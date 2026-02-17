@@ -1,3 +1,25 @@
+// Secure route to download request.log for debugging
+app.get('/debug/request-log', (req, res) => {
+  const adminKey = req.query.key;
+  if (adminKey !== ADMIN_PASS) {
+    return res.status(401).send('Unauthorized');
+  }
+  const logPath = path.join(process.cwd(), 'request.log');
+  if (!fs.existsSync(logPath)) {
+    return res.status(404).send('Log file not found');
+  }
+  res.setHeader('Content-Type', 'text/plain');
+  res.setHeader('Content-Disposition', 'attachment; filename="request.log"');
+  fs.createReadStream(logPath).pipe(res);
+});
+// ...existing code...
+// ...existing code...
+// ...existing code...
+// ===== TENANT DASHBOARD (ADMIN VIEW) =====
+app.get(["/admin/tenant", "/admin/tenant_dashboard.html"], adminAuth, (req, res) => {
+  const tenantDashboardPath = path.join(process.cwd(), "admin", "tenant_dashboard.html");
+  return res.sendFile(tenantDashboardPath);
+});
 import express from "express";
 import bodyParser from "body-parser";
 import axios from "axios";
@@ -22,6 +44,36 @@ dotenv.config();
 
 const app = express();
 app.use(bodyParser.json());
+
+// Robust request logging middleware (console + file)
+import fs from "fs";
+const logStream = fs.createWriteStream(path.join(process.cwd(), 'request.log'), { flags: 'a' });
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    const logLine = `[${new Date().toISOString()}] ${req.method} ${req.originalUrl} ${res.statusCode} - ${duration}ms\n`;
+    console.log(logLine.trim());
+    logStream.write(logLine);
+  });
+  res.on('close', () => {
+    if (!res.writableEnded) {
+      const logLine = `[${new Date().toISOString()}] ${req.method} ${req.originalUrl} CLOSED BEFORE END\n`;
+      console.log(logLine.trim());
+      logStream.write(logLine);
+    }
+  });
+  next();
+});
+
+// Serve static files from public directory
+const publicDir = path.join(process.cwd(), 'public');
+app.use(express.static(publicDir));
+
+// Serve public/index.html at root
+app.get('/', (req, res) => {
+  res.sendFile(path.join(publicDir, 'index.html'));
+});
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -240,27 +292,6 @@ function buildTrainingContext(trainingData = []) {
 }
 
 function getSystemPrompt(tenant = null, templates = [], trainingData = []) {
-  // ALPHADOME PLATFORM (no specific tenant)
-  if (!tenant) {
-    const alphadomePrompt = `You are Alphadome, the AI ecosystem orchestrator for African brands.
-
-YOUR ROLE:
-✅ Help brands grow via AI automation
-✅ Activate new tenant bots for their businesses  
-✅ Route customers to partner businesses
-✅ Provide platform-wide business consulting
-
-KEY CAPABILITIES:
-- Recognize when users need specific services and route them
-- Activate new tenant bots with a simple conversation
-- Explain the Alphadome multi-tenant ecosystem
-- Track where users are in the system
-
-TONE: Professional, helpful, growth-oriented. Always maintain context that you're the platform holding these bots together.`;
-    return alphadomePrompt;
-  }
-
-  // TENANT-SPECIFIC BOT (Kassangas, etc.)
   const brandName = tenant?.client_name || "Alphadome";
   let basePrompt = `You are a helpful WhatsApp assistant for ${brandName}. Be professional, warm, and concise.`;
 
@@ -323,18 +354,33 @@ function getDecryptedCredentials(tenant) {
   }
   const isValidWhatsAppToken = (token) => {
     if (!token) return false;
-    const t = token.trim();
+    const t = String(token).trim();
     if (!t) return false;
     if (t.includes("ACCESS_TOKEN_PLACEHOLDER")) return false;
+    if (t.includes("TOKEN_PLACEHOLDER")) return false;
     return true;
   };
 
+  const isValidPhoneNumberId = (id) => {
+    if (!id) return false;
+    const value = String(id).trim();
+    if (!value) return false;
+    if (value.includes("PHONE_NUMBER_ID")) return false;
+    if (value.includes("PLACEHOLDER")) return false;
+    if (!/^\d+$/.test(value)) return false;
+    return value.length >= 13;
+  };
+
   const tenantToken = tenant.whatsapp_access_token;
-  const useFallbackToken = !isValidWhatsAppToken(tenantToken);
+  const tenantPhoneId = tenant.whatsapp_phone_number_id;
+  const useFallbackWhatsApp =
+    !isValidWhatsAppToken(tenantToken) || !isValidPhoneNumberId(tenantPhoneId);
 
   return {
-    whatsappToken: useFallbackToken ? process.env.WHATSAPP_TOKEN : tenantToken,
-    whatsappPhoneNumberId: tenant.whatsapp_phone_number_id || process.env.PHONE_NUMBER_ID,
+    whatsappToken: useFallbackWhatsApp ? process.env.WHATSAPP_TOKEN : tenantToken,
+    whatsappPhoneNumberId: useFallbackWhatsApp
+      ? process.env.PHONE_NUMBER_ID
+      : tenantPhoneId,
     aiApiKey: tenant.ai_api_key || process.env.OPENAI_API_KEY,
     aiProvider: tenant.ai_provider || "openai",
     aiModel: tenant.ai_model || "gpt-4o-mini",
@@ -777,6 +823,19 @@ app.post("/webhook", loadTenantContext, async (req, res) => {
       }
     }
 
+    // STEP 3: Load tenant-specific configuration (NEW)
+    let templates = [];
+    let trainingData = [];
+    
+    if (req.isTenantAware && req.tenant?.id) {
+      templates = await loadTenantTemplates(req.tenant.id);
+      trainingData = await loadTenantTrainingData(req.tenant.id);
+      log(
+        `Loaded ${templates.length} templates and ${trainingData.length} training entries`,
+        "SYSTEM"
+      );
+    }
+
     // STEP 3b: Prefetch DB context for LLM
     const tenantPhone = req.tenant?.client_phone || req.tenant?._business_phone || null;
     const [userProfile, brandProfile, catalogMatches] = await Promise.all([
@@ -791,19 +850,6 @@ app.post("/webhook", loadTenantContext, async (req, res) => {
       tenant: req.tenant || null,
       catalogMatches,
     });
-
-    // STEP 3: Load tenant-specific configuration (NEW)
-    let templates = [];
-    let trainingData = [];
-    
-    if (req.isTenantAware && req.tenant?.id) {
-      templates = await loadTenantTemplates(req.tenant.id);
-      trainingData = await loadTenantTrainingData(req.tenant.id);
-      log(
-        `Loaded ${templates.length} templates and ${trainingData.length} training entries`,
-        "SYSTEM"
-      );
-    }
 
  // ---------- INSERT START: Join Alphadome / STK flow ----------
     // detect join command (case-insensitive)
@@ -1053,6 +1099,7 @@ if (text.match(/^2547\d{7}$/) || text.toLowerCase() === "same") {
       dbContext
     );
     const creds = getDecryptedCredentials(req.tenant);
+    const replyMeta = typeof reply === "object" ? reply.meta : null;
     if (reply?.type === "catalog") {
       const items = reply.items || [];
       const firstImage = items.find((i) => i.primary_image)?.primary_image || null;
@@ -1062,30 +1109,42 @@ if (text.match(/^2547\d{7}$/) || text.toLowerCase() === "same") {
       const sections = buildCatalogList(items);
       await sendInteractiveList(from, "Here are matching items:", "View items", sections, creds);
     } else {
-      const replyText = reply?.type === "text" ? reply.text : typeof reply === "string" ? reply : "";
-      if (replyText) {
-        await sendMessage(from, replyText, creds);
-      }
+      const replyText = typeof reply === "string" ? reply : reply?.text || "";
+      await sendMessage(from, replyText, creds);
     }
 
     // STEP 6: Log outbound message
-    const replyMeta = reply?.meta || null;
-    const outgoingText = reply?.type === "text" ? reply.text : typeof reply === "string" ? reply : "CATALOG_LIST";
     const { error: outErr } = await supabase.from("conversations").insert([
       {
         brand_id: brandId,
         user_id: userData.id,
         direction: "outgoing",
-        message_text: outgoingText,
-        llm_used: replyMeta?.llm_used ?? null,
-        llm_provider: replyMeta?.llm_provider ?? null,
-        llm_latency_ms: replyMeta?.llm_latency_ms ?? null,
-        llm_error: replyMeta?.llm_error ?? null,
-        llm_reason: replyMeta?.reason ?? null,
+        message_text:
+          reply?.type === "catalog"
+            ? "CATALOG_LIST"
+            : typeof reply === "string"
+              ? reply
+              : reply?.text || "",
+        llm_used: replyMeta?.llm_used ?? false,
+        llm_provider: replyMeta?.llm_provider || null,
+        llm_latency_ms: replyMeta?.llm_latency_ms || null,
+        llm_error: replyMeta?.llm_error || null,
+        llm_reason: replyMeta?.reason || null,
+        raw_payload: {
+          reply_type: reply?.type || "text",
+          llm_used: replyMeta?.llm_used ?? false,
+          llm_provider: replyMeta?.llm_provider || null,
+          llm_latency_ms: replyMeta?.llm_latency_ms || null,
+          llm_error: replyMeta?.llm_error || null,
+          reason: replyMeta?.reason || null,
+        },
         created_at: new Date().toISOString(),
       },
     ]);
-    if (outErr) throw outErr;
+      if (outErr) {
+        log(`Conversation insert error: ${JSON.stringify(outErr)}`, "ERROR");
+        throw outErr;
+      }
   } catch (err) {
     log(`Error processing message from ${from}: ${err.message}`, "ERROR");
   }
@@ -1355,6 +1414,93 @@ async function fetchConversationContext(userId, brandId, limit = 8) {
   }));
 }
 
+async function fetchUserProfile(userId) {
+  if (!userId) return null;
+  const { data, error } = await supabase
+    .from("users")
+    .select("id, phone, full_name, subscribed, subscription_type, subscription_level")
+    .eq("id", userId)
+    .maybeSingle();
+  if (error) {
+    log(`User profile error: ${error.message}`, "WARN");
+    return null;
+  }
+  return data || null;
+}
+
+async function fetchBrandProfile(brandId) {
+  if (!brandId) return null;
+  const { data, error } = await supabase
+    .from("brands")
+    .select("*")
+    .eq("id", brandId)
+    .maybeSingle();
+  if (error) {
+    log(`Brand profile error: ${error.message}`, "WARN");
+    return null;
+  }
+  return data || null;
+}
+
+function buildDbContext({ userProfile, brandProfile, tenant, catalogMatches = [] }) {
+  const blocks = [];
+
+  if (tenant) {
+    const tenantBlock = {
+      client_name: tenant.client_name,
+      client_phone: tenant.client_phone,
+      client_email: tenant.client_email,
+      brand_id: tenant.brand_id,
+      point_of_contact_name: tenant.point_of_contact_name,
+      point_of_contact_phone: tenant.point_of_contact_phone,
+    };
+    blocks.push(`Tenant profile:\n${JSON.stringify(tenantBlock, null, 2)}`);
+  }
+
+  if (brandProfile) {
+    const brandBlock = {
+      id: brandProfile.id,
+      name: brandProfile.name || brandProfile.brand_name || null,
+      description: brandProfile.description || brandProfile.bio || null,
+      website: brandProfile.website || null,
+      email: brandProfile.email || null,
+      phone: brandProfile.phone || null,
+      location: brandProfile.location || null,
+      industry: brandProfile.industry || null,
+      category: brandProfile.category || null,
+      tagline: brandProfile.tagline || null,
+    };
+    blocks.push(`Brand profile:\n${JSON.stringify(brandBlock, null, 2)}`);
+  }
+
+  if (userProfile) {
+    const userBlock = {
+      id: userProfile.id,
+      phone: userProfile.phone,
+      full_name: userProfile.full_name,
+      subscribed: userProfile.subscribed,
+      subscription_type: userProfile.subscription_type,
+      subscription_level: userProfile.subscription_level,
+    };
+    blocks.push(`User profile:\n${JSON.stringify(userBlock, null, 2)}`);
+  }
+
+  if (catalogMatches.length) {
+    const catalogBlock = catalogMatches.slice(0, 5).map((item) => ({
+      sku: item.sku || item.id,
+      name: item.name,
+      price: item.price,
+      currency: item.currency || "KES",
+      stock_count: item.stock_count,
+      category: item.category || item.metadata?.category || null,
+      tags: item.tags || item.metadata?.tags || null,
+    }));
+    blocks.push(`Catalog matches:\n${JSON.stringify(catalogBlock, null, 2)}`);
+  }
+
+  return blocks.join("\n\n").trim();
+}
+
 function formatCatalogReply(items = []) {
   if (!items.length) return null;
   return { type: "catalog", items };
@@ -1373,136 +1519,32 @@ function buildCatalogList(items = []) {
   }];
 }
 
-// ===== TENANT MANAGEMENT FUNCTIONS (ALPHADOME SYSTEM) =====
-
-async function getActiveTenants() {
-  try {
-    const { data, error } = await supabase.rpc("get_active_tenants");
-    if (error) {
-      log(`Error fetching tenants: ${error.message}`, "WARN");
-      return [];
-    }
-    return data || [];
-  } catch (err) {
-    log(`Exception in getActiveTenants: ${err.message}`, "ERROR");
-    return [];
-  }
+function isGreetingMessage(message = "") {
+  const text = (message || "").toLowerCase().trim();
+  if (!text) return false;
+  return [
+    "hi",
+    "hello",
+    "hey",
+    "good morning",
+    "good afternoon",
+    "good evening",
+    "mambo",
+    "niaje",
+    "sasa",
+    "habari",
+  ].some((greet) => text === greet || text.startsWith(`${greet} `));
 }
 
-function matchTenantQuery(userMessage) {
-  // Keyword-based tenant matching
-  const tenantKeywords = {
-    kassangas: ["guitar", "keyboard", "music", "instrument", "audio", "drum", "amplifier", "cable"],
-  };
-
-  const lowerMessage = userMessage.toLowerCase();
-  
-  for (const [tenantName, keywords] of Object.entries(tenantKeywords)) {
-    if (keywords.some(kw => lowerMessage.includes(kw))) {
-      return tenantName;
-    }
-  }
-  return null;
-}
-
-async function recommendTenant(requirement) {
-  const tenants = await getActiveTenants();
-  const matchedTenantName = matchTenantQuery(requirement);
-  
-  if (matchedTenantName) {
-    const matched = tenants.find(t => t.client_name.toLowerCase().includes(matchedTenantName));
-    if (matched) {
-      return {
-        suggestion: `Try ${matched.client_name}`,
-        phone: matched.client_phone,
-        description: matched.description,
-        action: `Text them on ${matched.client_phone}`
-      };
-    }
-  }
-  return null;
-}
-
-async function registerNewTenant(clientName, clientPhone, pocName, pocPhone, description) {
-  try {
-    // Create a brand for the tenant
-    const { data: brandData, error: brandErr } = await supabase
-      .from("brands")
-      .insert([
-        {
-          name: clientName,
-          description: description,
-          is_platform_owner: false,
-          tagline: description,
-        }
-      ])
-      .select("id")
-      .single();
-    
-    if (brandErr) {
-      log(`Brand creation error: ${brandErr.message}`, "ERROR");
-      return null;
-    }
-
-    // Create tenant in bot_tenants
-    const { data: tenantData, error: tenantErr } = await supabase.rpc("create_tenant", {
-      p_client_name: clientName,
-      p_client_phone: clientPhone,
-      p_poc_name: pocName,
-      p_poc_phone: pocPhone,
-      p_description: description,
-      p_brand_id: brandData.id
-    });
-
-    if (tenantErr) {
-      log(`Tenant creation error: ${tenantErr.message}`, "ERROR");
-      return null;
-    }
-
-    log(`✅ New tenant registered: ${clientName} (${clientPhone})`, "SYSTEM");
-    return tenantData?.[0] || null;
-  } catch (err) {
-    log(`Exception in registerNewTenant: ${err.message}`, "ERROR");
-    return null;
-  }
-}
-
-async function generateReply(userMessage, tenant = null, templates = null, trainingData = [], contextMessages = [], catalogMatches = [], dbContext = "") {
-  // ===== ALPHADOME ROUTING LOGIC (Platform-aware) =====
-  // If this is Alphadome (no tenant), handle tenant recommendations
-  if (!tenant) {
-    const lowerMessage = userMessage.toLowerCase();
-    
-    // Check if user wants to activate a business bot
-    if (
-      lowerMessage.includes("activate") ||
-      lowerMessage.includes("grow") ||
-      lowerMessage.includes("business") ||
-      lowerMessage.includes("my bot") ||
-      lowerMessage.includes("tenant") ||
-      lowerMessage.includes("join alphadome")
-    ) {
-      log("Alphadome: Detected activation request", "SYSTEM");
-      return {
-        type: "text",
-        text: `Great! You've reached Alphadome—the AI ecosystem for African brands.\n\nI can help you activate a dedicated bot for your business in 2 minutes.\n\n🎯 What's your business name?`,
-        meta: { llm_used: false, reason: "activation_flow" },
-      };
-    }
-    
-    // Check if user is looking for a specific service/product
-    const tenantRecommendation = await recommendTenant(userMessage);
-    if (tenantRecommendation) {
-      log(`Alphadome: Recommending ${tenantRecommendation.suggestion}`, "SYSTEM");
-      return {
-        type: "text",
-        text: `I'm Alphadome, the AI platform. I don't ${tenantRecommendation.description.toLowerCase()} directly, but I know who does! 🎯\n\n✅ ${tenantRecommendation.suggestion}\n\nText them on: ${tenantRecommendation.phone}\n\nTell them Alphadome sent you!`,
-        meta: { llm_used: false, reason: "tenant_recommendation" },
-      };
-    }
-  }
-
-  // ===== STANDARD LLM REPLY GENERATION =====
+async function generateReply(
+  userMessage,
+  tenant = null,
+  templates = null,
+  trainingData = [],
+  contextMessages = [],
+  catalogMatches = [],
+  dbContext = ""
+) {
   const creds = getDecryptedCredentials(tenant);
   const openaiClient = new OpenAI({ apiKey: creds.aiApiKey });
   const systemMessage = {
@@ -1515,21 +1557,26 @@ async function generateReply(userMessage, tenant = null, templates = null, train
     "SYSTEM"
   );
 
-  // 0️⃣ Try catalog search first (tenant-aware)
-  const tenantPhone = tenant?.client_phone || tenant?._business_phone;
-  const items = catalogMatches?.length
-    ? catalogMatches
-    : tenantPhone
-      ? await fetchCatalogForTenant(tenantPhone, userMessage)
-      : [];
-  if (items.length) {
-    const catalogReply = formatCatalogReply(items);
-    if (catalogReply) {
-      log(`✓ Catalog match: ${items.length} items`, "AI");
-      return {
-        ...catalogReply,
-        meta: { llm_used: false, reason: "catalog" },
-      };
+  const isGreeting = isGreetingMessage(userMessage);
+  if (isGreeting) {
+    log("Greeting detected → routing to LLM", "SYSTEM");
+  } else {
+    // 0️⃣ Try catalog search first (tenant-aware)
+    const tenantPhone = tenant?.client_phone || tenant?._business_phone;
+    const items = catalogMatches?.length
+      ? catalogMatches
+      : tenantPhone
+        ? await fetchCatalogForTenant(tenantPhone, userMessage)
+        : [];
+    if (items.length) {
+      const catalogReply = formatCatalogReply(items);
+      if (catalogReply) {
+        log(`✓ Catalog match: ${items.length} items`, "AI");
+        return {
+          ...catalogReply,
+          meta: { llm_used: false, reason: "catalog" },
+        };
+      }
     }
   }
 
@@ -1600,75 +1647,71 @@ async function generateReply(userMessage, tenant = null, templates = null, train
   }
 
   // 2️⃣ Fallback to OpenRouter Meta Llama 3.3 free
-  if (process.env.OPENROUTER_KEY) {
-    try {
-      log("LLM path: OpenRouter", "SYSTEM");
-      const start = Date.now();
-      const routerResponse = await axios.post(
-        "https://api.openrouter.ai/v1/chat/completions",
-        {
-          model: "meta-llama/llama-3.3-70b-instruct:free",
-          messages: messageStack,
+  try {
+    log("LLM path: OpenRouter", "SYSTEM");
+    const start = Date.now();
+    const routerResponse = await axios.post(
+      "https://api.openrouter.ai/v1/chat/completions",
+      {
+        model: "meta-llama/llama-3.3-70b-instruct:free",
+        messages: messageStack,
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.OPENROUTER_KEY}`,
+          "Content-Type": "application/json",
         },
-        {
-          headers: {
-            Authorization: `Bearer ${process.env.OPENROUTER_KEY}`,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-
-      if (routerResponse.data?.choices?.length > 0) {
-        const routerReply = routerResponse.data.choices[0].message.content;
-        const latency = Date.now() - start;
-        log(`✓ OpenRouter reply: ${routerReply.substring(0, 50)}...`, "AI");
-        return {
-          type: "text",
-          text: routerReply,
-          meta: { llm_used: true, llm_provider: "openrouter", llm_latency_ms: latency },
-        };
-      } else {
-        log("OpenRouter error: No choices returned", "ERROR");
       }
-    } catch (routerErr) {
-      log(`OpenRouter error: ${routerErr.message}`, "ERROR");
+    );
+
+    if (routerResponse.data?.choices?.length > 0) {
+      const routerReply = routerResponse.data.choices[0].message.content;
+      const latency = Date.now() - start;
+      log(`✓ OpenRouter reply: ${routerReply.substring(0, 50)}...`, "AI");
+      return {
+        type: "text",
+        text: routerReply,
+        meta: { llm_used: true, llm_provider: "openrouter", llm_latency_ms: latency },
+      };
+    } else {
+      log("OpenRouter error: No choices returned", "ERROR");
     }
+  } catch (routerErr) {
+    log(`OpenRouter error: ${routerErr.message}`, "ERROR");
   }
 
   // 3️⃣ Fallback to Hugging Face (new router-based API)
-  if (process.env.HF_API_KEY) {
-    try {
-      log("LLM path: HuggingFace", "SYSTEM");
-      const start = Date.now();
-      const hfResponse = await axios.post(
-        "https://router.huggingface.co/v1/chat/completions",
-        {
-          model: "meta-llama/Llama-3.1-8B-Instruct:novita", // ✅ new inference model
-          messages: messageStack,
+  try {
+    log("LLM path: HuggingFace", "SYSTEM");
+    const start = Date.now();
+    const hfResponse = await axios.post(
+      "https://router.huggingface.co/v1/chat/completions",
+      {
+        model: "meta-llama/Llama-3.1-8B-Instruct:novita", // ✅ new inference model
+        messages: messageStack,
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.HF_API_KEY}`,
+          "Content-Type": "application/json",
         },
-        {
-          headers: {
-            Authorization: `Bearer ${process.env.HF_API_KEY}`,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-
-      if (hfResponse.data?.choices?.length > 0) {
-        const hfReply = hfResponse.data.choices[0].message.content;
-        const latency = Date.now() - start;
-        log(`✓ HuggingFace reply: ${hfReply.substring(0, 50)}...`, "AI");
-        return {
-          type: "text",
-          text: hfReply,
-          meta: { llm_used: true, llm_provider: "huggingface", llm_latency_ms: latency },
-        };
-      } else {
-        log("HuggingFace error: No choices returned", "ERROR");
       }
-    } catch (hfErr) {
-      log(`HuggingFace error: ${hfErr.message}`, "ERROR");
+    );
+
+    if (hfResponse.data?.choices?.length > 0) {
+      const hfReply = hfResponse.data.choices[0].message.content;
+      const latency = Date.now() - start;
+      log(`✓ HuggingFace reply: ${hfReply.substring(0, 50)}...`, "AI");
+      return {
+        type: "text",
+        text: hfReply,
+        meta: { llm_used: true, llm_provider: "huggingface", llm_latency_ms: latency },
+      };
+    } else {
+      log("HuggingFace error: No choices returned", "ERROR");
     }
+  } catch (hfErr) {
+    log(`HuggingFace error: ${hfErr.message}`, "ERROR");
   }
 
   // 4️⃣ Static fallback message
@@ -1894,7 +1937,7 @@ setInterval(async () => {
 
     for (const msg of failedMsgs) {
       try {
-        const fallback = `🙏 *Apologies for the delay!* We had a temporary issue earlier, but we're back online now.  
+        const fallback = `🙏 *Hello, apologies for the inconvenience!* We are experiencing a temporary issue, but we'll be back online in a few.  
 
 👋 Hey there! Welcome to *Alphadome* — your all-in-one creative AI ecosystem helping brands, creators, and innovators thrive in the digital world. 
 
@@ -1951,99 +1994,6 @@ Alphadome helps brands scale through automation, AI storytelling, and digital cr
 // ===== START SERVER =====
 app.listen(process.env.PORT, () => {
   log(`Server running on port ${process.env.PORT}`, "SYSTEM");
-  if (process.env.RENDER_GIT_COMMIT) {
-    log(`Deployed commit: ${process.env.RENDER_GIT_COMMIT}`, "SYSTEM");
-  }
   console.log(`🚀 Server running on port ${process.env.PORT}`);
 });
 
-// DB Context Functions for LLM
-
-async function fetchUserProfile(userId) {
-  if (!userId) return null;
-  const { data, error } = await supabase
-    .from("users")
-    .select("id, phone, full_name, subscribed, subscription_type, subscription_level")
-    .eq("id", userId)
-    .maybeSingle();
-  if (error) {
-    log(`User profile error: ${error.message}`, "WARN");
-    return null;
-  }
-  return data || null;
-}
-
-async function fetchBrandProfile(brandId) {
-  if (!brandId) return null;
-  const { data, error} = await supabase
-    .from("brands")
-    .select("*")
-    .eq("id", brandId)
-    .maybeSingle();
-  if (error) {
-    log(`Brand profile error: ${error.message}`, "WARN");
-    return null;
-  }
-  return data || null;
-}
-
-function buildDbContext({ userProfile, brandProfile, tenant, catalogMatches = [] }) {
-  const blocks = [];
-
-  if (tenant) {
-    const tenantBlock = {
-      client_name: tenant.client_name,
-      client_phone: tenant.client_phone,
-      client_email: tenant.client_email,
-      brand_id: tenant.brand_id,
-      point_of_contact_name: tenant.point_of_contact_name,
-      point_of_contact_phone: tenant.point_of_contact_phone,
-    };
-    blocks.push(`Tenant profile:\n${JSON.stringify(tenantBlock, null, 2)}`);
-  }
-
-  if (brandProfile) {
-    const brandBlock = {
-      id: brandProfile.id,
-      name: brandProfile.name || brandProfile.brand_name || null,
-      description: brandProfile.description || brandProfile.bio || null,
-      website: brandProfile.website || null,
-      email: brandProfile.email || null,
-      phone: brandProfile.phone || null,
-      location: brandProfile.location || null,
-      industry: brandProfile.industry || null,
-      category: brandProfile.category || null,
-      tagline: brandProfile.tagline || null,
-    };
-    blocks.push(`Brand profile:\n${JSON.stringify(brandBlock, null, 2)}`);
-  }
-
-  if (userProfile) {
-    const userBlock = {
-      id: userProfile.id,
-      phone: userProfile.phone,
-      full_name: userProfile.full_name,
-      subscribed: userProfile.subscribed,
-      subscription_type: userProfile.subscription_type,
-      subscription_level: userProfile.subscription_level,
-    };
-    blocks.push(`User profile:\n${JSON.stringify(userBlock, null, 2)}`);
-  }
-
-  if (catalogMatches.length) {
-    const catalogBlock = catalogMatches.slice(0, 5).map((item) => ({
-      sku: item.sku || item.id,
-      name: item.name,
-      price: item.price,
-      currency: item.currency || "KES",
-      stock_count: item.stock_count,
-      category: item.category || item.metadata?.category || null,
-      tags: item.tags || item.metadata?.tags || null,
-    }));
-    blocks.push(`Catalog matches:\n${JSON.stringify(catalogBlock, null, 2)}`);
-  }
-
-  return blocks.join("\n\n").trim();
-}
-
-export { fetchUserProfile, fetchBrandProfile, buildDbContext };
