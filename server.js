@@ -1,11 +1,13 @@
 
 // --- Imports and app initialization ---
+
 import express from "express";
 import fs from "fs";
 import path from "path";
 import multer from "multer";
 import { createClient } from "@supabase/supabase-js";
 import OpenAI from "openai";
+import { log } from "./utils/logger.js";
 
 const app = express();
 app.use(express.json());
