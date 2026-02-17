@@ -761,6 +761,50 @@ app.post("/webhook", loadTenantContext, async (req, res) => {
   // NOTE for System Update; Find a way of handling different formats (text, graphics - videos, audio, and images.)
   if (!text) return res.sendStatus(200);
 
+  // === CONTEXT-AWARE INTENT DETECTION FOR WRITER'S FLOW ===
+  // Simple keyword/intent detection (can be replaced with LLM/NLP for advanced use)
+  const writersFlowTriggers = [
+    '/writersflow',
+    'writer\'s flow',
+    'pitch to',
+    'supply my products',
+    'find opportunity',
+    'reach out to',
+    'send pitch',
+  ];
+  const lowerText = text.toLowerCase();
+  const matchedTrigger = writersFlowTriggers.find(trigger => lowerText.includes(trigger));
+
+  if (matchedTrigger) {
+    // Extract context/keywords (simple example: everything after the trigger)
+    let keywords = [];
+    let context = text;
+    // Example: "/writersflow AI jobs" or "I want to pitch to a restaurant to supply my products"
+    if (lowerText.startsWith('/writersflow')) {
+      keywords = text.split(' ').slice(1);
+      context = keywords.join(' ');
+    } else {
+      // For natural language, use the whole message as context
+      keywords = text.split(' ').filter(w => w.length > 2);
+    }
+
+    // Call Writer's Flow orchestrator
+    const writersFlow = require('./writers_flow/orchestrator');
+    try {
+      await sendMessage(from, '⏳ Processing your request with Writer\'s Flow...');
+      const result = await writersFlow({
+        keywords,
+        userId: userData.id,
+        fromEmail: process.env.SMTP_USER, // or map WhatsApp user to email if available
+        context,
+      });
+      await sendMessage(from, `✅ Writer's Flow completed. Opportunities contacted: ${result.sent}`);
+    } catch (err) {
+      await sendMessage(from, `⚠️ Writer's Flow failed: ${err.message}`);
+    }
+    return res.sendStatus(200);
+  }
+
   log(`Received from ${from}: ${text}`, "INCOMING");
 
   try {
