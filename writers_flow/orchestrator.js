@@ -1,9 +1,9 @@
 // Orchestrator: coordinates scraping, humanization, and email sending
-const scrapeOpportunities = require('./scraper');
-const humanizeMessage = require('./llmService');
-const sendEmail = require('./emailSender');
+import scrapeOpportunities from './scraper.js';
+import humanizeMessage from './llmService.js';
+import sendEmail from './emailSender.js';
 
-module.exports = async function writersFlow({ keywords, userId, fromEmail }) {
+export default async function writersFlow({ keywords, userId, fromEmail }) {
   const opportunities = await scrapeOpportunities(keywords);
   for (const opp of opportunities) {
     const message = `Hello,\nI found your opportunity: ${opp.title} (${opp.url})`;
@@ -16,4 +16,4 @@ module.exports = async function writersFlow({ keywords, userId, fromEmail }) {
     });
   }
   return { sent: opportunities.length };
-};
+}
