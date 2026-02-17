@@ -1,20 +1,16 @@
-// Secure route to download request.log for debugging
-app.get('/debug/request-log', (req, res) => {
-  const adminKey = req.query.key;
-  if (adminKey !== ADMIN_PASS) {
-    return res.status(401).send('Unauthorized');
-  }
-  const logPath = path.join(process.cwd(), 'request.log');
-  if (!fs.existsSync(logPath)) {
-    return res.status(404).send('Log file not found');
-  }
-  res.setHeader('Content-Type', 'text/plain');
-  res.setHeader('Content-Disposition', 'attachment; filename="request.log"');
-  fs.createReadStream(logPath).pipe(res);
-});
+
+// --- Imports and app initialization ---
+import express from "express";
+import fs from "fs";
+import path from "path";
+import multer from "multer";
+import { createClient } from "@supabase/supabase-js";
+import OpenAI from "openai";
+
+const app = express();
+app.use(express.json());
 
 // Robust request logging middleware (console + file)
-import fs from "fs";
 const logStream = fs.createWriteStream(path.join(process.cwd(), 'request.log'), { flags: 'a' });
 app.use((req, res, next) => {
   const start = Date.now();
@@ -37,6 +33,21 @@ app.use((req, res, next) => {
 // Serve static files from public directory
 const publicDir = path.join(process.cwd(), 'public');
 app.use(express.static(publicDir));
+
+// Secure route to download request.log for debugging
+app.get('/debug/request-log', (req, res) => {
+  const adminKey = req.query.key;
+  if (adminKey !== ADMIN_PASS) {
+    return res.status(401).send('Unauthorized');
+  }
+  const logPath = path.join(process.cwd(), 'request.log');
+  if (!fs.existsSync(logPath)) {
+    return res.status(404).send('Log file not found');
+  }
+  res.setHeader('Content-Type', 'text/plain');
+  res.setHeader('Content-Disposition', 'attachment; filename="request.log"');
+  fs.createReadStream(logPath).pipe(res);
+});
 
 // Serve public/index.html at root
 app.get('/', (req, res) => {
