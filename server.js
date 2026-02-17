@@ -789,10 +789,11 @@ app.post("/webhook", loadTenantContext, async (req, res) => {
       keywords = text.split(' ').filter(w => w.length > 2);
     }
 
-    // Call Writer's Flow orchestrator
-    const writersFlow = require('./writers_flow/orchestrator');
+    // Call Writer's Flow orchestrator (ESM compatible)
     try {
       await sendMessage(from, '⏳ Processing your request with Writer\'s Flow...');
+      const writersFlowModule = await import('./writers_flow/orchestrator.js');
+      const writersFlow = writersFlowModule.default || writersFlowModule;
       const result = await writersFlow({
         keywords,
         userId: userData.id,
