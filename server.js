@@ -778,6 +778,27 @@ app.post("/webhook", loadTenantContext, async (req, res) => {
   const matchedTrigger = writersFlowTriggers.find(trigger => lowerText.includes(trigger));
 
   if (matchedTrigger) {
+    // STEP 1: Find or create user (moved up so userData is defined)
+    let { data: userData, error: userErr } = await supabase
+      .from("users")
+      .select("id, phone")
+      .eq("phone", from)
+      .maybeSingle();
+
+    if (userErr) throw userErr;
+
+    if (!userData) {
+      const { data: newUser, error: newUserErr } = await supabase
+        .from("users")
+        .insert([{ phone: from, full_name: "Unknown User" }])
+        .select("id")
+        .single();
+
+      if (newUserErr) throw newUserErr;
+      userData = newUser;
+      log(`New user created: ${from}`, "SYSTEM");
+    }
+
     // Extract context/keywords (simple example: everything after the trigger)
     let keywords = [];
     let context = text;
