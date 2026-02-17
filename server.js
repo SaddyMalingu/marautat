@@ -8,6 +8,7 @@ import multer from "multer";
 import { createClient } from "@supabase/supabase-js";
 import OpenAI from "openai";
 import { log } from "./utils/logger.js";
+import { startHealthMonitor, runHealthCheck } from "./utils/healthMonitor.js";
 
 const app = express();
 app.use(express.json());
