@@ -12,38 +12,6 @@ app.get('/debug/request-log', (req, res) => {
   res.setHeader('Content-Disposition', 'attachment; filename="request.log"');
   fs.createReadStream(logPath).pipe(res);
 });
-// ...existing code...
-// ...existing code...
-// ...existing code...
-// ===== TENANT DASHBOARD (ADMIN VIEW) =====
-app.get(["/admin/tenant", "/admin/tenant_dashboard.html"], adminAuth, (req, res) => {
-  const tenantDashboardPath = path.join(process.cwd(), "admin", "tenant_dashboard.html");
-  return res.sendFile(tenantDashboardPath);
-});
-import express from "express";
-import bodyParser from "body-parser";
-import axios from "axios";
-import dotenv from "dotenv";
-import OpenAI from "openai";
-import fs from "fs";
-import path from "path";
-import FormData from "form-data";
-import { parse as parseCsv } from "csv-parse/sync";
-import multer from "multer";
-import { createClient } from "@supabase/supabase-js";
-import { log } from "./utils/logger.js";
-import {
-  startHealthMonitor,
-  incrementErrorCount,
-  runHealthCheck,
-} from "./utils/healthMonitor.js";
-import { sendMessage, sendImage, sendInteractiveList } from "./utils/messenger.js";
-import crypto from "crypto"; 
-
-dotenv.config();
-
-const app = express();
-app.use(bodyParser.json());
 
 // Robust request logging middleware (console + file)
 import fs from "fs";
@@ -72,6 +40,7 @@ app.use(express.static(publicDir));
 
 // Serve public/index.html at root
 app.get('/', (req, res) => {
+  log(`Landing page loaded by ${req.ip} at ${new Date().toISOString()}`, "PAGE");
   res.sendFile(path.join(publicDir, 'index.html'));
 });
 
@@ -405,6 +374,7 @@ app.get("/webhook", (req, res) => {
 
 // ===== ADMIN DASHBOARD =====
 app.get("/admin", adminAuth, (req, res) => {
+  log(`Admin dashboard loaded by ${req.ip} at ${new Date().toISOString()}`, "PAGE");
   if (!ADMIN_DASHBOARD_ENABLED) {
     return res.status(403).send("Admin dashboard disabled");
   }
@@ -413,6 +383,7 @@ app.get("/admin", adminAuth, (req, res) => {
 });
 
 app.get("/admin/simple", adminAuth, (req, res) => {
+  log(`Admin dashboard loaded by ${req.ip} at ${new Date().toISOString()}`, "PAGE");
   if (!ADMIN_DASHBOARD_ENABLED) {
     return res.status(403).send("Admin dashboard disabled");
   }
@@ -421,6 +392,7 @@ app.get("/admin/simple", adminAuth, (req, res) => {
 });
 
 app.get("/admin/catalog", adminAuth, (req, res) => {
+  log(`Admin dashboard loaded by ${req.ip} at ${new Date().toISOString()}`, "PAGE");
   if (!ADMIN_DASHBOARD_ENABLED) {
     return res.status(403).send("Admin dashboard disabled");
   }
