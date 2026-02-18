@@ -403,7 +403,7 @@
 </head>
 <body>
   <header style="background:rgba(15,23,42,0.98);padding:2rem 0 1rem 0;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,0.1);position:relative;z-index:2;">
-    <img src="brand-logo.png" alt="Brand Logo" style="height:90px;width:auto;margin-bottom:1rem;filter:drop-shadow(0 2px 16px #38bdf8cc);border-radius:1.2rem;box-shadow:0 2px 16px #0ea5e9aa;" loading="lazy">
+    <img src="./brand-logo-new.png" alt="Brand Logo" style="height:90px;width:auto;margin-bottom:1rem;filter:drop-shadow(0 2px 16px #38bdf8cc);border-radius:1.2rem;box-shadow:0 2px 16px #0ea5e9aa;" loading="lazy">
     <h1 style="font-size:2.5rem;margin:0 0 0.5rem 0;letter-spacing:2px;color:#38bdf8;text-shadow:0 4px 32px #0ea5e9aa;font-weight:900;">Alphadome: Multi-Tenant AI SaaS for Brands & Creators</h1>
     <p style="font-size:1.3rem;color:#cbd5e1;margin:0 0 1rem 0;text-shadow:0 2px 8px #6366f1aa;">Automate, scale, and innovate with agentic workflows, creative bots, and robust dashboards.</p>
     <div class="hero-buttons">
@@ -412,10 +412,13 @@
       <a href="#pricing" class="cta-btn" aria-label="Join Alphadome">Join Alphadome</a>
     </div>
   </header>
+  <!-- 3D Hero Canvas -->
+  <div id="hero-3d" style="width:100vw;max-width:100%;height:320px;margin:0 auto 1.5rem auto;z-index:1;"></div>
   <main>
     <section class="hero">
       <h2>Unleash Agentic Automation</h2>
       <p>Alphadome empowers brands, agencies, and creators with modular, multi-tenant AI workflows, creative bots, and dynamic dashboards. Secure, scalable, and ready for enterprise.</p>
+      <noscript><p style="color:#f87171">Enable JavaScript to see interactive 3D graphics.</p></noscript>
       <div class="hero-buttons">
         <a href="#get-started" class="cta-btn" aria-label="Get Started">Get Started</a>
         <a href="#demo" class="cta-btn" aria-label="View Demo">View Demo</a>
@@ -572,6 +575,56 @@
       <a href="mailto:info@alphadome.ai" class="cta-btn cta-large" aria-label="Request a Demo">Request a Demo</a>
     </section>
   </main>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.155.0/build/three.min.js"></script>
+  <script>
+    // Simple Three.js 3D animated sphere
+    window.addEventListener('DOMContentLoaded', () => {
+      const container = document.getElementById('hero-3d');
+      if (!container || !window.THREE) return;
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(60, container.offsetWidth/container.offsetHeight, 0.1, 1000);
+      const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+      renderer.setClearColor(0x0f172a, 0); // transparent
+      renderer.setSize(container.offsetWidth, container.offsetHeight);
+      container.appendChild(renderer.domElement);
+      // Lighting
+      const light = new THREE.PointLight(0x38bdf8, 1.2, 100);
+      light.position.set(10, 10, 10);
+      scene.add(light);
+      // Sphere
+      const geometry = new THREE.SphereGeometry(1.5, 64, 64);
+      const material = new THREE.MeshPhysicalMaterial({
+        color: 0x38bdf8,
+        roughness: 0.2,
+        metalness: 0.7,
+        clearcoat: 1,
+        clearcoatRoughness: 0.1,
+        transmission: 0.7,
+        thickness: 0.5,
+        ior: 1.2,
+        reflectivity: 0.8,
+        transparent: true,
+        opacity: 0.95
+      });
+      const sphere = new THREE.Mesh(geometry, material);
+      scene.add(sphere);
+      camera.position.z = 5;
+      // Animation
+      function animate() {
+        requestAnimationFrame(animate);
+        sphere.rotation.y += 0.008;
+        sphere.rotation.x += 0.003;
+        renderer.render(scene, camera);
+      }
+      animate();
+      // Responsive
+      window.addEventListener('resize', () => {
+        renderer.setSize(container.offsetWidth, container.offsetHeight);
+        camera.aspect = container.offsetWidth/container.offsetHeight;
+        camera.updateProjectionMatrix();
+      });
+    });
+  </script>
   <footer>
     &copy; 2026 Alphadome. All rights reserved.<br>
     <div class="social-icons">
