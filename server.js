@@ -397,6 +397,13 @@ app.get("/admin", adminAuth, (req, res) => {
   return res.sendFile(dashboardPath);
 });
 
+// ===== TENANT DASHBOARD =====
+app.get("/tenant-dashboard", (req, res) => {
+  log(`Tenant dashboard loaded by ${req.ip} at ${new Date().toISOString()}`, "PAGE");
+  const dashboardPath = path.join(process.cwd(), "admin", "tenant_dashboard.html");
+  return res.sendFile(dashboardPath);
+});
+
 app.get("/admin/simple", adminAuth, (req, res) => {
   log(`Admin dashboard loaded by ${req.ip} at ${new Date().toISOString()}`, "PAGE");
   if (!ADMIN_DASHBOARD_ENABLED) {
