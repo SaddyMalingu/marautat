@@ -35,243 +35,298 @@
             justify-content: center;
             gap: 2rem;
         }
-        nav a {
-            color: #0ea5e9;
-            text-decoration: none;
-            font-weight: 700;
-            font-size: 1.1rem;
-            transition: color 0.2s;
-        }
-        nav a:hover {
-            color: #38bdf8;
-        }
-        .hero {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            min-height: 60vh;
-            text-align: center;
-        }
-        .hero h2 {
-            font-size: 2.2rem;
-            margin-bottom: 1rem;
-            color: #38bdf8;
-        }
-        .hero p {
-            font-size: 1.2rem;
-            max-width: 600px;
-            margin: 0 auto 2rem auto;
-            color: #e0e7ef;
-        }
-        .cta-btn {
-            background: #0ea5e9;
-            color: #fff;
-            border: none;
-            padding: 1rem 2.5rem;
-            font-size: 1.2rem;
-            border-radius: 2rem;
-            font-weight: 700;
-            cursor: pointer;
-            box-shadow: 0 4px 16px rgba(14,165,233,0.2);
-            transition: background 0.2s, transform 0.2s;
-        }
-        .cta-btn:hover {
-            background: #38bdf8;
-            transform: translateY(-2px) scale(1.04);
-        }
-        .features {
-            display: flex;
-            flex-wrap: wrap;
-            justify-content: center;
-            gap: 2rem;
-            margin: 4rem 0 2rem 0;
-        }
-        .feature-card {
-            background: rgba(30,41,59,0.95);
-            border-radius: 1.5rem;
-            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
-            padding: 2rem 1.5rem;
-            max-width: 320px;
-            min-width: 260px;
-            text-align: center;
-            transition: transform 0.2s, box-shadow 0.2s;
-        }
-        .feature-card:hover {
-            transform: translateY(-6px) scale(1.03);
-            box-shadow: 0 8px 32px rgba(14,165,233,0.15);
-        }
-        .feature-card i {
-            font-size: 2.5rem;
-            color: #0ea5e9;
-            margin-bottom: 1rem;
-        }
-        .feature-card h3 {
-            margin: 0.5rem 0 0.5rem 0;
-            font-size: 1.3rem;
-            color: #38bdf8;
-        }
-        .feature-card p {
-            color: #cbd5e1;
-            font-size: 1rem;
-        }
-        .audience-section {
-            background: rgba(14,165,233,0.08);
-            padding: 3rem 0;
-            margin: 3rem 0 0 0;
-        }
-        .audience-section h2 {
-            color: #0ea5e9;
-            font-size: 2rem;
-            text-align: center;
-            margin-bottom: 2rem;
-        }
-        .audience-cards {
-            display: flex;
-            flex-wrap: wrap;
-            justify-content: center;
-            gap: 2rem;
-        }
-        .audience-card {
-            background: #fff;
-            color: #1e293b;
-            border-radius: 1.2rem;
-            box-shadow: 0 2px 12px rgba(14,165,233,0.08);
-            padding: 1.5rem 1.2rem;
-            max-width: 260px;
-            min-width: 200px;
-            text-align: center;
-            transition: transform 0.2s, box-shadow 0.2s;
-        }
-        .audience-card:hover {
-            transform: translateY(-4px) scale(1.03);
-            box-shadow: 0 8px 32px rgba(14,165,233,0.15);
-        }
-        .audience-card i {
-            font-size: 2rem;
-            color: #0ea5e9;
-            margin-bottom: 0.5rem;
-        }
-        .audience-card h4 {
-            margin: 0.5rem 0 0.5rem 0;
-            font-size: 1.1rem;
-        }
-        .audience-card p {
-            color: #334155;
-            font-size: 0.98rem;
-        }
-        .dynamic-section {
-            margin: 4rem 0 2rem 0;
-            text-align: center;
-        }
-        .dynamic-section h2 {
-            color: #38bdf8;
-            font-size: 2rem;
-            margin-bottom: 1.5rem;
-        }
-        .dynamic-content {
-            font-size: 1.3rem;
-            color: #fff;
-            min-height: 2.5rem;
-            font-weight: 500;
-            letter-spacing: 1px;
-        }
-        footer {
-            background: #1e293b;
-            color: #cbd5e1;
-            text-align: center;
-            padding: 2rem 0 1rem 0;
-            margin-top: 3rem;
-            font-size: 1rem;
-        }
-        @media (max-width: 900px) {
-            .features, .audience-cards {
-                flex-direction: column;
-                align-items: center;
+        <style>
+            body {
+                font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
+                background: linear-gradient(135deg, #f8fafc 0%, #e0e7ef 100%);
+                color: #1e293b;
+                margin: 0;
+                padding: 0;
             }
-        }
-    </style>
-</head>
-<body>
-    <main class="landing">
-        <section class="landing-hero">
-            <div class="hero-content">
-                <h1><i class="fab fa-whatsapp"></i> WhatsApp Bot Platform</h1>
-                <h2>Automate. Engage. Grow.</h2>
-                <p class="tagline">The all-in-one WhatsApp automation platform for professionals, organizations, and brands.</p>
-                <ul class="value-list">
-                    <li><i class="fas fa-check-circle"></i> AI-powered chatbots & workflows</li>
-                    <li><i class="fas fa-check-circle"></i> Real-time analytics & insights</li>
-                    <li><i class="fas fa-check-circle"></i> Multi-tenant & enterprise ready</li>
-                    <li><i class="fas fa-check-circle"></i> Secure, scalable, and easy to integrate</li>
-                </ul>
-                <a href="#get-started" class="cta-btn">Get Started Free</a>
+            .alphadome-landing {
+                max-width: 1200px;
+                margin: 0 auto;
+                padding: 0 1.5rem;
+            }
+            .hero {
+                position: relative;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                min-height: 480px;
+                padding: 4rem 0 2rem 0;
+            }
+            .hero-bg {
+                position: absolute;
+                top: 0; left: 0; right: 0; bottom: 0;
+                background: radial-gradient(circle at 60% 40%, #38bdf8 0%, #6366f1 60%, transparent 100%);
+                opacity: 0.18;
+                z-index: 0;
+                pointer-events: none;
+                border-radius: 2rem;
+            }
+            .hero-content {
+                position: relative;
+                z-index: 1;
+                text-align: center;
+                max-width: 600px;
+                margin: 0 auto;
+            }
+            .logo {
+                width: 72px;
+                height: 72px;
+                margin-bottom: 1.2rem;
+                border-radius: 1.5rem;
+                box-shadow: 0 4px 24px rgba(99,102,241,0.12);
+                background: #fff;
+            }
+            .hero-content h1 {
+                font-size: 3.2rem;
+                font-weight: 900;
+                margin: 0 0 0.5rem 0;
+                color: #6366f1;
+                letter-spacing: -2px;
+            }
+            .hero-content h2 {
+                font-size: 1.7rem;
+                font-weight: 700;
+                margin: 0 0 1.5rem 0;
+                color: #0ea5e9;
+            }
+            .tagline {
+                font-size: 1.25rem;
+                color: #64748b;
+                margin-bottom: 2rem;
+            }
+            .cta-btn {
+                display: inline-block;
+                background: linear-gradient(90deg, #6366f1 0%, #0ea5e9 100%);
+                color: #fff;
+                font-weight: 700;
+                padding: 1rem 2.5rem;
+                border-radius: 2rem;
+                font-size: 1.15rem;
+                text-decoration: none;
+                box-shadow: 0 4px 16px rgba(99,102,241,0.12);
+                transition: background 0.2s, box-shadow 0.2s, transform 0.2s;
+            }
+            .cta-btn:hover {
+                background: linear-gradient(90deg, #0ea5e9 0%, #6366f1 100%);
+                box-shadow: 0 8px 32px rgba(99,102,241,0.18);
+                transform: translateY(-2px) scale(1.03);
+            }
+            .trusted-by {
+                text-align: center;
+                margin: 2.5rem 0 2rem 0;
+            }
+            .logos {
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                gap: 2.5rem;
+                margin-top: 1.2rem;
+                flex-wrap: wrap;
+            }
+            .features {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 2rem;
+                justify-content: space-between;
+                margin: 3rem 0 2rem 0;
+            }
+            .feature-card {
+                flex: 1 1 220px;
+                min-width: 220px;
+                background: linear-gradient(135deg, #f1f5f9 60%, #e0e7ef 100%);
+                border-radius: 1.2rem;
+                padding: 2rem 1.2rem;
+                text-align: center;
+                box-shadow: 0 2px 12px rgba(99,102,241,0.07);
+                transition: box-shadow 0.2s, transform 0.2s;
+            }
+            .feature-card:hover {
+                box-shadow: 0 8px 32px rgba(99,102,241,0.13);
+                transform: translateY(-3px) scale(1.03);
+            }
+            .icon-bg {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                width: 56px;
+                height: 56px;
+                margin: 0 auto 1rem auto;
+                background: linear-gradient(135deg, #6366f1 60%, #0ea5e9 100%);
+                border-radius: 50%;
+                color: #fff;
+                font-size: 2rem;
+                box-shadow: 0 2px 8px rgba(99,102,241,0.13);
+            }
+            .feature-card h4 {
+                margin: 0.7rem 0 0.5rem 0;
+                font-size: 1.2rem;
+                color: #334155;
+            }
+            .feature-card p {
+                color: #64748b;
+                font-size: 1rem;
+            }
+            .audience-cards {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 2rem;
+                justify-content: space-between;
+                margin: 3rem 0 2rem 0;
+            }
+            .audience-card {
+                flex: 1 1 220px;
+                min-width: 220px;
+                background: #fff;
+                border-radius: 1.2rem;
+                padding: 1.5rem 1.2rem;
+                text-align: center;
+                box-shadow: 0 2px 8px rgba(14,165,233,0.07);
+                border: 1.5px solid #e0e7ef;
+                transition: box-shadow 0.2s, border 0.2s;
+            }
+            .audience-card:hover {
+                box-shadow: 0 8px 32px rgba(14,165,233,0.13);
+                border: 1.5px solid #6366f1;
+            }
+            .audience-card h5 {
+                margin: 0 0 0.5rem 0;
+                font-size: 1.1rem;
+                color: #0ea5e9;
+            }
+            .audience-card p {
+                color: #64748b;
+                font-size: 1rem;
+            }
+            .testimonial-section {
+                margin: 3rem 0 2rem 0;
+                text-align: center;
+            }
+            .testimonials {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 2rem;
+                justify-content: center;
+                margin-top: 1.5rem;
+            }
+            .testimonial {
+                background: #f1f5f9;
+                border-radius: 1.2rem;
+                padding: 1.5rem 1.2rem;
+                min-width: 220px;
+                max-width: 340px;
+                box-shadow: 0 2px 8px rgba(99,102,241,0.07);
+                font-style: italic;
+                color: #334155;
+            }
+            .testimonial span {
+                display: block;
+                margin-top: 0.8rem;
+                font-size: 0.98rem;
+                color: #6366f1;
+                font-style: normal;
+            }
+            .cta-final {
+                text-align: center;
+                margin: 4rem 0 2rem 0;
+            }
+            .cta-final h2 {
+                font-size: 2rem;
+                margin-bottom: 1.2rem;
+            }
+            .cta-final p {
+                color: #64748b;
+                font-size: 1.1rem;
+                margin-bottom: 2rem;
+            }
+            footer {
+                color: #cbd5e1;
+                text-align: center;
+                padding: 2rem 0 1rem 0;
+                margin-top: 3rem;
+                font-size: 1rem;
+            }
+            @media (max-width: 900px) {
+                .features, .audience-cards {
+                    flex-direction: column;
+                    align-items: center;
+                }
+                .hero-content h1 {
+                    font-size: 2.1rem;
+                }
+                .hero-content h2 {
+                    font-size: 1.1rem;
+                }
+            }
+            @media (max-width: 600px) {
+                .alphadome-landing {
+                    padding: 0 0.5rem;
+                }
+                .hero {
+                    padding: 2rem 0 1rem 0;
+                    min-height: 320px;
+                }
+                .feature-card, .audience-card, .testimonial {
+                    min-width: 0;
+                    width: 100%;
+                }
+            }
+        </style>
+                <p>Isolate, customize, and monitor each client or brand with robust, secure controls.</p>
             </div>
-            <div class="hero-visual">
-                <img src="https://assets-global.website-files.com/63e3e7e7e7e7e7e7e7e7e7e7/63e3e7e7e7e7e7e7e7e7e7e7_whatsapp-automation-hero.svg" alt="WhatsApp Automation" style="max-width: 100%; border-radius: 1.5rem; box-shadow: 0 8px 32px rgba(14,165,233,0.15);">
+            <div class="feature-card">
+                <div class="icon-bg"><i class="fas fa-chart-line"></i></div>
+                <h4>Real-Time Analytics</h4>
+                <p>Gain actionable insights across all tenants, campaigns, and workflows.</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon-bg"><i class="fas fa-lock"></i></div>
+                <h4>Enterprise Security</h4>
+                <p>End-to-end encryption, compliance, and privacy for every tenant and user.</p>
             </div>
         </section>
-        <section class="social-proof">
-            <h3>Trusted by leading professionals & organizations</h3>
-            <div class="logos">
-                <img src="https://upload.wikimedia.org/wikipedia/commons/4/44/Microsoft_logo.svg" alt="Microsoft" height="32">
-                <img src="https://upload.wikimedia.org/wikipedia/commons/a/a6/Logo_NIKE.svg" alt="Nike" height="32">
-                <img src="https://upload.wikimedia.org/wikipedia/commons/2/2f/Google_2015_logo.svg" alt="Google" height="32">
-                <img src="https://upload.wikimedia.org/wikipedia/commons/0/08/Netflix_2015_logo.svg" alt="Netflix" height="32">
-                <img src="https://upload.wikimedia.org/wikipedia/commons/5/51/IBM_logo.svg" alt="IBM" height="32">
+        <section class="audience-cards">
+            <div class="audience-card">
+                <h5>For Agencies</h5>
+                <p>Deliver branded AI solutions to every client, with full isolation and custom workflows.</p>
             </div>
-        </section>
-        <section class="landing-features">
-            <div class="feature">
-                <i class="fas fa-robot"></i>
-                <h4>AI Chatbots</h4>
-                <p>Automate support, sales, and engagement with intelligent bots.</p>
+            <div class="audience-card">
+                <h5>For Enterprises</h5>
+                <p>Centralize automation, analytics, and compliance across all departments and brands.</p>
             </div>
-            <div class="feature">
-                <i class="fas fa-chart-bar"></i>
-                <h4>Analytics</h4>
-                <p>Track every conversation and campaign with actionable insights.</p>
+            <div class="audience-card">
+                <h5>For Startups</h5>
+                <p>Launch fast, scale securely, and focus on growth with plug-and-play AI automation.</p>
             </div>
-            <div class="feature">
-                <i class="fas fa-plug"></i>
-                <h4>Integrations</h4>
-                <p>Connect with your favorite tools, CRMs, and databases.</p>
-            </div>
-            <div class="feature">
-                <i class="fas fa-lock"></i>
-                <h4>Security</h4>
-                <p>Enterprise-grade privacy and compliance for all your data.</p>
-            </div>
-        </section>
-        <section class="attention-section">
-            <h2>Ready to transform your WhatsApp experience?</h2>
-            <a href="#get-started" class="cta-btn cta-large">Start Your Free Trial</a>
         </section>
         <section class="testimonial-section">
             <h3>What Our Users Say</h3>
             <div class="testimonials">
                 <div class="testimonial">
-                    <p>“This platform revolutionized our customer support. The automation is seamless and the analytics are a game changer!”</p>
-                    <span>- Sarah, Operations Lead</span>
+                    <p>“Alphadome let us launch AI-powered services for every client—no dev team needed.”</p>
+                    <span>- Maya, Agency Director</span>
                 </div>
                 <div class="testimonial">
-                    <p>“We scaled our outreach and engagement 5x with zero extra staff. Highly recommended for any brand.”</p>
-                    <span>- Daniel, Brand Manager</span>
+                    <p>“The multi-tenant controls and analytics are a game changer for our enterprise.”</p>
+                    <span>- Alex, CTO</span>
                 </div>
                 <div class="testimonial">
-                    <p>“The multi-tenant support is perfect for our agency. Our clients love the results.”</p>
-                    <span>- Priya, Digital Agency CEO</span>
+                    <p>“We automated onboarding, support, and marketing in days. The agentic workflows are magic.”</p>
+                    <span>- Priya, Startup Founder</span>
                 </div>
             </div>
         </section>
         <section class="cta-final" id="get-started">
-            <h2>Get Started with WhatsApp Bot Platform</h2>
-            <p>Sign up now and unlock the power of WhatsApp automation for your business or brand.</p>
-            <a href="mailto:info@yourdomain.com" class="cta-btn cta-large">Request a Demo</a>
+            <h2>Get Started with Alphadome</h2>
+            <p>Unlock the power of agentic AI and multi-tenant automation for your business or agency.</p>
+            <a href="mailto:info@alphadome.ai" class="cta-btn cta-large">Request a Demo</a>
         </section>
     </main>
     <footer>
-        &copy; 2026 WhatsApp Bot Platform. All rights reserved.
+        &copy; 2026 Alphadome. All rights reserved.
     </footer>
 </body>
 </html>

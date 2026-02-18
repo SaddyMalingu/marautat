@@ -52,8 +52,43 @@ function setActiveMenu(route) {
   });
 }
 
+import { attachSmtpConfigHandler } from './smtpConfigHandler.js';
+
 function renderDashboard(main) {
-  main.innerHTML = `<div class="card"><h2>Welcome to the Admin Dashboard</h2><p>Use the menu to view logs, LLM usage, errors, tenants, or run a health check.</p></div>`;
+  main.innerHTML = `
+    <div class="card">
+      <h2>Welcome to the Admin Dashboard</h2>
+      <p>Use the menu to view logs, LLM usage, errors, tenants, or run a health check.</p>
+    </div>
+    <section class="card mt-4">
+      <h3><i class="fa-solid fa-envelope"></i> Tenant Email (SMTP) Settings</h3>
+      <form id="smtpConfigForm">
+        <div class="mb-2">
+          <label for="smtp_host" class="form-label">SMTP Host</label>
+          <input type="text" class="form-control" id="smtp_host" name="smtp_host" required>
+        </div>
+        <div class="mb-2">
+          <label for="smtp_port" class="form-label">SMTP Port</label>
+          <input type="number" class="form-control" id="smtp_port" name="smtp_port" required>
+        </div>
+        <div class="mb-2">
+          <label for="smtp_user" class="form-label">SMTP User</label>
+          <input type="email" class="form-control" id="smtp_user" name="smtp_user" required>
+        </div>
+        <div class="mb-2">
+          <label for="smtp_pass" class="form-label">SMTP Password</label>
+          <input type="password" class="form-control" id="smtp_pass" name="smtp_pass" required>
+        </div>
+        <div class="mb-2">
+          <label for="smtp_from_name" class="form-label">Sender Name</label>
+          <input type="text" class="form-control" id="smtp_from_name" name="smtp_from_name">
+        </div>
+        <button type="submit" class="btn btn-info mt-2">Save SMTP Settings</button>
+      </form>
+    </section>
+  `;
+  // TODO: Replace 'tenantId' with actual tenant ID from context/session
+  attachSmtpConfigHandler('smtpConfigForm', 'tenantId');
 }
 function renderLogs(main) {
   main.innerHTML = `<div class="card"><h2>Conversation Logs</h2><div id="logs-list">Loading...</div></div>`;

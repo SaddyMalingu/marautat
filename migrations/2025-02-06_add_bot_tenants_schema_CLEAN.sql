@@ -28,6 +28,12 @@ CREATE TABLE IF NOT EXISTS alphadome.bot_tenants (
   is_verified boolean DEFAULT false,
   webhook_verify_token text UNIQUE,
   webhook_url text,
+  -- Per-tenant SMTP config for Writer's Flow
+  smtp_host text,
+  smtp_port integer,
+  smtp_user text,
+  smtp_pass text,
+  smtp_from_name text,
   metadata jsonb DEFAULT '{}'::jsonb,
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now()
