@@ -6,27 +6,16 @@
   <title>Alphadome: Multi-Tenant AI SaaS</title>
   <link href="https://fonts.googleapis.com/css?family=Montserrat:700,400&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="./tailwind.output.css">
   <style>
     body {
       margin: 0;
       font-family: 'Montserrat', Arial, sans-serif;
-      background: linear-gradient(135deg, #1e293b 0%, #0ea5e9 100%);
+      background: #0f172a;
       color: #fff;
       overflow-x: hidden;
     }
-    .animated-bg {
-      position: fixed;
-      top: 0; left: 0; width: 100vw; height: 100vh;
-      z-index: 0;
-      pointer-events: none;
-      background: radial-gradient(circle at 60% 40%, #38bdf8 0%, #6366f1 60%, transparent 100%);
-      opacity: 0.18;
-      animation: bgMove 12s linear infinite alternate;
-    }
-    @keyframes bgMove {
-      0% { background-position: 60% 40%; }
-      100% { background-position: 40% 60%; }
-    }
+    /* Remove animated-bg and gradient background */
     header {
       background: rgba(30,41,59,0.95);
       padding: 2rem 0 1rem 0;
@@ -413,10 +402,10 @@
   </style>
 </head>
 <body>
-  <div class="animated-bg"></div>
-  <header>
-    <h1>Alphadome: Multi-Tenant AI SaaS for Brands & Creators</h1>
-    <p>Automate, scale, and innovate with agentic workflows, creative bots, and robust dashboards.</p>
+  <header style="background:rgba(15,23,42,0.98);padding:2rem 0 1rem 0;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,0.1);position:relative;z-index:2;">
+    <img src="brand-logo.png" alt="Brand Logo" style="height:90px;width:auto;margin-bottom:1rem;filter:drop-shadow(0 2px 16px #38bdf8cc);border-radius:1.2rem;box-shadow:0 2px 16px #0ea5e9aa;" loading="lazy">
+    <h1 style="font-size:2.5rem;margin:0 0 0.5rem 0;letter-spacing:2px;color:#38bdf8;text-shadow:0 4px 32px #0ea5e9aa;font-weight:900;">Alphadome: Multi-Tenant AI SaaS for Brands & Creators</h1>
+    <p style="font-size:1.3rem;color:#cbd5e1;margin:0 0 1rem 0;text-shadow:0 2px 8px #6366f1aa;">Automate, scale, and innovate with agentic workflows, creative bots, and robust dashboards.</p>
     <div class="hero-buttons">
       <a href="#get-started" class="cta-btn" aria-label="Get Started">Get Started</a>
       <a href="#demo" class="cta-btn" aria-label="View Demo">View Demo</a>
