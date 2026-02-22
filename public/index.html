@@ -615,7 +615,9 @@
           </ul>
         </div>
         <div style="flex:2 1 500px;min-width:220px;max-width:600px;width:100%;">
-          <iframe id="demo-iframe" src="" style="width:100%;height:65vh;min-width:0;max-width:100vw;border-radius:1rem;border:2px solid #38bdf8;background:#fff;display:none;" allowfullscreen loading="lazy"></iframe>
+          <div style="display:flex;justify-content:center;width:100%;">
+            <iframe id="demo-iframe" src="" style="display:none;border-radius:1rem;border:2px solid #38bdf8;background:#fff;box-shadow:0 4px 24px #0ea5e9aa;transition:width 0.2s,height 0.2s;" allowfullscreen loading="lazy"></iframe>
+          </div>
           <div id="demo-placeholder" style="width:100%;height:65vh;min-width:0;max-width:100vw;display:flex;align-items:center;justify-content:center;color:#cbd5e1;font-size:1.1rem;">Select an agent to view the live demo here.</div>
         </div>
       </div>
@@ -784,64 +786,86 @@
   </main>
   <script src="https://cdn.jsdelivr.net/npm/three@0.155.0/build/three.min.js"></script>
   <script>
-    // Demo Modal Logic
-    const demoModal = document.getElementById('demo-modal');
-    const viewDemoBtn = document.getElementById('view-demo-btn');
-    const closeDemoModal = document.getElementById('close-demo-modal');
-    const demoIframe = document.getElementById('demo-iframe');
-    const demoPlaceholder = document.getElementById('demo-placeholder');
-    document.querySelectorAll('.demo-link-btn').forEach(btn => {
-      btn.onclick = function() {
-        const url = btn.getAttribute('data-url');
-        demoIframe.style.display = 'block';
-        demoIframe.src = url;
-        demoPlaceholder.style.display = 'none';
-      };
-    });
-    // Open modal on click (desktop and mobile)
-    viewDemoBtn.onclick = function(e) {
-      e.preventDefault();
-      demoModal.style.display = 'flex';
-      document.body.style.overflow = 'hidden';
-    };
-    closeDemoModal.onclick = function() {
-      demoModal.style.display = 'none';
-      demoIframe.src = '';
-      demoIframe.style.display = 'none';
-      demoPlaceholder.style.display = 'flex';
-      document.body.style.overflow = '';
-    };
-    // Close modal on outside click
-    demoModal.addEventListener('click', function(e) {
-      if (e.target === demoModal) closeDemoModal.onclick();
-    });
-    // Mobile: allow long-press to open modal
-    let pressTimer;
-    viewDemoBtn.addEventListener('touchstart', function(e) {
-      pressTimer = setTimeout(() => {
+    // Demo Modal Logic (only define once)
+    (function() {
+      const demoModal = document.getElementById('demo-modal');
+      const viewDemoBtn = document.getElementById('view-demo-btn');
+      const closeDemoModal = document.getElementById('close-demo-modal');
+      const demoIframe = document.getElementById('demo-iframe');
+      const demoPlaceholder = document.getElementById('demo-placeholder');
+      function setIframeSize() {
+        if (!demoIframe) return;
+        if (window.innerWidth < 600) {
+          // Mobile: full width, mobile height
+          demoIframe.style.width = '98vw';
+          demoIframe.style.height = '65vh';
+          demoIframe.style.maxWidth = '98vw';
+          demoIframe.style.minWidth = '0';
+        } else {
+          // Desktop: tablet size, centered
+          demoIframe.style.width = '420px';
+          demoIframe.style.height = '700px';
+          demoIframe.style.maxWidth = '90vw';
+          demoIframe.style.minWidth = '320px';
+        }
+      }
+      document.querySelectorAll('.demo-link-btn').forEach(btn => {
+        btn.onclick = function() {
+          const url = btn.getAttribute('data-url');
+          demoIframe.style.display = 'block';
+          demoIframe.src = url;
+          demoPlaceholder.style.display = 'none';
+          setIframeSize();
+        };
+      });
+      // Open modal on click (desktop and mobile)
+      viewDemoBtn.onclick = function(e) {
+        e.preventDefault();
         demoModal.style.display = 'flex';
         document.body.style.overflow = 'hidden';
-      }, 500);
-    });
-    viewDemoBtn.addEventListener('touchend', function(e) {
-      clearTimeout(pressTimer);
-    });
-    // Responsive modal sizing for mobile
-    function adjustDemoModal() {
-      if (window.innerWidth < 600) {
-        demoModal.style.alignItems = 'flex-start';
-        demoModal.querySelector('div').style.padding = '1rem 0.5rem 1rem 0.5rem';
-        demoModal.querySelector('div').style.width = '98vw';
-        demoModal.querySelector('div').style.maxWidth = '98vw';
-      } else {
-        demoModal.style.alignItems = 'center';
-        demoModal.querySelector('div').style.padding = '2rem 1.5rem 1.5rem 1.5rem';
-        demoModal.querySelector('div').style.width = '95vw';
-        demoModal.querySelector('div').style.maxWidth = '900px';
+        setIframeSize();
+      };
+      closeDemoModal.onclick = function() {
+        demoModal.style.display = 'none';
+        demoIframe.src = '';
+        demoIframe.style.display = 'none';
+        demoPlaceholder.style.display = 'flex';
+        document.body.style.overflow = '';
+      };
+      // Close modal on outside click
+      demoModal.addEventListener('click', function(e) {
+        if (e.target === demoModal) closeDemoModal.onclick();
+      });
+      // Mobile: allow long-press to open modal
+      let pressTimer;
+      viewDemoBtn.addEventListener('touchstart', function(e) {
+        pressTimer = setTimeout(() => {
+          demoModal.style.display = 'flex';
+          document.body.style.overflow = 'hidden';
+          setIframeSize();
+        }, 500);
+      });
+      viewDemoBtn.addEventListener('touchend', function(e) {
+        clearTimeout(pressTimer);
+      });
+      // Responsive modal sizing for mobile and iframe
+      function adjustDemoModal() {
+        if (window.innerWidth < 600) {
+          demoModal.style.alignItems = 'flex-start';
+          demoModal.querySelector('div').style.padding = '1rem 0.5rem 1rem 0.5rem';
+          demoModal.querySelector('div').style.width = '98vw';
+          demoModal.querySelector('div').style.maxWidth = '98vw';
+        } else {
+          demoModal.style.alignItems = 'center';
+          demoModal.querySelector('div').style.padding = '2rem 1.5rem 1.5rem 1.5rem';
+          demoModal.querySelector('div').style.width = '95vw';
+          demoModal.querySelector('div').style.maxWidth = '900px';
+        }
+        setIframeSize();
       }
-    }
-    window.addEventListener('resize', adjustDemoModal);
-    adjustDemoModal();
+      window.addEventListener('resize', adjustDemoModal);
+      adjustDemoModal();
+    })();
   </script>
   <script>
     // Demo Modal Logic
