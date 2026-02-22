@@ -195,24 +195,17 @@
       .feature-card h4 {
         font-size: 1.1rem;
       }
-        font-family: 'Montserrat', Arial, sans-serif;
-        letter-spacing: 0.3px;
       .feature-card i {
         font-size: 2rem;
       }
     }
-        font-family: 'Roboto', 'Montserrat', Arial, sans-serif;
-        font-weight: 400;
-        line-height: 1.45;
     .glass {
       background: rgba(255,255,255,0.08);
       border-radius: 2rem;
       box-shadow: 0 8px 32px rgba(14,165,233,0.15);
       backdrop-filter: blur(12px);
       border: 1px solid #38bdf8;
-        font-family: 'Montserrat', Arial, sans-serif;
-        letter-spacing: 0.3px;
-        line-height: 1.15;
+    
       padding: 2rem;
       margin: 2rem auto;
       max-width: 900px;
@@ -227,9 +220,7 @@
       margin: 4rem 0 2rem 0;
       z-index: 2;
     }
-        font-family: 'Roboto', 'Montserrat', Arial, sans-serif;
-        font-weight: 400;
-        line-height: 1.5;
+    
     .feature-card {
       background: linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%);
       border-radius: 1.5rem;
@@ -550,12 +541,86 @@
     <p style="font-size:1.1rem;color:#e0e7ef;margin:0 0 1.2rem 0;text-shadow:0 2px 8px #6366f1aa;font-family:'Roboto','Montserrat',Arial,sans-serif;font-weight:400;line-height:1.4;">Automate, scale, and innovate with agentic workflows, creative bots, and robust dashboards.</p>
     <div class="hero-buttons">
       <a href="#get-started" class="cta-btn" aria-label="Get Started">Get Started</a>
-      <a href="#demo" class="cta-btn" aria-label="View Demo">View Demo</a>
+      <a href="#demo-modal" class="cta-btn" id="view-demo-btn" aria-label="View Demo">View Demo</a>
       <a href="#pricing" class="cta-btn" aria-label="Join Alphadome">Join Alphadome</a>
     </div>
   </header>
   <!-- 3D Hero Canvas -->
   <div id="hero-3d" style="width:100vw;max-width:100%;height:320px;margin:0 auto 1.5rem auto;z-index:1;"></div>
+  <!-- Demo Modal -->
+  <div id="demo-modal" style="display:none;position:fixed;z-index:9999;top:0;left:0;width:100vw;height:100vh;background:rgba(15,23,42,0.96);backdrop-filter:blur(6px);align-items:center;justify-content:center;">
+    <div style="background:#1e293b;border-radius:1.5rem;max-width:98vw;width:900px;max-height:90vh;overflow:auto;box-shadow:0 8px 32px #38bdf8aa;position:relative;padding:2rem 1.5rem 1.5rem 1.5rem;">
+      <button id="close-demo-modal" style="position:absolute;top:1rem;right:1.2rem;background:none;border:none;color:#38bdf8;font-size:2rem;cursor:pointer;z-index:2;" aria-label="Close Demo">&times;</button>
+      <h2 style="color:#38bdf8;text-align:center;margin-bottom:1.2rem;">Alphadome Agent Demos</h2>
+      <div style="display:flex;flex-wrap:wrap;gap:1.5rem;justify-content:center;max-height:70vh;overflow:auto;">
+        <!-- Demo List -->
+        <div style="flex:1 1 260px;min-width:220px;max-width:320px;overflow-y:auto;">
+          <ul style="list-style:none;padding:0;margin:0;max-height:65vh;overflow-y:auto;">
+            <li><button class="demo-link-btn" data-url="https://coach-dawn-3-0-djqhjxa.gamma.site/">Coach Dawn 3.0</button></li>
+            <li><button class="demo-link-btn" data-url="https://somakatiba3-ca3yt4c.gamma.site/">Soma Katiba 3.0</button></li>
+            <li><button class="demo-link-btn" data-url="https://malingu-global-supplies-lqwyn4t.gamma.site/">Malingu Global Supplies 3.0</button></li>
+            <li><button class="demo-link-btn" data-url="https://gamma.app/docs/Agent-Purity-30-Your-Financial-Guide-s3hv5wrwooi6err?mode=doc">Agent Purity 3.0</button></li>
+            <li><button class="demo-link-btn" data-url="https://denim-and-diamonds-kc6heb5.gamma.site/">Denim & Diamonds 3.0</button></li>
+            <li><button class="demo-link-btn" data-url="https://accurate-football-predic-h8ctcpj.gamma.site/">One Odundo 3.0</button></li>
+            <li><button class="demo-link-btn" data-url="https://tour-guide-dennis-c76329s.gamma.site/">Tour Guide Dennis 3.0</button></li>
+            <li><button class="demo-link-btn" data-url="https://coach-peter-3-0-s6ufezp.gamma.site/">Coach Peter 3.0</button></li>
+            <li><button class="demo-link-btn" data-url="https://vet-martin-w3zxuyb.gamma.site/">Vet Martin 3.0</button></li>
+            <li><button class="demo-link-btn" data-url="https://donkeytopia--1hr23j5.gamma.site/">Donkeytopia</button></li>
+            <li><button class="demo-link-btn" data-url="https://rahim-boutique-5skbi0x.gamma.site/">Rahim Boutique 3.0</button></li>
+            <li><button class="demo-link-btn" data-url="https://house-of-annie-62socx0.gamma.site/">House of Annie Events & Tours 3.0</button></li>
+            <li><button class="demo-link-btn" data-url="https://agent-saleh-3-0-d2tdqo4.gamma.site/">Agent Saleh 3.0</button></li>
+            <li><button class="demo-link-btn" data-url="https://agent-tekla-30-19w4spk.gamma.site/">Agent Tekla 3.0</button></li>
+            <li><button class="demo-link-btn" data-url="https://lifeline-cancer-trust-lqjwob4.gamma.site/">Lifeline Cancer Trust 3.0</button></li>
+            <li><button class="demo-link-btn" data-url="https://winningteam-hr-9q4lyu1.gamma.site/">The Winning Team HR Solutions 3.0</button></li>
+            <li><button class="demo-link-btn" data-url="https://dr-sally-freeman-ai-rfeiw9u.gamma.site/">Dr. Sally Freeman 3.0</button></li>
+            <li><button class="demo-link-btn" data-url="https://professor-leon-aaron-3-0-a75nbf8.gamma.site/">Professor Leon Aaron 3.0</button></li>
+            <li><button class="demo-link-btn" data-url="https://dr-ransford-antwi-3-0-xzwhl8l.gamma.site/">Dr. Ransford Antwi 3.0</button></li>
+            <li><button class="demo-link-btn" data-url="https://bijo-gas-ndi0xgu.gamma.site/">Bijo Gas and Accessories 3.0</button></li>
+            <li><button class="demo-link-btn" data-url="https://mawani3-0-22y21j9.gamma.site/">Mawani 3.0</button></li>
+            <li><button class="demo-link-btn" data-url="https://sky-garden-3-0-n71o5lm.gamma.site/">Sky Garden 3.0</button></li>
+            <li><button class="demo-link-btn" data-url="https://carolyn-abot-3-0-wzuiuy1.gamma.site/">Carolyn Abbot</button></li>
+            <li><button class="demo-link-btn" data-url="https://dr-sabu-abraham-3-0-jpd8h4b.gamma.site/">Dr. Sabu Abraham</button></li>
+            <li><button class="demo-link-btn" data-url="https://sharon-beauty-3-0-408eiak.gamma.site/">Sharon Beauty 3.0</button></li>
+            <li><button class="demo-link-btn" data-url="https://dr-cindy-3-0-3okwhvt.gamma.site/">Dr. Cindy 3.0</button></li>
+            <li><button class="demo-link-btn" data-url="https://virtual-assistant-abby-3-6l3ed3p.gamma.site/">Virtual Assistant Abby 3.0</button></li>
+            <li><button class="demo-link-btn" data-url="https://malingu-contractor-3-0-6ts3yzw.gamma.site/">Malingu Contractor 3.0</button></li>
+            <li><button class="demo-link-btn" data-url="https://mary-msoh-comm-9aou1xd.gamma.site/">Mary Msoh Communications Solutions 3.0</button></li>
+            <li><button class="demo-link-btn" data-url="https://general-apollo-3-0-7zjdtt0.gamma.site/">General Apollo 3.0</button></li>
+            <li><button class="demo-link-btn" data-url="https://patmag-school-uniform-7zskhoi.gamma.site/">Patmag School Uniform 3.0</button></li>
+            <li><button class="demo-link-btn" data-url="https://building-plans-3-0-i0qy3el.gamma.site/">Building Plans 3.0</button></li>
+            <li><button class="demo-link-btn" data-url="https://nila-pharmaceuticals-3-0-iyui455.gamma.site/">Nila Pharmaceuticals 3.0</button></li>
+            <li><button class="demo-link-btn" data-url="https://victoria-beauty-3-0-y83h6ib.gamma.site/">Victoria Beauty 3.0</button></li>
+            <li><button class="demo-link-btn" data-url="https://craydel-africa-travel-l7axd0p.gamma.site/">Craydel Africa Travel 3.0</button></li>
+            <li><button class="demo-link-btn" data-url="https://elegance-aesthetic-spa-i56iu7t.gamma.site/">Elegance Aesthetic Spa 3.0</button></li>
+            <li><button class="demo-link-btn" data-url="https://donki-brands-3-0-krarm26.gamma.site/">Donki Brands 3.0</button></li>
+            <li><button class="demo-link-btn" data-url="https://thebranch3-0-62iz8nz.gamma.site/">The Branch Restaurant 3.0</button></li>
+            <li><button class="demo-link-btn" data-url="https://the-peach-3-0-4dpeg63.gamma.site/">The Peach 3.0</button></li>
+            <li><button class="demo-link-btn" data-url="https://the-curve-3-0-axoub9k.gamma.site/">The Curve 3.0</button></li>
+            <li><button class="demo-link-btn" data-url="https://amir-3-0-jbdx7m3.gamma.site/">Amir 3.0</button></li>
+            <li><button class="demo-link-btn" data-url="https://galitoz-3-0-29pabdf.gamma.site/">Galitoz 3.0</button></li>
+            <li><button class="demo-link-btn" data-url="https://denri-3-0-spx531p.gamma.site/">Denri 3.0</button></li>
+            <li><button class="demo-link-btn" data-url="https://unifi3-0-p3xaj1i.gamma.site/">Unifi 3.0</button></li>
+            <li><button class="demo-link-btn" data-url="https://mamy-3-0-3nyjj4q.gamma.site/">Mamy 3.0</button></li>
+            <li><button class="demo-link-btn" data-url="https://ladyluck3-0-14l930f.gamma.site/">Lady Luck 3.0</button></li>
+            <li><button class="demo-link-btn" data-url="https://baus-optical-3-0-zg2ypf9.gamma.site/">Baus Optical 3.0</button></li>
+            <li><button class="demo-link-btn" data-url="https://aboosto-3-0-08o6z54.gamma.site/">Aboosto 3.0</button></li>
+            <li><button class="demo-link-btn" data-url="https://ebrahim-electronics-3-0-5rhe07v.gamma.site/">Ebrahim Electronics 3.0</button></li>
+            <li><button class="demo-link-btn" data-url="https://kam-pharmacy-3-0-3adj1tu.gamma.site/">Kam Pharmacy 3.0</button></li>
+            <li><button class="demo-link-btn" data-url="https://penda-health-3-0-9myamrd.gamma.site/">Penda Health 3.0</button></li>
+            <li><button class="demo-link-btn" data-url="https://olakira-3-0-k5yug6w.gamma.site/">Olakira 3.0</button></li>
+            <li><button class="demo-link-btn" data-url="https://beauty-square-3-0-0irs79l.gamma.site/">Beauty Square 3.0</button></li>
+            <li><button class="demo-link-btn" data-url="https://anupifashions3-8d7rw02.gamma.site/">Anupi Fashions 3.0</button></li>
+            <li><button class="demo-link-btn" data-url="https://pbc-3-0-7hl0qkv.gamma.site/">PBC 3.0</button></li>
+            <li><button class="demo-link-btn" data-url="https://urbancraft30-x14plq1.gamma.site/">Urban Craft 3.0</button></li>
+          </ul>
+        </div>
+        <div style="flex:2 1 500px;min-width:320px;max-width:600px;">
+          <iframe id="demo-iframe" src="" style="width:100%;height:65vh;border-radius:1rem;border:2px solid #38bdf8;background:#fff;display:none;" allowfullscreen loading="lazy"></iframe>
+          <div id="demo-placeholder" style="width:100%;height:65vh;display:flex;align-items:center;justify-content:center;color:#cbd5e1;font-size:1.1rem;">Select an agent to view the live demo here.</div>
+        </div>
+      </div>
+    </div>
+  </div>
   <main>
     <section class="hero">
       <h2>Unleash Agentic Automation</h2>
@@ -718,6 +783,49 @@
     </section>
   </main>
   <script src="https://cdn.jsdelivr.net/npm/three@0.155.0/build/three.min.js"></script>
+  <script>
+    // Demo Modal Logic
+    const demoModal = document.getElementById('demo-modal');
+    const viewDemoBtn = document.getElementById('view-demo-btn');
+    const closeDemoModal = document.getElementById('close-demo-modal');
+    const demoIframe = document.getElementById('demo-iframe');
+    const demoPlaceholder = document.getElementById('demo-placeholder');
+    document.querySelectorAll('.demo-link-btn').forEach(btn => {
+      btn.onclick = function() {
+        const url = btn.getAttribute('data-url');
+        demoIframe.style.display = 'block';
+        demoIframe.src = url;
+        demoPlaceholder.style.display = 'none';
+      };
+    });
+    viewDemoBtn.onclick = function(e) {
+      e.preventDefault();
+      demoModal.style.display = 'flex';
+      document.body.style.overflow = 'hidden';
+    };
+    closeDemoModal.onclick = function() {
+      demoModal.style.display = 'none';
+      demoIframe.src = '';
+      demoIframe.style.display = 'none';
+      demoPlaceholder.style.display = 'flex';
+      document.body.style.overflow = '';
+    };
+    // Close modal on outside click
+    demoModal.addEventListener('click', function(e) {
+      if (e.target === demoModal) closeDemoModal.onclick();
+    });
+    // Mobile: allow long-press to open modal
+    let pressTimer;
+    viewDemoBtn.addEventListener('touchstart', function(e) {
+      pressTimer = setTimeout(() => {
+        demoModal.style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+      }, 500);
+    });
+    viewDemoBtn.addEventListener('touchend', function(e) {
+      clearTimeout(pressTimer);
+    });
+  </script>
   <script>
     // Simple Three.js 3D animated sphere
     window.addEventListener('DOMContentLoaded', () => {
