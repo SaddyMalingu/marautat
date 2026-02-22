@@ -623,6 +623,23 @@
       </div>
     </div>
   </div>
+    <!-- Swipeable Agent Demo Slideshow Modal -->
+    <div id="demo-modal" style="display:none;position:fixed;z-index:9999;top:0;left:0;width:100vw;height:100vh;background:rgba(15,23,42,0.96);backdrop-filter:blur(6px);align-items:center;justify-content:center;">
+      <div style="background:#1e293b;border-radius:1.5rem;width:95vw;max-width:900px;max-height:90vh;overflow:auto;box-shadow:0 8px 32px #38bdf8aa;position:relative;padding:2rem 1.5rem 1.5rem 1.5rem;display:flex;flex-direction:column;align-items:center;">
+        <button id="close-demo-modal" style="position:absolute;top:1rem;right:1.2rem;background:none;border:none;color:#38bdf8;font-size:2rem;cursor:pointer;z-index:2;" aria-label="Close Demo">&times;</button>
+        <h2 style="color:#38bdf8;text-align:center;margin-bottom:1.2rem;">Alphadome Agent Demos</h2>
+        <div id="agent-slideshow" style="width:100%;max-width:700px;display:flex;align-items:center;justify-content:center;gap:2rem;">
+          <button id="agent-prev" style="background:none;border:none;color:#38bdf8;font-size:2.2rem;cursor:pointer;">&#8592;</button>
+          <div id="agent-card" style="background:rgba(255,255,255,0.08);border-radius:1.2rem;box-shadow:0 4px 24px #38bdf8aa;padding:2rem 1.5rem;min-width:220px;max-width:340px;text-align:center;display:flex;flex-direction:column;align-items:center;">
+            <img id="agent-thumbnail" src="" alt="Agent Thumbnail" style="width:120px;height:120px;border-radius:1rem;box-shadow:0 2px 16px #0ea5e9aa;margin-bottom:1rem;object-fit:cover;background:#222;">
+            <h3 id="agent-name" style="color:#38bdf8;font-size:1.4rem;font-weight:700;margin-bottom:0.5rem;"></h3>
+            <p id="agent-desc" style="color:#cbd5e1;font-size:1.05rem;margin-bottom:0.5rem;"></p>
+          </div>
+          <button id="agent-next" style="background:none;border:none;color:#38bdf8;font-size:2.2rem;cursor:pointer;">&#8594;</button>
+        </div>
+        <div style="margin-top:1.2rem;text-align:center;color:#cbd5e1;font-size:1rem;">Swipe or use arrows to browse agents. No URLs shown.</div>
+      </div>
+    </div>
   <main>
     <section class="hero">
       <h2>Unleash Agentic Automation</h2>
@@ -786,129 +803,98 @@
   </main>
   <script src="https://cdn.jsdelivr.net/npm/three@0.155.0/build/three.min.js"></script>
   <script>
-    // Demo Modal Logic (only define once)
+    // Swipeable Agent Demo Slideshow Modal Logic
     (function() {
       const demoModal = document.getElementById('demo-modal');
       const viewDemoBtn = document.getElementById('view-demo-btn');
       const closeDemoModal = document.getElementById('close-demo-modal');
-      const demoIframe = document.getElementById('demo-iframe');
-      const demoPlaceholder = document.getElementById('demo-placeholder');
-      function setIframeSize() {
-        if (!demoIframe) return;
-        if (window.innerWidth < 600) {
-          // Mobile: full width, mobile height
-          demoIframe.style.width = '98vw';
-          demoIframe.style.height = '65vh';
-          demoIframe.style.maxWidth = '98vw';
-          demoIframe.style.minWidth = '0';
-        } else {
-          // Desktop: tablet size, centered
-          demoIframe.style.width = '420px';
-          demoIframe.style.height = '700px';
-          demoIframe.style.maxWidth = '90vw';
-          demoIframe.style.minWidth = '320px';
-        }
+      const agentPrev = document.getElementById('agent-prev');
+      const agentNext = document.getElementById('agent-next');
+      const agentCard = document.getElementById('agent-card');
+      const agentThumbnail = document.getElementById('agent-thumbnail');
+      const agentName = document.getElementById('agent-name');
+      const agentDesc = document.getElementById('agent-desc');
+      let agents = [];
+      let current = 0;
+
+      // Helper: fallback thumbnail
+      function getDefaultThumb() {
+        return 'https://cdn-icons-png.flaticon.com/512/4712/4712035.png';
       }
-      document.querySelectorAll('.demo-link-btn').forEach(btn => {
-        btn.onclick = function() {
-          const url = btn.getAttribute('data-url');
-          demoIframe.style.display = 'block';
-          demoIframe.src = url;
-          demoPlaceholder.style.display = 'none';
-          setIframeSize();
-        };
-      });
-      // Open modal on click (desktop and mobile)
-      viewDemoBtn.onclick = function(e) {
-        e.preventDefault();
+
+      // Load agent data from JSON
+      fetch('agent_demos.json')
+        .then(r => r.json())
+        .then(data => {
+          agents = data;
+          showAgent(0);
+        });
+
+      function showAgent(idx) {
+        if (!agents.length) return;
+        current = (idx + agents.length) % agents.length;
+        const agent = agents[current];
+        agentThumbnail.src = agent.thumbnail || getDefaultThumb();
+        agentName.textContent = agent.name || 'Agent';
+        agentDesc.textContent = agent.description || '';
+      }
+
+      agentPrev.onclick = function(e) {
+        e.stopPropagation();
+        showAgent(current - 1);
+      };
+      agentNext.onclick = function(e) {
+        e.stopPropagation();
+        showAgent(current + 1);
+      };
+
+      // Modal open/close logic
+      function openModal() {
         demoModal.style.display = 'flex';
         document.body.style.overflow = 'hidden';
-        setIframeSize();
-      };
-      closeDemoModal.onclick = function() {
+      }
+      function closeModal() {
         demoModal.style.display = 'none';
-        demoIframe.src = '';
-        demoIframe.style.display = 'none';
-        demoPlaceholder.style.display = 'flex';
         document.body.style.overflow = '';
+      }
+      viewDemoBtn.onclick = function(e) {
+        e.preventDefault();
+        openModal();
       };
-      // Close modal on outside click
+      closeDemoModal.onclick = closeModal;
       demoModal.addEventListener('click', function(e) {
-        if (e.target === demoModal) closeDemoModal.onclick();
+        if (e.target === demoModal) closeModal();
       });
       // Mobile: allow long-press to open modal
       let pressTimer;
       viewDemoBtn.addEventListener('touchstart', function(e) {
-        pressTimer = setTimeout(() => {
-          demoModal.style.display = 'flex';
-          document.body.style.overflow = 'hidden';
-          setIframeSize();
-        }, 500);
+        pressTimer = setTimeout(openModal, 500);
       });
       viewDemoBtn.addEventListener('touchend', function(e) {
         clearTimeout(pressTimer);
       });
-      // Responsive modal sizing for mobile and iframe
-      function adjustDemoModal() {
-        if (window.innerWidth < 600) {
-          demoModal.style.alignItems = 'flex-start';
-          demoModal.querySelector('div').style.padding = '1rem 0.5rem 1rem 0.5rem';
-          demoModal.querySelector('div').style.width = '98vw';
-          demoModal.querySelector('div').style.maxWidth = '98vw';
-        } else {
-          demoModal.style.alignItems = 'center';
-          demoModal.querySelector('div').style.padding = '2rem 1.5rem 1.5rem 1.5rem';
-          demoModal.querySelector('div').style.width = '95vw';
-          demoModal.querySelector('div').style.maxWidth = '900px';
-        }
-        setIframeSize();
-      }
-      window.addEventListener('resize', adjustDemoModal);
-      adjustDemoModal();
+
+      // Swipe support (touch events)
+      let startX = null;
+      agentCard.addEventListener('touchstart', function(e) {
+        if (e.touches.length === 1) startX = e.touches[0].clientX;
+      });
+      agentCard.addEventListener('touchend', function(e) {
+        if (startX === null) return;
+        const endX = e.changedTouches[0].clientX;
+        if (endX - startX > 40) showAgent(current - 1); // swipe right
+        else if (startX - endX > 40) showAgent(current + 1); // swipe left
+        startX = null;
+      });
+
+      // Keyboard navigation
+      document.addEventListener('keydown', function(e) {
+        if (demoModal.style.display !== 'flex') return;
+        if (e.key === 'ArrowLeft') showAgent(current - 1);
+        if (e.key === 'ArrowRight') showAgent(current + 1);
+        if (e.key === 'Escape') closeModal();
+      });
     })();
-  </script>
-  <script>
-    // Demo Modal Logic
-    const demoModal = document.getElementById('demo-modal');
-    const viewDemoBtn = document.getElementById('view-demo-btn');
-    const closeDemoModal = document.getElementById('close-demo-modal');
-    const demoIframe = document.getElementById('demo-iframe');
-    const demoPlaceholder = document.getElementById('demo-placeholder');
-    document.querySelectorAll('.demo-link-btn').forEach(btn => {
-      btn.onclick = function() {
-        const url = btn.getAttribute('data-url');
-        demoIframe.style.display = 'block';
-        demoIframe.src = url;
-        demoPlaceholder.style.display = 'none';
-      };
-    });
-    viewDemoBtn.onclick = function(e) {
-      e.preventDefault();
-      demoModal.style.display = 'flex';
-      document.body.style.overflow = 'hidden';
-    };
-    closeDemoModal.onclick = function() {
-      demoModal.style.display = 'none';
-      demoIframe.src = '';
-      demoIframe.style.display = 'none';
-      demoPlaceholder.style.display = 'flex';
-      document.body.style.overflow = '';
-    };
-    // Close modal on outside click
-    demoModal.addEventListener('click', function(e) {
-      if (e.target === demoModal) closeDemoModal.onclick();
-    });
-    // Mobile: allow long-press to open modal
-    let pressTimer;
-    viewDemoBtn.addEventListener('touchstart', function(e) {
-      pressTimer = setTimeout(() => {
-        demoModal.style.display = 'flex';
-        document.body.style.overflow = 'hidden';
-      }, 500);
-    });
-    viewDemoBtn.addEventListener('touchend', function(e) {
-      clearTimeout(pressTimer);
-    });
   </script>
   <script>
     // Simple Three.js 3D animated sphere
