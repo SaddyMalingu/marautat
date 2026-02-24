@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agent Demo Modal Feature (Isolated)</title>
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <main>
+    <h1>Agent Demo Modal (Isolated Feature)</h1>
+    <button id="view-demo-btn">View Demo</button>
+    <div id="demo-modal" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(30,41,59,0.85);z-index:1000;align-items:center;justify-content:center;">
+      <div style="background:#fff;border-radius:1.2rem;box-shadow:0 4px 24px #38bdf8aa;padding:2rem 1.5rem;min-width:220px;max-width:340px;text-align:center;display:flex;flex-direction:column;align-items:center;">
+        <span id="close-demo-modal" style="position:absolute;top:1rem;right:1rem;font-size:2rem;cursor:pointer;">&times;</span>
+        <div id="agent-slide-container"></div>
+        <button id="agent-prev">Prev</button>
+        <button id="agent-next">Next</button>
+      </div>
+    </div>
+    <div id="agent-fullscreen-modal" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(30,41,59,0.95);z-index:1100;align-items:center;justify-content:center;">
+      <span id="close-agent-fullscreen" style="position:absolute;top:1rem;right:1rem;font-size:2rem;cursor:pointer;">&times;</span>
+      <button id="agent-fullscreen-prev">Prev</button>
+      <button id="agent-fullscreen-next">Next</button>
+      <iframe id="agent-demo-iframe" style="width:80vw;height:80vh;border-radius:1rem;border:none;background:#fff;"></iframe>
+    </div>
+  </main>
+  <script src="../agent_demo_modal.js"></script>
+</body>
+</html>
