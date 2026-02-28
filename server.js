@@ -156,26 +156,33 @@ async function loadTenantContext(req, res, next) {
     const businessPhoneId = metadata?.phone_number_id;
     const businessAccountId = metadata?.business_account_id;
 
-    if (!businessPhone && !businessPhoneId && !businessAccountId) {
+    // Set your Alphadome main number here (should match your config)
+    const ALPHADOME_MAIN_NUMBER = process.env.PHONE_NUMBER_ALPHADOME || "0786817637";
+    const normalizePhone = (phone) => (phone || "").replace(/\D/g, "");
+    const normalizedBusinessPhone = normalizePhone(businessPhone);
+    const normalizedAlphadome = normalizePhone(ALPHADOME_MAIN_NUMBER);
+
+    // If the destination number is Alphadome, do not load any tenant
+    if (normalizedBusinessPhone === normalizedAlphadome) {
       req.tenant = null;
       req.isTenantAware = false;
+      log(`✓ Alphadome main number detected (${businessPhone}) - responding as Alphadome`, "SYSTEM");
       return next();
     }
 
-    const normalizePhone = (phone) => (phone || "").replace(/\D/g, "");
-    const normalizedBusinessPhone = normalizePhone(businessPhone);
+    // Otherwise, look up tenant strictly by WhatsApp number
+    const { data: tenantResult, error } = await supabase
+      .from("alphadome.bot_tenants")
+      .select("*")
+      .eq("whatsapp_phone_number_id", businessPhoneId)
+      .eq("client_phone", normalizedBusinessPhone)
+      .single();
 
-    const { data: tenantResult, error } = await supabase.rpc("get_tenant_by_wa", {
-      business_phone_id: businessPhoneId || null,
-      business_account_id: businessAccountId || null,
-      business_phone: normalizedBusinessPhone || null,
-    });
-
-    const tenant = tenantResult?.tenant || null;
+    const tenant = tenantResult || null;
 
     if (error) {
       log(
-        `Tenant lookup error for ${businessPhoneId || businessAccountId || normalizedBusinessPhone}: ${error.message}`,
+        `Tenant lookup error for ${businessPhoneId || normalizedBusinessPhone}: ${error.message}`,
         "WARN"
       );
       req.tenant = null;
@@ -185,7 +192,7 @@ async function loadTenantContext(req, res, next) {
 
     if (!tenant) {
       log(
-        `No tenant found for business phone ${businessPhoneId || businessAccountId || normalizedBusinessPhone} - using default`,
+        `No tenant found for business phone ${businessPhoneId || normalizedBusinessPhone} - using default`,
         "DEBUG"
       );
       req.tenant = null;
@@ -211,7 +218,7 @@ async function loadTenantContext(req, res, next) {
     req.tenant = tenant;
     req.isTenantAware = true;
     log(
-      `✓ Tenant loaded: ${tenant.client_name} (${businessPhoneId || businessAccountId || normalizedBusinessPhone})`,
+      `✓ Tenant loaded: ${tenant.client_name} (${businessPhoneId || normalizedBusinessPhone})`,
       "SYSTEM"
     );
     next();
