@@ -9,7 +9,7 @@ import { createClient } from "@supabase/supabase-js";
 import OpenAI from "openai";
 import { log } from "./utils/logger.js";
 import { sendMessage } from "./utils/messenger.js";
-import { startHealthMonitor, runHealthCheck } from "./utils/healthMonitor.js";
+import { startHealthMonitor, runHealthCheck, incrementErrorCount } from "./utils/healthMonitor.js";
 
 const app = express();
 app.use(express.json());
@@ -57,6 +57,11 @@ app.get('/debug/request-log', (req, res) => {
 app.get('/', (req, res) => {
   log(`Landing page loaded by ${req.ip} at ${new Date().toISOString()}`, "PAGE");
   res.sendFile(path.join(publicDir, 'index.html'));
+});
+
+// Serve agent-demo-modal.html explicitly for isolated modal demo
+app.get('/agent-demo-modal.html', (req, res) => {
+  res.sendFile(path.join(publicDir, 'agent-demo-modal.html'));
 });
 
 const openai = new OpenAI({
