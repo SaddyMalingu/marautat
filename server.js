@@ -2,6 +2,7 @@
 // --- Imports and app initialization ---
 
 import express from "express";
+import axios from "axios";
 import fs from "fs";
 import path from "path";
 import multer from "multer";
