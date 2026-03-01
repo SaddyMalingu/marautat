@@ -4,178 +4,608 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Alphadome Agent Portfolio</title>
-  <link rel="stylesheet" href="/public/styles.css">
+  <meta name="description" content="Alphadome portfolio showcasing AI agents and partner brands.">
   <style>
-    body { font-family: 'Segoe UI', Arial, sans-serif; background: #f8fafc; margin: 0; }
-    .header { background: #0f172a; color: #fff; padding: 2rem 0; text-align: center; }
-    .container { max-width: 1100px; margin: 2rem auto; padding: 0 1rem; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 2rem; }
-    .card { background: #fff; border-radius: 1rem; box-shadow: 0 2px 8px rgba(0,0,0,0.07); padding: 2rem 1.5rem; text-align: center; transition: box-shadow 0.2s; }
-    .card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.12); }
-    .agent-title { font-size: 1.2rem; font-weight: 600; margin-bottom: 0.5rem; color: #0f172a; }
-    .agent-contact { font-size: 1rem; color: #334155; margin-bottom: 0.5rem; }
-    .agent-desc { font-size: 0.98rem; color: #64748b; margin-bottom: 1rem; }
-    .nav { background: #fff; border-bottom: 1px solid #e2e8f0; padding: 0.75rem 0; text-align: center; }
-    .nav a { color: #0f172a; text-decoration: none; font-weight: 500; margin: 0 1.5rem; transition: color 0.2s; }
-    .nav a:hover { color: #2563eb; }
-    @media (max-width: 600px) { .container { padding: 0 0.5rem; } }
+    :root {
+      --bg-1: #030712;
+      --bg-2: #0b1120;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --card: rgba(15, 23, 42, 0.65);
+      --stroke: rgba(148, 163, 184, 0.2);
+      --brand: #22d3ee;
+      --brand-2: #818cf8;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html,
+    body {
+      min-height: 100%;
+      font-family: Inter, "Segoe UI", Roboto, Arial, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 12% 8%, rgba(56, 189, 248, 0.18), transparent 33%),
+        radial-gradient(circle at 88% 12%, rgba(129, 140, 248, 0.2), transparent 30%),
+        radial-gradient(circle at 60% 90%, rgba(45, 212, 191, 0.15), transparent 35%),
+        linear-gradient(160deg, var(--bg-1), var(--bg-2));
+      overflow-x: hidden;
+    }
+
+    .bg-orb {
+      position: fixed;
+      border-radius: 999px;
+      filter: blur(42px);
+      z-index: 0;
+      pointer-events: none;
+      animation: float 10s ease-in-out infinite;
+    }
+
+    .orb-a {
+      width: 260px;
+      height: 260px;
+      left: -60px;
+      top: 120px;
+      background: rgba(34, 211, 238, 0.26);
+    }
+
+    .orb-b {
+      width: 320px;
+      height: 320px;
+      right: -80px;
+      top: 340px;
+      background: rgba(129, 140, 248, 0.22);
+      animation-delay: 1.4s;
+    }
+
+    .page {
+      position: relative;
+      z-index: 1;
+      width: min(1160px, 92vw);
+      margin: 0 auto;
+      padding-bottom: 2rem;
+    }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      backdrop-filter: blur(14px);
+      background: rgba(2, 6, 23, 0.55);
+      border: 1px solid rgba(148, 163, 184, 0.14);
+      border-radius: 0 0 16px 16px;
+      margin-bottom: 1.25rem;
+    }
+
+    .topbar nav {
+      display: flex;
+      justify-content: center;
+      gap: 0.65rem;
+      padding: 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    .topbar a {
+      color: var(--text);
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 0.95rem;
+      padding: 0.58rem 0.9rem;
+      border-radius: 12px;
+      border: 1px solid transparent;
+      transition: all 0.22s ease;
+    }
+
+    .topbar a:hover,
+    .topbar a[aria-current="page"] {
+      color: #001118;
+      background: linear-gradient(135deg, var(--brand), var(--brand-2));
+      border-color: rgba(255, 255, 255, 0.25);
+      box-shadow: 0 8px 30px rgba(34, 211, 238, 0.24);
+    }
+
+    .hero {
+      text-align: center;
+      padding: 3.2rem 1rem 1.8rem;
+    }
+
+    .hero-badge {
+      display: inline-block;
+      font-size: 0.74rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: #cffafe;
+      padding: 0.45rem 0.72rem;
+      border-radius: 999px;
+      border: 1px solid rgba(34, 211, 238, 0.4);
+      background: rgba(8, 47, 73, 0.46);
+      margin-bottom: 1rem;
+    }
+
+    h1 {
+      font-size: clamp(1.8rem, 3.6vw, 3.1rem);
+      line-height: 1.1;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.8rem;
+      background: linear-gradient(110deg, #f8fafc 10%, #67e8f9 48%, #a5b4fc 85%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      color: transparent;
+    }
+
+    .hero p {
+      max-width: 780px;
+      margin: 0.2rem auto 1rem;
+      color: var(--muted);
+      font-size: clamp(0.95rem, 1.8vw, 1.08rem);
+      line-height: 1.6;
+    }
+
+    .stat-row {
+      display: flex;
+      justify-content: center;
+      align-items: stretch;
+      gap: 0.8rem;
+      flex-wrap: wrap;
+      margin-top: 1.1rem;
+    }
+
+    .stat {
+      min-width: 145px;
+      padding: 0.85rem 0.95rem;
+      border-radius: 14px;
+      background: rgba(15, 23, 42, 0.58);
+      border: 1px solid var(--stroke);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    }
+
+    .stat strong {
+      display: block;
+      font-size: 1.3rem;
+      color: #67e8f9;
+    }
+
+    .stat span {
+      color: #cbd5e1;
+      font-size: 0.8rem;
+    }
+
+    .portfolio {
+      perspective: 1200px;
+      padding: 0.8rem 0 1.6rem;
+    }
+
+    .grid {
+      display: grid;
+      gap: 1rem;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .card {
+      position: relative;
+      min-height: 220px;
+      border-radius: 20px;
+      padding: 1rem;
+      border: 1px solid var(--stroke);
+      transform-style: preserve-3d;
+      transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+      background: linear-gradient(160deg, rgba(15, 23, 42, 0.74), rgba(2, 6, 23, 0.78));
+      box-shadow: 0 14px 34px rgba(2, 6, 23, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+      overflow: hidden;
+      will-change: transform;
+    }
+
+    .card::before {
+      content: "";
+      position: absolute;
+      inset: -45% -30% auto;
+      height: 65%;
+      background: radial-gradient(circle at center, rgba(34, 211, 238, 0.35), transparent 70%);
+      transform: translateZ(20px);
+      pointer-events: none;
+      opacity: 0.7;
+    }
+
+    .card:hover {
+      border-color: rgba(34, 211, 238, 0.55);
+      box-shadow: 0 18px 44px rgba(34, 211, 238, 0.2), 0 12px 30px rgba(2, 6, 23, 0.6);
+    }
+
+    .card-inner {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 0.7rem;
+      transform: translateZ(30px);
+    }
+
+    .agent-tag {
+      align-self: flex-start;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      color: #a5f3fc;
+      padding: 0.3rem 0.5rem;
+      border-radius: 999px;
+      border: 1px solid rgba(34, 211, 238, 0.4);
+      background: rgba(8, 47, 73, 0.4);
+    }
+
+    .agent-title {
+      font-size: 1.05rem;
+      line-height: 1.35;
+      font-weight: 700;
+      color: #f8fafc;
+      letter-spacing: -0.01em;
+      margin-top: 0.3rem;
+    }
+
+    .agent-contact {
+      color: #bfdbfe;
+      font-size: 0.9rem;
+      letter-spacing: 0.01em;
+      word-break: break-word;
+    }
+
+    .agent-desc {
+      color: #cbd5e1;
+      font-size: 0.92rem;
+      line-height: 1.5;
+    }
+
+    .footer-note {
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.88rem;
+      margin: 0.5rem 0 1rem;
+    }
+
+    @keyframes float {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-18px); }
+    }
+
+    @media (max-width: 1024px) {
+      .grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .hero {
+        padding-top: 2.4rem;
+      }
+    }
+
+    @media (max-width: 700px) {
+      .page {
+        width: min(1160px, 94vw);
+      }
+
+      .topbar nav {
+        gap: 0.4rem;
+      }
+
+      .topbar a {
+        flex: 1 1 auto;
+        text-align: center;
+        font-size: 0.86rem;
+        padding: 0.56rem 0.5rem;
+      }
+
+      .grid {
+        grid-template-columns: 1fr;
+        gap: 0.85rem;
+      }
+
+      .card {
+        min-height: 200px;
+      }
+
+      .stat {
+        min-width: 120px;
+        padding: 0.7rem 0.72rem;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .bg-orb,
+      .card {
+        animation: none !important;
+        transition: none !important;
+      }
+    }
   </style>
 </head>
 <body>
-  <div class="header">
-    <h1>Our Portfolio</h1>
-    <p>Meet the agents and brands powered by Alphadome</p>
+  <div class="bg-orb orb-a"></div>
+  <div class="bg-orb orb-b"></div>
+
+  <div class="page">
+    <header class="topbar">
+      <nav>
+        <a href="/">Home</a>
+        <a href="/portfolio.html" aria-current="page">Our Portfolio</a>
+        <a href="/admin">Admin Dashboard</a>
+      </nav>
+    </header>
+
+    <section class="hero">
+      <span class="hero-badge">Alphadome Ecosystem</span>
+      <h1>Our Portfolio</h1>
+      <p>Meet the AI agents and partner brands already onboarded into the Alphadome system. Built to scale, designed to convert, and optimized for always-on engagement.</p>
+      <div class="stat-row">
+        <div class="stat"><strong>28</strong><span>Onboarded Agents</span></div>
+        <div class="stat"><strong>100%</strong><span>Alphadome Navigation</span></div>
+        <div class="stat"><strong>Mobile + Desktop</strong><span>Responsive UI</span></div>
+      </div>
+    </section>
+
+    <section class="portfolio">
+      <div class="grid">
+        <article class="card" data-tilt>
+          <div class="card-inner">
+            <span class="agent-tag">AI Agent</span>
+            <div class="agent-title">Coach Dawn 3.0</div>
+            <div class="agent-contact">WhatsApp: +254748621563</div>
+            <div class="agent-desc">Empowering personal growth and transformation.</div>
+          </div>
+        </article>
+        <article class="card" data-tilt>
+          <div class="card-inner">
+            <span class="agent-tag">AI Agent</span>
+            <div class="agent-title">Soma Katiba 3.0</div>
+            <div class="agent-contact">WhatsApp: +254722717865</div>
+            <div class="agent-desc">Legal literacy and civic empowerment for all.</div>
+          </div>
+        </article>
+        <article class="card" data-tilt>
+          <div class="card-inner">
+            <span class="agent-tag">AI Agent</span>
+            <div class="agent-title">Malingu Global Supplies 3.0</div>
+            <div class="agent-contact">WhatsApp: +254799721460</div>
+            <div class="agent-desc">Supplying quality products for your business needs.</div>
+          </div>
+        </article>
+        <article class="card" data-tilt>
+          <div class="card-inner">
+            <span class="agent-tag">AI Agent</span>
+            <div class="agent-title">Agent Purity 3.0</div>
+            <div class="agent-contact">WhatsApp: +254720486791</div>
+            <div class="agent-desc">Your trusted agent for seamless transactions.</div>
+          </div>
+        </article>
+        <article class="card" data-tilt>
+          <div class="card-inner">
+            <span class="agent-tag">Brand</span>
+            <div class="agent-title">Denim & Diamonds 3.0</div>
+            <div class="agent-contact">WhatsApp: +254728746015</div>
+            <div class="agent-desc">Fashion redefined for the modern era.</div>
+          </div>
+        </article>
+        <article class="card" data-tilt>
+          <div class="card-inner">
+            <span class="agent-tag">Brand</span>
+            <div class="agent-title">One Odundo 3.0</div>
+            <div class="agent-contact">WhatsApp: +254720566608</div>
+            <div class="agent-desc">Business solutions with a personal touch.</div>
+          </div>
+        </article>
+        <article class="card" data-tilt>
+          <div class="card-inner">
+            <span class="agent-tag">Travel</span>
+            <div class="agent-title">Tour Guide Dennis 3.0</div>
+            <div class="agent-contact">WhatsApp: +254704953642</div>
+            <div class="agent-desc">Explore Kenya with a professional guide.</div>
+          </div>
+        </article>
+        <article class="card" data-tilt>
+          <div class="card-inner">
+            <span class="agent-tag">AI Agent</span>
+            <div class="agent-title">Coach Peter 3.0</div>
+            <div class="agent-contact">WhatsApp: +254720737106</div>
+            <div class="agent-desc">Coaching for success in life and business.</div>
+          </div>
+        </article>
+        <article class="card" data-tilt>
+          <div class="card-inner">
+            <span class="agent-tag">Health</span>
+            <div class="agent-title">Vet Martin 3.0</div>
+            <div class="agent-contact">WhatsApp: +254727058824</div>
+            <div class="agent-desc">Expert veterinary care for your animals.</div>
+          </div>
+        </article>
+        <article class="card" data-tilt>
+          <div class="card-inner">
+            <span class="agent-tag">Retail</span>
+            <div class="agent-title">Rahim Boutique 3.0</div>
+            <div class="agent-contact">WhatsApp: +254722777391</div>
+            <div class="agent-desc">Boutique fashion and accessories.</div>
+          </div>
+        </article>
+        <article class="card" data-tilt>
+          <div class="card-inner">
+            <span class="agent-tag">Events</span>
+            <div class="agent-title">House of Annie Events & Tours 3.0</div>
+            <div class="agent-contact">WhatsApp: +254769892450</div>
+            <div class="agent-desc">Events and tours with a personal touch.</div>
+          </div>
+        </article>
+        <article class="card" data-tilt>
+          <div class="card-inner">
+            <span class="agent-tag">AI Agent</span>
+            <div class="agent-title">Agent Saleh 3.0</div>
+            <div class="agent-contact">WhatsApp: +254746252088</div>
+            <div class="agent-desc">Professional agent for your business needs.</div>
+          </div>
+        </article>
+        <article class="card" data-tilt>
+          <div class="card-inner">
+            <span class="agent-tag">AI Agent</span>
+            <div class="agent-title">Agent Tekla 3.0</div>
+            <div class="agent-contact">WhatsApp: +254715221606</div>
+            <div class="agent-desc">Reliable agent for seamless service.</div>
+          </div>
+        </article>
+        <article class="card" data-tilt>
+          <div class="card-inner">
+            <span class="agent-tag">Health</span>
+            <div class="agent-title">Lifeline Cancer Trust 3.0</div>
+            <div class="agent-contact">WhatsApp: +254724727390</div>
+            <div class="agent-desc">Support and resources for cancer patients.</div>
+          </div>
+        </article>
+        <article class="card" data-tilt>
+          <div class="card-inner">
+            <span class="agent-tag">Retail</span>
+            <div class="agent-title">Bijo Gas and Accessories 3.0</div>
+            <div class="agent-contact">WhatsApp: +254714968909</div>
+            <div class="agent-desc">Your source for gas and accessories.</div>
+          </div>
+        </article>
+        <article class="card" data-tilt>
+          <div class="card-inner">
+            <span class="agent-tag">Brand</span>
+            <div class="agent-title">Mawani 3.0</div>
+            <div class="agent-contact">WhatsApp: +254759457202</div>
+            <div class="agent-desc">Innovative solutions for modern living.</div>
+          </div>
+        </article>
+        <article class="card" data-tilt>
+          <div class="card-inner">
+            <span class="agent-tag">Beauty</span>
+            <div class="agent-title">Sharon Beauty 3.0</div>
+            <div class="agent-contact">WhatsApp: +254716543542</div>
+            <div class="agent-desc">Beauty and wellness for everyone.</div>
+          </div>
+        </article>
+        <article class="card" data-tilt>
+          <div class="card-inner">
+            <span class="agent-tag">Health</span>
+            <div class="agent-title">Dr. Cindy 3.0</div>
+            <div class="agent-contact">WhatsApp: +254707348513</div>
+            <div class="agent-desc">Healthcare and wellness expertise.</div>
+          </div>
+        </article>
+        <article class="card" data-tilt>
+          <div class="card-inner">
+            <span class="agent-tag">AI Agent</span>
+            <div class="agent-title">Virtual Assistant Abby 3.0</div>
+            <div class="agent-contact">WhatsApp: +254707148096</div>
+            <div class="agent-desc">Your digital assistant for daily tasks.</div>
+          </div>
+        </article>
+        <article class="card" data-tilt>
+          <div class="card-inner">
+            <span class="agent-tag">Contracting</span>
+            <div class="agent-title">Malingu Contractor 3.0</div>
+            <div class="agent-contact">WhatsApp: +254729530472</div>
+            <div class="agent-desc">Contracting and construction services.</div>
+          </div>
+        </article>
+        <article class="card" data-tilt>
+          <div class="card-inner">
+            <span class="agent-tag">Comms</span>
+            <div class="agent-title">Mary Msoh Communications Solutions 3.0</div>
+            <div class="agent-contact">WhatsApp: +254795006968</div>
+            <div class="agent-desc">Communications solutions for your business.</div>
+          </div>
+        </article>
+        <article class="card" data-tilt>
+          <div class="card-inner">
+            <span class="agent-tag">Leadership</span>
+            <div class="agent-title">General Apollo 3.0</div>
+            <div class="agent-contact">WhatsApp: +254708623514</div>
+            <div class="agent-desc">Leadership and strategic solutions.</div>
+          </div>
+        </article>
+        <article class="card" data-tilt>
+          <div class="card-inner">
+            <span class="agent-tag">Architecture</span>
+            <div class="agent-title">Building Plans 3.0</div>
+            <div class="agent-contact">WhatsApp: +254716783715</div>
+            <div class="agent-desc">Building plans and architectural services.</div>
+          </div>
+        </article>
+        <article class="card" data-tilt>
+          <div class="card-inner">
+            <span class="agent-tag">Travel</span>
+            <div class="agent-title">Craydel Africa Travel 3.0</div>
+            <div class="agent-contact">WhatsApp: +254722881541</div>
+            <div class="agent-desc">Travel and adventure across Africa.</div>
+          </div>
+        </article>
+        <article class="card" data-tilt>
+          <div class="card-inner">
+            <span class="agent-tag">Beauty</span>
+            <div class="agent-title">Elegance Aesthetic Spa 3.0</div>
+            <div class="agent-contact">WhatsApp: +254727990228</div>
+            <div class="agent-desc">Relaxation and beauty treatments.</div>
+          </div>
+        </article>
+        <article class="card" data-tilt>
+          <div class="card-inner">
+            <span class="agent-tag">Brand</span>
+            <div class="agent-title">Amir 3.0</div>
+            <div class="agent-contact">WhatsApp: +254708446848</div>
+            <div class="agent-desc">Business and personal growth solutions.</div>
+          </div>
+        </article>
+        <article class="card" data-tilt>
+          <div class="card-inner">
+            <span class="agent-tag">Consulting</span>
+            <div class="agent-title">PBC 3.0</div>
+            <div class="agent-contact">WhatsApp: +254715371211</div>
+            <div class="agent-desc">Professional business consulting.</div>
+          </div>
+        </article>
+        <article class="card" data-tilt>
+          <div class="card-inner">
+            <span class="agent-tag">Creative</span>
+            <div class="agent-title">Urban Craft 3.0</div>
+            <div class="agent-contact">WhatsApp: +254716439810</div>
+            <div class="agent-desc">Crafting urban solutions for modern life.</div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <p class="footer-note">Alphadome portfolio experience · Desktop and mobile optimized</p>
   </div>
-  <div class="nav">
-    <a href="/">Home</a>
-    <a href="/portfolio.html">Our Portfolio</a>
-    <a href="/admin">Admin Dashboard</a>
-  </div>
-  <div class="container">
-    <div class="grid">
-      <!-- Agent Cards -->
-      <div class="card">
-        <div class="agent-title">Coach Dawn 3.0</div>
-        <div class="agent-contact">WhatsApp: +254748621563</div>
-        <div class="agent-desc">Empowering personal growth and transformation.</div>
-      </div>
-      <div class="card">
-        <div class="agent-title">Soma Katiba 3.0</div>
-        <div class="agent-contact">WhatsApp: +254722717865</div>
-        <div class="agent-desc">Legal literacy and civic empowerment for all.</div>
-      </div>
-      <div class="card">
-        <div class="agent-title">Malingu Global Supplies 3.0</div>
-        <div class="agent-contact">WhatsApp: +254799721460</div>
-        <div class="agent-desc">Supplying quality products for your business needs.</div>
-      </div>
-      <div class="card">
-        <div class="agent-title">Agent Purity 3.0</div>
-        <div class="agent-contact">WhatsApp: +254720486791</div>
-        <div class="agent-desc">Your trusted agent for seamless transactions.</div>
-      </div>
-      <div class="card">
-        <div class="agent-title">Denim & Diamonds 3.0</div>
-        <div class="agent-contact">WhatsApp: +254728746015</div>
-        <div class="agent-desc">Fashion redefined for the modern era.</div>
-      </div>
-      <div class="card">
-        <div class="agent-title">One Odundo 3.0</div>
-        <div class="agent-contact">WhatsApp: +254720566608</div>
-        <div class="agent-desc">Business solutions with a personal touch.</div>
-      </div>
-      <div class="card">
-        <div class="agent-title">Tour Guide Dennis 3.0</div>
-        <div class="agent-contact">WhatsApp: +254704953642</div>
-        <div class="agent-desc">Explore Kenya with a professional guide.</div>
-      </div>
-      <div class="card">
-        <div class="agent-title">Coach Peter 3.0</div>
-        <div class="agent-contact">WhatsApp: +254720737106</div>
-        <div class="agent-desc">Coaching for success in life and business.</div>
-      </div>
-      <div class="card">
-        <div class="agent-title">Vet Martin 3.0</div>
-        <div class="agent-contact">WhatsApp: +254727058824</div>
-        <div class="agent-desc">Expert veterinary care for your animals.</div>
-      </div>
-      <div class="card">
-        <div class="agent-title">Rahim Boutique 3.0</div>
-        <div class="agent-contact">WhatsApp: +254722777391</div>
-        <div class="agent-desc">Boutique fashion and accessories.</div>
-      </div>
-      <div class="card">
-        <div class="agent-title">House of Annie Events & Tours 3.0</div>
-        <div class="agent-contact">WhatsApp: +254769892450</div>
-        <div class="agent-desc">Events and tours with a personal touch.</div>
-      </div>
-      <div class="card">
-        <div class="agent-title">Agent Saleh 3.0</div>
-        <div class="agent-contact">WhatsApp: +254746252088</div>
-        <div class="agent-desc">Professional agent for your business needs.</div>
-      </div>
-      <div class="card">
-        <div class="agent-title">Agent Tekla 3.0</div>
-        <div class="agent-contact">WhatsApp: +254715221606</div>
-        <div class="agent-desc">Reliable agent for seamless service.</div>
-      </div>
-      <div class="card">
-        <div class="agent-title">Lifeline Cancer Trust 3.0</div>
-        <div class="agent-contact">WhatsApp: +254724727390</div>
-        <div class="agent-desc">Support and resources for cancer patients.</div>
-      </div>
-      <div class="card">
-        <div class="agent-title">Bijo Gas and Accessories 3.0</div>
-        <div class="agent-contact">WhatsApp: +254714968909</div>
-        <div class="agent-desc">Your source for gas and accessories.</div>
-      </div>
-      <div class="card">
-        <div class="agent-title">Mawani 3.0</div>
-        <div class="agent-contact">WhatsApp: +254759457202</div>
-        <div class="agent-desc">Innovative solutions for modern living.</div>
-      </div>
-      <div class="card">
-        <div class="agent-title">Sharon Beauty 3.0</div>
-        <div class="agent-contact">WhatsApp: +254716543542</div>
-        <div class="agent-desc">Beauty and wellness for everyone.</div>
-      </div>
-      <div class="card">
-        <div class="agent-title">Dr. Cindy 3.0</div>
-        <div class="agent-contact">WhatsApp: +254707348513</div>
-        <div class="agent-desc">Healthcare and wellness expertise.</div>
-      </div>
-      <div class="card">
-        <div class="agent-title">Virtual Assistant Abby 3.0</div>
-        <div class="agent-contact">WhatsApp: +254707148096</div>
-        <div class="agent-desc">Your digital assistant for daily tasks.</div>
-      </div>
-      <div class="card">
-        <div class="agent-title">Malingu Contractor 3.0</div>
-        <div class="agent-contact">WhatsApp: +254729530472</div>
-        <div class="agent-desc">Contracting and construction services.</div>
-      </div>
-      <div class="card">
-        <div class="agent-title">Mary Msoh Communications Solutions 3.0</div>
-        <div class="agent-contact">WhatsApp: +254795006968</div>
-        <div class="agent-desc">Communications solutions for your business.</div>
-      </div>
-      <div class="card">
-        <div class="agent-title">General Apollo 3.0</div>
-        <div class="agent-contact">WhatsApp: +254708623514</div>
-        <div class="agent-desc">Leadership and strategic solutions.</div>
-      </div>
-      <div class="card">
-        <div class="agent-title">Building Plans 3.0</div>
-        <div class="agent-contact">WhatsApp: +254716783715</div>
-        <div class="agent-desc">Building plans and architectural services.</div>
-      </div>
-      <div class="card">
-        <div class="agent-title">Craydel Africa Travel 3.0</div>
-        <div class="agent-contact">WhatsApp: +254722881541</div>
-        <div class="agent-desc">Travel and adventure across Africa.</div>
-      </div>
-      <div class="card">
-        <div class="agent-title">Elegance Aesthetic Spa 3.0</div>
-        <div class="agent-contact">WhatsApp: +254727990228</div>
-        <div class="agent-desc">Relaxation and beauty treatments.</div>
-      </div>
-      <div class="card">
-        <div class="agent-title">Amir 3.0</div>
-        <div class="agent-contact">WhatsApp: +254708446848</div>
-        <div class="agent-desc">Business and personal growth solutions.</div>
-      </div>
-      <div class="card">
-        <div class="agent-title">PBC 3.0</div>
-        <div class="agent-contact">WhatsApp: +254715371211</div>
-        <div class="agent-desc">Professional business consulting.</div>
-      </div>
-      <div class="card">
-        <div class="agent-title">Urban Craft 3.0</div>
-        <div class="agent-contact">WhatsApp: +254716439810</div>
-        <div class="agent-desc">Crafting urban solutions for modern life.</div>
-      </div>
-      <!-- Add more agent cards as needed -->
-    </div>
-  </div>
+
+  <script>
+    (function () {
+      const cards = document.querySelectorAll("[data-tilt]");
+      const isTouch = window.matchMedia("(hover: none)").matches;
+
+      if (isTouch) {
+        return;
+      }
+
+      cards.forEach((card) => {
+        const maxTilt = 8;
+
+        card.addEventListener("mousemove", (event) => {
+          const rect = card.getBoundingClientRect();
+          const x = event.clientX - rect.left;
+          const y = event.clientY - rect.top;
+          const centerX = rect.width / 2;
+          const centerY = rect.height / 2;
+          const rotateX = ((y - centerY) / centerY) * -maxTilt;
+          const rotateY = ((x - centerX) / centerX) * maxTilt;
+
+          card.style.transform = `rotateX(${rotateX.toFixed(2)}deg) rotateY(${rotateY.toFixed(2)}deg) translateY(-4px)`;
+        });
+
+        card.addEventListener("mouseleave", () => {
+          card.style.transform = "rotateX(0deg) rotateY(0deg) translateY(0)";
+        });
+      });
+    })();
+  </script>
 </body>
 </html>
