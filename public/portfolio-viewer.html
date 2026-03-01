@@ -108,6 +108,34 @@
       color: var(--muted);
     }
 
+    .loading {
+      display: grid;
+      place-items: center;
+      text-align: center;
+      padding: 1rem;
+      color: var(--muted);
+      background: radial-gradient(circle at 50% 40%, rgba(34, 211, 238, 0.09), transparent 52%);
+    }
+
+    .loading .box {
+      max-width: 640px;
+      background: var(--panel);
+      border: 1px solid var(--stroke);
+      border-radius: 14px;
+      padding: 1.1rem;
+    }
+
+    .loading h2 {
+      margin: 0 0 0.5rem 0;
+      color: var(--text);
+      font-size: 1.05rem;
+    }
+
+    .loading p {
+      margin: 0;
+      line-height: 1.55;
+    }
+
     .fallback .box {
       max-width: 640px;
       background: var(--panel);
@@ -158,6 +186,13 @@
 
     <iframe id="viewer" allowfullscreen loading="eager" referrerpolicy="no-referrer"></iframe>
 
+    <section class="loading" id="loading">
+      <div class="box">
+        <h2>Loading portfolio preview…</h2>
+        <p>Please wait while we open this agent in full-screen view.</p>
+      </div>
+    </section>
+
     <section class="fallback" id="fallback">
       <div class="box">
         <h2>Preview blocked by source site</h2>
@@ -207,11 +242,15 @@
       document.getElementById("agent-title").textContent = `Alphadome • ${agent.replace(/-/g, " ")}`;
 
       const iframe = document.getElementById("viewer");
+      const loading = document.getElementById("loading");
       const fallback = document.getElementById("fallback");
       const openDirect = document.getElementById("open-direct");
 
+      let frameLoaded = false;
+
       if (!src) {
         iframe.style.display = "none";
+        loading.style.display = "none";
         fallback.style.display = "grid";
         openDirect.style.display = "none";
         return;
@@ -221,12 +260,23 @@
       iframe.src = src;
 
       const checkBlocked = setTimeout(() => {
-        fallback.style.display = "grid";
-      }, 3500);
+        if (!frameLoaded) {
+          loading.style.display = "none";
+          fallback.style.display = "grid";
+        }
+      }, 12000);
 
       iframe.addEventListener("load", () => {
+        frameLoaded = true;
         clearTimeout(checkBlocked);
+        loading.style.display = "none";
         fallback.style.display = "none";
+      });
+
+      iframe.addEventListener("error", () => {
+        clearTimeout(checkBlocked);
+        loading.style.display = "none";
+        fallback.style.display = "grid";
       });
     })();
   </script>
