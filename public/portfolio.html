@@ -198,6 +198,7 @@
       box-shadow: 0 14px 34px rgba(2, 6, 23, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.06);
       overflow: hidden;
       will-change: transform;
+      cursor: pointer;
     }
 
     .card::before {
@@ -214,6 +215,11 @@
     .card:hover {
       border-color: rgba(34, 211, 238, 0.55);
       box-shadow: 0 18px 44px rgba(34, 211, 238, 0.2), 0 12px 30px rgba(2, 6, 23, 0.6);
+    }
+
+    .card:focus-visible {
+      outline: 2px solid #67e8f9;
+      outline-offset: 3px;
     }
 
     .card-inner {
@@ -581,6 +587,60 @@
     (function () {
       const cards = document.querySelectorAll("[data-tilt]");
       const isTouch = window.matchMedia("(hover: none)").matches;
+      const agentLinks = {
+        "Coach Dawn 3.0": "https://coach-dawn-3-0-djqhjxa.gamma.site/",
+        "Soma Katiba 3.0": "https://somakatiba3-ca3yt4c.gamma.site/",
+        "Malingu Global Supplies 3.0": "https://malingu-global-supplies-lqwyn4t.gamma.site/",
+        "Agent Purity 3.0": "https://gamma.app/docs/Agent-Purity-30-Your-Financial-Guide-s3hv5wrwooi6err?mode=doc",
+        "Denim & Diamonds 3.0": "https://denim-and-diamonds-kc6heb5.gamma.site/",
+        "One Odundo 3.0": "https://accurate-football-predic-h8ctcpj.gamma.site/",
+        "Tour Guide Dennis 3.0": "https://tour-guide-dennis-c76329s.gamma.site/",
+        "Coach Peter 3.0": "https://coach-peter-3-0-s6ufezp.gamma.site/",
+        "Vet Martin 3.0": "https://vet-martin-w3zxuyb.gamma.site/",
+        "Rahim Boutique 3.0": "https://rahim-boutique-5skbi0x.gamma.site/",
+        "House of Annie Events & Tours 3.0": "https://house-of-annie-62socx0.gamma.site/",
+        "Agent Saleh 3.0": "https://agent-saleh-3-0-d2tdqo4.gamma.site/",
+        "Agent Tekla 3.0": "https://agent-tekla-30-19w4spk.gamma.site/",
+        "Lifeline Cancer Trust 3.0": "https://lifeline-cancer-trust-lqjwob4.gamma.site/",
+        "Bijo Gas and Accessories 3.0": "https://bijo-gas-ndi0xgu.gamma.site/",
+        "Mawani 3.0": "https://mawani3-0-22y21j9.gamma.site/",
+        "Sharon Beauty 3.0": "https://sharon-beauty-3-0-408eiak.gamma.site/",
+        "Dr. Cindy 3.0": "https://dr-cindy-3-0-3okwhvt.gamma.site/",
+        "Virtual Assistant Abby 3.0": "https://virtual-assistant-abby-3-6l3ed3p.gamma.site/",
+        "Malingu Contractor 3.0": "https://malingu-contractor-3-0-6ts3yzw.gamma.site/",
+        "Mary Msoh Communications Solutions 3.0": "https://mary-msoh-comm-9aou1xd.gamma.site/",
+        "General Apollo 3.0": "https://general-apollo-3-0-7zjdtt0.gamma.site/",
+        "Building Plans 3.0": "https://building-plans-3-0-i0qy3el.gamma.site/",
+        "Craydel Africa Travel 3.0": "https://craydel-africa-travel-l7axd0p.gamma.site/",
+        "Elegance Aesthetic Spa 3.0": "https://elegance-aesthetic-spa-i56iu7t.gamma.site/",
+        "Amir 3.0": "https://amir-3-0-jbdx7m3.gamma.site/",
+        "PBC 3.0": "https://pbc-3-0-7hl0qkv.gamma.site/",
+        "Urban Craft 3.0": "https://urbancraft30-x14plq1.gamma.site/"
+      };
+
+      cards.forEach((card) => {
+        const title = card.querySelector(".agent-title")?.textContent?.trim() || "";
+        const url = agentLinks[title];
+        if (!url) {
+          return;
+        }
+
+        card.setAttribute("role", "link");
+        card.setAttribute("tabindex", "0");
+        card.setAttribute("aria-label", `Open ${title} profile`);
+
+        const openProfile = () => {
+          window.location.href = url;
+        };
+
+        card.addEventListener("click", openProfile);
+        card.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            openProfile();
+          }
+        });
+      });
 
       if (isTouch) {
         return;
