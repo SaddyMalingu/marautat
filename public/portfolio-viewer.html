@@ -246,7 +246,14 @@
       const fallback = document.getElementById("fallback");
       const openDirect = document.getElementById("open-direct");
 
-      let frameLoaded = false;
+      let fallbackShown = false;
+
+      const showFallback = () => {
+        if (fallbackShown) return;
+        fallbackShown = true;
+        loading.style.display = "none";
+        fallback.style.display = "grid";
+      };
 
       if (!src) {
         iframe.style.display = "none";
@@ -259,24 +266,26 @@
       openDirect.href = src;
       iframe.src = src;
 
-      const checkBlocked = setTimeout(() => {
-        if (!frameLoaded) {
-          loading.style.display = "none";
-          fallback.style.display = "grid";
-        }
-      }, 12000);
-
       iframe.addEventListener("load", () => {
-        frameLoaded = true;
-        clearTimeout(checkBlocked);
+        if (fallbackShown) return;
         loading.style.display = "none";
         fallback.style.display = "none";
+
+        setTimeout(() => {
+          if (fallbackShown) return;
+          try {
+            const href = iframe.contentWindow?.location?.href || "";
+            if (href === "about:blank") {
+              showFallback();
+            }
+          } catch {
+            // Cross-origin content loaded successfully; access is restricted by browser policy.
+          }
+        }, 1200);
       });
 
       iframe.addEventListener("error", () => {
-        clearTimeout(checkBlocked);
-        loading.style.display = "none";
-        fallback.style.display = "grid";
+        showFallback();
       });
     })();
   </script>
