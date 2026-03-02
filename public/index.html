@@ -558,7 +558,35 @@
       </div>
     </section>
     <svg class="wave-divider" viewBox="0 0 1440 60" fill="none" xmlns="http://www.w3.org/2000/svg"><path fill="#0ea5e9" fill-opacity="0.12" d="M0,30 C360,60 1080,0 1440,30 L1440,60 L0,60 Z"></path></svg>
-    <section class="glass features">
+    <!-- Floating WhatsApp Button -->
+    <a href="https://wa.me/254786817637" target="_blank" id="floating-whatsapp" title="Chat on WhatsApp">
+      <img src="./images/whatsapp-3d.png" alt="WhatsApp" style="width:60px;height:60px;">
+    </a>
+    <style>
+      #floating-whatsapp {
+        position: fixed;
+        right: 32px;
+        bottom: 32px;
+        z-index: 9999;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+        border-radius: 50%;
+        background: #25d366;
+        padding: 8px;
+        transition: box-shadow 0.2s, transform 0.2s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      #floating-whatsapp:hover {
+        box-shadow: 0 8px 32px rgba(0,0,0,0.28);
+        transform: scale(1.08);
+      }
+      #floating-whatsapp img {
+        display: block;
+        border-radius: 50%;
+      }
+    </style>
+    <!-- End Floating WhatsApp Button -->
       <div class="feature-card">
         <i class="fas fa-cubes" aria-label="Agentic Workflows"></i>
         <h4>Agentic Workflows</h4>

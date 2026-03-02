@@ -272,20 +272,90 @@ async function loadTenantTrainingData(tenantId) {
 function buildTrainingContext(trainingData = []) {
   if (!trainingData.length) return "";
 
-  const maxItems = 15;
-  const maxChars = 2000;
-  let result = "";
+  // Prioritize training data by type and priority
+  const priorityOrder = [
+    'product_knowledge',
+    'category_knowledge',
+    'inventory',
+    'price_knowledge',
+    'recommendation',
+    'inventory_alert',
+    'brand_knowledge',
+    'faq',
+    'canned_reply'
+  ];
 
-  for (const entry of trainingData.slice(0, maxItems)) {
+  // Sort training data by type priority, then by entry priority
+  const sortedData = [...trainingData].sort((a, b) => {
+    const aTypeIdx = priorityOrder.indexOf(a.data_type) !== -1 
+      ? priorityOrder.indexOf(a.data_type) 
+      : 999;
+    const bTypeIdx = priorityOrder.indexOf(b.data_type) !== -1 
+      ? priorityOrder.indexOf(b.data_type) 
+      : 999;
+    
+    if (aTypeIdx !== bTypeIdx) return aTypeIdx - bTypeIdx;
+    return (b.priority || 0) - (a.priority || 0);
+  });
+
+  const maxItems = 20; // Increased from 15 to include more product knowledge
+  const maxChars = 3000; // Increased from 2000 for better context
+  let result = "";
+  let itemCount = 0;
+
+  // Group by type for better organization
+  const byType = {};
+  for (const entry of sortedData.slice(0, maxItems)) {
     const q = (entry.question || "").trim();
     const a = (entry.answer || "").trim();
     if (!a) continue;
-    const line = q ? `- Q: ${q}\n  A: ${a}\n` : `- ${a}\n`;
-    if (result.length + line.length > maxChars) break;
-    result += line;
+    
+    const type = entry.data_type || 'general';
+    if (!byType[type]) byType[type] = [];
+    
+    const line = q ? `Q: ${q}\nA: ${a}` : `${a}`;
+    if (result.length + line.length + 50 > maxChars) break;
+    
+    byType[type].push(line);
+    itemCount++;
   }
 
-  return result.trim();
+  // Build context with sections
+  const sections = [];
+  
+  if (byType.product_knowledge || byType.category_knowledge) {
+    const productLines = [
+      ...(byType.product_knowledge || []),
+      ...(byType.category_knowledge || [])
+    ];
+    sections.push(`PRODUCT CATALOG:\n${productLines.slice(0, 8).join('\n\n')}`);
+  }
+  
+  if (byType.price_knowledge || byType.recommendation) {
+    const priceLines = [
+      ...(byType.price_knowledge || []),
+      ...(byType.recommendation || [])
+    ];
+    sections.push(`PRICING & RECOMMENDATIONS:\n${priceLines.slice(0, 5).join('\n\n')}`);
+  }
+  
+  if (byType.inventory || byType.inventory_alert) {
+    const inventoryLines = [
+      ...(byType.inventory || []),
+      ...(byType.inventory_alert || [])
+    ];
+    sections.push(`INVENTORY STATUS:\n${inventoryLines.slice(0, 3).join('\n\n')}`);
+  }
+  
+  if (byType.faq || byType.brand_knowledge) {
+    const faqLines = [
+      ...(byType.brand_knowledge || []),
+      ...(byType.faq || [])
+    ];
+    sections.push(`BUSINESS INFO:\n${faqLines.slice(0, 4).join('\n\n')}`);
+  }
+
+  return sections.join('\n\n---\n\n').trim();
 }
 
 function getSystemPrompt(tenant = null, templates = [], trainingData = []) {
@@ -299,12 +369,30 @@ function getSystemPrompt(tenant = null, templates = [], trainingData = []) {
     }
   }
 
-  const guardrails = `You must ONLY answer using the brand's portfolio, catalog, and the training data provided. Do NOT invent details or mention unrelated communities. If the information is not available, say you don't have it in the catalog/brand data and ask for a more specific product name, SKU, or request to connect with a human.`;
+  // Enhanced guardrails with product expertise guidance
+  const guardrails = `
+IMPORTANT RULES:
+1. ONLY use information from the brand's product catalog and training data below
+2. When asked about products, check the PRODUCT CATALOG section first
+3. For pricing questions, refer to PRICING & RECOMMENDATIONS section
+4. For availability, check INVENTORY STATUS section
+5. If information is unavailable, say "I don't have that information in our current catalog" and suggest:
+   - Asking for a specific product name or SKU
+   - Calling the business directly
+   - Requesting to speak with a human agent
+6. DO NOT invent product details, prices, or availability
+7. DO NOT mention unrelated businesses or communities
+8. Be proactive - if customer mentions a category, suggest relevant products from catalog
+9. If customer mentions budget, recommend items within their price range
+10. Always be helpful, professional, and encourage customers to explore the full catalog
+`.trim();
 
   const trainingContext = buildTrainingContext(trainingData);
-  const trainingBlock = trainingContext ? `\n\nBrand data:\n${trainingContext}` : "";
+  const trainingBlock = trainingContext 
+    ? `\n\n${guardrails}\n\n---\n\nKNOWLEDGE BASE:\n\n${trainingContext}` 
+    : `\n\n${guardrails}`;
 
-  return `${basePrompt}\n\n${guardrails}${trainingBlock}`.trim();
+  return `${basePrompt}${trainingBlock}`.trim();
 }
 
 function findTrainingAnswer(trainingData = [], userMessage = "") {
