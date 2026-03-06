@@ -1,3 +1,164 @@
+// ===== TENANT TRAINING DATA/FAQ MANAGEMENT API =====
+// List all training data for a tenant
+app.get("/tenant/training", async (req, res) => {
+  const tenant_phone = req.query.tenant_phone;
+  if (!tenant_phone) return res.status(400).json({ error: "Missing tenant_phone" });
+  // Get tenant ID
+  const { data: tenant, error: tenantError } = await supabase
+    .from("alphadome.bot_tenants")
+    .select("id")
+    .eq("client_phone", tenant_phone)
+    .maybeSingle();
+  if (tenantError || !tenant) return res.status(404).json({ error: "Tenant not found" });
+  // Fetch training data
+  const { data, error } = await supabase
+    .from("alphadome.bot_training_data")
+    .select("*")
+    .eq("bot_tenant_id", tenant.id)
+    .order("priority", { ascending: false })
+    .order("confidence_score", { ascending: false });
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ training: data });
+});
+
+// Add a new training/FAQ entry
+app.post("/tenant/training", async (req, res) => {
+  const { tenant_phone, question, answer, category, priority, confidence_score } = req.body;
+  if (!tenant_phone || !question || !answer) return res.status(400).json({ error: "Missing required fields" });
+  // Get tenant ID
+  const { data: tenant, error: tenantError } = await supabase
+    .from("alphadome.bot_tenants")
+    .select("id")
+    .eq("client_phone", tenant_phone)
+    .maybeSingle();
+  if (tenantError || !tenant) return res.status(404).json({ error: "Tenant not found" });
+  // Insert training entry
+  const { data, error } = await supabase
+    .from("alphadome.bot_training_data")
+    .insert([
+      {
+        bot_tenant_id: tenant.id,
+        question,
+        answer,
+        category: category || null,
+        priority: priority || 0,
+        confidence_score: confidence_score || 1.0,
+        is_active: true
+      },
+    ])
+    .select("*")
+    .maybeSingle();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ training: data });
+});
+
+// Update a training/FAQ entry
+app.patch("/tenant/training/:id", async (req, res) => {
+  const { id } = req.params;
+  const { question, answer, category, priority, confidence_score, is_active } = req.body;
+  if (!id) return res.status(400).json({ error: "Missing training entry id" });
+  const update = { question, answer, category, priority, confidence_score, is_active };
+  Object.keys(update).forEach(k => update[k] === undefined && delete update[k]);
+  const { data, error } = await supabase
+    .from("alphadome.bot_training_data")
+    .update({ ...update, updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .select("*")
+    .maybeSingle();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ training: data });
+});
+
+// Delete a training/FAQ entry
+app.delete("/tenant/training/:id", async (req, res) => {
+  const { id } = req.params;
+  if (!id) return res.status(400).json({ error: "Missing training entry id" });
+  const { error } = await supabase
+    .from("alphadome.bot_training_data")
+    .delete()
+    .eq("id", id);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ ok: true });
+});
+// ===== TENANT ORDER MANAGEMENT API =====
+// List all orders for a tenant
+app.get("/tenant/orders", async (req, res) => {
+  const tenant_phone = req.query.tenant_phone;
+  if (!tenant_phone) return res.status(400).json({ error: "Missing tenant_phone" });
+  // Get tenant ID
+  const { data: tenant, error: tenantError } = await supabase
+    .from("alphadome.bot_tenants")
+    .select("id")
+    .eq("client_phone", tenant_phone)
+    .maybeSingle();
+  if (tenantError || !tenant) return res.status(404).json({ error: "Tenant not found" });
+  // Fetch orders
+  const { data, error } = await supabase
+    .from("alphadome.bot_orders")
+    .select("*")
+    .eq("bot_tenant_id", tenant.id)
+    .order("created_at", { ascending: false });
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ orders: data });
+});
+
+// Create a new order for a tenant
+app.post("/tenant/orders", async (req, res) => {
+  const { tenant_phone, customer_name, customer_phone, order_items, total_amount, currency, notes } = req.body;
+  if (!tenant_phone || !order_items || !total_amount) return res.status(400).json({ error: "Missing required fields" });
+  // Get tenant ID
+  const { data: tenant, error: tenantError } = await supabase
+    .from("alphadome.bot_tenants")
+    .select("id")
+    .eq("client_phone", tenant_phone)
+    .maybeSingle();
+  if (tenantError || !tenant) return res.status(404).json({ error: "Tenant not found" });
+  // Insert order
+  const { data, error } = await supabase
+    .from("alphadome.bot_orders")
+    .insert([
+      {
+        bot_tenant_id: tenant.id,
+        customer_name,
+        customer_phone,
+        order_items,
+        total_amount,
+        currency: currency || "KES",
+        notes,
+      },
+    ])
+    .select("*")
+    .maybeSingle();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ order: data });
+});
+
+// Update order status
+app.patch("/tenant/orders/:id", async (req, res) => {
+  const { id } = req.params;
+  const { status, notes } = req.body;
+  if (!id || !status) return res.status(400).json({ error: "Missing order id or status" });
+  const { data, error } = await supabase
+    .from("alphadome.bot_orders")
+    .update({ status, notes, updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .select("*")
+    .maybeSingle();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ order: data });
+});
+
+// Delete an order
+app.delete("/tenant/orders/:id", async (req, res) => {
+  const { id } = req.params;
+  if (!id) return res.status(400).json({ error: "Missing order id" });
+  const { error } = await supabase
+    .from("alphadome.bot_orders")
+    .delete()
+    .eq("id", id);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ ok: true });
+});
 
 // --- Imports and app initialization ---
 
