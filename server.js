@@ -1,3 +1,49 @@
+// ===== TENANT DASHBOARD PUBLIC ROUTE =====
+app.get("/tenant-dashboard", (req, res) => {
+  const dashboardPath = path.join(process.cwd(), "admin", "tenant_dashboard.html");
+  res.sendFile(dashboardPath);
+});
+// ===== ADMIN: ADD AGENT/TENANT API =====
+// POST /admin/agents - Add a new agent/tenant
+app.post('/admin/agents', async (req, res) => {
+  const {
+    client_name,
+    client_phone,
+    client_email,
+    point_of_contact_name,
+    business_address,
+    business_description,
+    logo,
+    industry,
+    status,
+    agent_description
+  } = req.body;
+  if (!client_name || !client_phone) {
+    return res.status(400).json({ error: 'Business Name and Contact Phone are required.' });
+  }
+  const { data, error } = await supabase
+    .from('alphadome.bot_tenants')
+    .upsert([
+      {
+        client_name,
+        client_phone,
+        client_email,
+        point_of_contact_name,
+        is_active: status === 'active',
+        metadata: {
+          business_address,
+          business_description,
+          logo,
+          industry,
+          agent_description
+        }
+      }
+    ], { onConflict: ['client_phone'] });
+  if (error) {
+    return res.status(500).json({ error: error.message });
+  }
+  res.json({ ok: true, data });
+});
 
 // --- Imports and app initialization ---
 
