@@ -1,0 +1,7 @@
+<!-- Proxy for admin/tenant_dashboard.html to make it accessible at /public/tenant_dashboard.html for Render deployment -->
+<!-- This file simply loads the dashboard from the admin folder for public access -->
+<script>window.location.replace('/admin/tenant_dashboard.html');</script>
+<noscript>
+  <meta http-equiv="refresh" content="0; url=/admin/tenant_dashboard.html">
+  <p>If you are not redirected, <a href="/admin/tenant_dashboard.html">click here</a>.</p>
+</noscript>
