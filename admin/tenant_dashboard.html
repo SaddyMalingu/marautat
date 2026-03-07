@@ -36,6 +36,7 @@
     <div class="brand">Your Brand Name <span class="badge bg-info">Live</span></div>
     <nav class="mt-3">
       <a href="#dashboard" class="nav-link active">Dashboard</a>
+      <a href="#add-agent" class="nav-link">Add Agent</a>
       <a href="#catalog" class="nav-link">Catalog</a>
       <a href="#orders" class="nav-link">Orders</a>
       <a href="#llm-usage" class="nav-link">LLM Usage</a>
@@ -141,9 +142,55 @@
           loadNotificationsSection();
         } else if (section === 'profile' || section === 'settings') {
           loadProfileSection();
+        } else if (section === 'add-agent') {
+          loadAddAgentSection();
         } else if (section === 'help' || section === 'support') {
           loadHelpSection();
         } else {
+                      // Add Agent (Tenant) section
+                      async function loadAddAgentSection() {
+                        document.getElementById('tenant-spa-content').innerHTML = `
+                          <h2 class='mb-3'><i class='fa-solid fa-user-plus'></i> Add New Agent / Tenant</h2>
+                          <form id='addAgentForm' class='card p-3 mb-3'>
+                            <div class='mb-2'><label>Business Name</label><input type='text' class='form-control' name='business_name' required /></div>
+                            <div class='mb-2'><label>Contact Person Name</label><input type='text' class='form-control' name='contact_person_name' required /></div>
+                            <div class='mb-2'><label>Contact Phone Number</label><input type='text' class='form-control' name='contact_phone' required /></div>
+                            <div class='mb-2'><label>Contact Email</label><input type='email' class='form-control' name='contact_email' /></div>
+                            <div class='mb-2'><label>Business Address/Location</label><input type='text' class='form-control' name='business_address' /></div>
+                            <div class='mb-2'><label>Business Description</label><textarea class='form-control' name='business_description'></textarea></div>
+                            <div class='mb-2'><label>Logo or Branding (URL)</label><input type='text' class='form-control' name='logo' /></div>
+                            <div class='mb-2'><label>Industry/Category</label><input type='text' class='form-control' name='industry' /></div>
+                            <div class='mb-2'><label>Status</label>
+                              <select class='form-control' name='status'>
+                                <option value='active'>Active</option>
+                                <option value='inactive'>Inactive</option>
+                              </select>
+                            </div>
+                            <div class='mb-2'><label>Detailed Agent Description</label><textarea class='form-control' name='agent_description'></textarea></div>
+                            <button type='submit' class='btn btn-success'>Add Agent</button>
+                          </form>
+                          <div id='add-agent-status'></div>
+                        `;
+                        document.getElementById('addAgentForm').onsubmit = async function(e) {
+                          e.preventDefault();
+                          const form = e.target;
+                          const agent = {
+                            client_name: form.business_name.value,
+                            client_phone: form.contact_phone.value,
+                            client_email: form.contact_email.value,
+                            point_of_contact_name: form.contact_person_name.value,
+                            business_address: form.business_address.value,
+                            business_description: form.business_description.value,
+                            logo: form.logo.value,
+                            industry: form.industry.value,
+                            status: form.status.value,
+                            agent_description: form.agent_description.value
+                          };
+                          // TODO: Send agent to backend API for insertion
+                          document.getElementById('add-agent-status').innerHTML = `<div class='alert alert-success mt-2'>Agent added (demo only, backend integration needed).</div>`;
+                          form.reset();
+                        };
+                      }
                   // Help & Support section
                   async function loadHelpSection() {
                     document.getElementById('tenant-spa-content').innerHTML = `<div class='text-center p-5'><div class='spinner-border text-info'></div><div>Loading help resources...</div></div>`;
