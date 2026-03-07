@@ -1,3 +1,5 @@
+<!-- Full dashboard HTML copied from admin/tenant_dashboard.html -->
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -30,6 +32,27 @@
   </style>
 </head>
 <body>
-  <!-- ...existing code from admin/tenant_dashboard.html... -->
+  <header class="tenant-header">
+    <div class="logo"><i class="fa-solid fa-store"></i> Tenant Portal</div>
+    <div class="brand">Your Brand Name <span class="badge bg-info">Live</span></div>
+    <nav class="mt-3">
+      <a href="#dashboard" class="nav-link active">Dashboard</a>
+      <a href="#add-agent" class="nav-link">Add Agent</a>
+      <a href="#catalog" class="nav-link">Catalog</a>
+      <a href="#orders" class="nav-link">Orders</a>
+      <a href="#llm-usage" class="nav-link">LLM Usage</a>
+      <a href="#profile" class="nav-link">Profile</a>
+      <a href="#help" class="nav-link">Help & Support</a>
+    </nav>
+  </header>
+  <main class="main-content">
+    <div id="tenant-spa-content">
+      <!-- ...dashboard cards and SPA content... -->
+    </div>
+  </main>
+  <footer class="footer">
+    &copy; 2026 Alphadome Platform &mdash; Tenant Portal. Need help? <a href="mailto:support@alphadome.com" class="text-info">Contact Support</a>
+  </footer>
+  <!-- ...scripts and floating WhatsApp button... -->
 </body>
 </html>
