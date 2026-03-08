@@ -186,9 +186,23 @@
                             status: form.status.value,
                             agent_description: form.agent_description.value
                           };
-                          // TODO: Send agent to backend API for insertion
-                          document.getElementById('add-agent-status').innerHTML = `<div class='alert alert-success mt-2'>Agent added (demo only, backend integration needed).</div>`;
-                          form.reset();
+                          // Send agent to backend API for insertion
+                          try {
+                            const res = await fetch('/admin/agents', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify(agent)
+                            });
+                            const result = await res.json();
+                            if (result.error) {
+                              document.getElementById('add-agent-status').innerHTML = `<div class='alert alert-danger mt-2'>${result.error}</div>`;
+                            } else {
+                              document.getElementById('add-agent-status').innerHTML = `<div class='alert alert-success mt-2'>Agent added successfully!</div>`;
+                              form.reset();
+                            }
+                          } catch (err) {
+                            document.getElementById('add-agent-status').innerHTML = `<div class='alert alert-danger mt-2'>Error: ${err.message}</div>`;
+                          }
                         };
                       }
                   // Help & Support section
