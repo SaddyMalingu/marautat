@@ -253,6 +253,27 @@ async function findTenantByPhone(tenantPhone, requireActive = true) {
   return rows.find(isTenantRecordActive) || null;
 }
 
+function isMissingTableInSchemaCache(error) {
+  const msg = String(error?.message || "").toLowerCase();
+  return msg.includes("could not find the table") || msg.includes("schema cache");
+}
+
+async function resolveAlphadomeTenantByPhone(tenantPhone) {
+  const candidates = buildPhoneCandidates(tenantPhone);
+  for (const phone of candidates) {
+    const { data, error } = await supabase.rpc("get_tenant_by_wa", {
+      business_phone: phone,
+    });
+    if (error) {
+      throw error;
+    }
+    if (data?.tenant?.id) {
+      return data.tenant;
+    }
+  }
+  return null;
+}
+
 function tenantDashboardAuth(req, res, next) {
   if (!TENANT_DASHBOARD_PASS) {
     return res.status(500).send("TENANT_DASHBOARD_PASS environment variable must be set (separate from ADMIN_PASS)");
@@ -337,13 +358,25 @@ app.post("/tenant/session/logout", (req, res) => {
 // ===== TENANT TRAINING DATA/FAQ MANAGEMENT API =====
 app.get("/tenant/training", tenantSessionAuth, async (req, res) => {
   try {
-    const { tenantId } = req.tenantSession;
+    const { tenantId, tenantPhone } = req.tenantSession;
     const { data, error } = await supabase
       .from("bot_training_data")
       .select("*")
       .eq("bot_tenant_id", tenantId)
       .order("priority", { ascending: false })
       .order("confidence_score", { ascending: false });
+
+    if (error && isMissingTableInSchemaCache(error)) {
+      const tenant = await resolveAlphadomeTenantByPhone(tenantPhone);
+      if (!tenant?.id) {
+        return res.json({ training: [] });
+      }
+      const { data: rpcData, error: rpcError } = await supabase.rpc("get_training_by_tenant", {
+        p_tenant_id: tenant.id,
+      });
+      if (rpcError) return res.status(500).json({ error: rpcError.message });
+      return res.json({ training: rpcData?.items || [] });
+    }
 
     if (error) return res.status(500).json({ error: error.message });
     return res.json({ training: data || [] });
@@ -441,7 +474,7 @@ app.delete("/tenant/training/:id", tenantSessionAuth, async (req, res) => {
 // ===== TENANT CATALOG API =====
 app.get("/tenant/catalog", tenantSessionAuth, async (req, res) => {
   try {
-    const { tenantId } = req.tenantSession;
+    const { tenantId, tenantPhone } = req.tenantSession;
     const q = String(req.query.q || "").trim();
     let query = supabase
       .from("bot_products")
@@ -456,6 +489,15 @@ app.get("/tenant/catalog", tenantSessionAuth, async (req, res) => {
     }
 
     const { data, error } = await query;
+    if (error && isMissingTableInSchemaCache(error)) {
+      const { data: rpcData, error: rpcError } = await supabase.rpc("get_catalog", {
+        tenant_phone: tenantPhone,
+        q: q || null,
+      });
+      if (rpcError) return res.status(500).json({ error: rpcError.message });
+      return res.json({ items: rpcData?.items || [] });
+    }
+
     if (error) return res.status(500).json({ error: error.message });
     return res.json({ items: data || [] });
   } catch (error) {
@@ -542,6 +584,11 @@ app.get("/tenant/orders", tenantSessionAuth, async (req, res) => {
       .select("*")
       .eq("bot_tenant_id", tenantId)
       .order("created_at", { ascending: false });
+
+    if (error && isMissingTableInSchemaCache(error)) {
+      // Orders RPC is not available in this deployment yet; keep dashboard usable.
+      return res.json({ orders: [] });
+    }
 
     if (error) return res.status(500).json({ error: error.message });
     return res.json({ orders: data || [] });
