@@ -202,25 +202,33 @@ function createTenantSession(tenant) {
   };
 }
 
+function isTenantRecordActive(tenant) {
+  if (!tenant) return false;
+  if (typeof tenant.is_active === "boolean") {
+    return tenant.is_active;
+  }
+  const status = String(tenant.status || "").trim().toLowerCase();
+  if (!status) return true;
+  return status === "active";
+}
+
 async function findTenantByPhone(tenantPhone, requireActive = true) {
   const normalizedPhone = String(tenantPhone || "").trim();
   if (!normalizedPhone) return null;
 
   let query = supabase
     .from("bot_tenants")
-    .select("id, client_phone, client_name, is_active")
+    .select("*")
     .eq("client_phone", normalizedPhone)
     .limit(1);
-
-  if (requireActive) {
-    query = query.eq("is_active", true);
-  }
 
   const { data, error } = await query.maybeSingle();
   if (error) {
     throw error;
   }
-  return data || null;
+  if (!data) return null;
+  if (requireActive && !isTenantRecordActive(data)) return null;
+  return data;
 }
 
 function tenantDashboardAuth(req, res, next) {
@@ -698,10 +706,9 @@ async function loadTenantContext(req, res, next) {
         .from("bot_tenants")
         .select("*")
         .eq("whatsapp_phone_number_id", businessPhoneId)
-        .eq("is_active", true)
-        .limit(1)
-        .maybeSingle();
-      tenant = data || null;
+        .order("updated_at", { ascending: false })
+        .limit(10);
+      tenant = (data || []).find(isTenantRecordActive) || null;
       lastLookupError = error || null;
     }
 
@@ -710,11 +717,9 @@ async function loadTenantContext(req, res, next) {
         .from("bot_tenants")
         .select("*")
         .in("client_phone", businessPhoneCandidates)
-        .eq("is_active", true)
         .order("updated_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      tenant = data || null;
+        .limit(20);
+      tenant = (data || []).find(isTenantRecordActive) || null;
       lastLookupError = error || lastLookupError;
     }
 
