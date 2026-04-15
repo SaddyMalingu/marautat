@@ -2,6 +2,7 @@
 
 import express from "express";
 import axios from "axios";
+import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 import multer from "multer";
@@ -13,59 +14,7 @@ import { startHealthMonitor, runHealthCheck, incrementErrorCount } from "./utils
 
 const app = express();
 app.use(express.json());
-// ===== TENANT TRAINING DATA/FAQ MANAGEMENT API =====
-// List all training data for a tenant
-app.get("/tenant/training", async (req, res) => {
-  const tenant_phone = req.query.tenant_phone;
-  if (!tenant_phone) return res.status(400).json({ error: "Missing tenant_phone" });
-  // Get tenant ID
-  const { data: tenant, error: tenantError } = await supabase
-    .from("alphadome.bot_tenants")
-    .select("id")
-    .eq("client_phone", tenant_phone)
-    .maybeSingle();
-  if (tenantError || !tenant) return res.status(404).json({ error: "Tenant not found" });
-  // Fetch training data
-  const { data, error } = await supabase
-    .from("alphadome.bot_training_data")
-    .select("*")
-    .eq("bot_tenant_id", tenant.id)
-    .order("priority", { ascending: false })
-    .order("confidence_score", { ascending: false });
-  if (error) return res.status(500).json({ error: error.message });
-  res.json({ training: data });
-});
-
-// Add a new training/FAQ entry
-app.post("/tenant/training", async (req, res) => {
-  const { tenant_phone, question, answer, category, priority, confidence_score } = req.body;
-  if (!tenant_phone || !question || !answer) return res.status(400).json({ error: "Missing required fields" });
-  // Get tenant ID
-  const { data: tenant, error: tenantError } = await supabase
-    .from("alphadome.bot_tenants")
-    .select("id")
-    .eq("client_phone", tenant_phone)
-    .maybeSingle();
-  if (tenantError || !tenant) return res.status(404).json({ error: "Tenant not found" });
-  // Insert training entry
-  const { data, error } = await supabase
-    .from("alphadome.bot_training_data")
-    .insert([
-      {
-        bot_tenant_id: tenant.id,
-        question,
-        answer,
-        category: category || null,
-        priority: priority || 0,
-        confidence_score: confidence_score || 1.0,
-        is_active: true
-      }
-    ])
-    .select("*")
-    .maybeSingle();
-  if (error) return res.status(500).json({ error: error.message });
-  res.json({ training: data });
-});
+// Tenant APIs are defined below with session protection.
 
 // Robust request logging middleware (console + file)
 const logStream = fs.createWriteStream(path.join(process.cwd(), 'request.log'), { flags: 'a' });
@@ -128,7 +77,7 @@ const supabase = createClient(
 
 // ===== ADMIN: ADD AGENT/TENANT API =====
 // POST /admin/agents - Add a new agent/tenant
-app.post('/admin/agents', async (req, res) => {
+app.post('/admin/agents', tenantDashboardAuth, async (req, res) => {
   const {
     client_name,
     client_phone,
@@ -173,6 +122,8 @@ const DEFAULT_BRAND_ID =
   process.env.DEFAULT_BRAND_ID || "1af71403-b4c3-4eac-9aab-48ee2576a9bb";
 
 const ADMIN_PASS = process.env.ADMIN_PASS;
+const TENANT_DASHBOARD_PASS = process.env.TENANT_DASHBOARD_PASS || ADMIN_PASS;
+const TENANT_SESSION_TTL_MS = parseInt(process.env.TENANT_SESSION_TTL_MS || "28800000", 10);
 const ADMIN_DASHBOARD_ENABLED = process.env.ADMIN_DASHBOARD_ENABLED !== "false";
 const ADMIN_UPLOAD_BUCKET = process.env.ADMIN_UPLOAD_BUCKET || "product-images";
 const ADMIN_UPLOAD_MAX_MB = parseInt(process.env.ADMIN_UPLOAD_MAX_MB || "10", 10);
@@ -196,6 +147,451 @@ function adminAuth(req, res, next) {
   }
   next();
 }
+
+const tenantSessions = new Map();
+
+function getTenantPhoneFromRequest(req) {
+  const headerPhone = req.headers["x-tenant-phone"];
+  return (
+    req.query.tenant_phone ||
+    req.body?.tenant_phone ||
+    (typeof headerPhone === "string" ? headerPhone : "")
+  );
+}
+
+function getTenantSessionToken(req) {
+  const authHeader = req.headers.authorization || "";
+  if (authHeader.toLowerCase().startsWith("bearer ")) {
+    return authHeader.slice(7).trim();
+  }
+  return req.headers["x-tenant-session"] || req.query.session || "";
+}
+
+function cleanupExpiredTenantSessions() {
+  const now = Date.now();
+  for (const [token, session] of tenantSessions.entries()) {
+    if (session.expiresAt <= now) {
+      tenantSessions.delete(token);
+    }
+  }
+}
+
+function createTenantSession(tenant) {
+  cleanupExpiredTenantSessions();
+  const token = crypto.randomBytes(24).toString("hex");
+  const expiresAt = Date.now() + TENANT_SESSION_TTL_MS;
+  tenantSessions.set(token, {
+    tenantId: tenant.id,
+    tenantPhone: tenant.client_phone,
+    expiresAt,
+  });
+  return {
+    token,
+    expiresAt,
+  };
+}
+
+async function findTenantByPhone(tenantPhone, requireActive = true) {
+  const normalizedPhone = String(tenantPhone || "").trim();
+  if (!normalizedPhone) return null;
+
+  let query = supabase
+    .from("alphadome.bot_tenants")
+    .select("id, client_phone, client_name, is_active")
+    .eq("client_phone", normalizedPhone)
+    .limit(1);
+
+  if (requireActive) {
+    query = query.eq("is_active", true);
+  }
+
+  const { data, error } = await query.maybeSingle();
+  if (error) {
+    throw error;
+  }
+  return data || null;
+}
+
+function tenantDashboardAuth(req, res, next) {
+  if (!TENANT_DASHBOARD_PASS) {
+    return res.status(500).send("TENANT_DASHBOARD_PASS or ADMIN_PASS must be set");
+  }
+
+  const key = req.query.key || req.headers["x-tenant-key"];
+  if (key !== TENANT_DASHBOARD_PASS) {
+    return res.status(401).send("Unauthorized");
+  }
+
+  next();
+}
+
+function tenantSessionAuth(req, res, next) {
+  cleanupExpiredTenantSessions();
+
+  const token = String(getTenantSessionToken(req) || "").trim();
+  if (!token) {
+    return res.status(401).json({ error: "Missing tenant session token" });
+  }
+
+  const session = tenantSessions.get(token);
+  if (!session || session.expiresAt <= Date.now()) {
+    tenantSessions.delete(token);
+    return res.status(401).json({ error: "Tenant session expired or invalid" });
+  }
+
+  const requestPhone = String(getTenantPhoneFromRequest(req) || "").trim();
+  if (requestPhone && requestPhone !== session.tenantPhone) {
+    return res.status(403).json({ error: "Tenant mismatch for current session" });
+  }
+
+  req.tenantSession = session;
+  next();
+}
+
+app.post("/tenant/session/login", async (req, res) => {
+  try {
+    const tenantPhone = String(req.body?.tenant_phone || "").trim();
+    const key = req.body?.key || req.query.key;
+
+    if (!tenantPhone || !key) {
+      return res.status(400).json({ error: "tenant_phone and key are required" });
+    }
+
+    if (!TENANT_DASHBOARD_PASS || key !== TENANT_DASHBOARD_PASS) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const tenant = await findTenantByPhone(tenantPhone, true);
+    if (!tenant) {
+      return res.status(404).json({ error: "Active tenant not found" });
+    }
+
+    const session = createTenantSession(tenant);
+    return res.json({
+      ok: true,
+      token: session.token,
+      tenant_phone: tenant.client_phone,
+      tenant_name: tenant.client_name,
+      expires_at: new Date(session.expiresAt).toISOString(),
+    });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/tenant/session/logout", (req, res) => {
+  const token = String(getTenantSessionToken(req) || "").trim();
+  if (!token) {
+    return res.status(400).json({ error: "Missing tenant session token" });
+  }
+
+  const revoked = tenantSessions.delete(token);
+  return res.json({ ok: true, revoked });
+});
+
+// ===== TENANT TRAINING DATA/FAQ MANAGEMENT API =====
+app.get("/tenant/training", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+    const { data, error } = await supabase
+      .from("alphadome.bot_training_data")
+      .select("*")
+      .eq("bot_tenant_id", tenantId)
+      .order("priority", { ascending: false })
+      .order("confidence_score", { ascending: false });
+
+    if (error) return res.status(500).json({ error: error.message });
+    return res.json({ training: data || [] });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/tenant/training", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+    const { question, answer, category, priority, confidence_score, data_type } = req.body || {};
+
+    if (!question || !answer) {
+      return res.status(400).json({ error: "question and answer are required" });
+    }
+
+    const { data, error } = await supabase
+      .from("alphadome.bot_training_data")
+      .insert([
+        {
+          bot_tenant_id: tenantId,
+          data_type: data_type || "faq",
+          question,
+          answer,
+          category: category || null,
+          priority: Number.isFinite(Number(priority)) ? Number(priority) : 0,
+          confidence_score: Number.isFinite(Number(confidence_score)) ? Number(confidence_score) : 1.0,
+          is_active: true,
+        },
+      ])
+      .select("*")
+      .maybeSingle();
+
+    if (error) return res.status(500).json({ error: error.message });
+    return res.json({ training: data });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.patch("/tenant/training/:id", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+    const { id } = req.params;
+    const updates = {
+      question: req.body?.question,
+      answer: req.body?.answer,
+      category: req.body?.category,
+      priority: Number.isFinite(Number(req.body?.priority)) ? Number(req.body.priority) : undefined,
+      confidence_score: Number.isFinite(Number(req.body?.confidence_score)) ? Number(req.body.confidence_score) : undefined,
+      is_active: typeof req.body?.is_active === "boolean" ? req.body.is_active : undefined,
+      updated_at: new Date().toISOString(),
+    };
+
+    Object.keys(updates).forEach((key) => updates[key] === undefined && delete updates[key]);
+
+    const { data, error } = await supabase
+      .from("alphadome.bot_training_data")
+      .update(updates)
+      .eq("id", id)
+      .eq("bot_tenant_id", tenantId)
+      .select("*")
+      .maybeSingle();
+
+    if (error) return res.status(500).json({ error: error.message });
+    if (!data) return res.status(404).json({ error: "Training entry not found" });
+    return res.json({ training: data });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete("/tenant/training/:id", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+    const { id } = req.params;
+
+    const { data, error } = await supabase
+      .from("alphadome.bot_training_data")
+      .delete()
+      .eq("id", id)
+      .eq("bot_tenant_id", tenantId)
+      .select("id")
+      .maybeSingle();
+
+    if (error) return res.status(500).json({ error: error.message });
+    if (!data) return res.status(404).json({ error: "Training entry not found" });
+    return res.json({ ok: true, deleted_id: data.id });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// ===== TENANT CATALOG API =====
+app.get("/tenant/catalog", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+    const q = String(req.query.q || "").trim();
+    let query = supabase
+      .from("alphadome.bot_products")
+      .select("*")
+      .eq("bot_tenant_id", tenantId)
+      .eq("is_active", true)
+      .order("created_at", { ascending: false });
+
+    if (q) {
+      const needle = `%${q}%`;
+      query = query.or(`sku.ilike.${needle},name.ilike.${needle},description.ilike.${needle}`);
+    }
+
+    const { data, error } = await query;
+    if (error) return res.status(500).json({ error: error.message });
+    return res.json({ items: data || [] });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/tenant/catalog", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+    const payload = req.body || {};
+    const sku = String(payload.sku || "").trim() || generateSku(payload.name || "ITEM", "TEN");
+    const name = String(payload.name || "").trim();
+
+    if (!name) {
+      return res.status(400).json({ error: "name is required" });
+    }
+
+    const entity = {
+      bot_tenant_id: tenantId,
+      sku,
+      name,
+      description: payload.description || null,
+      price: Number.isFinite(Number(payload.price)) ? Number(payload.price) : null,
+      currency: payload.currency || "KES",
+      stock_count: Number.isFinite(Number(payload.stock_count)) ? Number(payload.stock_count) : 0,
+      image_url: payload.image_url || null,
+      metadata: payload.metadata || {},
+      is_active: payload.is_active !== false,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { data: existing } = await supabase
+      .from("alphadome.bot_products")
+      .select("id")
+      .eq("bot_tenant_id", tenantId)
+      .eq("sku", sku)
+      .limit(1)
+      .maybeSingle();
+
+    const query = existing
+      ? supabase.from("alphadome.bot_products").update(entity).eq("id", existing.id)
+      : supabase.from("alphadome.bot_products").insert([{ ...entity, created_at: new Date().toISOString() }]);
+
+    const { data, error } = await query.select("*").maybeSingle();
+    if (error) return res.status(500).json({ error: error.message });
+    return res.json({ item: data, mode: existing ? "updated" : "created" });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete("/tenant/catalog", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+    const sku = String(req.query.sku || "").trim();
+
+    if (!sku) {
+      return res.status(400).json({ error: "sku is required" });
+    }
+
+    const { data, error } = await supabase
+      .from("alphadome.bot_products")
+      .delete()
+      .eq("bot_tenant_id", tenantId)
+      .eq("sku", sku)
+      .select("id")
+      .maybeSingle();
+
+    if (error) return res.status(500).json({ error: error.message });
+    if (!data) return res.status(404).json({ error: "Product not found" });
+    return res.json({ ok: true, deleted_id: data.id });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// ===== TENANT ORDERS API =====
+app.get("/tenant/orders", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+    const { data, error } = await supabase
+      .from("alphadome.bot_orders")
+      .select("*")
+      .eq("bot_tenant_id", tenantId)
+      .order("created_at", { ascending: false });
+
+    if (error) return res.status(500).json({ error: error.message });
+    return res.json({ orders: data || [] });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/tenant/orders", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+    const { customer_name, customer_phone, order_items, total_amount, currency, status, notes } = req.body || {};
+
+    if (!Array.isArray(order_items) || !order_items.length) {
+      return res.status(400).json({ error: "order_items must be a non-empty array" });
+    }
+
+    if (!Number.isFinite(Number(total_amount))) {
+      return res.status(400).json({ error: "total_amount must be numeric" });
+    }
+
+    const { data, error } = await supabase
+      .from("alphadome.bot_orders")
+      .insert([
+        {
+          bot_tenant_id: tenantId,
+          customer_name: customer_name || null,
+          customer_phone: customer_phone || null,
+          order_items,
+          total_amount: Number(total_amount),
+          currency: currency || "KES",
+          status: status || "pending",
+          notes: notes || null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+      ])
+      .select("*")
+      .maybeSingle();
+
+    if (error) return res.status(500).json({ error: error.message });
+    return res.json({ order: data });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.patch("/tenant/orders/:id", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+    const { id } = req.params;
+    const updates = {
+      status: req.body?.status,
+      notes: req.body?.notes,
+      updated_at: new Date().toISOString(),
+    };
+
+    Object.keys(updates).forEach((key) => updates[key] === undefined && delete updates[key]);
+
+    const { data, error } = await supabase
+      .from("alphadome.bot_orders")
+      .update(updates)
+      .eq("id", id)
+      .eq("bot_tenant_id", tenantId)
+      .select("*")
+      .maybeSingle();
+
+    if (error) return res.status(500).json({ error: error.message });
+    if (!data) return res.status(404).json({ error: "Order not found" });
+    return res.json({ order: data });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete("/tenant/orders/:id", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+    const { id } = req.params;
+
+    const { data, error } = await supabase
+      .from("alphadome.bot_orders")
+      .delete()
+      .eq("id", id)
+      .eq("bot_tenant_id", tenantId)
+      .select("id")
+      .maybeSingle();
+
+    if (error) return res.status(500).json({ error: error.message });
+    if (!data) return res.status(404).json({ error: "Order not found" });
+    return res.json({ ok: true, deleted_id: data.id });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
 
 const upload = multer({
   dest: "uploads/",
@@ -620,7 +1016,7 @@ app.get("/admin", adminAuth, (req, res) => {
 });
 
 // ===== TENANT DASHBOARD =====
-app.get("/tenant-dashboard", (req, res) => {
+app.get("/tenant-dashboard", tenantDashboardAuth, (req, res) => {
   log(`Tenant dashboard loaded by ${req.ip} at ${new Date().toISOString()}`, "PAGE");
   const dashboardPath = path.join(process.cwd(), "admin", "tenant_dashboard.html");
   return res.sendFile(dashboardPath);

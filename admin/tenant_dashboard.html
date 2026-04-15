@@ -125,197 +125,226 @@
   </footer>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
   <script>
-    // SPA navigation for tenant dashboard
-    document.querySelectorAll('.nav-link').forEach(link => {
-      link.addEventListener('click', function(e) {
-        document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
-        this.classList.add('active');
-        e.preventDefault();
-        const section = this.getAttribute('href').replace('#','');
-        if (section === 'catalog') {
-          loadCatalogSection();
-        } else if (section === 'orders') {
-          loadOrdersSection();
-        } else if (section === 'llm-usage' || section === 'faq' || section === 'training' || section === 'training-data') {
-          loadTrainingSection();
-        } else if (section === 'notifications' || section === 'alerts') {
-          loadNotificationsSection();
-        } else if (section === 'profile' || section === 'settings') {
-          loadProfileSection();
-        } else if (section === 'add-agent') {
-          loadAddAgentSection();
-        } else if (section === 'help' || section === 'support') {
-          loadHelpSection();
-        } else {
-                      // Add Agent (Tenant) section
-                      async function loadAddAgentSection() {
-                        document.getElementById('tenant-spa-content').innerHTML = `
-                          <h2 class='mb-3'><i class='fa-solid fa-user-plus'></i> Add New Agent / Tenant</h2>
-                          <form id='addAgentForm' class='card p-3 mb-3'>
-                            <div class='mb-2'><label>Business Name</label><input type='text' class='form-control' name='business_name' required /></div>
-                            <div class='mb-2'><label>Contact Person Name</label><input type='text' class='form-control' name='contact_person_name' required /></div>
-                            <div class='mb-2'><label>Contact Phone Number</label><input type='text' class='form-control' name='contact_phone' required /></div>
-                            <div class='mb-2'><label>Contact Email</label><input type='email' class='form-control' name='contact_email' /></div>
-                            <div class='mb-2'><label>Business Address/Location</label><input type='text' class='form-control' name='business_address' /></div>
-                            <div class='mb-2'><label>Business Description</label><textarea class='form-control' name='business_description'></textarea></div>
-                            <div class='mb-2'><label>Logo or Branding (URL)</label><input type='text' class='form-control' name='logo' /></div>
-                            <div class='mb-2'><label>Industry/Category</label><input type='text' class='form-control' name='industry' /></div>
-                            <div class='mb-2'><label>Status</label>
-                              <select class='form-control' name='status'>
-                                <option value='active'>Active</option>
-                                <option value='inactive'>Inactive</option>
-                              </select>
-                            </div>
-                            <div class='mb-2'><label>Detailed Agent Description</label><textarea class='form-control' name='agent_description'></textarea></div>
-                            <button type='submit' class='btn btn-success'>Add Agent</button>
-                          </form>
-                          <div id='add-agent-status'></div>
-                        `;
-                        document.getElementById('addAgentForm').onsubmit = async function(e) {
-                          e.preventDefault();
-                          const form = e.target;
-                          const agent = {
-                            client_name: form.business_name.value,
-                            client_phone: form.contact_phone.value,
-                            client_email: form.contact_email.value,
-                            point_of_contact_name: form.contact_person_name.value,
-                            business_address: form.business_address.value,
-                            business_description: form.business_description.value,
-                            logo: form.logo.value,
-                            industry: form.industry.value,
-                            status: form.status.value,
-                            agent_description: form.agent_description.value
-                          };
-                          // Send agent to backend API for insertion
-                          try {
-                            const res = await fetch('/admin/agents', {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify(agent)
-                            });
-                            const result = await res.json();
-                            if (result.error) {
-                              document.getElementById('add-agent-status').innerHTML = `<div class='alert alert-danger mt-2'>${result.error}</div>`;
-                            } else {
-                              document.getElementById('add-agent-status').innerHTML = `<div class='alert alert-success mt-2'>Agent added successfully!</div>`;
-                              form.reset();
-                            }
-                          } catch (err) {
-                            document.getElementById('add-agent-status').innerHTML = `<div class='alert alert-danger mt-2'>Error: ${err.message}</div>`;
-                          }
-                        };
-                      }
-                  // Help & Support section
-                  async function loadHelpSection() {
-                    document.getElementById('tenant-spa-content').innerHTML = `<div class='text-center p-5'><div class='spinner-border text-info'></div><div>Loading help resources...</div></div>`;
-                    setTimeout(() => {
-                      document.getElementById('tenant-spa-content').innerHTML = `
-                        <h2 class='mb-3'><i class='fa-solid fa-circle-question'></i> Help & Support</h2>
-                        <div class='card p-3 mb-3 bg-dark text-light'>
-                          <h5>How can we help you?</h5>
-                          <ul class='list-group mb-3'>
-                            <li class='list-group-item bg-dark text-light'><i class='fa-solid fa-book-open text-info'></i> <b>Documentation:</b> <a href='../API_DOCUMENTATION.md' target='_blank' class='text-info'>API Docs</a></li>
-                            <li class='list-group-item bg-dark text-light'><i class='fa-solid fa-circle-info text-info'></i> <b>FAQs:</b> <a href='#' onclick='showFAQ()' class='text-info'>View Common Questions</a></li>
-                            <li class='list-group-item bg-dark text-light'><i class='fa-solid fa-envelope text-success'></i> <b>Email Support:</b> <a href='mailto:support@alphadome.com' class='text-info'>support@alphadome.com</a></li>
-                            <li class='list-group-item bg-dark text-light'><i class='fa-brands fa-whatsapp text-success'></i> <b>WhatsApp:</b> <a href='https://wa.me/254786817637' target='_blank' class='text-info'>Chat on WhatsApp</a></li>
-                          </ul>
-                          <div class='mb-2'>
-                            <b>Need more help?</b> Fill out the form below and our team will get back to you.
-                          </div>
-                          <form id='helpForm'>
-                            <div class='mb-2'><input type='text' class='form-control' name='name' placeholder='Your Name' required /></div>
-                            <div class='mb-2'><input type='email' class='form-control' name='email' placeholder='Your Email' required /></div>
-                            <div class='mb-2'><textarea class='form-control' name='message' placeholder='Describe your issue or question...' required></textarea></div>
-                            <button type='submit' class='btn btn-info'>Submit</button>
-                          </form>
-                          <div id='help-form-status'></div>
-                        </div>
-                      `;
-                      document.getElementById('helpForm').onsubmit = function(e) {
-                        e.preventDefault();
-                        document.getElementById('help-form-status').innerHTML = `<div class='alert alert-success mt-2'>Thank you! Your request has been received. (Demo only)</div>`;
-                        e.target.reset();
-                      };
-                    }, 700);
-                  }
+    const state = {
+      dashboardKey: new URLSearchParams(window.location.search).get('key') || '',
+      sessionToken: '',
+      tenantPhone: '',
+      tenantName: ''
+    };
 
-                  // Demo FAQ popup
-                  window.showFAQ = function() {
-                    alert('FAQ Demo:\n\n- How do I update my catalog?\nGo to the Catalog section and use the Add/Edit/Delete buttons.\n\n- How do I contact support?\nUse the Help & Support section or email support@alphadome.com.');
-                  };
-              // Profile & Settings management section (placeholder for backend integration)
-              async function loadProfileSection() {
-                document.getElementById('tenant-spa-content').innerHTML = `<div class='text-center p-5'><div class='spinner-border text-info'></div><div>Loading profile...</div></div>`;
-                // Placeholder: In production, fetch profile from backend
-                setTimeout(() => {
-                  document.getElementById('tenant-spa-content').innerHTML = `
-                    <h2 class='mb-3'><i class='fa-solid fa-user'></i> Profile & Settings</h2>
-                    <form id='profileForm' class='card p-3 mb-3'>
-                      <div class='mb-2'><label>Business Name</label><input type='text' class='form-control' name='business_name' value='Your Brand Name' required /></div>
-                      <div class='mb-2'><label>Contact Phone</label><input type='text' class='form-control' name='contact_phone' value='0700000000' required /></div>
-                      <div class='mb-2'><label>Contact Email</label><input type='email' class='form-control' name='contact_email' value='info@yourbrand.com' /></div>
-                      <div class='mb-2'><label>Address</label><input type='text' class='form-control' name='address' value='Nairobi, Kenya' /></div>
-                      <div class='mb-2'><label>Description</label><textarea class='form-control' name='description'>Short business description...</textarea></div>
-                      <button type='submit' class='btn btn-success'>Save Changes</button>
-                    </form>
-                    <div id='profile-save-status'></div>
-                  `;
-                  document.getElementById('profileForm').onsubmit = async function(e) {
-                    e.preventDefault();
-                    // Placeholder: In production, send updated profile to backend
-                    document.getElementById('profile-save-status').innerHTML = `<div class='alert alert-success mt-2'>Profile updated (demo only).</div>`;
-                  };
-                }, 800);
-              }
-          document.getElementById('tenant-spa-content').innerHTML = `<div class='text-center p-5'><div class='spinner-border text-info'></div><div>Loading...</div></div>`;
-          setTimeout(() => {
-            document.getElementById('tenant-spa-content').innerHTML = `<div class='text-center p-5'><h2>Coming soon: ${section}</h2></div>`;
-          }, 600);
-        }
+    const STORAGE_KEY = 'tenant_dashboard_session_v1';
+
+    function setActiveNav(section) {
+      document.querySelectorAll('.nav-link').forEach((link) => {
+        const target = (link.getAttribute('href') || '').replace('#', '');
+        link.classList.toggle('active', target === section);
       });
-    });
-        // Notifications and Alerts section (placeholder for future backend integration)
-        async function loadNotificationsSection() {
-          document.getElementById('tenant-spa-content').innerHTML = `<div class='text-center p-5'><div class='spinner-border text-info'></div><div>Loading notifications...</div></div>`;
-          // Placeholder: In production, fetch notifications from backend
-          setTimeout(() => {
-            document.getElementById('tenant-spa-content').innerHTML = `
-              <h2 class='mb-3'><i class='fa-solid fa-bell'></i> Notifications & Alerts</h2>
-              <div class='alert alert-info'>No new notifications at this time.</div>
-              <ul class='list-group mb-3'>
-                <li class='list-group-item bg-dark text-light'>
-                  <i class='fa-solid fa-circle-info text-info'></i> Example: Low stock alert for product <b>SKU-1234</b>.
-                </li>
-                <li class='list-group-item bg-dark text-light'>
-                  <i class='fa-solid fa-circle-exclamation text-warning'></i> Example: New order received from <b>Jane Doe</b>.
-                </li>
-                <li class='list-group-item bg-dark text-light'>
-                  <i class='fa-solid fa-circle-check text-success'></i> Example: Your profile was updated successfully.
-                </li>
-              </ul>
-              <div class='text-muted'>This section will show real-time alerts and important system messages for your business.</div>
-            `;
-          }, 800);
+    }
+
+    function saveSession(payload) {
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    }
+
+    function clearSession() {
+      state.sessionToken = '';
+      state.tenantPhone = '';
+      state.tenantName = '';
+      sessionStorage.removeItem(STORAGE_KEY);
+    }
+
+    function loadStoredSession() {
+      const raw = sessionStorage.getItem(STORAGE_KEY);
+      if (!raw) return false;
+      try {
+        const stored = JSON.parse(raw);
+        if (!stored?.token || !stored?.expires_at) return false;
+        if (Date.parse(stored.expires_at) <= Date.now()) {
+          sessionStorage.removeItem(STORAGE_KEY);
+          return false;
         }
-    // Training Data/FAQ management section
+        state.sessionToken = stored.token;
+        state.tenantPhone = stored.tenant_phone || '';
+        state.tenantName = stored.tenant_name || '';
+        return true;
+      } catch {
+        sessionStorage.removeItem(STORAGE_KEY);
+        return false;
+      }
+    }
+
+    async function apiFetch(url, options = {}) {
+      const headers = { ...(options.headers || {}) };
+      if (state.sessionToken) {
+        headers['x-tenant-session'] = state.sessionToken;
+      }
+
+      const response = await fetch(url, { ...options, headers });
+      if (response.status === 401 && url.startsWith('/tenant/')) {
+        clearSession();
+        renderLoginSection('Your tenant session expired. Please login again.');
+      }
+      return response;
+    }
+
+    async function performLogout() {
+      const token = state.sessionToken;
+      if (token) {
+        try {
+          await fetch('/tenant/session/logout', {
+            method: 'POST',
+            headers: { 'x-tenant-session': token }
+          });
+        } catch {
+          // Proceed with local logout even if request fails.
+        }
+      }
+      clearSession();
+      renderLoginSection('Logged out.');
+    }
+
+    function renderLoginSection(message = '') {
+      const content = document.getElementById('tenant-spa-content');
+      const keyInput = state.dashboardKey
+        ? `<input type='password' class='form-control mb-2' name='key' value='${state.dashboardKey}' readonly />`
+        : `<input type='password' class='form-control mb-2' name='key' placeholder='Dashboard access key' required />`;
+
+      content.innerHTML = `
+        <div class='card p-4 mx-auto' style='max-width:560px;'>
+          <h3 class='mb-3'><i class='fa-solid fa-right-to-bracket'></i> Tenant Login</h3>
+          <p class='text-muted'>Enter your tenant phone and dashboard key to continue.</p>
+          ${message ? `<div class='alert alert-warning'>${message}</div>` : ''}
+          <form id='tenantLoginForm'>
+            <input type='text' class='form-control mb-2' name='tenant_phone' placeholder='Tenant Phone (e.g. 2547...)' required />
+            ${keyInput}
+            <button type='submit' class='btn btn-info w-100'>Start Session</button>
+          </form>
+          <div id='tenant-login-status' class='mt-2'></div>
+        </div>
+      `;
+
+      document.getElementById('tenantLoginForm').onsubmit = async function(e) {
+        e.preventDefault();
+        const form = e.target;
+        const payload = {
+          tenant_phone: form.tenant_phone.value.trim(),
+          key: (form.key?.value || state.dashboardKey).trim()
+        };
+
+        if (!payload.tenant_phone || !payload.key) {
+          document.getElementById('tenant-login-status').innerHTML = `<div class='alert alert-danger'>tenant_phone and key are required.</div>`;
+          return;
+        }
+
+        const res = await fetch('/tenant/session/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json().catch(() => ({ error: 'Invalid response' }));
+
+        if (data.error) {
+          document.getElementById('tenant-login-status').innerHTML = `<div class='alert alert-danger'>${data.error}</div>`;
+          return;
+        }
+
+        state.sessionToken = data.token;
+        state.tenantPhone = data.tenant_phone;
+        state.tenantName = data.tenant_name || '';
+        saveSession(data);
+        renderHomeSection();
+        refreshCounters();
+      };
+    }
+
+    function renderHomeSection() {
+      const brand = document.querySelector('.tenant-header .brand');
+      if (brand) {
+        const safeName = state.tenantName || 'Tenant';
+        brand.innerHTML = `${safeName} <span class='badge bg-info'>Live</span>`;
+      }
+
+      document.getElementById('tenant-spa-content').innerHTML = `
+        <div class='alert alert-dark border border-info mb-4'>
+          Logged in as <b>${state.tenantName || 'Tenant'}</b>
+          (${state.tenantPhone || 'unknown'}).
+          <button class='btn btn-sm btn-outline-light float-end' id='tenantLogoutBtn'>Logout</button>
+        </div>
+        <div class='dashboard-cards mb-4'>
+          <div class='dashboard-card'>
+            <h3><i class='fa-solid fa-box'></i> Catalog</h3>
+            <div class='value' id='catalogCount'>--</div>
+            <div class='desc'>Products/Services</div>
+            <a href='#catalog' class='btn btn-sm btn-outline-info mt-2 w-100'>View Catalog</a>
+          </div>
+          <div class='dashboard-card'>
+            <h3><i class='fa-solid fa-cart-shopping'></i> Orders</h3>
+            <div class='value' id='orderCount'>--</div>
+            <div class='desc'>Recent Orders</div>
+            <a href='#orders' class='btn btn-sm btn-outline-info mt-2 w-100'>View Orders</a>
+          </div>
+          <div class='dashboard-card'>
+            <h3><i class='fa-solid fa-robot'></i> Training</h3>
+            <div class='value' id='llmUsage'>--</div>
+            <div class='desc'>Training entries</div>
+            <a href='#llm-usage' class='btn btn-sm btn-outline-info mt-2 w-100'>Manage Training</a>
+          </div>
+          <div class='dashboard-card'>
+            <h3><i class='fa-solid fa-user'></i> Profile</h3>
+            <div class='value'><i class='fa-solid fa-user-circle'></i></div>
+            <div class='desc'>Manage your info</div>
+            <a href='#profile' class='btn btn-sm btn-outline-info mt-2 w-100'>Edit Profile</a>
+          </div>
+        </div>
+        <section class='mt-4'>
+          <h2 class='mb-2'><i class='fa-solid fa-gauge-high'></i> Tenant Dashboard</h2>
+          <p class='text-muted mb-0'>Use the navigation links to manage catalog, orders, and training data for this tenant.</p>
+        </section>
+      `;
+
+      const logoutBtn = document.getElementById('tenantLogoutBtn');
+      if (logoutBtn) {
+        logoutBtn.onclick = performLogout;
+      }
+    }
+
+    async function refreshCounters() {
+      if (!state.sessionToken) return;
+      try {
+        const [catalogRes, ordersRes, trainingRes] = await Promise.all([
+          apiFetch('/tenant/catalog'),
+          apiFetch('/tenant/orders'),
+          apiFetch('/tenant/training')
+        ]);
+
+        const catalogData = await catalogRes.json().catch(() => ({ items: [] }));
+        const ordersData = await ordersRes.json().catch(() => ({ orders: [] }));
+        const trainingData = await trainingRes.json().catch(() => ({ training: [] }));
+
+        const catalogCount = document.getElementById('catalogCount');
+        const orderCount = document.getElementById('orderCount');
+        const llmUsage = document.getElementById('llmUsage');
+
+        if (catalogCount) catalogCount.textContent = String((catalogData.items || []).length);
+        if (orderCount) orderCount.textContent = String((ordersData.orders || []).length);
+        if (llmUsage) llmUsage.textContent = String((trainingData.training || []).length);
+      } catch {
+        // Keep dashboard usable even if counters fail.
+      }
+    }
+
     async function loadTrainingSection() {
       document.getElementById('tenant-spa-content').innerHTML = `<div class='text-center p-5'><div class='spinner-border text-info'></div><div>Loading training data...</div></div>`;
-      let tenant_phone = window.prompt('Enter your tenant phone number:');
-      if (!tenant_phone) {
-        document.getElementById('tenant-spa-content').innerHTML = `<div class='text-danger text-center p-5'>Tenant phone required.</div>`;
-        return;
-      }
-      let res = await fetch(`/tenant/training?tenant_phone=${encodeURIComponent(tenant_phone)}`);
-      let data = await res.json().catch(() => ({ error: 'Invalid response' }));
+      const res = await apiFetch('/tenant/training');
+      const data = await res.json().catch(() => ({ error: 'Invalid response' }));
       if (data.error) {
         document.getElementById('tenant-spa-content').innerHTML = `<div class='text-danger text-center p-5'>${data.error}</div>`;
         return;
       }
-      renderTrainingSection(data.training || [], tenant_phone);
+      renderTrainingSection(data.training || []);
     }
 
-    function renderTrainingSection(training, tenant_phone) {
-      let html = `
+    function renderTrainingSection(training) {
+      const html = `
         <h2 class='mb-3'><i class='fa-solid fa-robot'></i> Training Data / FAQ Management</h2>
         <button class='btn btn-info mb-3' onclick='showAddTrainingForm()'>Add Entry</button>
         <div class='table-responsive'><table class='table table-dark table-striped'>
@@ -329,8 +358,8 @@
                 <td>${entry.priority ?? ''}</td>
                 <td>${entry.is_active ? 'Active' : 'Inactive'}</td>
                 <td>
-                  <button class='btn btn-sm btn-outline-info' onclick='editTraining(${JSON.stringify(entry).replace(/'/g,"&#39;")}, "${tenant_phone}")'>Edit</button>
-                  <button class='btn btn-sm btn-outline-danger' onclick='deleteTraining("${entry.id}", "${tenant_phone}")'>Delete</button>
+                  <button class='btn btn-sm btn-outline-info' onclick='editTraining(${JSON.stringify(entry).replace(/'/g, "&#39;")})'>Edit</button>
+                  <button class='btn btn-sm btn-outline-danger' onclick='deleteTraining("${entry.id}")'>Delete</button>
                 </td>
               </tr>
             `).join('')}
@@ -341,7 +370,6 @@
       document.getElementById('tenant-spa-content').innerHTML = html;
     }
 
-    // Add/Edit/Delete training entry handlers
     window.showAddTrainingForm = function() {
       document.getElementById('training-form-modal').innerHTML = `
         <div class='card p-3 mb-3'>
@@ -361,23 +389,23 @@
         e.preventDefault();
         const form = e.target;
         const entry = {
-          tenant_phone: window.prompt('Enter your tenant phone number:'),
           question: form.question.value,
           answer: form.answer.value,
           category: form.category.value,
-          priority: form.priority.value ? parseInt(form.priority.value) : undefined,
+          priority: form.priority.value ? parseInt(form.priority.value, 10) : undefined,
           confidence_score: form.confidence_score.value ? parseFloat(form.confidence_score.value) : undefined
         };
-        let res = await fetch('/tenant/training', {
+        const res = await apiFetch('/tenant/training', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(entry)
         });
-        let data = await res.json();
+        const data = await res.json();
         if (data.error) alert(data.error);
         else alert('Entry added!');
         closeTrainingForm();
         loadTrainingSection();
+        refreshCounters();
       };
     };
 
@@ -385,7 +413,7 @@
       document.getElementById('training-form-modal').innerHTML = '';
     };
 
-    window.editTraining = function(entry, tenant_phone) {
+    window.editTraining = function(entry) {
       document.getElementById('training-form-modal').innerHTML = `
         <div class='card p-3 mb-3'>
           <h5>Edit Training/FAQ Entry</h5>
@@ -411,16 +439,16 @@
           question: form.question.value,
           answer: form.answer.value,
           category: form.category.value,
-          priority: form.priority.value ? parseInt(form.priority.value) : undefined,
+          priority: form.priority.value ? parseInt(form.priority.value, 10) : undefined,
           confidence_score: form.confidence_score.value ? parseFloat(form.confidence_score.value) : undefined,
           is_active: form.is_active.value === 'true'
         };
-        let res = await fetch(`/tenant/training/${entry.id}`, {
+        const res = await apiFetch(`/tenant/training/${entry.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(update)
         });
-        let data = await res.json();
+        const data = await res.json();
         if (data.error) alert(data.error);
         else alert('Entry updated!');
         closeTrainingForm();
@@ -428,36 +456,29 @@
       };
     };
 
-    window.deleteTraining = async function(id, tenant_phone) {
+    window.deleteTraining = async function(id) {
       if (!confirm('Are you sure you want to delete this entry?')) return;
-      let res = await fetch(`/tenant/training/${id}`, {
-        method: 'DELETE'
-      });
-      let data = await res.json();
+      const res = await apiFetch(`/tenant/training/${id}`, { method: 'DELETE' });
+      const data = await res.json();
       if (data.error) alert(data.error);
       else alert('Entry deleted!');
       loadTrainingSection();
+      refreshCounters();
     };
 
-    // Catalog management section
     async function loadCatalogSection() {
       document.getElementById('tenant-spa-content').innerHTML = `<div class='text-center p-5'><div class='spinner-border text-info'></div><div>Loading catalog...</div></div>`;
-      let tenant_phone = window.prompt('Enter your tenant phone number:');
-      if (!tenant_phone) {
-        document.getElementById('tenant-spa-content').innerHTML = `<div class='text-danger text-center p-5'>Tenant phone required.</div>`;
-        return;
-      }
-      let res = await fetch(`/admin/catalog/data?tenant_phone="${encodeURIComponent(tenant_phone)}"`);
-      let data = await res.json().catch(() => ({ error: 'Invalid response' }));
+      const res = await apiFetch('/tenant/catalog');
+      const data = await res.json().catch(() => ({ error: 'Invalid response' }));
       if (data.error) {
         document.getElementById('tenant-spa-content').innerHTML = `<div class='text-danger text-center p-5'>${data.error}</div>`;
         return;
       }
-      renderCatalogSection(data.items || [], tenant_phone);
+      renderCatalogSection(data.items || []);
     }
 
-    function renderCatalogSection(items, tenant_phone) {
-      let html = `
+    function renderCatalogSection(items) {
+      const html = `
         <h2 class='mb-3'><i class='fa-solid fa-box'></i> Catalog Management</h2>
         <button class='btn btn-info mb-3' onclick='showAddProductForm()'>Add Product</button>
         <div class='table-responsive'><table class='table table-dark table-striped'>
@@ -471,8 +492,8 @@
                 <td>${item.stock_count ?? ''}</td>
                 <td>${item.metadata?.category || ''}</td>
                 <td>
-                  <button class='btn btn-sm btn-outline-info' onclick='editProduct(${JSON.stringify(item).replace(/'/g,"&#39;")}, "${tenant_phone}")'>Edit</button>
-                  <button class='btn btn-sm btn-outline-danger' onclick='deleteProduct("${item.sku}", "${tenant_phone}")'>Delete</button>
+                  <button class='btn btn-sm btn-outline-info' onclick='editProduct(${JSON.stringify(item).replace(/'/g, "&#39;")})'>Edit</button>
+                  <button class='btn btn-sm btn-outline-danger' onclick='deleteProduct("${item.sku}")'>Delete</button>
                 </td>
               </tr>
             `).join('')}
@@ -483,16 +504,15 @@
       document.getElementById('tenant-spa-content').innerHTML = html;
     }
 
-    // Add/Edit/Delete product handlers (to be implemented)
     window.showAddProductForm = function() {
       document.getElementById('product-form-modal').innerHTML = `
         <div class='card p-3 mb-3'>
           <h5>Add Product</h5>
           <form id='addProductForm'>
-            <input type='text' name='sku' class='form-control mb-2' placeholder='SKU' required />
+            <input type='text' name='sku' class='form-control mb-2' placeholder='SKU (optional)' />
             <input type='text' name='name' class='form-control mb-2' placeholder='Name' required />
-            <input type='number' name='price' class='form-control mb-2' placeholder='Price' required />
-            <input type='number' name='stock_count' class='form-control mb-2' placeholder='Stock Count' required />
+            <input type='number' name='price' class='form-control mb-2' placeholder='Price' />
+            <input type='number' name='stock_count' class='form-control mb-2' placeholder='Stock Count' />
             <input type='text' name='category' class='form-control mb-2' placeholder='Category' />
             <button type='submit' class='btn btn-success'>Add</button>
             <button type='button' class='btn btn-secondary ms-2' onclick='closeProductForm()'>Cancel</button>
@@ -505,21 +525,21 @@
         const product = {
           sku: form.sku.value,
           name: form.name.value,
-          price: parseFloat(form.price.value),
-          stock_count: parseInt(form.stock_count.value),
-          metadata: { category: form.category.value },
-          tenant_phone: window.prompt('Enter your tenant phone number:')
+          price: form.price.value ? parseFloat(form.price.value) : null,
+          stock_count: form.stock_count.value ? parseInt(form.stock_count.value, 10) : 0,
+          metadata: { category: form.category.value }
         };
-        let res = await fetch('/admin/catalog', {
+        const res = await apiFetch('/tenant/catalog', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(product)
         });
-        let data = await res.json();
+        const data = await res.json();
         if (data.error) alert(data.error);
         else alert('Product added!');
         closeProductForm();
         loadCatalogSection();
+        refreshCounters();
       };
     };
 
@@ -527,15 +547,15 @@
       document.getElementById('product-form-modal').innerHTML = '';
     };
 
-    window.editProduct = function(item, tenant_phone) {
+    window.editProduct = function(item) {
       document.getElementById('product-form-modal').innerHTML = `
         <div class='card p-3 mb-3'>
           <h5>Edit Product</h5>
           <form id='editProductForm'>
             <input type='text' name='sku' class='form-control mb-2' value='${item.sku}' readonly />
-            <input type='text' name='name' class='form-control mb-2' value='${item.name}' required />
-            <input type='number' name='price' class='form-control mb-2' value='${item.price}' required />
-            <input type='number' name='stock_count' class='form-control mb-2' value='${item.stock_count}' required />
+            <input type='text' name='name' class='form-control mb-2' value='${item.name || ''}' required />
+            <input type='number' name='price' class='form-control mb-2' value='${item.price ?? ''}' />
+            <input type='number' name='stock_count' class='form-control mb-2' value='${item.stock_count ?? 0}' />
             <input type='text' name='category' class='form-control mb-2' value='${item.metadata?.category || ''}' />
             <button type='submit' class='btn btn-success'>Save</button>
             <button type='button' class='btn btn-secondary ms-2' onclick='closeProductForm()'>Cancel</button>
@@ -548,17 +568,16 @@
         const product = {
           sku: form.sku.value,
           name: form.name.value,
-          price: parseFloat(form.price.value),
-          stock_count: parseInt(form.stock_count.value),
-          metadata: { category: form.category.value },
-          tenant_phone: tenant_phone
+          price: form.price.value ? parseFloat(form.price.value) : null,
+          stock_count: form.stock_count.value ? parseInt(form.stock_count.value, 10) : 0,
+          metadata: { category: form.category.value }
         };
-        let res = await fetch('/admin/catalog', {
+        const res = await apiFetch('/tenant/catalog', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(product)
         });
-        let data = await res.json();
+        const data = await res.json();
         if (data.error) alert(data.error);
         else alert('Product updated!');
         closeProductForm();
@@ -566,36 +585,31 @@
       };
     };
 
-    window.deleteProduct = async function(sku, tenant_phone) {
+    window.deleteProduct = async function(sku) {
       if (!confirm('Are you sure you want to delete this product?')) return;
-      let res = await fetch(`/admin/catalog?tenant_phone=${encodeURIComponent(tenant_phone)}&sku=${encodeURIComponent(sku)}`, {
+      const res = await apiFetch(`/tenant/catalog?sku=${encodeURIComponent(sku)}`, {
         method: 'DELETE'
       });
-      let data = await res.json();
+      const data = await res.json();
       if (data.error) alert(data.error);
       else alert('Product deleted!');
       loadCatalogSection();
+      refreshCounters();
     };
 
-    // Orders management section
     async function loadOrdersSection() {
       document.getElementById('tenant-spa-content').innerHTML = `<div class='text-center p-5'><div class='spinner-border text-info'></div><div>Loading orders...</div></div>`;
-      let tenant_phone = window.prompt('Enter your tenant phone number:');
-      if (!tenant_phone) {
-        document.getElementById('tenant-spa-content').innerHTML = `<div class='text-danger text-center p-5'>Tenant phone required.</div>`;
-        return;
-      }
-      let res = await fetch(`/tenant/orders?tenant_phone=${encodeURIComponent(tenant_phone)}`);
-      let data = await res.json().catch(() => ({ error: 'Invalid response' }));
+      const res = await apiFetch('/tenant/orders');
+      const data = await res.json().catch(() => ({ error: 'Invalid response' }));
       if (data.error) {
         document.getElementById('tenant-spa-content').innerHTML = `<div class='text-danger text-center p-5'>${data.error}</div>`;
         return;
       }
-      renderOrdersSection(data.orders || [], tenant_phone);
+      renderOrdersSection(data.orders || []);
     }
 
-    function renderOrdersSection(orders, tenant_phone) {
-      let html = `
+    function renderOrdersSection(orders) {
+      const html = `
         <h2 class='mb-3'><i class='fa-solid fa-cart-shopping'></i> Orders Management</h2>
         <button class='btn btn-info mb-3' onclick='showAddOrderForm()'>Add Order</button>
         <div class='table-responsive'><table class='table table-dark table-striped'>
@@ -610,8 +624,8 @@
                 <td>${order.status}</td>
                 <td>${new Date(order.created_at).toLocaleString()}</td>
                 <td>
-                  <button class='btn btn-sm btn-outline-info' onclick='editOrder(${JSON.stringify(order).replace(/'/g,"&#39;")}, "${tenant_phone}")'>Edit</button>
-                  <button class='btn btn-sm btn-outline-danger' onclick='deleteOrder("${order.id}", "${tenant_phone}")'>Delete</button>
+                  <button class='btn btn-sm btn-outline-info' onclick='editOrder(${JSON.stringify(order).replace(/'/g, "&#39;")})'>Edit</button>
+                  <button class='btn btn-sm btn-outline-danger' onclick='deleteOrder("${order.id}")'>Delete</button>
                 </td>
               </tr>
             `).join('')}
@@ -622,7 +636,6 @@
       document.getElementById('tenant-spa-content').innerHTML = html;
     }
 
-    // Add/Edit/Delete order handlers
     window.showAddOrderForm = function() {
       document.getElementById('order-form-modal').innerHTML = `
         <div class='card p-3 mb-3'>
@@ -645,7 +658,6 @@
         let order;
         try {
           order = {
-            tenant_phone: window.prompt('Enter your tenant phone number:'),
             customer_name: form.customer_name.value,
             customer_phone: form.customer_phone.value,
             order_items: JSON.parse(form.order_items.value),
@@ -653,20 +665,21 @@
             currency: form.currency.value || 'KES',
             notes: form.notes.value
           };
-        } catch (err) {
+        } catch {
           alert('Invalid order items JSON');
           return;
         }
-        let res = await fetch('/tenant/orders', {
+        const res = await apiFetch('/tenant/orders', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(order)
         });
-        let data = await res.json();
+        const data = await res.json();
         if (data.error) alert(data.error);
         else alert('Order added!');
         closeOrderForm();
         loadOrdersSection();
+        refreshCounters();
       };
     };
 
@@ -674,7 +687,7 @@
       document.getElementById('order-form-modal').innerHTML = '';
     };
 
-    window.editOrder = function(order, tenant_phone) {
+    window.editOrder = function(order) {
       document.getElementById('order-form-modal').innerHTML = `
         <div class='card p-3 mb-3'>
           <h5>Edit Order Status</h5>
@@ -700,16 +713,16 @@
       document.getElementById('editOrderForm').onsubmit = async function(e) {
         e.preventDefault();
         const form = e.target;
-        let update = {
+        const update = {
           status: form.status.value,
           notes: form.notes.value
         };
-        let res = await fetch(`/tenant/orders/${order.id}`, {
+        const res = await apiFetch(`/tenant/orders/${order.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(update)
         });
-        let data = await res.json();
+        const data = await res.json();
         if (data.error) alert(data.error);
         else alert('Order updated!');
         closeOrderForm();
@@ -717,16 +730,146 @@
       };
     };
 
-    window.deleteOrder = async function(id, tenant_phone) {
+    window.deleteOrder = async function(id) {
       if (!confirm('Are you sure you want to delete this order?')) return;
-      let res = await fetch(`/tenant/orders/${id}`, {
-        method: 'DELETE'
-      });
-      let data = await res.json();
+      const res = await apiFetch(`/tenant/orders/${id}`, { method: 'DELETE' });
+      const data = await res.json();
       if (data.error) alert(data.error);
       else alert('Order deleted!');
       loadOrdersSection();
+      refreshCounters();
     };
+
+    async function loadProfileSection() {
+      document.getElementById('tenant-spa-content').innerHTML = `
+        <h2 class='mb-3'><i class='fa-solid fa-user'></i> Profile & Settings</h2>
+        <div class='card p-3'>
+          <div class='mb-2'><b>Tenant Name:</b> ${state.tenantName || 'N/A'}</div>
+          <div class='mb-2'><b>Tenant Phone:</b> ${state.tenantPhone || 'N/A'}</div>
+          <div class='text-muted'>Profile editing can be connected to tenant metadata endpoints next.</div>
+        </div>
+      `;
+    }
+
+    async function loadHelpSection() {
+      document.getElementById('tenant-spa-content').innerHTML = `
+        <h2 class='mb-3'><i class='fa-solid fa-circle-question'></i> Help & Support</h2>
+        <div class='card p-3 bg-dark text-light'>
+          <ul class='list-group mb-3'>
+            <li class='list-group-item bg-dark text-light'><i class='fa-solid fa-envelope text-success'></i> <b>Email:</b> <a href='mailto:support@alphadome.com' class='text-info'>support@alphadome.com</a></li>
+            <li class='list-group-item bg-dark text-light'><i class='fa-brands fa-whatsapp text-success'></i> <b>WhatsApp:</b> <a href='https://wa.me/254786817637' target='_blank' class='text-info'>Chat on WhatsApp</a></li>
+          </ul>
+          <div class='text-muted'>For technical issues, include your tenant phone and timestamp.</div>
+        </div>
+      `;
+    }
+
+    async function loadAddAgentSection() {
+      document.getElementById('tenant-spa-content').innerHTML = `
+        <h2 class='mb-3'><i class='fa-solid fa-user-plus'></i> Add New Agent / Tenant</h2>
+        <form id='addAgentForm' class='card p-3 mb-3'>
+          <div class='mb-2'><label>Business Name</label><input type='text' class='form-control' name='business_name' required /></div>
+          <div class='mb-2'><label>Contact Person Name</label><input type='text' class='form-control' name='contact_person_name' required /></div>
+          <div class='mb-2'><label>Contact Phone Number</label><input type='text' class='form-control' name='contact_phone' required /></div>
+          <div class='mb-2'><label>Contact Email</label><input type='email' class='form-control' name='contact_email' /></div>
+          <div class='mb-2'><label>Business Address/Location</label><input type='text' class='form-control' name='business_address' /></div>
+          <div class='mb-2'><label>Business Description</label><textarea class='form-control' name='business_description'></textarea></div>
+          <div class='mb-2'><label>Logo or Branding (URL)</label><input type='text' class='form-control' name='logo' /></div>
+          <div class='mb-2'><label>Industry/Category</label><input type='text' class='form-control' name='industry' /></div>
+          <div class='mb-2'><label>Status</label>
+            <select class='form-control' name='status'>
+              <option value='active'>Active</option>
+              <option value='inactive'>Inactive</option>
+            </select>
+          </div>
+          <div class='mb-2'><label>Detailed Agent Description</label><textarea class='form-control' name='agent_description'></textarea></div>
+          <button type='submit' class='btn btn-success'>Add Agent</button>
+        </form>
+        <div id='add-agent-status'></div>
+      `;
+
+      document.getElementById('addAgentForm').onsubmit = async function(e) {
+        e.preventDefault();
+        const form = e.target;
+        const agent = {
+          client_name: form.business_name.value,
+          client_phone: form.contact_phone.value,
+          client_email: form.contact_email.value,
+          point_of_contact_name: form.contact_person_name.value,
+          business_address: form.business_address.value,
+          business_description: form.business_description.value,
+          logo: form.logo.value,
+          industry: form.industry.value,
+          status: form.status.value,
+          agent_description: form.agent_description.value
+        };
+
+        const res = await fetch('/admin/agents', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-tenant-key': state.dashboardKey
+          },
+          body: JSON.stringify(agent)
+        });
+        const result = await res.json().catch(() => ({ error: 'Invalid response' }));
+
+        if (result.error) {
+          document.getElementById('add-agent-status').innerHTML = `<div class='alert alert-danger mt-2'>${result.error}</div>`;
+          return;
+        }
+
+        document.getElementById('add-agent-status').innerHTML = `<div class='alert alert-success mt-2'>Agent added successfully!</div>`;
+        form.reset();
+      };
+    }
+
+    async function navigate(section) {
+      if (!state.sessionToken && section !== 'dashboard') {
+        renderLoginSection('Login first to access tenant data.');
+        return;
+      }
+
+      setActiveNav(section);
+
+      if (section === 'catalog') return loadCatalogSection();
+      if (section === 'orders') return loadOrdersSection();
+      if (section === 'llm-usage' || section === 'faq' || section === 'training' || section === 'training-data') return loadTrainingSection();
+      if (section === 'profile' || section === 'settings') return loadProfileSection();
+      if (section === 'add-agent') return loadAddAgentSection();
+      if (section === 'help' || section === 'support') return loadHelpSection();
+
+      renderHomeSection();
+      refreshCounters();
+    }
+
+    function initNav() {
+      document.querySelectorAll('.nav-link').forEach((link) => {
+        link.addEventListener('click', (e) => {
+          e.preventDefault();
+          const section = (link.getAttribute('href') || '#dashboard').replace('#', '');
+          navigate(section);
+        });
+      });
+    }
+
+    function boot() {
+      initNav();
+      if (!state.dashboardKey) {
+        renderLoginSection('Missing key in URL. Open /tenant-dashboard?key=YOUR_KEY.');
+        return;
+      }
+
+      if (loadStoredSession()) {
+        renderHomeSection();
+        refreshCounters();
+        return;
+      }
+
+      renderLoginSection();
+    }
+
+    boot();
   </script>
   <!-- Floating WhatsApp Button -->
   <a href="https://wa.me/254786817637" target="_blank" id="floating-whatsapp" title="Chat on WhatsApp">
