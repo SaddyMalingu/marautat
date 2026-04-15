@@ -122,7 +122,18 @@ const DEFAULT_BRAND_ID =
   process.env.DEFAULT_BRAND_ID || "1af71403-b4c3-4eac-9aab-48ee2576a9bb";
 
 const ADMIN_PASS = process.env.ADMIN_PASS;
-const TENANT_DASHBOARD_PASS = process.env.TENANT_DASHBOARD_PASS || ADMIN_PASS;
+const TENANT_DASHBOARD_PASS = process.env.TENANT_DASHBOARD_PASS;
+
+// ⚠️ Enforce separation: both must be set AND different
+if (!ADMIN_PASS || !TENANT_DASHBOARD_PASS) {
+  console.warn(`⚠️  WARNING: Both ADMIN_PASS and TENANT_DASHBOARD_PASS must be set separately.`);
+  console.warn(`   - ADMIN_PASS set: ${!!ADMIN_PASS}`);
+  console.warn(`   - TENANT_DASHBOARD_PASS set: ${!!TENANT_DASHBOARD_PASS}`);
+}
+if (ADMIN_PASS && TENANT_DASHBOARD_PASS && ADMIN_PASS === TENANT_DASHBOARD_PASS) {
+  console.warn(`⚠️  WARNING: ADMIN_PASS and TENANT_DASHBOARD_PASS must be DIFFERENT for security.`);
+}
+
 const TENANT_SESSION_TTL_MS = parseInt(process.env.TENANT_SESSION_TTL_MS || "28800000", 10);
 const ADMIN_DASHBOARD_ENABLED = process.env.ADMIN_DASHBOARD_ENABLED !== "false";
 const ADMIN_UPLOAD_BUCKET = process.env.ADMIN_UPLOAD_BUCKET || "product-images";
@@ -214,7 +225,7 @@ async function findTenantByPhone(tenantPhone, requireActive = true) {
 
 function tenantDashboardAuth(req, res, next) {
   if (!TENANT_DASHBOARD_PASS) {
-    return res.status(500).send("TENANT_DASHBOARD_PASS or ADMIN_PASS must be set");
+    return res.status(500).send("TENANT_DASHBOARD_PASS environment variable must be set (separate from ADMIN_PASS)");
   }
 
   const key = req.query.key || req.headers["x-tenant-key"];
