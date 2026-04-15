@@ -212,23 +212,45 @@ function isTenantRecordActive(tenant) {
   return status === "active";
 }
 
-async function findTenantByPhone(tenantPhone, requireActive = true) {
-  const normalizedPhone = String(tenantPhone || "").trim();
-  if (!normalizedPhone) return null;
+function buildPhoneCandidates(tenantPhone) {
+  const raw = String(tenantPhone || "").trim();
+  const digits = raw.replace(/\D/g, "");
+  if (!digits) return [];
 
-  let query = supabase
+  const candidates = new Set([digits]);
+  if (digits.startsWith("0") && digits.length >= 10) {
+    candidates.add(`254${digits.slice(1)}`);
+  }
+  if (digits.startsWith("254") && digits.length >= 12) {
+    candidates.add(`0${digits.slice(3)}`);
+  }
+  if (digits.length === 9) {
+    candidates.add(`254${digits}`);
+    candidates.add(`0${digits}`);
+  }
+  return [...candidates];
+}
+
+async function findTenantByPhone(tenantPhone, requireActive = true) {
+  const candidates = buildPhoneCandidates(tenantPhone);
+  if (!candidates.length) return null;
+
+  const { data, error } = await supabase
     .from("bot_tenants")
     .select("*")
-    .eq("client_phone", normalizedPhone)
-    .limit(1);
+    .in("client_phone", candidates)
+    .order("updated_at", { ascending: false })
+    .limit(20);
 
-  const { data, error } = await query.maybeSingle();
   if (error) {
     throw error;
   }
-  if (!data) return null;
-  if (requireActive && !isTenantRecordActive(data)) return null;
-  return data;
+
+  const rows = data || [];
+  if (!rows.length) return null;
+  if (!requireActive) return rows[0];
+
+  return rows.find(isTenantRecordActive) || null;
 }
 
 function tenantDashboardAuth(req, res, next) {
@@ -282,7 +304,11 @@ app.post("/tenant/session/login", async (req, res) => {
 
     const tenant = await findTenantByPhone(tenantPhone, true);
     if (!tenant) {
-      return res.status(404).json({ error: "Active tenant not found" });
+      const existingTenant = await findTenantByPhone(tenantPhone, false);
+      if (existingTenant) {
+        return res.status(403).json({ error: "Tenant found but inactive" });
+      }
+      return res.status(404).json({ error: "Tenant not found for provided phone" });
     }
 
     const session = createTenantSession(tenant);
