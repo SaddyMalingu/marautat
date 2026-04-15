@@ -253,49 +253,76 @@ async function loadTenantContext(req, res, next) {
     // Set your Alphadome main number here (should match your config)
     const ALPHADOME_MAIN_NUMBER = process.env.PHONE_NUMBER_ALPHADOME || "0786817637";
     const normalizePhone = (phone) => (phone || "").replace(/\D/g, "");
+    const toKeE164 = (phone) => {
+      const digits = normalizePhone(phone);
+      if (!digits) return "";
+      if (digits.startsWith("254")) return digits;
+      if (digits.startsWith("0")) return `254${digits.slice(1)}`;
+      if (digits.length === 9) return `254${digits}`;
+      return digits;
+    };
+    const toLocalKe = (phone) => {
+      const digits = normalizePhone(phone);
+      if (digits.startsWith("254") && digits.length === 12) return `0${digits.slice(3)}`;
+      return digits;
+    };
     const normalizedBusinessPhone = normalizePhone(businessPhone);
     const normalizedAlphadome = normalizePhone(ALPHADOME_MAIN_NUMBER);
+    const businessPhoneCandidates = [...new Set([
+      normalizedBusinessPhone,
+      toKeE164(normalizedBusinessPhone),
+      toLocalKe(normalizedBusinessPhone),
+    ].filter(Boolean))];
 
     // If the destination number is Alphadome, do not load any tenant
-    if (normalizedBusinessPhone === normalizedAlphadome) {
+    if (businessPhoneCandidates.includes(normalizedAlphadome) || businessPhoneCandidates.includes(toKeE164(normalizedAlphadome)) || businessPhoneCandidates.includes(toLocalKe(normalizedAlphadome))) {
       req.tenant = null;
       req.isTenantAware = false;
       log(`✓ Alphadome main number detected (${businessPhone}) - responding as Alphadome`, "SYSTEM");
       return next();
     }
 
-    // Otherwise, look up tenant strictly by WhatsApp number
-    const { data: tenantResult, error } = await supabase
-      .from("alphadome.bot_tenants")
-      .select("*")
-      .eq("whatsapp_phone_number_id", businessPhoneId)
-      .eq("client_phone", normalizedBusinessPhone)
-      .single();
+    // Resolve tenant by phone_number_id first, then fallback to known phone formats.
+    let tenant = null;
+    let lastLookupError = null;
 
-    const tenant = tenantResult || null;
+    if (businessPhoneId) {
+      const { data, error } = await supabase
+        .from("alphadome.bot_tenants")
+        .select("*")
+        .eq("whatsapp_phone_number_id", businessPhoneId)
+        .eq("is_active", true)
+        .limit(1)
+        .maybeSingle();
+      tenant = data || null;
+      lastLookupError = error || null;
+    }
 
-    if (error) {
+    if (!tenant && businessPhoneCandidates.length) {
+      const { data, error } = await supabase
+        .from("alphadome.bot_tenants")
+        .select("*")
+        .in("client_phone", businessPhoneCandidates)
+        .eq("is_active", true)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      tenant = data || null;
+      lastLookupError = error || lastLookupError;
+    }
+
+    if (lastLookupError && !tenant) {
       log(
-        `Tenant lookup error for ${businessPhoneId || normalizedBusinessPhone}: ${error.message}`,
+        `Tenant lookup error for ${businessPhoneId || normalizedBusinessPhone}: ${lastLookupError.message}`,
         "WARN"
       );
-      req.tenant = null;
-      req.isTenantAware = false;
-      return next();
     }
 
     if (!tenant) {
       log(
-        `No tenant found for business phone ${businessPhoneId || normalizedBusinessPhone} - using default`,
+        `No tenant found for business phone ${businessPhoneId || normalizedBusinessPhone} (candidates: ${businessPhoneCandidates.join(",") || "none"}) - using default`,
         "DEBUG"
       );
-      req.tenant = null;
-      req.isTenantAware = false;
-      return next();
-    }
-
-    if (!tenant.is_active) {
-      log(`Tenant ${tenant.client_name} is inactive - using fallback`, "WARN");
       req.tenant = null;
       req.isTenantAware = false;
       return next();

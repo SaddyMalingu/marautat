@@ -31,7 +31,7 @@ const testPayloads = [
             }],
             contacts: [{ profile: { name: 'Test User 1' }, wa_id: '254700000001' }],
             metadata: {
-              display_phone_number: '254700123456',
+              display_phone_number: '254702245555',
               phone_number_id: 'TEST_PHONE_ID_123456',
               business_account_id: 'TEST_ACCOUNT_ID_654321'
             }
@@ -60,7 +60,7 @@ const testPayloads = [
             }],
             contacts: [{ profile: { name: 'Test User 1' }, wa_id: '254700000001' }],
             metadata: {
-              display_phone_number: '254700123456',
+              display_phone_number: '254702245555',
               phone_number_id: 'TEST_PHONE_ID_123456',
               business_account_id: 'TEST_ACCOUNT_ID_654321'
             }
@@ -136,7 +136,7 @@ function analyzePayload(payload) {
 function findTenant(botPhone) {
   // In real system, would query database
   // Hardcoding test tenant
-  if (botPhone === '254700123456') {
+  if (botPhone === '254702245555') {
     return {
       id: 'test-tenant-001',
       name: 'TestBot Inc',

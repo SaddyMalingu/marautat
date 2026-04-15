@@ -78,7 +78,7 @@ async function testIncomingMessage() {
             }],
             contacts: [{ profile: { name: 'Test User' }, wa_id: '254700000001' }],
             metadata: {
-              display_phone_number: '254700123456',
+              display_phone_number: '254702245555',
               phone_number_id: 'TEST_PHONE_ID',
               business_account_id: 'TEST_ACCOUNT_ID'
             }
@@ -186,7 +186,7 @@ async function testMultipleMessages() {
             }],
             contacts: [{ profile: { name: `User ${i + 1}` }, wa_id: `25470000000${i}` }],
             metadata: {
-              display_phone_number: '254700123456',
+              display_phone_number: '254702245555',
               phone_number_id: 'TEST_PHONE_ID',
               business_account_id: 'TEST_ACCOUNT_ID'
             }

@@ -6,7 +6,7 @@
  * training entries to teach the AI about inventory, pricing, and recommendations.
  * 
  * Usage:
- *   node generate_product_training.js --tenant=254700123456
+ *   node generate_product_training.js --tenant=254702245555
  *   node generate_product_training.js --tenant-name="Kassangas Music Shop"
  *   node generate_product_training.js --all
  * 
@@ -37,7 +37,7 @@ args.forEach(arg => {
   options[key.replace(/^--/, '')] = value || true;
 });
 
-const TENANT_PHONE = options.tenant || '254700123456';
+const TENANT_PHONE = options.tenant || '254702245555';
 const TENANT_NAME = options['tenant-name'] || null;
 const PROCESS_ALL = options.all || false;
 const DRY_RUN = options['dry-run'] || false;

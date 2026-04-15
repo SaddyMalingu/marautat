@@ -27,7 +27,7 @@ const config = {
   phoneNumberId: args[0] || 'PHONE_NUMBER_ID_PLACEHOLDER',
   accessToken: args[1] || 'ACCESS_TOKEN_PLACEHOLDER',
   businessAccountId: args[2] || 'ACCOUNT_ID_PLACEHOLDER',
-  clientPhone: '254700123456', // Gideon's WhatsApp number
+  clientPhone: '254702245555', // Gideon's WhatsApp number
   clientName: 'Kassangas Music Shop',
   brandId: 'alphadome-test-brand'
 };

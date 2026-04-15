@@ -119,7 +119,7 @@ INSERT INTO alphadome.bot_tenants (
   whatsapp_access_token, ai_provider, ai_api_key, ai_model,
   is_active, is_verified, webhook_verify_token
 ) VALUES (
-  'Business Name', '254700123456', 'brand-001',
+  'Business Name', '254702245555', 'brand-001',
   'PHONE_ID_123', 'ACCOUNT_ID_456',
   'ACCESS_TOKEN_XXX', 'openai', 'sk-...', 'gpt-3.5-turbo',
   true, false, 'webhook_verify_token'
@@ -128,17 +128,17 @@ INSERT INTO alphadome.bot_tenants (
 -- 2. Insert conversation template
 INSERT INTO bot_templates (bot_tenant_id, template_name, system_prompt, tone, is_default)
 SELECT id, 'Default', 'You are a helpful bot for...', 'friendly', true
-FROM bot_tenants WHERE client_phone = '254700123456';
+FROM bot_tenants WHERE client_phone = '254702245555';
 
 -- 3. Insert FAQ entries
 INSERT INTO bot_training_data (bot_tenant_id, data_type, question, answer, priority, confidence_score)
 SELECT id, 'faq', 'Question?', 'Answer.', 10, 0.95
-FROM bot_tenants WHERE client_phone = '254700123456';
+FROM bot_tenants WHERE client_phone = '254702245555';
 
 -- 4. Insert control settings
 INSERT INTO bot_control_settings (bot_tenant_id, is_bot_enabled, max_messages_per_hour, ...)
 SELECT id, true, 100, ...
-FROM bot_tenants WHERE client_phone = '254700123456';
+FROM bot_tenants WHERE client_phone = '254702245555';
 ```
 
 ### Or Use Migration Generator
@@ -272,7 +272,7 @@ ai_processed, ai_response, error_message, created_at
 ```sql
 -- Last 10 messages for a tenant
 SELECT * FROM bot_message_logs
-WHERE bot_tenant_id = (SELECT id FROM bot_tenants WHERE client_phone = '254700123456')
+WHERE bot_tenant_id = (SELECT id FROM bot_tenants WHERE client_phone = '254702245555')
 ORDER BY created_at DESC
 LIMIT 10;
 

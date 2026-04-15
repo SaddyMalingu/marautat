@@ -64,7 +64,7 @@ Content-Type: application/json
       "value": {
         "messaging_product": "whatsapp",
         "messages": [{
-          "from": "254700123456",
+          "from": "254702245555",
           "id": "wamid.1234567890123456",
           "timestamp": "1234567890",
           "type": "text",
@@ -74,10 +74,10 @@ Content-Type: application/json
         }],
         "contacts": [{
           "profile": { "name": "John Doe" },
-          "wa_id": "254700123456"
+          "wa_id": "254702245555"
         }],
         "metadata": {
-          "display_phone_number": "254700123456",
+          "display_phone_number": "254702245555",
           "phone_number_id": "119202345678901",
           "business_account_id": "108912345678901"
         }
@@ -187,7 +187,7 @@ Content-Type: application/json
 Tenants are uniquely identified by the **WhatsApp business phone number**:
 
 ```sql
-SELECT * FROM alphadome.bot_tenants WHERE client_phone = '254700123456';
+SELECT * FROM alphadome.bot_tenants WHERE client_phone = '254702245555';
 ```
 
 ### Tenant Not Found
@@ -202,7 +202,7 @@ If phone number doesn't exist in database:
 ```sql
 -- Tenant 1: Kassangas Music Shop
 INSERT INTO bot_tenants (client_phone, client_name, ...)
-VALUES ('254700123456', 'Kassangas Music Shop', ...);
+VALUES ('254702245555', 'Kassangas Music Shop', ...);
 
 -- Tenant 2: Another Business
 INSERT INTO bot_tenants (client_phone, client_name, ...)
@@ -380,7 +380,7 @@ INSERT INTO alphadome.bot_tenants (
   whatsapp_access_token, ai_provider, ai_api_key, ai_model,
   is_active, is_verified, webhook_verify_token
 ) VALUES (
-  'Kassangas Music Shop', '254700123456', 'brand-001',
+  'Kassangas Music Shop', '254702245555', 'brand-001',
   '119202345678901', '108912345678901',
   'EAAX...encrypted...', 'openai', 'sk-...encrypted...',
   'gpt-3.5-turbo', true, true, 'verify_token_123'
@@ -392,7 +392,7 @@ INSERT INTO alphadome.bot_tenants (
 INSERT INTO bot_templates (bot_tenant_id, template_name, system_prompt, tone, is_default)
 SELECT id, 'Default', 'You are a friendly customer service bot for Kassangas...',
        'friendly', true
-FROM bot_tenants WHERE client_phone = '254700123456';
+FROM bot_tenants WHERE client_phone = '254702245555';
 ```
 
 **Step 3:** Insert FAQ
@@ -402,7 +402,7 @@ SELECT id, 'faq',
   'What are your business hours?',
   'Open Monday-Friday 9AM-6PM, Saturday 10AM-4PM, Closed Sunday',
   10, 0.95
-FROM bot_tenants WHERE client_phone = '254700123456';
+FROM bot_tenants WHERE client_phone = '254702245555';
 ```
 
 ---
@@ -414,8 +414,8 @@ FROM bot_tenants WHERE client_phone = '254700123456';
 **Server flow:**
 ```
 1. Parse webhook payload
-2. Extract phone: 254700123456
-3. Query: SELECT * FROM bot_tenants WHERE client_phone = '254700123456'
+2. Extract phone: 254702245555
+3. Query: SELECT * FROM bot_tenants WHERE client_phone = '254702245555'
    → Found: Kassangas Music Shop tenant
 4. Load templates, FAQs, settings for this tenant
 5. Log inbound message

@@ -52,7 +52,7 @@ SELECT
   true
 FROM alphadome.bot_tenants bt
 JOIN alphadome.bot_products p ON p.bot_tenant_id = bt.id
-WHERE bt.client_phone = '254700123456'
+WHERE bt.client_phone = '254702245555'
   AND p.is_active = true
 ON CONFLICT DO NOTHING;
 
@@ -92,7 +92,7 @@ SELECT
   0.98,
   true
 FROM alphadome.bot_tenants
-WHERE client_phone = '254700123456'
+WHERE client_phone = '254702245555'
   AND EXISTS (
     SELECT 1 FROM alphadome.bot_products p
     WHERE p.bot_tenant_id = alphadome.bot_tenants.id
@@ -137,7 +137,7 @@ SELECT
   0.98,
   true
 FROM alphadome.bot_tenants
-WHERE client_phone = '254700123456'
+WHERE client_phone = '254702245555'
   AND EXISTS (
     SELECT 1 FROM alphadome.bot_products p
     WHERE p.bot_tenant_id = alphadome.bot_tenants.id
@@ -183,7 +183,7 @@ SELECT
   0.95,
   true
 FROM alphadome.bot_tenants
-WHERE client_phone = '254700123456'
+WHERE client_phone = '254702245555'
   AND EXISTS (
     SELECT 1 FROM alphadome.bot_products p
     WHERE p.bot_tenant_id = alphadome.bot_tenants.id
@@ -228,7 +228,7 @@ SELECT
   0.95,
   true
 FROM alphadome.bot_tenants
-WHERE client_phone = '254700123456'
+WHERE client_phone = '254702245555'
   AND EXISTS (
     SELECT 1 FROM alphadome.bot_products p
     WHERE p.bot_tenant_id = alphadome.bot_tenants.id
@@ -264,7 +264,7 @@ SELECT
   0.92,
   true
 FROM alphadome.bot_tenants
-WHERE client_phone = '254700123456'
+WHERE client_phone = '254702245555'
 ON CONFLICT DO NOTHING;
 
 -- ============================================================================
@@ -303,7 +303,7 @@ SELECT
   0.90,
   true
 FROM alphadome.bot_tenants
-WHERE client_phone = '254700123456'
+WHERE client_phone = '254702245555'
   AND EXISTS (
     SELECT 1 FROM alphadome.bot_products p
     WHERE p.bot_tenant_id = alphadome.bot_tenants.id AND p.price < 10000
@@ -346,7 +346,7 @@ SELECT
   0.90,
   true
 FROM alphadome.bot_tenants
-WHERE client_phone = '254700123456'
+WHERE client_phone = '254702245555'
   AND EXISTS (
     SELECT 1 FROM alphadome.bot_products p
     WHERE p.bot_tenant_id = alphadome.bot_tenants.id AND p.price BETWEEN 10000 AND 30000
@@ -398,7 +398,7 @@ SELECT
   0.93,
   true
 FROM alphadome.bot_tenants
-WHERE client_phone = '254700123456'
+WHERE client_phone = '254702245555'
 ON CONFLICT DO NOTHING;
 
 -- ============================================================================
@@ -436,7 +436,7 @@ SELECT
   true
 FROM alphadome.bot_tenants bt
 JOIN alphadome.bot_products p ON p.bot_tenant_id = bt.id
-WHERE bt.client_phone = '254700123456'
+WHERE bt.client_phone = '254702245555'
   AND p.is_active = true
   AND p.stock_count > 0
   AND p.stock_count <= 5
@@ -489,7 +489,7 @@ SELECT
   0.95,
   true
 FROM alphadome.bot_tenants
-WHERE client_phone = '254700123456'
+WHERE client_phone = '254702245555'
 ON CONFLICT DO NOTHING;
 
 -- ============================================================================
@@ -532,7 +532,7 @@ SELECT
   0.93,
   true
 FROM alphadome.bot_tenants
-WHERE client_phone = '254700123456'
+WHERE client_phone = '254702245555'
 ON CONFLICT DO NOTHING;
 
 -- ============================================================================
@@ -565,7 +565,7 @@ SELECT
   0.98,
   true
 FROM alphadome.bot_tenants
-WHERE client_phone = '254700123456'
+WHERE client_phone = '254702245555'
 ON CONFLICT DO NOTHING;
 
 -- ============================================================================
@@ -605,7 +605,7 @@ SELECT
   0.95,
   true
 FROM alphadome.bot_tenants bt
-WHERE bt.client_phone = '254700123456'
+WHERE bt.client_phone = '254702245555'
   AND EXISTS (
     SELECT 1 FROM alphadome.bot_collections c
     WHERE c.bot_tenant_id = bt.id AND c.name = 'Featured'
@@ -624,7 +624,7 @@ SELECT
   COUNT(*) as count
 FROM alphadome.bot_training_data
 WHERE bot_tenant_id IN (
-  SELECT id FROM alphadome.bot_tenants WHERE client_phone = '254700123456'
+  SELECT id FROM alphadome.bot_tenants WHERE client_phone = '254702245555'
 )
 GROUP BY data_type, category
 ORDER BY data_type, category;
@@ -638,7 +638,7 @@ SELECT
   confidence_score
 FROM alphadome.bot_training_data
 WHERE bot_tenant_id IN (
-  SELECT id FROM alphadome.bot_tenants WHERE client_phone = '254700123456'
+  SELECT id FROM alphadome.bot_tenants WHERE client_phone = '254702245555'
 )
 ORDER BY priority DESC, created_at DESC
 LIMIT 10;

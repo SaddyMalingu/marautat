@@ -10,7 +10,7 @@ dotenv.config();
 
 const sb = createClient(process.env.SB_URL, process.env.SB_SERVICE_ROLE_KEY);
 
-const TEST_PHONE = '254700123456';
+const TEST_PHONE = '254702245555';
 const TEST_TENANT_NAME = 'TestBot Inc';
 
 let results = { total: 0, passed: 0, failed: 0, errors: [] };

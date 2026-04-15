@@ -24,7 +24,7 @@ INSERT INTO alphadome.bot_tenants (
   metadata
 ) VALUES (
   'Kassangas Music Shop',
-  '254700123456',
+  '254702245555',
   'alphadome-test-brand',
   'PHONE_NUMBER_ID_PLACEHOLDER',
   'ACCOUNT_ID_PLACEHOLDER',
@@ -39,7 +39,7 @@ INSERT INTO alphadome.bot_tenants (
   '{
     "setup_date": "2026-02-05T23:07:19.127Z",
     "contact_person": "Gideon",
-    "contact_phone": "254700123456",
+    "contact_phone": "254702245555",
     "notes": "Multi-tenant bot for music shop customer support"
   }'::jsonb
 ) ON CONFLICT (client_phone) DO UPDATE SET
@@ -75,7 +75,7 @@ SELECT
     "created_at": "2026-02-05T23:07:19.127Z"
   }'::jsonb
 FROM alphadome.bot_tenants
-WHERE client_phone = '254700123456'
+WHERE client_phone = '254702245555'
 ON CONFLICT DO NOTHING;
 
 -- ============================================================================
@@ -102,7 +102,7 @@ SELECT
   10,
   0.95,
   true
-FROM alphadome.bot_tenants WHERE client_phone = '254700123456'
+FROM alphadome.bot_tenants WHERE client_phone = '254702245555'
 UNION ALL
 SELECT
   id,
@@ -114,7 +114,7 @@ SELECT
   9,
   0.93,
   true
-FROM alphadome.bot_tenants WHERE client_phone = '254700123456'
+FROM alphadome.bot_tenants WHERE client_phone = '254702245555'
 UNION ALL
 SELECT
   id,
@@ -126,7 +126,7 @@ SELECT
   9,
   0.92,
   true
-FROM alphadome.bot_tenants WHERE client_phone = '254700123456'
+FROM alphadome.bot_tenants WHERE client_phone = '254702245555'
 UNION ALL
 SELECT
   id,
@@ -138,7 +138,7 @@ SELECT
   8,
   0.90,
   true
-FROM alphadome.bot_tenants WHERE client_phone = '254700123456'
+FROM alphadome.bot_tenants WHERE client_phone = '254702245555'
 ON CONFLICT DO NOTHING;
 
 -- ============================================================================
@@ -193,7 +193,7 @@ SELECT
   COUNT(*) as count,
   'Should be 1' as expected
 FROM alphadome.bot_tenants
-WHERE client_phone = '254700123456'
+WHERE client_phone = '254702245555'
 UNION ALL
 
 -- Verify templates
@@ -202,7 +202,7 @@ SELECT
   COUNT(*) as count,
   'Should be >= 1' as expected
 FROM alphadome.bot_templates
-WHERE bot_tenant_id IN (SELECT id FROM alphadome.bot_tenants WHERE client_phone = '254700123456')
+WHERE bot_tenant_id IN (SELECT id FROM alphadome.bot_tenants WHERE client_phone = '254702245555')
 UNION ALL
 
 -- Verify training data
@@ -211,7 +211,7 @@ SELECT
   COUNT(*) as count,
   'Should be >= 4' as expected
 FROM alphadome.bot_training_data
-WHERE bot_tenant_id IN (SELECT id FROM alphadome.bot_tenants WHERE client_phone = '254700123456')
+WHERE bot_tenant_id IN (SELECT id FROM alphadome.bot_tenants WHERE client_phone = '254702245555')
 UNION ALL
 
 -- Verify control settings
@@ -220,7 +220,7 @@ SELECT
   COUNT(*) as count,
   'Should be 1' as expected
 FROM alphadome.bot_control_settings
-WHERE bot_tenant_id IN (SELECT id FROM alphadome.bot_tenants WHERE client_phone = '254700123456');
+WHERE bot_tenant_id IN (SELECT id FROM alphadome.bot_tenants WHERE client_phone = '254702245555');
 
 -- ============================================================================
 -- NEXT STEPS
@@ -229,16 +229,16 @@ WHERE bot_tenant_id IN (SELECT id FROM alphadome.bot_tenants WHERE client_phone 
 -- 1. Set the actual OpenAI API key:
 --    UPDATE alphadome.bot_tenants
 --    SET ai_api_key = 'sk-YOUR_ACTUAL_KEY'
---    WHERE client_phone = '254700123456';
+--    WHERE client_phone = '254702245555';
 --
 -- 2. Update webhook URL after deployment:
 --    UPDATE alphadome.bot_tenants
 --    SET webhook_url = 'https://your-deployed-domain.com/webhook'
---    WHERE client_phone = '254700123456';
+--    WHERE client_phone = '254702245555';
 --
 -- 3. After webhook verification in Meta:
 --    UPDATE alphadome.bot_tenants
 --    SET is_verified = true
---    WHERE client_phone = '254700123456';
+--    WHERE client_phone = '254702245555';
 --
 -- ============================================================================
