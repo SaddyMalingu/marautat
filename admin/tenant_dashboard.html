@@ -1,904 +1,921 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Tenant Dashboard | Alphadome</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <title>Tenant Portal | Alphadome</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
   <style>
-    body { font-family: 'Inter', system-ui, Arial, sans-serif; background: linear-gradient(120deg, #181c2f 0%, #232a4d 100%); color: #e6e8ee; min-height: 100vh; }
-    .tenant-header { background: linear-gradient(90deg,#38bdf8 0%,#232a4d 100%); color: #fff; padding: 32px 0 24px 0; text-align: center; }
-    .tenant-header .logo { font-size: 2.2rem; font-weight: 700; letter-spacing: 1px; }
-    .tenant-header .brand { font-size: 1.2rem; color: #a5eaff; margin-top: 8px; }
-    .dashboard-cards { display: flex; flex-wrap: wrap; gap: 24px; margin: 32px auto 0 auto; justify-content: center; max-width: 1100px; }
-    .dashboard-card { background: #181c2f; border-radius: 18px; border: 1px solid #232a4d; box-shadow: 0 2px 16px 0 rgba(30,39,71,0.10); padding: 32px 24px 28px 24px; flex: 1 1 220px; min-width: 180px; max-width: 340px; transition: box-shadow 0.2s, transform 0.2s; margin-bottom: 8px; }
-    .dashboard-card:hover { box-shadow: 0 4px 32px 0 rgba(30,39,71,0.18); transform: translateY(-2px) scale(1.03); }
-    .dashboard-card h3 { color: #38bdf8; font-size: 1.18rem; margin-bottom: 12px; letter-spacing: 0.5px; }
-    .dashboard-card .value { font-size: 2.3rem; font-weight: 700; color: #a5eaff; margin-bottom: 4px; }
-    .dashboard-card .desc { color: #b7bfd4; font-size: 1.04rem; margin-bottom: 0; }
-    .main-content { margin: 0 auto; padding: 32px 5vw 32px 5vw; max-width: 1100px; width: 100%; }
-    @media (max-width: 991px) {
-      .dashboard-cards { gap: 12px; }
-      .dashboard-card { min-width: 140px; max-width: 100vw; padding: 20px 10px 16px 10px; }
-      .main-content { padding: 24px 2vw 24px 2vw; }
+    :root {
+      --bg-main: #0f1117;
+      --bg-card: #181c2f;
+      --bg-sidebar: #13162a;
+      --border: #1e2749;
+      --accent: #38bdf8;
+      --text-muted: #7c8db0;
+      --text-light: #d4daf0;
+      --success: #22d3a0;
+      --warning: #f59e0b;
+      --danger: #f43f5e;
     }
-    .nav-link { color: #b7bfd4; font-weight: 600; font-size: 1.08rem; margin: 0 10px; text-decoration: none; transition: color 0.2s; }
-    .nav-link.active, .nav-link:hover { color: #38bdf8; text-decoration: underline; }
-    .footer { text-align: center; padding: 18px 0 8px 0; color: #9aa5c0; font-size: 0.98rem; margin-top: 32px; border-top: 1px solid #232a4d; background: #15182b; }
+    *, *::before, *::after { box-sizing: border-box; }
+    body { font-family: 'Inter', system-ui, Arial, sans-serif; background: var(--bg-main); color: var(--text-light); min-height: 100vh; margin: 0; }
+    /* ─── App Shell ─── */
+    .app-shell { display: grid; grid-template-columns: 240px 1fr; grid-template-rows: 60px 1fr; min-height: 100vh; }
+    @media (max-width: 767px) { .app-shell { grid-template-columns: 1fr; } .sidebar { display: none; } .sidebar.open { display: flex; position: fixed; inset: 60px 0 0 0; z-index: 200; width: 240px; } }
+    /* ─── Topbar ─── */
+    .topbar { grid-column: 1 / -1; background: var(--bg-sidebar); border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 20px; gap: 14px; position: sticky; top: 0; z-index: 100; }
+    .topbar-brand { font-weight: 700; font-size: 1.05rem; color: var(--accent); flex: 1; }
+    .topbar-user { font-size: 0.88rem; color: var(--text-muted); }
+    .topbar-logout { font-size: 0.84rem; color: var(--danger); cursor: pointer; background: none; border: none; padding: 4px 10px; border-radius: 6px; transition: background 0.2s; }
+    .topbar-logout:hover { background: rgba(244,63,94,0.13); }
+    .topbar-menu-btn { display: none; background: none; border: none; color: var(--text-light); font-size: 1.2rem; cursor: pointer; }
+    @media (max-width: 767px) { .topbar-menu-btn { display: block; } }
+    /* ─── Sidebar ─── */
+    .sidebar { background: var(--bg-sidebar); border-right: 1px solid var(--border); display: flex; flex-direction: column; padding: 18px 0; overflow-y: auto; }
+    .sidebar-label { font-size: 0.72rem; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: var(--text-muted); padding: 14px 20px 6px 20px; }
+    .nav-item { display: flex; align-items: center; gap: 10px; padding: 10px 20px; cursor: pointer; font-size: 0.92rem; font-weight: 500; color: var(--text-muted); transition: all 0.15s; border-left: 3px solid transparent; user-select: none; }
+    .nav-item:hover { background: rgba(56,189,248,0.07); color: var(--text-light); }
+    .nav-item.active { background: rgba(56,189,248,0.12); color: var(--accent); border-left-color: var(--accent); }
+    .nav-icon { width: 18px; text-align: center; font-size: 0.95rem; }
+    /* ─── Main ─── */
+    .main-area { overflow-y: auto; padding: 28px 28px 60px; background: var(--bg-main); }
+    @media (max-width: 575px) { .main-area { padding: 16px 12px 60px; } }
+    /* ─── Cards ─── */
+    .section-hdr { font-size: 1.3rem; font-weight: 700; color: var(--text-light); margin-bottom: 20px; display: flex; align-items: center; gap: 10px; }
+    .section-hdr i { color: var(--accent); }
+    .stat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); gap: 14px; margin-bottom: 22px; }
+    .stat-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 18px 16px; }
+    .stat-label { font-size: 0.78rem; color: var(--text-muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+    .stat-value { font-size: 2rem; font-weight: 700; color: var(--accent); line-height: 1; margin-bottom: 4px; }
+    .stat-sub { font-size: 0.79rem; color: var(--text-muted); }
+    .panel { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 22px; margin-bottom: 18px; }
+    .panel-title { font-size: 0.93rem; font-weight: 600; color: var(--text-light); margin-bottom: 16px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+    /* ─── Tables ─── */
+    .table { color: var(--text-light); border-color: var(--border); }
+    .table thead th { color: var(--text-muted); font-size: 0.77rem; text-transform: uppercase; letter-spacing: 0.5px; border-color: var(--border); background: var(--bg-main); font-weight: 600; }
+    .table td, .table th { padding: 10px 12px; vertical-align: middle; border-color: var(--border); }
+    .table tbody tr:hover { background: rgba(56,189,248,0.04); }
+    /* ─── Forms ─── */
+    .form-control, .form-select { background: var(--bg-main); border: 1px solid var(--border); color: var(--text-light); border-radius: 8px; }
+    .form-control:focus, .form-select:focus { background: var(--bg-main); border-color: var(--accent); color: var(--text-light); box-shadow: 0 0 0 2px rgba(56,189,248,0.18); }
+    .form-control::placeholder { color: var(--text-muted); }
+    .form-label { font-size: 0.84rem; color: var(--text-muted); font-weight: 500; }
+    .form-text { color: var(--text-muted); font-size: 0.78rem; }
+    /* ─── Buttons ─── */
+    .btn-accent { background: var(--accent); color: #0f1117; border: none; font-weight: 600; border-radius: 8px; padding: 8px 18px; transition: opacity 0.2s; }
+    .btn-accent:hover { opacity: 0.88; color: #0f1117; }
+    .btn-outline-acc { border: 1px solid var(--accent); color: var(--accent); background: transparent; border-radius: 8px; padding: 6px 14px; font-size: 0.85rem; transition: all 0.2s; }
+    .btn-outline-acc:hover { background: rgba(56,189,248,0.12); color: var(--accent); }
+    .btn-danger-out { border: 1px solid var(--danger); color: var(--danger); background: transparent; border-radius: 8px; padding: 5px 12px; font-size: 0.83rem; transition: all 0.2s; }
+    .btn-danger-out:hover { background: rgba(244,63,94,0.12); color: var(--danger); }
+    /* ─── Badges ─── */
+    .badge-ok { background: rgba(34,211,160,0.15); color: var(--success); border: 1px solid rgba(34,211,160,0.3); border-radius: 20px; padding: 2px 9px; font-size: 0.74rem; font-weight: 600; }
+    .badge-off { background: rgba(244,63,94,0.12); color: var(--danger); border: 1px solid rgba(244,63,94,0.25); border-radius: 20px; padding: 2px 9px; font-size: 0.74rem; font-weight: 600; }
+    .badge-mid { background: rgba(245,158,11,0.15); color: var(--warning); border: 1px solid rgba(245,158,11,0.3); border-radius: 20px; padding: 2px 9px; font-size: 0.74rem; font-weight: 600; }
+    /* ─── Toasts ─── */
+    .toast-area { position: fixed; top: 70px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; max-width: 340px; }
+    .toast-msg { background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 11px 15px; font-size: 0.88rem; display: flex; align-items: center; gap: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); animation: slideIn 0.2s ease; }
+    .toast-ok { border-left: 3px solid var(--success); }
+    .toast-err { border-left: 3px solid var(--danger); }
+    @keyframes slideIn { from { transform: translateX(30px); opacity: 0; } to { transform: none; opacity: 1; } }
+    /* ─── Login ─── */
+    .login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #0f1117 0%, #181c2f 100%); }
+    .login-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 18px; padding: 40px 36px; width: 100%; max-width: 440px; box-shadow: 0 8px 40px rgba(0,0,0,0.4); }
+    .login-logo { text-align: center; margin-bottom: 24px; }
+    .login-logo i { font-size: 2.4rem; color: var(--accent); }
+    .login-logo h2 { font-size: 1.4rem; font-weight: 700; margin-top: 8px; color: var(--text-light); }
+    .login-logo p { font-size: 0.88rem; color: var(--text-muted); margin: 4px 0 0; }
+    /* ─── Misc ─── */
+    .spinner-sm { width: 16px; height: 16px; border-width: 2px; display: inline-block; vertical-align: text-bottom; }
+    .app-hidden { display: none !important; }
+    #floating-wa { position: fixed; right: 22px; bottom: 22px; z-index: 999; }
+    #floating-wa img { width: 52px; height: 52px; border-radius: 50%; box-shadow: 0 4px 16px rgba(0,0,0,0.3); transition: transform 0.2s; display: block; }
+    #floating-wa:hover img { transform: scale(1.08); }
+    .bar-wrap { display: flex; flex-direction: column; gap: 8px; }
+    .bar-row { display: flex; align-items: center; gap: 10px; font-size: 0.82rem; }
+    .bar-label { width: 74px; color: var(--text-muted); flex-shrink: 0; }
+    .bar-track { flex: 1; height: 7px; background: var(--bg-main); border-radius: 4px; overflow: hidden; }
+    .bar-fill { height: 100%; background: var(--accent); border-radius: 4px; transition: width 0.5s; }
+    .bar-count { width: 34px; text-align: right; color: var(--text-muted); }
+    .kv-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 0.88rem; }
+    .kv-row:last-child { border-bottom: none; }
+    .kv-key { color: var(--text-muted); }
   </style>
 </head>
 <body>
-  <header class="tenant-header">
-    <div class="logo"><i class="fa-solid fa-store"></i> Tenant Portal</div>
-    <div class="brand">Your Brand Name <span class="badge bg-info">Live</span></div>
-    <nav class="mt-3">
-      <a href="#dashboard" class="nav-link active">Dashboard</a>
-      <a href="#add-agent" class="nav-link">Add Agent</a>
-      <a href="#catalog" class="nav-link">Catalog</a>
-      <a href="#orders" class="nav-link">Orders</a>
-      <a href="#llm-usage" class="nav-link">LLM Usage</a>
-      <a href="#profile" class="nav-link">Profile</a>
-      <a href="#help" class="nav-link">Help & Support</a>
-    </nav>
+
+<div class="toast-area" id="toastArea"></div>
+
+<!-- ── Login Screen ─────────────────────────────────────────────────────── -->
+<div id="loginScreen" class="login-wrap">
+  <div class="login-card">
+    <div class="login-logo">
+      <i class="fa-solid fa-store"></i>
+      <h2>Tenant Portal</h2>
+      <p>Powered by Alphadome</p>
+    </div>
+    <div id="loginAlert" class="mb-3" style="display:none;"></div>
+    <form id="loginForm">
+      <div class="mb-3"><label class="form-label">Business Phone Number</label><input type="text" class="form-control" id="lPhone" placeholder="e.g. 0702245555 or 254702245555" autocomplete="username" required /></div>
+      <div class="mb-4"><label class="form-label">Dashboard Access Key</label><input type="password" class="form-control" id="lKey" placeholder="Your access key" autocomplete="current-password" required /></div>
+      <button type="submit" class="btn btn-accent w-100" id="loginBtn"><i class="fa-solid fa-right-to-bracket me-2"></i>Sign In</button>
+    </form>
+    <div class="text-center mt-4" style="font-size:0.8rem;color:var(--text-muted);">Need help? <a href="https://wa.me/254786817637" target="_blank" style="color:var(--accent);">Chat on WhatsApp</a></div>
+  </div>
+</div>
+
+<!-- ── App Shell ─────────────────────────────────────────────────────────── -->
+<div id="appShell" class="app-shell app-hidden">
+  <header class="topbar">
+    <button class="topbar-menu-btn" id="menuBtn"><i class="fa-solid fa-bars"></i></button>
+    <span class="topbar-brand"><i class="fa-solid fa-store me-2"></i>Tenant Portal</span>
+    <span class="topbar-user" id="topUser"></span>
+    <button class="topbar-logout" id="logoutBtn"><i class="fa-solid fa-right-from-bracket me-1"></i>Logout</button>
   </header>
-  <main class="main-content">
-    <div id="tenant-spa-content">
-      <div class="dashboard-cards mb-4">
-        <div class="dashboard-card">
-          <h3><i class="fa-solid fa-box"></i> Catalog</h3>
-          <div class="value" id="catalogCount">--</div>
-          <div class="desc">Products/Services</div>
-          <a href="#catalog" class="btn btn-sm btn-outline-info mt-2 w-100">View Catalog</a>
-        </div>
-        <div class="dashboard-card">
-          <h3><i class="fa-solid fa-cart-shopping"></i> Orders</h3>
-          <div class="value" id="orderCount">--</div>
-          <div class="desc">Recent Orders</div>
-          <a href="#orders" class="btn btn-sm btn-outline-info mt-2 w-100">View Orders</a>
-        </div>
-        <div class="dashboard-card">
-          <h3><i class="fa-solid fa-robot"></i> LLM Usage</h3>
-          <div class="value" id="llmUsage">--</div>
-          <div class="desc">LLM requests (24h)</div>
-          <a href="#llm-usage" class="btn btn-sm btn-outline-info mt-2 w-100">Usage Details</a>
-        </div>
-        <div class="dashboard-card">
-          <h3><i class="fa-solid fa-user"></i> Profile</h3>
-          <div class="value"><i class="fa-solid fa-user-circle"></i></div>
-          <div class="desc">Manage your info</div>
-          <a href="#profile" class="btn btn-sm btn-outline-info mt-2 w-100">Edit Profile</a>
-        </div>
-        <div class="dashboard-card bg-gradient bg-opacity-75" style="background:linear-gradient(120deg,#232a4d 0%,#1e2747 100%);">
-          <h3><i class="fa-solid fa-chart-line"></i> Analytics</h3>
-          <div class="value"><i class="fa-solid fa-chart-simple"></i></div>
-          <div class="desc">Your business insights</div>
-          <div class="text-center mt-2"><span class="badge bg-secondary">Coming Soon</span></div>
+
+  <nav class="sidebar" id="sidebar">
+    <div class="sidebar-label">Overview</div>
+    <div class="nav-item active" data-sec="home"><span class="nav-icon"><i class="fa-solid fa-gauge-high"></i></span>Dashboard</div>
+    <div class="nav-item" data-sec="analytics"><span class="nav-icon"><i class="fa-solid fa-chart-line"></i></span>Analytics</div>
+
+    <div class="sidebar-label">Store</div>
+    <div class="nav-item" data-sec="catalog"><span class="nav-icon"><i class="fa-solid fa-box"></i></span>Product Catalog</div>
+    <div class="nav-item" data-sec="orders"><span class="nav-icon"><i class="fa-solid fa-cart-shopping"></i></span>Orders</div>
+
+    <div class="sidebar-label">Bot</div>
+    <div class="nav-item" data-sec="training"><span class="nav-icon"><i class="fa-solid fa-robot"></i></span>Bot Training</div>
+    <div class="nav-item" data-sec="bot-config"><span class="nav-icon"><i class="fa-solid fa-sliders"></i></span>Bot Config</div>
+
+    <div class="sidebar-label">Settings</div>
+    <div class="nav-item" data-sec="profile"><span class="nav-icon"><i class="fa-solid fa-user"></i></span>Profile</div>
+    <div class="nav-item" data-sec="smtp"><span class="nav-icon"><i class="fa-solid fa-envelope"></i></span>Email Setup</div>
+    <div class="nav-item" data-sec="payments"><span class="nav-icon"><i class="fa-solid fa-credit-card"></i></span>Payments</div>
+
+    <div class="sidebar-label">More</div>
+    <div class="nav-item" data-sec="add-agent"><span class="nav-icon"><i class="fa-solid fa-user-plus"></i></span>Add Agent</div>
+    <div class="nav-item" data-sec="help"><span class="nav-icon"><i class="fa-solid fa-circle-question"></i></span>Help &amp; Support</div>
+  </nav>
+
+  <main class="main-area" id="mainArea">
+    <div id="spa"></div>
+  </main>
+</div>
+
+<a href="https://wa.me/254786817637" target="_blank" id="floating-wa" title="Chat on WhatsApp"><img src="../images/whatsapp-3d.png" alt="WhatsApp" /></a>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+"use strict";
+// ══════════════════════ STATE ══════════════════════════════════════════════
+const STORAGE_KEY = 'td_v3';
+const S = { key: new URLSearchParams(location.search).get('key') || '', token: '', phone: '', name: '', expires: null };
+let curSec = 'home';
+
+// ══════════════════════ TOAST ══════════════════════════════════════════════
+function toast(msg, type = 'ok', ms = 4200) {
+  const el = Object.assign(document.createElement('div'), { className: `toast-msg toast-${type}` });
+  const icon = type === 'ok' ? 'fa-circle-check' : 'fa-circle-exclamation';
+  const clr = type === 'ok' ? 'var(--success)' : 'var(--danger)';
+  el.innerHTML = `<i class="fa-solid ${icon}" style="color:${clr};flex-shrink:0;"></i><span>${esc(msg)}</span>`;
+  document.getElementById('toastArea').appendChild(el);
+  setTimeout(() => el.remove(), ms);
+}
+
+// ══════════════════════ UTILS ══════════════════════════════════════════════
+function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+function fmtDate(d) { return d ? new Date(d).toLocaleDateString('en-KE',{year:'numeric',month:'short',day:'numeric'}) : '—'; }
+function fmtDT(d) { return d ? new Date(d).toLocaleString('en-KE',{year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '—'; }
+function badge(s) {
+  const ok=['active','live','paid','delivered','completed','verified'];
+  const off=['inactive','cancelled','failed','suspended'];
+  const cls = ok.includes(String(s).toLowerCase()) ? 'badge-ok' : off.includes(String(s).toLowerCase()) ? 'badge-off' : 'badge-mid';
+  return `<span class="${cls}">${esc(s)}</span>`;
+}
+function spinner(text='Loading…') { return `<div class="text-center p-5"><div class="spinner-border text-info spinner-sm"></div> <span style="color:var(--text-muted);margin-left:8px;">${esc(text)}</span></div>`; }
+
+// ══════════════════════ SESSION ═══════════════════════════════════════════
+function saveSession(d) {
+  Object.assign(S, { token: d.token, phone: d.tenant_phone, name: d.tenant_name || '', expires: d.expires_at });
+  sessionStorage.setItem(STORAGE_KEY, JSON.stringify(d));
+}
+function clearSession() { Object.assign(S, { token:'', phone:'', name:'', expires:null }); sessionStorage.removeItem(STORAGE_KEY); }
+function loadSession() {
+  const raw = sessionStorage.getItem(STORAGE_KEY);
+  if (!raw) return false;
+  try {
+    const d = JSON.parse(raw);
+    if (!d?.token || Date.parse(d.expires_at) <= Date.now()) { sessionStorage.removeItem(STORAGE_KEY); return false; }
+    Object.assign(S, { token: d.token, phone: d.tenant_phone || '', name: d.tenant_name || '', expires: d.expires_at });
+    return true;
+  } catch { sessionStorage.removeItem(STORAGE_KEY); return false; }
+}
+
+// ══════════════════════ API ════════════════════════════════════════════════
+async function api(url, opts = {}) {
+  const headers = { ...(opts.headers || {}) };
+  if (S.token) headers['x-tenant-session'] = S.token;
+  const r = await fetch(url, { ...opts, headers });
+  if (r.status === 401 && url.startsWith('/tenant/')) { clearSession(); showLogin('Session expired. Please sign in again.'); }
+  return r;
+}
+
+async function apiJson(url, opts = {}) {
+  const r = await api(url, opts);
+  const d = await r.json().catch(() => ({ error: 'Invalid server response' }));
+  return { ok: r.ok, status: r.status, data: d };
+}
+
+// ══════════════════════ AUTH ═══════════════════════════════════════════════
+async function doLogin(phone, key) {
+  const r = await fetch('/tenant/session/login', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ tenant_phone: phone, key }) });
+  const d = await r.json().catch(() => ({ error: 'Invalid response' }));
+  return { ok: r.ok, data: d };
+}
+async function doLogout() {
+  if (S.token) fetch('/tenant/session/logout', { method: 'POST', headers: {'x-tenant-session': S.token} }).catch(()=>{});
+  clearSession(); showLogin();
+}
+
+// ══════════════════════ SHOW / HIDE ═══════════════════════════════════════
+function showLogin(msg = '') {
+  document.getElementById('loginScreen').classList.remove('app-hidden');
+  document.getElementById('appShell').classList.add('app-hidden');
+  const al = document.getElementById('loginAlert');
+  if (msg) { al.innerHTML = `<div class="alert alert-warning py-2 mb-0">${esc(msg)}</div>`; al.style.display = ''; }
+  else al.style.display = 'none';
+}
+function showApp() {
+  document.getElementById('loginScreen').classList.add('app-hidden');
+  document.getElementById('appShell').classList.remove('app-hidden');
+  document.getElementById('topUser').textContent = S.name || S.phone || 'Tenant';
+}
+
+// ══════════════════════ NAVIGATION ═══════════════════════════════════════
+function go(sec) {
+  curSec = sec;
+  document.querySelectorAll('.nav-item[data-sec]').forEach(el => el.classList.toggle('active', el.dataset.sec === sec));
+  document.getElementById('sidebar').classList.remove('open');
+  const sp = document.getElementById('spa');
+  sp.innerHTML = spinner();
+  const map = { home:renderHome, analytics:renderAnalytics, catalog:renderCatalog, orders:renderOrders, training:renderTraining, 'bot-config':renderBotConfig, profile:renderProfile, smtp:renderSmtp, payments:renderPayments, 'add-agent':renderAddAgent, help:renderHelp };
+  (map[sec] || renderHome)();
+}
+
+function showErr(msg) {
+  document.getElementById('spa').innerHTML = `<div class="text-center p-5"><i class="fa-solid fa-circle-exclamation fa-2x mb-3" style="color:var(--danger);"></i><div style="color:var(--danger);">${esc(msg)}</div><button class="btn btn-outline-acc mt-3" onclick="go('${esc(curSec)}')">Retry</button></div>`;
+}
+
+// ══════════════════════ HOME ═══════════════════════════════════════════════
+async function renderHome() {
+  document.getElementById('spa').innerHTML = `
+    <div class="section-hdr"><i class="fa-solid fa-gauge-high"></i> Dashboard</div>
+    <div class="stat-grid">
+      <div class="stat-card"><div class="stat-label">Catalog</div><div class="stat-value" id="hC">—</div><div class="stat-sub">Products</div></div>
+      <div class="stat-card"><div class="stat-label">Orders</div><div class="stat-value" id="hO">—</div><div class="stat-sub">All time</div></div>
+      <div class="stat-card"><div class="stat-label">Training</div><div class="stat-value" id="hT">—</div><div class="stat-sub">FAQ entries</div></div>
+      <div class="stat-card"><div class="stat-label">Conversations</div><div class="stat-value" id="hV">—</div><div class="stat-sub">All time</div></div>
+    </div>
+    <div class="row g-3">
+      <div class="col-12 col-md-6">
+        <div class="panel">
+          <div class="panel-title"><i class="fa-solid fa-circle-dot me-2" style="color:var(--success);"></i>Bot Status</div>
+          <div id="hBot" style="color:var(--text-muted);font-size:0.88rem;">Loading…</div>
         </div>
       </div>
-      <section class="mt-5">
-        <h2 class="mb-3"><i class="fa-solid fa-gauge-high"></i> Tenant Dashboard</h2>
-        <p class="text-muted mb-3">Welcome to your personalized dashboard. Here you can manage your catalog, view orders, monitor LLM usage, and update your profile. More analytics and features coming soon!</p>
-        <div class="row g-3">
-          <div class="col-12 col-md-6">
-            <div class="bg-dark rounded-3 p-3 h-100">
-              <h5 class="mb-2"><i class="fa-solid fa-box"></i> Catalog</h5>
-              <p class="small">Add, edit, or remove products/services. Keep your catalog up to date for your customers.</p>
-              <a href="#catalog" class="btn btn-outline-info btn-sm w-100">Go to Catalog</a>
-            </div>
-          </div>
-          <div class="col-12 col-md-6">
-            <div class="bg-dark rounded-3 p-3 h-100">
-              <h5 class="mb-2"><i class="fa-solid fa-cart-shopping"></i> Orders</h5>
-              <p class="small">View and manage recent orders. Track fulfillment and customer status.</p>
-              <a href="#orders" class="btn btn-outline-info btn-sm w-100">Go to Orders</a>
-            </div>
-          </div>
-          <div class="col-12 col-md-6">
-            <div class="bg-dark rounded-3 p-3 h-100">
-              <h5 class="mb-2"><i class="fa-solid fa-robot"></i> LLM Usage</h5>
-              <p class="small">Monitor your LLM/chatbot usage and costs. Export usage reports.</p>
-              <a href="#llm-usage" class="btn btn-outline-info btn-sm w-100">LLM Usage</a>
-            </div>
-          </div>
-          <div class="col-12 col-md-6">
-            <div class="bg-dark rounded-3 p-3 h-100">
-              <h5 class="mb-2"><i class="fa-solid fa-user"></i> Profile</h5>
-              <p class="small">Update your business info, contact details, and branding.</p>
-              <a href="#profile" class="btn btn-outline-info btn-sm w-100">Edit Profile</a>
-            </div>
-          </div>
-          <div class="col-12 col-md-6">
-            <div class="bg-dark rounded-3 p-3 h-100">
-              <h5 class="mb-2"><i class="fa-solid fa-chart-line"></i> Analytics <span class="badge bg-secondary">Coming Soon</span></h5>
-              <p class="small">Visualize your business performance and growth with interactive charts.</p>
-            </div>
+      <div class="col-12 col-md-6">
+        <div class="panel">
+          <div class="panel-title"><i class="fa-solid fa-bolt me-2" style="color:var(--accent);"></i>Quick Access</div>
+          <div class="d-flex flex-wrap gap-2">
+            <button class="btn btn-outline-acc btn-sm" onclick="go('catalog')"><i class="fa-solid fa-box me-1"></i>Catalog</button>
+            <button class="btn btn-outline-acc btn-sm" onclick="go('orders')"><i class="fa-solid fa-cart-shopping me-1"></i>Orders</button>
+            <button class="btn btn-outline-acc btn-sm" onclick="go('training')"><i class="fa-solid fa-robot me-1"></i>Training</button>
+            <button class="btn btn-outline-acc btn-sm" onclick="go('analytics')"><i class="fa-solid fa-chart-line me-1"></i>Analytics</button>
+            <button class="btn btn-outline-acc btn-sm" onclick="go('smtp')"><i class="fa-solid fa-envelope me-1"></i>Email</button>
+            <button class="btn btn-outline-acc btn-sm" onclick="go('payments')"><i class="fa-solid fa-credit-card me-1"></i>Payments</button>
           </div>
         </div>
-      </section>
+      </div>
+    </div>`;
+
+  const [cr, or, tr, ar, br] = await Promise.all([
+    apiJson('/tenant/catalog'), apiJson('/tenant/orders'), apiJson('/tenant/training'),
+    apiJson('/tenant/analytics'), apiJson('/tenant/bot-settings'),
+  ]);
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  set('hC', (cr.data?.items || []).length);
+  set('hO', (or.data?.orders || []).length);
+  set('hT', (tr.data?.training || []).length);
+  set('hV', ar.data?.analytics?.total_conversations ?? '—');
+  const s = br.data?.settings || {};
+  const botEl = document.getElementById('hBot');
+  if (botEl) botEl.innerHTML = `
+    <div class="kv-row"><span class="kv-key">Status</span>${badge(s.is_active ? 'active' : 'inactive')}</div>
+    <div class="kv-row"><span class="kv-key">Verified</span>${s.is_verified ? '<span class="badge-ok">Yes</span>' : '<span class="badge-off">No</span>'}</div>
+    <div class="kv-row"><span class="kv-key">AI Model</span><span>${esc(s.ai_model || '—')}</span></div>
+    <div class="kv-row"><span class="kv-key">WA Token</span>${s.has_wa_token ? '<span class="badge-ok">Configured</span>' : '<span class="badge-off">Missing</span>'}</div>`;
+}
+
+// ══════════════════════ ANALYTICS ══════════════════════════════════════════
+async function renderAnalytics() {
+  const { data } = await apiJson('/tenant/analytics');
+  const a = data?.analytics || {};
+  const days = a.last_7_days || [];
+  const maxD = Math.max(...days.map(d => d.messages), 1);
+  document.getElementById('spa').innerHTML = `
+    <div class="section-hdr"><i class="fa-solid fa-chart-line"></i> Analytics</div>
+    <div class="stat-grid">
+      <div class="stat-card"><div class="stat-label">Total</div><div class="stat-value">${a.total_conversations || 0}</div><div class="stat-sub">All conversations</div></div>
+      <div class="stat-card"><div class="stat-label">Inbound</div><div class="stat-value">${a.inbound_count || 0}</div><div class="stat-sub">Received</div></div>
+      <div class="stat-card"><div class="stat-label">Outbound</div><div class="stat-value">${a.outbound_count || 0}</div><div class="stat-sub">Sent</div></div>
+      <div class="stat-card"><div class="stat-label">LLM Calls</div><div class="stat-value">${a.llm_calls_total || 0}</div><div class="stat-sub">AI responses</div></div>
     </div>
-  </main>
-  <footer class="footer">
-    &copy; 2026 Alphadome Platform &mdash; Tenant Portal. Need help? <a href="mailto:support@alphadome.com" class="text-info">Contact Support</a>
-  </footer>
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-  <script>
-    const state = {
-      dashboardKey: new URLSearchParams(window.location.search).get('key') || '',
-      sessionToken: '',
-      tenantPhone: '',
-      tenantName: ''
-    };
+    ${a.note ? `<div class="alert py-2 mb-3" style="background:var(--bg-card);border:1px solid var(--border);font-size:0.84rem;color:var(--text-muted);">${esc(a.note)}</div>` : ''}
+    <div class="panel">
+      <div class="panel-title">Messages — Last 7 Days</div>
+      ${days.length === 0 ? '<p style="color:var(--text-muted);font-size:0.88rem;margin:0;">No data in last 7 days.</p>' : `
+        <div class="bar-wrap">${days.map(d => `
+          <div class="bar-row">
+            <span class="bar-label">${esc(d.date?.slice(5)||'')}</span>
+            <div class="bar-track"><div class="bar-fill" style="width:${Math.round(d.messages/maxD*100)}%"></div></div>
+            <span class="bar-count">${d.messages}</span>
+          </div>`).join('')}
+        </div>`}
+    </div>`;
+}
 
-    const STORAGE_KEY = 'tenant_dashboard_session_v1';
+// ══════════════════════ CATALOG ════════════════════════════════════════════
+async function renderCatalog() {
+  const { ok, data } = await apiJson('/tenant/catalog');
+  if (!ok) { showErr(data.error || 'Failed to load catalog'); return; }
+  const items = data.items || [];
+  document.getElementById('spa').innerHTML = `
+    <div class="section-hdr"><i class="fa-solid fa-box"></i> Product Catalog</div>
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+      <input type="text" class="form-control" id="catSearch" placeholder="Search products…" style="max-width:240px;" oninput="filterTbl('catTbl',this.value)" />
+      <button class="btn btn-accent" onclick="showProdForm()"><i class="fa-solid fa-plus me-2"></i>Add Product</button>
+    </div>
+    <div class="panel p-0" style="overflow:hidden;">
+      <div class="table-responsive">
+        <table class="table mb-0" id="catTbl">
+          <thead><tr><th>SKU</th><th>Name</th><th>Price</th><th>Stock</th><th>Category</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody>
+            ${items.length === 0 ? `<tr><td colspan="7" class="text-center py-4" style="color:var(--text-muted);">No products yet.</td></tr>` :
+              items.map(it => `<tr>
+                <td><code style="font-size:0.77rem;color:var(--text-muted);">${esc(it.sku||'')}</code></td>
+                <td><b>${esc(it.name||'')}</b>${it.description?`<br><span style="font-size:0.77rem;color:var(--text-muted);">${esc(it.description.substring(0,60))}</span>`:''}</td>
+                <td>${it.price!=null?`<b>${parseFloat(it.price).toLocaleString()}</b> <span style="color:var(--text-muted);">${esc(it.currency||'KES')}</span>`:'—'}</td>
+                <td>${it.stock_count??'—'}</td>
+                <td>${esc(it.metadata?.category||'')}</td>
+                <td>${badge(it.is_active!==false?'active':'inactive')}</td>
+                <td class="d-flex gap-1">
+                  <button class="btn btn-outline-acc btn-sm" onclick='showProdForm(${JSON.stringify(it).replace(/'/g,"&#39;")})'>Edit</button>
+                  <button class="btn btn-danger-out btn-sm" onclick="delProduct('${esc(it.sku||'')}')">Del</button>
+                </td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div id="prodModal"></div>`;
+}
 
-    function setActiveNav(section) {
-      document.querySelectorAll('.nav-link').forEach((link) => {
-        const target = (link.getAttribute('href') || '').replace('#', '');
-        link.classList.toggle('active', target === section);
-      });
-    }
+window.filterTbl = function(tblId, q) {
+  const lq = q.toLowerCase();
+  document.querySelectorAll(`#${tblId} tbody tr`).forEach(r => { r.style.display = r.textContent.toLowerCase().includes(lq) ? '' : 'none'; });
+};
 
-    function saveSession(payload) {
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
-    }
-
-    function clearSession() {
-      state.sessionToken = '';
-      state.tenantPhone = '';
-      state.tenantName = '';
-      sessionStorage.removeItem(STORAGE_KEY);
-    }
-
-    function loadStoredSession() {
-      const raw = sessionStorage.getItem(STORAGE_KEY);
-      if (!raw) return false;
-      try {
-        const stored = JSON.parse(raw);
-        if (!stored?.token || !stored?.expires_at) return false;
-        if (Date.parse(stored.expires_at) <= Date.now()) {
-          sessionStorage.removeItem(STORAGE_KEY);
-          return false;
-        }
-        state.sessionToken = stored.token;
-        state.tenantPhone = stored.tenant_phone || '';
-        state.tenantName = stored.tenant_name || '';
-        return true;
-      } catch {
-        sessionStorage.removeItem(STORAGE_KEY);
-        return false;
-      }
-    }
-
-    async function apiFetch(url, options = {}) {
-      const headers = { ...(options.headers || {}) };
-      if (state.sessionToken) {
-        headers['x-tenant-session'] = state.sessionToken;
-      }
-
-      const response = await fetch(url, { ...options, headers });
-      if (response.status === 401 && url.startsWith('/tenant/')) {
-        clearSession();
-        renderLoginSection('Your tenant session expired. Please login again.');
-      }
-      return response;
-    }
-
-    async function performLogout() {
-      const token = state.sessionToken;
-      if (token) {
-        try {
-          await fetch('/tenant/session/logout', {
-            method: 'POST',
-            headers: { 'x-tenant-session': token }
-          });
-        } catch {
-          // Proceed with local logout even if request fails.
-        }
-      }
-      clearSession();
-      renderLoginSection('Logged out.');
-    }
-
-    function renderLoginSection(message = '') {
-      const content = document.getElementById('tenant-spa-content');
-      const keyInput = state.dashboardKey
-        ? `<input type='password' class='form-control mb-2' name='key' value='${state.dashboardKey}' readonly />`
-        : `<input type='password' class='form-control mb-2' name='key' placeholder='Dashboard access key' required />`;
-
-      content.innerHTML = `
-        <div class='card p-4 mx-auto' style='max-width:560px;'>
-          <h3 class='mb-3'><i class='fa-solid fa-right-to-bracket'></i> Tenant Login</h3>
-          <p class='text-muted'>Enter your tenant phone and dashboard key to continue.</p>
-          ${message ? `<div class='alert alert-warning'>${message}</div>` : ''}
-          <form id='tenantLoginForm'>
-            <input type='text' class='form-control mb-2' name='tenant_phone' placeholder='Tenant Phone (e.g. 2547...)' required />
-            ${keyInput}
-            <button type='submit' class='btn btn-info w-100'>Start Session</button>
-          </form>
-          <div id='tenant-login-status' class='mt-2'></div>
+window.showProdForm = function(it) {
+  const ed = Boolean(it);
+  document.getElementById('prodModal').innerHTML = `
+    <div class="panel mt-3">
+      <div class="panel-title">${ed ? 'Edit' : 'Add'} Product</div>
+      <form id="pForm">
+        <div class="row g-3">
+          <div class="col-12 col-md-6"><label class="form-label">Name *</label><input type="text" class="form-control" name="name" value="${esc(it?.name||'')}" required /></div>
+          <div class="col-12 col-md-6"><label class="form-label">SKU${ed?' (read-only)':''}</label><input type="text" class="form-control" name="sku" value="${esc(it?.sku||'')}" ${ed?'readonly':''}/></div>
+          <div class="col-12 col-md-4"><label class="form-label">Price (KES)</label><input type="number" class="form-control" name="price" value="${it?.price??''}" step="0.01"/></div>
+          <div class="col-12 col-md-4"><label class="form-label">Currency</label><input type="text" class="form-control" name="currency" value="${esc(it?.currency||'KES')}"/></div>
+          <div class="col-12 col-md-4"><label class="form-label">Stock</label><input type="number" class="form-control" name="stock" value="${it?.stock_count??0}"/></div>
+          <div class="col-12 col-md-6"><label class="form-label">Category</label><input type="text" class="form-control" name="cat" value="${esc(it?.metadata?.category||'')}"/></div>
+          <div class="col-12 col-md-6"><label class="form-label">Image URL</label><input type="url" class="form-control" name="img" value="${esc(it?.image_url||'')}"/></div>
+          <div class="col-12"><label class="form-label">Description</label><textarea class="form-control" name="desc" rows="2">${esc(it?.description||'')}</textarea></div>
+          ${ed?`<div class="col-12 col-md-4"><label class="form-label">Status</label><select class="form-select" name="active"><option value="true" ${it.is_active!==false?'selected':''}>Active</option><option value="false" ${it.is_active===false?'selected':''}>Inactive</option></select></div>`:''}
+          <div class="col-12 d-flex gap-2"><button type="submit" class="btn btn-accent">${ed?'Save':'Add Product'}</button><button type="button" class="btn btn-outline-acc" onclick="document.getElementById('prodModal').innerHTML=''">Cancel</button></div>
         </div>
-      `;
+      </form>
+    </div>`;
+  document.getElementById('pForm').onsubmit = async function(e) {
+    e.preventDefault(); const f = e.target;
+    const payload = { sku: f.sku.value.trim(), name: f.name.value.trim(), price: f.price.value ? parseFloat(f.price.value) : null, currency: f.currency.value || 'KES', stock_count: parseInt(f.stock.value,10)||0, description: f.desc.value.trim(), image_url: f.img.value.trim()||null, metadata: { category: f.cat.value.trim() } };
+    if (ed && f.active) payload.is_active = f.active.value === 'true';
+    const { ok, data } = await apiJson('/tenant/catalog', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+    if (!ok) { toast(data.error||'Error saving product', 'err'); return; }
+    toast(ed ? 'Product updated!' : 'Product added!', 'ok'); renderCatalog();
+  };
+};
 
-      document.getElementById('tenantLoginForm').onsubmit = async function(e) {
-        e.preventDefault();
-        const form = e.target;
-        const payload = {
-          tenant_phone: form.tenant_phone.value.trim(),
-          key: (form.key?.value || state.dashboardKey).trim()
-        };
+window.delProduct = async function(sku) {
+  if (!confirm(`Delete product SKU: ${sku}?`)) return;
+  const { ok, data } = await apiJson(`/tenant/catalog?sku=${encodeURIComponent(sku)}`, { method:'DELETE' });
+  if (!ok) { toast(data.error||'Delete failed', 'err'); return; }
+  toast('Product deleted.', 'ok'); renderCatalog();
+};
 
-        if (!payload.tenant_phone || !payload.key) {
-          document.getElementById('tenant-login-status').innerHTML = `<div class='alert alert-danger'>tenant_phone and key are required.</div>`;
-          return;
-        }
+// ══════════════════════ ORDERS ═════════════════════════════════════════════
+async function renderOrders() {
+  const { ok, data } = await apiJson('/tenant/orders');
+  if (!ok) { showErr(data.error || 'Failed to load orders'); return; }
+  const orders = data.orders || [];
+  document.getElementById('spa').innerHTML = `
+    <div class="section-hdr"><i class="fa-solid fa-cart-shopping"></i> Orders</div>
+    <div class="panel p-0" style="overflow:hidden;">
+      <div class="table-responsive">
+        <table class="table mb-0">
+          <thead><tr><th>Date</th><th>Customer</th><th>Phone</th><th>Total</th><th>Status</th><th>Action</th></tr></thead>
+          <tbody>
+            ${orders.length === 0 ? `<tr><td colspan="6" class="text-center py-4" style="color:var(--text-muted);">No orders yet.</td></tr>` :
+              orders.map(o => `<tr>
+                <td style="font-size:0.8rem;">${fmtDT(o.created_at)}</td>
+                <td>${esc(o.customer_name||'—')}</td>
+                <td>${esc(o.customer_phone||'—')}</td>
+                <td><b>${parseFloat(o.total_amount||0).toLocaleString()}</b> <span style="color:var(--text-muted);">${esc(o.currency||'KES')}</span></td>
+                <td>${badge(o.status||'pending')}</td>
+                <td><button class="btn btn-outline-acc btn-sm" onclick='showOrderDetail(${JSON.stringify(o).replace(/'/g,"&#39;")})'>Manage</button></td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div id="ordModal"></div>`;
+}
 
-        const res = await fetch('/tenant/session/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-        const data = await res.json().catch(() => ({ error: 'Invalid response' }));
-
-        if (data.error) {
-          document.getElementById('tenant-login-status').innerHTML = `<div class='alert alert-danger'>${data.error}</div>`;
-          return;
-        }
-
-        state.sessionToken = data.token;
-        state.tenantPhone = data.tenant_phone;
-        state.tenantName = data.tenant_name || '';
-        saveSession(data);
-        renderHomeSection();
-        refreshCounters();
-      };
-    }
-
-    function renderHomeSection() {
-      const brand = document.querySelector('.tenant-header .brand');
-      if (brand) {
-        const safeName = state.tenantName || 'Tenant';
-        brand.innerHTML = `${safeName} <span class='badge bg-info'>Live</span>`;
-      }
-
-      document.getElementById('tenant-spa-content').innerHTML = `
-        <div class='alert alert-dark border border-info mb-4'>
-          Logged in as <b>${state.tenantName || 'Tenant'}</b>
-          (${state.tenantPhone || 'unknown'}).
-          <button class='btn btn-sm btn-outline-light float-end' id='tenantLogoutBtn'>Logout</button>
-        </div>
-        <div class='dashboard-cards mb-4'>
-          <div class='dashboard-card'>
-            <h3><i class='fa-solid fa-box'></i> Catalog</h3>
-            <div class='value' id='catalogCount'>--</div>
-            <div class='desc'>Products/Services</div>
-            <a href='#catalog' class='btn btn-sm btn-outline-info mt-2 w-100'>View Catalog</a>
+window.showOrderDetail = function(o) {
+  document.getElementById('ordModal').innerHTML = `
+    <div class="panel mt-3">
+      <div class="panel-title">Order — #${esc(String(o.id||'').slice(0,8))}…</div>
+      <div class="row g-2 mb-3" style="font-size:0.88rem;">
+        <div class="col-12 col-md-6"><span style="color:var(--text-muted);">Customer:</span> <b>${esc(o.customer_name||'—')}</b></div>
+        <div class="col-12 col-md-6"><span style="color:var(--text-muted);">Phone:</span> ${esc(o.customer_phone||'—')}</div>
+        <div class="col-12"><span style="color:var(--text-muted);">Items:</span><pre style="background:var(--bg-main);border-radius:8px;padding:10px;margin-top:5px;font-size:0.79rem;color:var(--text-muted);overflow:auto;max-height:160px;">${esc(JSON.stringify(o.order_items,null,2))}</pre></div>
+        ${o.notes ? `<div class="col-12"><span style="color:var(--text-muted);">Notes:</span> ${esc(o.notes)}</div>` : ''}
+      </div>
+      <form id="ordForm">
+        <div class="row g-3">
+          <div class="col-12 col-md-5">
+            <label class="form-label">Update Status</label>
+            <select class="form-select" name="status">
+              ${['pending','processing','paid','shipped','delivered','cancelled'].map(s=>`<option value="${s}" ${o.status===s?'selected':''}>${s[0].toUpperCase()+s.slice(1)}</option>`).join('')}
+            </select>
           </div>
-          <div class='dashboard-card'>
-            <h3><i class='fa-solid fa-cart-shopping'></i> Orders</h3>
-            <div class='value' id='orderCount'>--</div>
-            <div class='desc'>Recent Orders</div>
-            <a href='#orders' class='btn btn-sm btn-outline-info mt-2 w-100'>View Orders</a>
-          </div>
-          <div class='dashboard-card'>
-            <h3><i class='fa-solid fa-robot'></i> Training</h3>
-            <div class='value' id='llmUsage'>--</div>
-            <div class='desc'>Training entries</div>
-            <a href='#llm-usage' class='btn btn-sm btn-outline-info mt-2 w-100'>Manage Training</a>
-          </div>
-          <div class='dashboard-card'>
-            <h3><i class='fa-solid fa-user'></i> Profile</h3>
-            <div class='value'><i class='fa-solid fa-user-circle'></i></div>
-            <div class='desc'>Manage your info</div>
-            <a href='#profile' class='btn btn-sm btn-outline-info mt-2 w-100'>Edit Profile</a>
+          <div class="col-12 col-md-7"><label class="form-label">Notes</label><input type="text" class="form-control" name="notes" value="${esc(o.notes||'')}"/></div>
+          <div class="col-12 d-flex gap-2">
+            <button type="submit" class="btn btn-accent">Save</button>
+            <button type="button" class="btn btn-outline-acc" onclick="document.getElementById('ordModal').innerHTML=''">Close</button>
           </div>
         </div>
-        <section class='mt-4'>
-          <h2 class='mb-2'><i class='fa-solid fa-gauge-high'></i> Tenant Dashboard</h2>
-          <p class='text-muted mb-0'>Use the navigation links to manage catalog, orders, and training data for this tenant.</p>
-        </section>
-      `;
+      </form>
+    </div>`;
+  document.getElementById('ordForm').onsubmit = async function(e) {
+    e.preventDefault(); const f = e.target;
+    const { ok, data } = await apiJson(`/tenant/orders/${o.id}`, { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ status:f.status.value, notes:f.notes.value }) });
+    if (!ok) { toast(data.error||'Update failed','err'); return; }
+    toast('Order updated!','ok'); renderOrders();
+  };
+};
 
-      const logoutBtn = document.getElementById('tenantLogoutBtn');
-      if (logoutBtn) {
-        logoutBtn.onclick = performLogout;
-      }
-    }
-
-    async function refreshCounters() {
-      if (!state.sessionToken) return;
-      try {
-        const [catalogRes, ordersRes, trainingRes] = await Promise.all([
-          apiFetch('/tenant/catalog'),
-          apiFetch('/tenant/orders'),
-          apiFetch('/tenant/training')
-        ]);
-
-        const catalogData = await catalogRes.json().catch(() => ({ items: [] }));
-        const ordersData = await ordersRes.json().catch(() => ({ orders: [] }));
-        const trainingData = await trainingRes.json().catch(() => ({ training: [] }));
-
-        const catalogCount = document.getElementById('catalogCount');
-        const orderCount = document.getElementById('orderCount');
-        const llmUsage = document.getElementById('llmUsage');
-
-        if (catalogCount) catalogCount.textContent = String((catalogData.items || []).length);
-        if (orderCount) orderCount.textContent = String((ordersData.orders || []).length);
-        if (llmUsage) llmUsage.textContent = String((trainingData.training || []).length);
-      } catch {
-        // Keep dashboard usable even if counters fail.
-      }
-    }
-
-    async function loadTrainingSection() {
-      document.getElementById('tenant-spa-content').innerHTML = `<div class='text-center p-5'><div class='spinner-border text-info'></div><div>Loading training data...</div></div>`;
-      const res = await apiFetch('/tenant/training');
-      const data = await res.json().catch(() => ({ error: 'Invalid response' }));
-      if (data.error) {
-        document.getElementById('tenant-spa-content').innerHTML = `<div class='text-danger text-center p-5'>${data.error}</div>`;
-        return;
-      }
-      renderTrainingSection(data.training || []);
-    }
-
-    function renderTrainingSection(training) {
-      const html = `
-        <h2 class='mb-3'><i class='fa-solid fa-robot'></i> Training Data / FAQ Management</h2>
-        <button class='btn btn-info mb-3' onclick='showAddTrainingForm()'>Add Entry</button>
-        <div class='table-responsive'><table class='table table-dark table-striped'>
+// ══════════════════════ TRAINING ═══════════════════════════════════════════
+async function renderTraining() {
+  const { ok, data } = await apiJson('/tenant/training');
+  if (!ok) { showErr(data.error || 'Failed to load training data'); return; }
+  const items = data.training || [];
+  document.getElementById('spa').innerHTML = `
+    <div class="section-hdr"><i class="fa-solid fa-robot"></i> Bot Training / FAQ</div>
+    <div class="d-flex justify-content-end mb-3"><button class="btn btn-accent" onclick="showTrainForm()"><i class="fa-solid fa-plus me-2"></i>Add Entry</button></div>
+    <div class="panel p-0" style="overflow:hidden;">
+      <div class="table-responsive">
+        <table class="table mb-0">
           <thead><tr><th>Question</th><th>Answer</th><th>Category</th><th>Priority</th><th>Status</th><th>Actions</th></tr></thead>
           <tbody>
-            ${training.map(entry => `
-              <tr>
-                <td>${entry.question || ''}</td>
-                <td>${entry.answer || ''}</td>
-                <td>${entry.category || ''}</td>
-                <td>${entry.priority ?? ''}</td>
-                <td>${entry.is_active ? 'Active' : 'Inactive'}</td>
-                <td>
-                  <button class='btn btn-sm btn-outline-info' onclick='editTraining(${JSON.stringify(entry).replace(/'/g, "&#39;")})'>Edit</button>
-                  <button class='btn btn-sm btn-outline-danger' onclick='deleteTraining("${entry.id}")'>Delete</button>
+            ${items.length === 0 ? `<tr><td colspan="6" class="text-center py-4" style="color:var(--text-muted);">No training data yet. Add your first FAQ!</td></tr>` :
+              items.map(t => `<tr>
+                <td style="max-width:200px;font-size:0.86rem;">${esc(t.question||'')}</td>
+                <td style="max-width:260px;"><span style="font-size:0.8rem;color:var(--text-muted);">${esc((t.answer||'').substring(0,80))}${(t.answer||'').length>80?'…':''}</span></td>
+                <td>${esc(t.category||'—')}</td><td>${t.priority??0}</td>
+                <td>${badge(t.is_active!==false?'active':'inactive')}</td>
+                <td class="d-flex gap-1">
+                  <button class="btn btn-outline-acc btn-sm" onclick='showTrainForm(${JSON.stringify(t).replace(/'/g,"&#39;")})'>Edit</button>
+                  <button class="btn btn-danger-out btn-sm" onclick="delTrain('${esc(t.id)}')">Del</button>
                 </td>
-              </tr>
-            `).join('')}
+              </tr>`).join('')}
           </tbody>
-        </table></div>
-        <div id='training-form-modal'></div>
-      `;
-      document.getElementById('tenant-spa-content').innerHTML = html;
-    }
+        </table>
+      </div>
+    </div>
+    <div id="trainModal"></div>`;
+}
 
-    window.showAddTrainingForm = function() {
-      document.getElementById('training-form-modal').innerHTML = `
-        <div class='card p-3 mb-3'>
-          <h5>Add Training/FAQ Entry</h5>
-          <form id='addTrainingForm'>
-            <input type='text' name='question' class='form-control mb-2' placeholder='Question' required />
-            <textarea name='answer' class='form-control mb-2' placeholder='Answer' required></textarea>
-            <input type='text' name='category' class='form-control mb-2' placeholder='Category' />
-            <input type='number' name='priority' class='form-control mb-2' placeholder='Priority (higher = more important)' />
-            <input type='number' name='confidence_score' class='form-control mb-2' placeholder='Confidence Score (0-1)' step='0.01' />
-            <button type='submit' class='btn btn-success'>Add</button>
-            <button type='button' class='btn btn-secondary ms-2' onclick='closeTrainingForm()'>Cancel</button>
-          </form>
-        </div>
-      `;
-      document.getElementById('addTrainingForm').onsubmit = async function(e) {
-        e.preventDefault();
-        const form = e.target;
-        const entry = {
-          question: form.question.value,
-          answer: form.answer.value,
-          category: form.category.value,
-          priority: form.priority.value ? parseInt(form.priority.value, 10) : undefined,
-          confidence_score: form.confidence_score.value ? parseFloat(form.confidence_score.value) : undefined
-        };
-        const res = await apiFetch('/tenant/training', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(entry)
-        });
-        const data = await res.json();
-        if (data.error) alert(data.error);
-        else alert('Entry added!');
-        closeTrainingForm();
-        loadTrainingSection();
-        refreshCounters();
-      };
-    };
-
-    window.closeTrainingForm = function() {
-      document.getElementById('training-form-modal').innerHTML = '';
-    };
-
-    window.editTraining = function(entry) {
-      document.getElementById('training-form-modal').innerHTML = `
-        <div class='card p-3 mb-3'>
-          <h5>Edit Training/FAQ Entry</h5>
-          <form id='editTrainingForm'>
-            <input type='text' name='question' class='form-control mb-2' value='${entry.question || ''}' required />
-            <textarea name='answer' class='form-control mb-2' required>${entry.answer || ''}</textarea>
-            <input type='text' name='category' class='form-control mb-2' value='${entry.category || ''}' />
-            <input type='number' name='priority' class='form-control mb-2' value='${entry.priority ?? ''}' />
-            <input type='number' name='confidence_score' class='form-control mb-2' value='${entry.confidence_score ?? ''}' step='0.01' />
-            <select name='is_active' class='form-control mb-2'>
-              <option value='true' ${entry.is_active ? 'selected' : ''}>Active</option>
-              <option value='false' ${!entry.is_active ? 'selected' : ''}>Inactive</option>
-            </select>
-            <button type='submit' class='btn btn-success'>Save</button>
-            <button type='button' class='btn btn-secondary ms-2' onclick='closeTrainingForm()'>Cancel</button>
-          </form>
-        </div>
-      `;
-      document.getElementById('editTrainingForm').onsubmit = async function(e) {
-        e.preventDefault();
-        const form = e.target;
-        const update = {
-          question: form.question.value,
-          answer: form.answer.value,
-          category: form.category.value,
-          priority: form.priority.value ? parseInt(form.priority.value, 10) : undefined,
-          confidence_score: form.confidence_score.value ? parseFloat(form.confidence_score.value) : undefined,
-          is_active: form.is_active.value === 'true'
-        };
-        const res = await apiFetch(`/tenant/training/${entry.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(update)
-        });
-        const data = await res.json();
-        if (data.error) alert(data.error);
-        else alert('Entry updated!');
-        closeTrainingForm();
-        loadTrainingSection();
-      };
-    };
-
-    window.deleteTraining = async function(id) {
-      if (!confirm('Are you sure you want to delete this entry?')) return;
-      const res = await apiFetch(`/tenant/training/${id}`, { method: 'DELETE' });
-      const data = await res.json();
-      if (data.error) alert(data.error);
-      else alert('Entry deleted!');
-      loadTrainingSection();
-      refreshCounters();
-    };
-
-    async function loadCatalogSection() {
-      document.getElementById('tenant-spa-content').innerHTML = `<div class='text-center p-5'><div class='spinner-border text-info'></div><div>Loading catalog...</div></div>`;
-      const res = await apiFetch('/tenant/catalog');
-      const data = await res.json().catch(() => ({ error: 'Invalid response' }));
-      if (data.error) {
-        document.getElementById('tenant-spa-content').innerHTML = `<div class='text-danger text-center p-5'>${data.error}</div>`;
-        return;
-      }
-      renderCatalogSection(data.items || []);
-    }
-
-    function renderCatalogSection(items) {
-      const html = `
-        <h2 class='mb-3'><i class='fa-solid fa-box'></i> Catalog Management</h2>
-        <button class='btn btn-info mb-3' onclick='showAddProductForm()'>Add Product</button>
-        <div class='table-responsive'><table class='table table-dark table-striped'>
-          <thead><tr><th>SKU</th><th>Name</th><th>Price</th><th>Stock</th><th>Category</th><th>Actions</th></tr></thead>
-          <tbody>
-            ${items.map(item => `
-              <tr>
-                <td>${item.sku || ''}</td>
-                <td>${item.name || ''}</td>
-                <td>${item.price ? item.price + ' ' + (item.currency || 'KES') : ''}</td>
-                <td>${item.stock_count ?? ''}</td>
-                <td>${item.metadata?.category || ''}</td>
-                <td>
-                  <button class='btn btn-sm btn-outline-info' onclick='editProduct(${JSON.stringify(item).replace(/'/g, "&#39;")})'>Edit</button>
-                  <button class='btn btn-sm btn-outline-danger' onclick='deleteProduct("${item.sku}")'>Delete</button>
-                </td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table></div>
-        <div id='product-form-modal'></div>
-      `;
-      document.getElementById('tenant-spa-content').innerHTML = html;
-    }
-
-    window.showAddProductForm = function() {
-      document.getElementById('product-form-modal').innerHTML = `
-        <div class='card p-3 mb-3'>
-          <h5>Add Product</h5>
-          <form id='addProductForm'>
-            <input type='text' name='sku' class='form-control mb-2' placeholder='SKU (optional)' />
-            <input type='text' name='name' class='form-control mb-2' placeholder='Name' required />
-            <input type='number' name='price' class='form-control mb-2' placeholder='Price' />
-            <input type='number' name='stock_count' class='form-control mb-2' placeholder='Stock Count' />
-            <input type='text' name='category' class='form-control mb-2' placeholder='Category' />
-            <button type='submit' class='btn btn-success'>Add</button>
-            <button type='button' class='btn btn-secondary ms-2' onclick='closeProductForm()'>Cancel</button>
-          </form>
-        </div>
-      `;
-      document.getElementById('addProductForm').onsubmit = async function(e) {
-        e.preventDefault();
-        const form = e.target;
-        const product = {
-          sku: form.sku.value,
-          name: form.name.value,
-          price: form.price.value ? parseFloat(form.price.value) : null,
-          stock_count: form.stock_count.value ? parseInt(form.stock_count.value, 10) : 0,
-          metadata: { category: form.category.value }
-        };
-        const res = await apiFetch('/tenant/catalog', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(product)
-        });
-        const data = await res.json();
-        if (data.error) alert(data.error);
-        else alert('Product added!');
-        closeProductForm();
-        loadCatalogSection();
-        refreshCounters();
-      };
-    };
-
-    window.closeProductForm = function() {
-      document.getElementById('product-form-modal').innerHTML = '';
-    };
-
-    window.editProduct = function(item) {
-      document.getElementById('product-form-modal').innerHTML = `
-        <div class='card p-3 mb-3'>
-          <h5>Edit Product</h5>
-          <form id='editProductForm'>
-            <input type='text' name='sku' class='form-control mb-2' value='${item.sku}' readonly />
-            <input type='text' name='name' class='form-control mb-2' value='${item.name || ''}' required />
-            <input type='number' name='price' class='form-control mb-2' value='${item.price ?? ''}' />
-            <input type='number' name='stock_count' class='form-control mb-2' value='${item.stock_count ?? 0}' />
-            <input type='text' name='category' class='form-control mb-2' value='${item.metadata?.category || ''}' />
-            <button type='submit' class='btn btn-success'>Save</button>
-            <button type='button' class='btn btn-secondary ms-2' onclick='closeProductForm()'>Cancel</button>
-          </form>
-        </div>
-      `;
-      document.getElementById('editProductForm').onsubmit = async function(e) {
-        e.preventDefault();
-        const form = e.target;
-        const product = {
-          sku: form.sku.value,
-          name: form.name.value,
-          price: form.price.value ? parseFloat(form.price.value) : null,
-          stock_count: form.stock_count.value ? parseInt(form.stock_count.value, 10) : 0,
-          metadata: { category: form.category.value }
-        };
-        const res = await apiFetch('/tenant/catalog', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(product)
-        });
-        const data = await res.json();
-        if (data.error) alert(data.error);
-        else alert('Product updated!');
-        closeProductForm();
-        loadCatalogSection();
-      };
-    };
-
-    window.deleteProduct = async function(sku) {
-      if (!confirm('Are you sure you want to delete this product?')) return;
-      const res = await apiFetch(`/tenant/catalog?sku=${encodeURIComponent(sku)}`, {
-        method: 'DELETE'
-      });
-      const data = await res.json();
-      if (data.error) alert(data.error);
-      else alert('Product deleted!');
-      loadCatalogSection();
-      refreshCounters();
-    };
-
-    async function loadOrdersSection() {
-      document.getElementById('tenant-spa-content').innerHTML = `<div class='text-center p-5'><div class='spinner-border text-info'></div><div>Loading orders...</div></div>`;
-      const res = await apiFetch('/tenant/orders');
-      const data = await res.json().catch(() => ({ error: 'Invalid response' }));
-      if (data.error) {
-        document.getElementById('tenant-spa-content').innerHTML = `<div class='text-danger text-center p-5'>${data.error}</div>`;
-        return;
-      }
-      renderOrdersSection(data.orders || []);
-    }
-
-    function renderOrdersSection(orders) {
-      const html = `
-        <h2 class='mb-3'><i class='fa-solid fa-cart-shopping'></i> Orders Management</h2>
-        <button class='btn btn-info mb-3' onclick='showAddOrderForm()'>Add Order</button>
-        <div class='table-responsive'><table class='table table-dark table-striped'>
-          <thead><tr><th>ID</th><th>Customer</th><th>Phone</th><th>Total</th><th>Status</th><th>Created</th><th>Actions</th></tr></thead>
-          <tbody>
-            ${orders.map(order => `
-              <tr>
-                <td>${order.id}</td>
-                <td>${order.customer_name || ''}</td>
-                <td>${order.customer_phone || ''}</td>
-                <td>${order.total_amount} ${order.currency || 'KES'}</td>
-                <td>${order.status}</td>
-                <td>${new Date(order.created_at).toLocaleString()}</td>
-                <td>
-                  <button class='btn btn-sm btn-outline-info' onclick='editOrder(${JSON.stringify(order).replace(/'/g, "&#39;")})'>Edit</button>
-                  <button class='btn btn-sm btn-outline-danger' onclick='deleteOrder("${order.id}")'>Delete</button>
-                </td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table></div>
-        <div id='order-form-modal'></div>
-      `;
-      document.getElementById('tenant-spa-content').innerHTML = html;
-    }
-
-    window.showAddOrderForm = function() {
-      document.getElementById('order-form-modal').innerHTML = `
-        <div class='card p-3 mb-3'>
-          <h5>Add Order</h5>
-          <form id='addOrderForm'>
-            <input type='text' name='customer_name' class='form-control mb-2' placeholder='Customer Name' required />
-            <input type='text' name='customer_phone' class='form-control mb-2' placeholder='Customer Phone' required />
-            <textarea name='order_items' class='form-control mb-2' placeholder='Order Items (JSON array)' required></textarea>
-            <input type='number' name='total_amount' class='form-control mb-2' placeholder='Total Amount' required />
-            <input type='text' name='currency' class='form-control mb-2' placeholder='Currency (default KES)' />
-            <input type='text' name='notes' class='form-control mb-2' placeholder='Notes' />
-            <button type='submit' class='btn btn-success'>Add</button>
-            <button type='button' class='btn btn-secondary ms-2' onclick='closeOrderForm()'>Cancel</button>
-          </form>
-        </div>
-      `;
-      document.getElementById('addOrderForm').onsubmit = async function(e) {
-        e.preventDefault();
-        const form = e.target;
-        let order;
-        try {
-          order = {
-            customer_name: form.customer_name.value,
-            customer_phone: form.customer_phone.value,
-            order_items: JSON.parse(form.order_items.value),
-            total_amount: parseFloat(form.total_amount.value),
-            currency: form.currency.value || 'KES',
-            notes: form.notes.value
-          };
-        } catch {
-          alert('Invalid order items JSON');
-          return;
-        }
-        const res = await apiFetch('/tenant/orders', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(order)
-        });
-        const data = await res.json();
-        if (data.error) alert(data.error);
-        else alert('Order added!');
-        closeOrderForm();
-        loadOrdersSection();
-        refreshCounters();
-      };
-    };
-
-    window.closeOrderForm = function() {
-      document.getElementById('order-form-modal').innerHTML = '';
-    };
-
-    window.editOrder = function(order) {
-      document.getElementById('order-form-modal').innerHTML = `
-        <div class='card p-3 mb-3'>
-          <h5>Edit Order Status</h5>
-          <form id='editOrderForm'>
-            <input type='text' name='customer_name' class='form-control mb-2' value='${order.customer_name || ''}' readonly />
-            <input type='text' name='customer_phone' class='form-control mb-2' value='${order.customer_phone || ''}' readonly />
-            <textarea name='order_items' class='form-control mb-2' readonly>${JSON.stringify(order.order_items, null, 2)}</textarea>
-            <input type='number' name='total_amount' class='form-control mb-2' value='${order.total_amount}' readonly />
-            <input type='text' name='currency' class='form-control mb-2' value='${order.currency || 'KES'}' readonly />
-            <input type='text' name='notes' class='form-control mb-2' value='${order.notes || ''}' />
-            <select name='status' class='form-control mb-2' required>
-              <option value='pending' ${order.status === 'pending' ? 'selected' : ''}>Pending</option>
-              <option value='paid' ${order.status === 'paid' ? 'selected' : ''}>Paid</option>
-              <option value='shipped' ${order.status === 'shipped' ? 'selected' : ''}>Shipped</option>
-              <option value='delivered' ${order.status === 'delivered' ? 'selected' : ''}>Delivered</option>
-              <option value='cancelled' ${order.status === 'cancelled' ? 'selected' : ''}>Cancelled</option>
-            </select>
-            <button type='submit' class='btn btn-success'>Save</button>
-            <button type='button' class='btn btn-secondary ms-2' onclick='closeOrderForm()'>Cancel</button>
-          </form>
-        </div>
-      `;
-      document.getElementById('editOrderForm').onsubmit = async function(e) {
-        e.preventDefault();
-        const form = e.target;
-        const update = {
-          status: form.status.value,
-          notes: form.notes.value
-        };
-        const res = await apiFetch(`/tenant/orders/${order.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(update)
-        });
-        const data = await res.json();
-        if (data.error) alert(data.error);
-        else alert('Order updated!');
-        closeOrderForm();
-        loadOrdersSection();
-      };
-    };
-
-    window.deleteOrder = async function(id) {
-      if (!confirm('Are you sure you want to delete this order?')) return;
-      const res = await apiFetch(`/tenant/orders/${id}`, { method: 'DELETE' });
-      const data = await res.json();
-      if (data.error) alert(data.error);
-      else alert('Order deleted!');
-      loadOrdersSection();
-      refreshCounters();
-    };
-
-    async function loadProfileSection() {
-      document.getElementById('tenant-spa-content').innerHTML = `
-        <h2 class='mb-3'><i class='fa-solid fa-user'></i> Profile & Settings</h2>
-        <div class='card p-3'>
-          <div class='mb-2'><b>Tenant Name:</b> ${state.tenantName || 'N/A'}</div>
-          <div class='mb-2'><b>Tenant Phone:</b> ${state.tenantPhone || 'N/A'}</div>
-          <div class='text-muted'>Profile editing can be connected to tenant metadata endpoints next.</div>
-        </div>
-      `;
-    }
-
-    async function loadHelpSection() {
-      document.getElementById('tenant-spa-content').innerHTML = `
-        <h2 class='mb-3'><i class='fa-solid fa-circle-question'></i> Help & Support</h2>
-        <div class='card p-3 bg-dark text-light'>
-          <ul class='list-group mb-3'>
-            <li class='list-group-item bg-dark text-light'><i class='fa-solid fa-envelope text-success'></i> <b>Email:</b> <a href='mailto:support@alphadome.com' class='text-info'>support@alphadome.com</a></li>
-            <li class='list-group-item bg-dark text-light'><i class='fa-brands fa-whatsapp text-success'></i> <b>WhatsApp:</b> <a href='https://wa.me/254786817637' target='_blank' class='text-info'>Chat on WhatsApp</a></li>
-          </ul>
-          <div class='text-muted'>For technical issues, include your tenant phone and timestamp.</div>
-        </div>
-      `;
-    }
-
-    async function loadAddAgentSection() {
-      document.getElementById('tenant-spa-content').innerHTML = `
-        <h2 class='mb-3'><i class='fa-solid fa-user-plus'></i> Add New Agent / Tenant</h2>
-        <form id='addAgentForm' class='card p-3 mb-3'>
-          <div class='mb-2'><label>Business Name</label><input type='text' class='form-control' name='business_name' required /></div>
-          <div class='mb-2'><label>Contact Person Name</label><input type='text' class='form-control' name='contact_person_name' required /></div>
-          <div class='mb-2'><label>Contact Phone Number</label><input type='text' class='form-control' name='contact_phone' required /></div>
-          <div class='mb-2'><label>Contact Email</label><input type='email' class='form-control' name='contact_email' /></div>
-          <div class='mb-2'><label>Business Address/Location</label><input type='text' class='form-control' name='business_address' /></div>
-          <div class='mb-2'><label>Business Description</label><textarea class='form-control' name='business_description'></textarea></div>
-          <div class='mb-2'><label>Logo or Branding (URL)</label><input type='text' class='form-control' name='logo' /></div>
-          <div class='mb-2'><label>Industry/Category</label><input type='text' class='form-control' name='industry' /></div>
-          <div class='mb-2'><label>Status</label>
-            <select class='form-control' name='status'>
-              <option value='active'>Active</option>
-              <option value='inactive'>Inactive</option>
-            </select>
+window.showTrainForm = function(t) {
+  const ed = Boolean(t);
+  document.getElementById('trainModal').innerHTML = `
+    <div class="panel mt-3">
+      <div class="panel-title">${ed ? 'Edit' : 'Add'} Training / FAQ Entry</div>
+      <form id="tForm">
+        <div class="row g-3">
+          <div class="col-12"><label class="form-label">Question *</label><input type="text" class="form-control" name="q" value="${esc(t?.question||'')}" required /></div>
+          <div class="col-12"><label class="form-label">Answer *</label><textarea class="form-control" name="a" rows="3" required>${esc(t?.answer||'')}</textarea></div>
+          <div class="col-12 col-md-4"><label class="form-label">Category</label><input type="text" class="form-control" name="cat" value="${esc(t?.category||'')}"/></div>
+          <div class="col-12 col-md-4"><label class="form-label">Priority (0–100)</label><input type="number" class="form-control" name="pri" value="${t?.priority??0}" min="0" max="100"/></div>
+          <div class="col-12 col-md-4"><label class="form-label">Confidence (0–1)</label><input type="number" class="form-control" name="conf" value="${t?.confidence_score??1}" step="0.01" min="0" max="1"/></div>
+          ${ed?`<div class="col-12 col-md-4"><label class="form-label">Status</label><select class="form-select" name="active"><option value="true" ${t.is_active!==false?'selected':''}>Active</option><option value="false" ${t.is_active===false?'selected':''}>Inactive</option></select></div>`:''}
+          <div class="col-12 d-flex gap-2">
+            <button type="submit" class="btn btn-accent">${ed?'Save Changes':'Add Entry'}</button>
+            <button type="button" class="btn btn-outline-acc" onclick="document.getElementById('trainModal').innerHTML=''">Cancel</button>
           </div>
-          <div class='mb-2'><label>Detailed Agent Description</label><textarea class='form-control' name='agent_description'></textarea></div>
-          <button type='submit' class='btn btn-success'>Add Agent</button>
-        </form>
-        <div id='add-agent-status'></div>
-      `;
+        </div>
+      </form>
+    </div>`;
+  document.getElementById('tForm').onsubmit = async function(e) {
+    e.preventDefault(); const f = e.target;
+    const payload = { question:f.q.value.trim(), answer:f.a.value.trim(), category:f.cat.value.trim()||null, priority:parseInt(f.pri.value,10)||0, confidence_score:parseFloat(f.conf.value)||1.0 };
+    if (ed && f.active) payload.is_active = f.active.value === 'true';
+    const url = ed ? `/tenant/training/${t.id}` : '/tenant/training';
+    const { ok, data } = await apiJson(url, { method:ed?'PATCH':'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+    if (!ok) { toast(data.error||'Error','err'); return; }
+    toast(ed?'Entry updated!':'Entry added!','ok'); renderTraining();
+  };
+};
 
-      document.getElementById('addAgentForm').onsubmit = async function(e) {
-        e.preventDefault();
-        const form = e.target;
-        const agent = {
-          client_name: form.business_name.value,
-          client_phone: form.contact_phone.value,
-          client_email: form.contact_email.value,
-          point_of_contact_name: form.contact_person_name.value,
-          business_address: form.business_address.value,
-          business_description: form.business_description.value,
-          logo: form.logo.value,
-          industry: form.industry.value,
-          status: form.status.value,
-          agent_description: form.agent_description.value
-        };
+window.delTrain = async function(id) {
+  if (!confirm('Delete this training entry?')) return;
+  const { ok, data } = await apiJson(`/tenant/training/${id}`, { method:'DELETE' });
+  if (!ok) { toast(data.error||'Delete failed','err'); return; }
+  toast('Entry deleted.','ok'); renderTraining();
+};
 
-        const res = await fetch('/admin/agents', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-tenant-key': state.dashboardKey
-          },
-          body: JSON.stringify(agent)
-        });
-        const result = await res.json().catch(() => ({ error: 'Invalid response' }));
+// ══════════════════════ BOT CONFIG ════════════════════════════════════════
+async function renderBotConfig() {
+  const { ok, data } = await apiJson('/tenant/bot-settings');
+  if (!ok) { showErr(data.error || 'Failed to load bot settings'); return; }
+  const s = data.settings || {};
+  const models = ['gpt-4o','gpt-4o-mini','gpt-4','gpt-3.5-turbo','claude-3-haiku-20240307','claude-3-5-sonnet-20241022'];
+  document.getElementById('spa').innerHTML = `
+    <div class="section-hdr"><i class="fa-solid fa-sliders"></i> Bot Configuration</div>
+    <div class="row g-3">
+      <div class="col-12 col-lg-6">
+        <div class="panel">
+          <div class="panel-title"><i class="fa-solid fa-brain me-2" style="color:var(--accent);"></i>AI Settings</div>
+          <form id="aiForm">
+            <div class="mb-3">
+              <label class="form-label">AI Model</label>
+              <select class="form-select" name="ai_model">${models.map(m=>`<option value="${m}" ${s.ai_model===m?'selected':''}>${m}</option>`).join('')}</select>
+              <div class="form-text">The language model that powers your chatbot.</div>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">AI Provider</label>
+              <select class="form-select" name="ai_provider">
+                <option value="openai" ${s.ai_provider==='openai'?'selected':''}>OpenAI</option>
+                <option value="anthropic" ${s.ai_provider==='anthropic'?'selected':''}>Anthropic</option>
+              </select>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">AI API Key ${s.has_ai_key?'<span class="badge-ok">Configured</span>':'<span class="badge-off">Not set</span>'}</label>
+              <input type="password" class="form-control" name="ai_api_key" placeholder="${s.has_ai_key?'Leave blank to keep current key':'Enter API key'}" autocomplete="new-password" />
+            </div>
+            <button type="submit" class="btn btn-accent"><i class="fa-solid fa-floppy-disk me-2"></i>Save AI Settings</button>
+          </form>
+        </div>
+      </div>
+      <div class="col-12 col-lg-6">
+        <div class="panel">
+          <div class="panel-title"><i class="fa-brands fa-whatsapp me-2" style="color:#25d366;"></i>WhatsApp Credentials</div>
+          <form id="waForm">
+            <div class="mb-3"><label class="form-label">Phone Number ID</label><input type="text" class="form-control" name="wp_id" value="${esc(s.whatsapp_phone_number_id||'')}" placeholder="e.g. 123456789012345"/></div>
+            <div class="mb-3"><label class="form-label">Business Account ID</label><input type="text" class="form-control" name="wa_id" value="${esc(s.whatsapp_business_account_id||'')}" placeholder="e.g. 987654321098765"/></div>
+            <div class="mb-3">
+              <label class="form-label">Access Token ${s.has_wa_token?'<span class="badge-ok">Configured</span>':'<span class="badge-off">Not set</span>'}</label>
+              <input type="password" class="form-control" name="wa_token" placeholder="${s.has_wa_token?'Leave blank to keep current token':'Enter token'}" autocomplete="new-password"/>
+            </div>
+            <div class="mb-3 p-3 rounded" style="background:var(--bg-main);border:1px solid var(--border);font-size:0.84rem;">
+              <div class="kv-row"><span class="kv-key">Bot Active</span>${badge(s.is_active?'active':'inactive')}</div>
+              <div class="kv-row"><span class="kv-key">WA Verified</span>${s.is_verified?'<span class="badge-ok">Yes</span>':'<span class="badge-off">No</span>'}</div>
+            </div>
+            <button type="submit" class="btn btn-accent"><i class="fa-solid fa-floppy-disk me-2"></i>Save WhatsApp Config</button>
+          </form>
+        </div>
+      </div>
+    </div>`;
 
-        if (result.error) {
-          document.getElementById('add-agent-status').innerHTML = `<div class='alert alert-danger mt-2'>${result.error}</div>`;
-          return;
-        }
+  document.getElementById('aiForm').onsubmit = async function(e) {
+    e.preventDefault(); const f = e.target;
+    const payload = { ai_model: f.ai_model.value, ai_provider: f.ai_provider.value };
+    if (f.ai_api_key.value) payload.ai_api_key = f.ai_api_key.value;
+    const { ok, data } = await apiJson('/tenant/bot-settings', { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+    if (!ok) { toast(data.error||'Save failed','err'); return; }
+    toast('AI settings saved!','ok'); f.ai_api_key.value = ''; renderBotConfig();
+  };
 
-        document.getElementById('add-agent-status').innerHTML = `<div class='alert alert-success mt-2'>Agent added successfully!</div>`;
-        form.reset();
-      };
+  document.getElementById('waForm').onsubmit = async function(e) {
+    e.preventDefault(); const f = e.target;
+    const payload = { whatsapp_phone_number_id: f.wp_id.value.trim(), whatsapp_business_account_id: f.wa_id.value.trim() };
+    if (f.wa_token.value) payload.whatsapp_access_token = f.wa_token.value;
+    const { ok, data } = await apiJson('/tenant/bot-settings', { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+    if (!ok) { toast(data.error||'Save failed','err'); return; }
+    toast('WhatsApp config saved!','ok'); f.wa_token.value = ''; renderBotConfig();
+  };
+}
+
+// ══════════════════════ PROFILE ════════════════════════════════════════════
+async function renderProfile() {
+  const { ok, data } = await apiJson('/tenant/profile');
+  if (!ok) { showErr(data.error || 'Failed to load profile'); return; }
+  const p = data.profile || {};
+  document.getElementById('spa').innerHTML = `
+    <div class="section-hdr"><i class="fa-solid fa-user"></i> Business Profile</div>
+    <div class="row g-3">
+      <div class="col-12 col-lg-8">
+        <div class="panel">
+          <div class="panel-title"><i class="fa-solid fa-building me-2"></i>Business Info</div>
+          <form id="profForm">
+            <div class="row g-3">
+              <div class="col-12 col-md-6"><label class="form-label">Business Name</label><input type="text" class="form-control" name="cn" value="${esc(p.client_name||'')}" required /></div>
+              <div class="col-12 col-md-6"><label class="form-label">Phone (read-only)</label><input type="text" class="form-control" value="${esc(p.client_phone||'')}" readonly style="opacity:0.6;"/></div>
+              <div class="col-12 col-md-6"><label class="form-label">Business Email</label><input type="email" class="form-control" name="ce" value="${esc(p.client_email||'')}"/></div>
+              <div class="col-12 col-md-6"><label class="form-label">Industry</label><input type="text" class="form-control" name="ind" value="${esc(p.industry||'')}" placeholder="e.g. Music Instruments"/></div>
+              <div class="col-12"><label class="form-label">Business Description</label><textarea class="form-control" name="desc" rows="3">${esc(p.description||'')}</textarea></div>
+              <div class="col-12"><label class="form-label">Business Address</label><input type="text" class="form-control" name="addr" value="${esc(p.business_address||'')}"/></div>
+              <div class="col-12"><label class="form-label">Logo URL</label><input type="url" class="form-control" name="logo" value="${esc(p.logo||'')}" placeholder="https://…"/></div>
+              <div class="col-12"><button type="submit" class="btn btn-accent"><i class="fa-solid fa-floppy-disk me-2"></i>Save Profile</button></div>
+            </div>
+          </form>
+        </div>
+      </div>
+      <div class="col-12 col-lg-4">
+        <div class="panel">
+          <div class="panel-title"><i class="fa-solid fa-address-card me-2"></i>Point of Contact</div>
+          <form id="pocForm">
+            <div class="mb-3"><label class="form-label">Contact Name</label><input type="text" class="form-control" name="pocn" value="${esc(p.point_of_contact_name||'')}"/></div>
+            <div class="mb-3"><label class="form-label">Contact Phone</label><input type="text" class="form-control" name="pocp" value="${esc(p.point_of_contact_phone||'')}"/></div>
+            <button type="submit" class="btn btn-accent btn-sm"><i class="fa-solid fa-floppy-disk me-2"></i>Save Contact</button>
+          </form>
+        </div>
+        <div class="panel" style="margin-top:14px;">
+          <div class="panel-title"><i class="fa-solid fa-info-circle me-2"></i>Account</div>
+          <div class="kv-row"><span class="kv-key">Status</span>${badge(p.status||'unknown')}</div>
+          <div class="kv-row"><span class="kv-key">Verified</span>${p.is_verified?'<span class="badge-ok">Yes</span>':'<span class="badge-off">No</span>'}</div>
+          <div class="kv-row"><span class="kv-key">Member Since</span><span style="font-size:0.84rem;">${fmtDate(p.member_since)}</span></div>
+        </div>
+      </div>
+    </div>`;
+
+  document.getElementById('profForm').onsubmit = async function(e) {
+    e.preventDefault(); const f = e.target;
+    const payload = { client_name:f.cn.value.trim(), client_email:f.ce.value.trim(), industry:f.ind.value.trim(), description:f.desc.value.trim(), business_address:f.addr.value.trim(), logo:f.logo.value.trim() };
+    const { ok, data } = await apiJson('/tenant/profile', { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+    if (!ok) { toast(data.error||'Save failed','err'); return; }
+    toast('Profile saved!','ok');
+  };
+
+  document.getElementById('pocForm').onsubmit = async function(e) {
+    e.preventDefault(); const f = e.target;
+    const { ok, data } = await apiJson('/tenant/profile', { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ point_of_contact_name:f.pocn.value.trim(), point_of_contact_phone:f.pocp.value.trim() }) });
+    if (!ok) { toast(data.error||'Save failed','err'); return; }
+    toast('Contact info saved!','ok');
+  };
+}
+
+// ══════════════════════ SMTP ═══════════════════════════════════════════════
+async function renderSmtp() {
+  const { ok, data } = await apiJson('/tenant/smtp');
+  if (!ok) { showErr(data.error || 'Failed to load SMTP settings'); return; }
+  const s = data.smtp || {};
+  document.getElementById('spa').innerHTML = `
+    <div class="section-hdr"><i class="fa-solid fa-envelope"></i> Email Setup (SMTP)</div>
+    <div class="row g-3">
+      <div class="col-12 col-lg-7">
+        <div class="panel">
+          <div class="panel-title"><i class="fa-solid fa-server me-2"></i>SMTP Configuration</div>
+          <form id="smtpForm">
+            <div class="row g-3">
+              <div class="col-12 col-md-8"><label class="form-label">SMTP Host</label><input type="text" class="form-control" name="host" value="${esc(s.smtp_host||'')}" placeholder="e.g. smtp.gmail.com"/></div>
+              <div class="col-12 col-md-4"><label class="form-label">Port</label><input type="number" class="form-control" name="port" value="${s.smtp_port||587}"/></div>
+              <div class="col-12"><label class="form-label">Username / Email</label><input type="text" class="form-control" name="user" value="${esc(s.smtp_user||'')}" autocomplete="new-password" placeholder="your@email.com"/></div>
+              <div class="col-12">
+                <label class="form-label">Password ${s.has_password?'<span class="badge-ok">Configured</span>':'<span class="badge-off">Not set</span>'}</label>
+                <input type="password" class="form-control" name="pass" placeholder="${s.has_password?'Leave blank to keep current password':'Enter password'}" autocomplete="new-password"/>
+              </div>
+              <div class="col-12"><label class="form-label">From Name</label><input type="text" class="form-control" name="from_name" value="${esc(s.smtp_from_name||'')}" placeholder="e.g. Kassangas Music"/></div>
+            </div>
+            <div class="mt-3"><button type="submit" class="btn btn-accent"><i class="fa-solid fa-floppy-disk me-2"></i>Save Email Settings</button></div>
+          </form>
+        </div>
+      </div>
+      <div class="col-12 col-lg-5">
+        <div class="panel">
+          <div class="panel-title"><i class="fa-solid fa-circle-question me-2"></i>SMTP Provider Tips</div>
+          <ul style="font-size:0.84rem;color:var(--text-muted);padding-left:16px;line-height:2.1;">
+            <li><b>Gmail:</b> smtp.gmail.com, port 587, use App Password</li>
+            <li><b>Outlook:</b> smtp-mail.outlook.com, port 587</li>
+            <li><b>SendGrid:</b> smtp.sendgrid.net, port 587, user=<code>apikey</code></li>
+            <li><b>Brevo:</b> smtp-relay.brevo.com, port 587</li>
+            <li><b>Zoho:</b> smtp.zoho.com, port 587</li>
+          </ul>
+          <div class="alert py-2 mt-2" style="background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);font-size:0.82rem;color:var(--warning);">
+            <i class="fa-solid fa-triangle-exclamation me-1"></i>For Gmail, enable 2FA and generate an <b>App Password</b>.
+          </div>
+        </div>
+      </div>
+    </div>`;
+
+  document.getElementById('smtpForm').onsubmit = async function(e) {
+    e.preventDefault(); const f = e.target;
+    const payload = { smtp_host:f.host.value.trim(), smtp_port:parseInt(f.port.value,10)||587, smtp_user:f.user.value.trim(), smtp_from_name:f.from_name.value.trim() };
+    if (f.pass.value) payload.smtp_pass = f.pass.value;
+    const { ok, data } = await apiJson('/tenant/smtp', { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+    if (!ok) { toast(data.error||'Save failed','err'); return; }
+    toast('Email settings saved!','ok'); f.pass.value = ''; renderSmtp();
+  };
+}
+
+// ══════════════════════ PAYMENTS ═══════════════════════════════════════════
+async function renderPayments() {
+  const { ok, data } = await apiJson('/tenant/payments');
+  if (!ok) { showErr(data.error || 'Failed to load payments'); return; }
+  const payments = data.payments || [];
+  const latest = payments[0];
+  document.getElementById('spa').innerHTML = `
+    <div class="section-hdr"><i class="fa-solid fa-credit-card"></i> Payments &amp; Billing</div>
+    <div class="row g-3 mb-2">
+      <div class="col-12 col-md-5">
+        <div class="panel">
+          <div class="panel-title"><i class="fa-solid fa-receipt me-2"></i>Subscription</div>
+          ${latest ? `
+            <div class="kv-row"><span class="kv-key">Plan</span><b>${esc(latest.plan_type||'—')}</b></div>
+            <div class="kv-row"><span class="kv-key">Level</span><b>${latest.level??'—'}</b></div>
+            <div class="kv-row"><span class="kv-key">Status</span>${badge(latest.status||'unknown')}</div>
+            <div class="kv-row"><span class="kv-key">Amount</span><b>KES ${parseFloat(latest.amount||0).toLocaleString()}</b></div>
+            <div class="kv-row"><span class="kv-key">Last Payment</span><span style="font-size:0.83rem;">${fmtDate(latest.created_at)}</span></div>
+          ` : `<p style="color:var(--text-muted);font-size:0.88rem;margin:0;">No subscription records found.</p>`}
+        </div>
+      </div>
+      <div class="col-12 col-md-7">
+        <div class="panel">
+          <div class="panel-title"><i class="fa-solid fa-mobile-screen me-2" style="color:#4ade80;"></i>M-Pesa STK Push</div>
+          <p style="font-size:0.84rem;color:var(--text-muted);margin-bottom:14px;">Prompt a payment via M-Pesa Safaricom STK push.</p>
+          <form id="stkForm">
+            <div class="row g-3">
+              <div class="col-12 col-md-5"><label class="form-label">Phone Number</label><input type="text" class="form-control" name="sp" placeholder="e.g. 254712345678" value="${esc(S.phone||'')}"/></div>
+              <div class="col-12 col-md-4"><label class="form-label">Amount (KES)</label><input type="number" class="form-control" name="sa" placeholder="e.g. 900" min="1"/></div>
+              <div class="col-12 col-md-3"><label class="form-label">Reference</label><input type="text" class="form-control" name="sr" placeholder="e.g. Sub"/></div>
+              <div class="col-12"><button type="submit" class="btn btn-accent" id="stkBtn"><i class="fa-solid fa-mobile-screen me-2"></i>Send STK Push</button></div>
+            </div>
+          </form>
+          <div id="stkMsg" class="mt-2"></div>
+        </div>
+      </div>
+    </div>
+    <div class="panel p-0" style="overflow:hidden;">
+      <div class="panel-title px-3 pt-3 pb-0 mb-0" style="border-bottom:none;padding-bottom:0;">Payment History</div>
+      <div class="table-responsive">
+        <table class="table mb-0">
+          <thead><tr><th>Date</th><th>Plan</th><th>Level</th><th>Amount</th><th>Status</th></tr></thead>
+          <tbody>
+            ${payments.length === 0 ? `<tr><td colspan="5" class="text-center py-4" style="color:var(--text-muted);">No payment records found.</td></tr>` :
+              payments.map(p => `<tr>
+                <td style="font-size:0.8rem;">${fmtDate(p.created_at)}</td>
+                <td>${esc(p.plan_type||'—')}</td>
+                <td>${p.level??'—'}</td>
+                <td><b>KES ${parseFloat(p.amount||0).toLocaleString()}</b></td>
+                <td>${badge(p.status||'unknown')}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+
+  document.getElementById('stkForm').onsubmit = async function(e) {
+    e.preventDefault(); const f = e.target;
+    const phone = f.sp.value.trim(), amount = parseFloat(f.sa.value), ref = f.sr.value.trim() || 'Tenant Payment';
+    if (!phone || !amount) { toast('Phone and amount required.','err'); return; }
+    const btn = document.getElementById('stkBtn');
+    btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-sm me-2"></span>Sending…';
+    let r, d;
+    try {
+      r = await fetch('/mpesa/stk-push', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ phone, amount, accountRef:ref, callbackUrl: location.origin+'/mpesa/callback' }) });
+      d = await r.json().catch(()=>({ error:'No response' }));
+    } catch(err) { d = { error: err.message }; }
+    btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-mobile-screen me-2"></i>Send STK Push';
+    const msgEl = document.getElementById('stkMsg');
+    if (!r?.ok || d.error) {
+      msgEl.innerHTML = `<div class="alert py-2" style="background:rgba(244,63,94,0.1);border:1px solid rgba(244,63,94,0.3);color:var(--danger);font-size:0.84rem;">${esc(d.error||d.message||'STK push failed')}</div>`;
+    } else {
+      msgEl.innerHTML = `<div class="alert py-2" style="background:rgba(34,211,160,0.1);border:1px solid rgba(34,211,160,0.3);color:var(--success);font-size:0.84rem;"><i class="fa-solid fa-circle-check me-1"></i>STK Push sent to ${esc(phone)}. Awaiting confirmation.</div>`;
     }
+  };
+}
 
-    async function navigate(section) {
-      if (!state.sessionToken && section !== 'dashboard') {
-        renderLoginSection('Login first to access tenant data.');
-        return;
-      }
+// ══════════════════════ ADD AGENT ══════════════════════════════════════════
+function renderAddAgent() {
+  document.getElementById('spa').innerHTML = `
+    <div class="section-hdr"><i class="fa-solid fa-user-plus"></i> Add New Agent</div>
+    <div class="panel" style="max-width:680px;">
+      <form id="agtForm">
+        <div class="row g-3">
+          <div class="col-12 col-md-6"><label class="form-label">Business Name *</label><input type="text" class="form-control" name="cn" required/></div>
+          <div class="col-12 col-md-6"><label class="form-label">Business Phone *</label><input type="text" class="form-control" name="cp" required placeholder="254712…"/></div>
+          <div class="col-12 col-md-6"><label class="form-label">Contact Person *</label><input type="text" class="form-control" name="poc" required/></div>
+          <div class="col-12 col-md-6"><label class="form-label">Email</label><input type="email" class="form-control" name="em"/></div>
+          <div class="col-12 col-md-6"><label class="form-label">Industry</label><input type="text" class="form-control" name="ind"/></div>
+          <div class="col-12 col-md-6"><label class="form-label">Status</label><select class="form-select" name="st"><option value="active">Active</option><option value="inactive">Inactive</option></select></div>
+          <div class="col-12"><label class="form-label">Business Address</label><input type="text" class="form-control" name="addr"/></div>
+          <div class="col-12"><label class="form-label">Description</label><textarea class="form-control" name="desc" rows="3"></textarea></div>
+          <div class="col-12 col-md-6"><label class="form-label">Logo URL</label><input type="url" class="form-control" name="logo"/></div>
+          <div class="col-12"><button type="submit" class="btn btn-accent"><i class="fa-solid fa-user-plus me-2"></i>Create Agent</button></div>
+        </div>
+      </form>
+      <div id="agtStatus" class="mt-3"></div>
+    </div>`;
 
-      setActiveNav(section);
+  document.getElementById('agtForm').onsubmit = async function(e) {
+    e.preventDefault(); const f = e.target;
+    const agent = { client_name:f.cn.value.trim(), client_phone:f.cp.value.trim(), point_of_contact_name:f.poc.value.trim(), client_email:f.em.value.trim(), industry:f.ind.value.trim(), business_address:f.addr.value.trim(), description:f.desc.value.trim(), logo:f.logo.value.trim(), status:f.st.value };
+    const r = await fetch('/admin/agents', { method:'POST', headers:{'Content-Type':'application/json','x-tenant-key':S.key}, body:JSON.stringify(agent) });
+    const d = await r.json().catch(()=>({ error:'Invalid response' }));
+    const el = document.getElementById('agtStatus');
+    if (d.error) { el.innerHTML = `<div class="alert py-2" style="background:rgba(244,63,94,0.1);border:1px solid var(--danger);color:var(--danger);">${esc(d.error)}</div>`; return; }
+    el.innerHTML = `<div class="alert py-2" style="background:rgba(34,211,160,0.1);border:1px solid var(--success);color:var(--success);"><i class="fa-solid fa-circle-check me-1"></i>Agent created!</div>`;
+    f.reset();
+  };
+}
 
-      if (section === 'catalog') return loadCatalogSection();
-      if (section === 'orders') return loadOrdersSection();
-      if (section === 'llm-usage' || section === 'faq' || section === 'training' || section === 'training-data') return loadTrainingSection();
-      if (section === 'profile' || section === 'settings') return loadProfileSection();
-      if (section === 'add-agent') return loadAddAgentSection();
-      if (section === 'help' || section === 'support') return loadHelpSection();
+// ══════════════════════ HELP ═══════════════════════════════════════════════
+function renderHelp() {
+  document.getElementById('spa').innerHTML = `
+    <div class="section-hdr"><i class="fa-solid fa-circle-question"></i> Help &amp; Support</div>
+    <div class="row g-3">
+      <div class="col-12 col-md-5">
+        <div class="panel">
+          <div class="panel-title">Get in Touch</div>
+          <a href="https://wa.me/254786817637" target="_blank" class="d-flex align-items-center gap-3 text-decoration-none mb-3" style="background:var(--bg-main);border:1px solid var(--border);border-radius:10px;padding:12px;color:var(--text-light);">
+            <i class="fa-brands fa-whatsapp fa-lg" style="color:#25d366;flex-shrink:0;"></i>
+            <div><div style="font-weight:600;">WhatsApp Support</div><div style="font-size:0.8rem;color:var(--text-muted);">Chat with our team</div></div>
+          </a>
+          <a href="mailto:support@alphadome.com" class="d-flex align-items-center gap-3 text-decoration-none" style="background:var(--bg-main);border:1px solid var(--border);border-radius:10px;padding:12px;color:var(--text-light);">
+            <i class="fa-solid fa-envelope fa-lg" style="color:var(--accent);flex-shrink:0;"></i>
+            <div><div style="font-weight:600;">Email Support</div><div style="font-size:0.8rem;color:var(--text-muted);">support@alphadome.com</div></div>
+          </a>
+        </div>
+      </div>
+      <div class="col-12 col-md-7">
+        <div class="panel">
+          <div class="panel-title">Quick Help Guide</div>
+          <ul style="font-size:0.86rem;color:var(--text-muted);padding-left:18px;line-height:2.2;">
+            <li>Add products in <b>Product Catalog</b> — they'll appear in bot searches.</li>
+            <li>Add FAQs in <b>Bot Training</b> — improves chatbot accuracy.</li>
+            <li>Configure AI model &amp; WhatsApp token in <b>Bot Config</b>.</li>
+            <li>Set up outgoing email in <b>Email Setup</b> (SMTP).</li>
+            <li>View subscription history and trigger M-Pesa payments in <b>Payments</b>.</li>
+            <li>Update business info, logo, and industry in <b>Profile</b>.</li>
+            <li>Bot must be <b>active &amp; verified</b> to respond to customers.</li>
+          </ul>
+        </div>
+      </div>
+    </div>`;
+}
 
-      renderHomeSection();
-      refreshCounters();
+// ══════════════════════ BOOT ═══════════════════════════════════════════════
+function boot() {
+  document.querySelectorAll('.nav-item[data-sec]').forEach(el => el.addEventListener('click', () => go(el.dataset.sec)));
+  document.getElementById('menuBtn').addEventListener('click', () => document.getElementById('sidebar').classList.toggle('open'));
+  document.getElementById('logoutBtn').addEventListener('click', doLogout);
+
+  document.getElementById('loginForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const phone = document.getElementById('lPhone').value.trim();
+    const key = document.getElementById('lKey').value.trim() || S.key;
+    if (!phone || !key) { toast('Phone and key are required.','err'); return; }
+    const btn = document.getElementById('loginBtn');
+    btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-sm me-2"></span>Signing in…';
+    const { ok, data } = await doLogin(phone, key);
+    btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-right-to-bracket me-2"></i>Sign In';
+    if (!ok || data.error) {
+      const al = document.getElementById('loginAlert');
+      al.innerHTML = `<div class="alert alert-danger py-2 mb-0">${esc(data.error||'Login failed')}</div>`;
+      al.style.display = ''; return;
     }
+    // Persist key if just entered
+    if (data.token && !S.key) S.key = key;
+    saveSession(data); showApp(); go('home');
+  });
 
-    function initNav() {
-      document.querySelectorAll('.nav-link').forEach((link) => {
-        link.addEventListener('click', (e) => {
-          e.preventDefault();
-          const section = (link.getAttribute('href') || '#dashboard').replace('#', '');
-          navigate(section);
-        });
-      });
-    }
+  if (!S.key) { showLogin('Missing key in URL. Open /tenant-dashboard?key=YOUR_KEY'); return; }
+  if (loadSession()) { showApp(); go('home'); return; }
+  showLogin();
+}
 
-    function boot() {
-      initNav();
-      if (!state.dashboardKey) {
-        renderLoginSection('Missing key in URL. Open /tenant-dashboard?key=YOUR_KEY.');
-        return;
-      }
-
-      if (loadStoredSession()) {
-        renderHomeSection();
-        refreshCounters();
-        return;
-      }
-
-      renderLoginSection();
-    }
-
-    boot();
-  </script>
-  <!-- Floating WhatsApp Button -->
-  <a href="https://wa.me/254786817637" target="_blank" id="floating-whatsapp" title="Chat on WhatsApp">
-    <img src="../images/whatsapp-3d.png" alt="WhatsApp" style="width:60px;height:60px;">
-  </a>
-  <style>
-    #floating-whatsapp {
-      position: fixed;
-      right: 32px;
-      bottom: 32px;
-      z-index: 9999;
-      transition: transform 0.2s;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: none;
-      padding: 0;
-      border-radius: 0;
-      box-shadow: none;
-    }
-    #floating-whatsapp:hover {
-      transform: scale(1.08);
-    }
-    #floating-whatsapp img {
-      display: block;
-      border-radius: 50%;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.18);
-    }
-  </style>
-  <!-- End Floating WhatsApp Button -->
+boot();
+</script>
 </body>
 </html>

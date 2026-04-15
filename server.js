@@ -685,6 +685,252 @@ app.delete("/tenant/orders/:id", tenantSessionAuth, async (req, res) => {
   }
 });
 
+// ===== HELPER: Write to alphadome.bot_tenants via PostgREST schema header =====
+async function updateAlphadomeTenantByPhone(tenantPhone, updates) {
+  const candidates = buildPhoneCandidates(tenantPhone);
+  if (!candidates.length) return [];
+  for (const phone of candidates) {
+    const urlSafe = encodeURIComponent(phone);
+    const url = `${process.env.SB_URL}/rest/v1/bot_tenants?client_phone=eq.${urlSafe}`;
+    try {
+      const response = await axios.patch(url, updates, {
+        headers: {
+          apikey: process.env.SB_SERVICE_ROLE_KEY,
+          Authorization: `Bearer ${process.env.SB_SERVICE_ROLE_KEY}`,
+          "Content-Type": "application/json",
+          "Content-Profile": "alphadome",
+          Prefer: "return=representation",
+        },
+      });
+      const rows = Array.isArray(response.data) ? response.data : [];
+      if (rows.length) return rows;
+    } catch (err) {
+      if (err.response?.status !== 404 && err.response?.status !== 406) throw err;
+    }
+  }
+  return [];
+}
+
+// ===== TENANT PROFILE API =====
+
+app.get("/tenant/profile", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId, tenantPhone } = req.tenantSession;
+    const { data: pubTenant, error: pubErr } = await supabase
+      .from("bot_tenants")
+      .select("id, client_name, client_phone, description, brand_id, status, point_of_contact_name, point_of_contact_phone, metadata, created_at")
+      .eq("id", tenantId)
+      .maybeSingle();
+    if (pubErr) return res.status(500).json({ error: pubErr.message });
+    const alpha = await resolveAlphadomeTenantByPhone(tenantPhone);
+    return res.json({
+      profile: {
+        client_name: alpha?.client_name || pubTenant?.client_name || "",
+        client_phone: alpha?.client_phone || pubTenant?.client_phone || tenantPhone,
+        client_email: alpha?.client_email || "",
+        point_of_contact_name: alpha?.point_of_contact_name || pubTenant?.point_of_contact_name || "",
+        point_of_contact_phone: alpha?.point_of_contact_phone || pubTenant?.point_of_contact_phone || "",
+        description: pubTenant?.description || alpha?.metadata?.description || "",
+        business_address: alpha?.metadata?.business_address || pubTenant?.metadata?.business_address || "",
+        industry: alpha?.metadata?.industry || pubTenant?.metadata?.industry || "",
+        logo: alpha?.metadata?.logo || pubTenant?.metadata?.logo || "",
+        status: alpha?.is_active ? "active" : (pubTenant?.status || "unknown"),
+        is_verified: alpha?.is_verified || false,
+        brand_id: pubTenant?.brand_id || null,
+        member_since: pubTenant?.created_at || alpha?.created_at || null,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.patch("/tenant/profile", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId, tenantPhone } = req.tenantSession;
+    const body = req.body || {};
+    const pubUpdates = {};
+    if (body.client_name !== undefined) pubUpdates.client_name = String(body.client_name).trim();
+    if (body.point_of_contact_name !== undefined) pubUpdates.point_of_contact_name = String(body.point_of_contact_name).trim();
+    if (body.description !== undefined) pubUpdates.description = String(body.description).trim();
+    if (Object.keys(pubUpdates).length) {
+      pubUpdates.updated_at = new Date().toISOString();
+      await supabase.from("bot_tenants").update(pubUpdates).eq("id", tenantId);
+    }
+    const alphaUpdates = { updated_at: new Date().toISOString() };
+    if (body.client_name !== undefined) alphaUpdates.client_name = String(body.client_name).trim();
+    if (body.client_email !== undefined) alphaUpdates.client_email = String(body.client_email).trim().toLowerCase();
+    if (body.point_of_contact_name !== undefined) alphaUpdates.point_of_contact_name = String(body.point_of_contact_name).trim();
+    if (body.point_of_contact_phone !== undefined) alphaUpdates.point_of_contact_phone = String(body.point_of_contact_phone).trim();
+    const metaKeys = ["business_address", "industry", "logo", "description"];
+    const newMeta = {};
+    metaKeys.forEach((k) => { if (body[k] !== undefined) newMeta[k] = body[k]; });
+    if (Object.keys(newMeta).length) {
+      const existing = await resolveAlphadomeTenantByPhone(tenantPhone);
+      alphaUpdates.metadata = { ...(existing?.metadata || {}), ...newMeta };
+    }
+    await updateAlphadomeTenantByPhone(tenantPhone, alphaUpdates);
+    return res.json({ ok: true });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// ===== TENANT SMTP CONFIG API =====
+
+app.get("/tenant/smtp", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantPhone } = req.tenantSession;
+    const tenant = await resolveAlphadomeTenantByPhone(tenantPhone);
+    if (!tenant) return res.status(404).json({ error: "Tenant config not found" });
+    return res.json({
+      smtp: {
+        smtp_host: tenant.smtp_host || "",
+        smtp_port: tenant.smtp_port || 587,
+        smtp_user: tenant.smtp_user || "",
+        smtp_from_name: tenant.smtp_from_name || "",
+        has_password: Boolean(tenant.smtp_pass),
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.patch("/tenant/smtp", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantPhone } = req.tenantSession;
+    const { smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from_name } = req.body || {};
+    const updates = { updated_at: new Date().toISOString() };
+    if (smtp_host !== undefined) updates.smtp_host = String(smtp_host).trim();
+    if (smtp_port !== undefined) updates.smtp_port = parseInt(smtp_port, 10) || 587;
+    if (smtp_user !== undefined) updates.smtp_user = String(smtp_user).trim();
+    if (smtp_from_name !== undefined) updates.smtp_from_name = String(smtp_from_name).trim();
+    if (smtp_pass !== undefined && smtp_pass !== "") updates.smtp_pass = String(smtp_pass);
+    const rows = await updateAlphadomeTenantByPhone(tenantPhone, updates);
+    if (!rows.length) return res.status(404).json({ error: "Tenant not found — SMTP config not updated" });
+    return res.json({ ok: true });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// ===== TENANT BOT SETTINGS API =====
+
+app.get("/tenant/bot-settings", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantPhone } = req.tenantSession;
+    const tenant = await resolveAlphadomeTenantByPhone(tenantPhone);
+    if (!tenant) return res.status(404).json({ error: "Tenant config not found" });
+    return res.json({
+      settings: {
+        ai_model: tenant.ai_model || "gpt-3.5-turbo",
+        ai_provider: tenant.ai_provider || "openai",
+        has_ai_key: Boolean(tenant.ai_api_key),
+        whatsapp_phone_number_id: tenant.whatsapp_phone_number_id || "",
+        whatsapp_business_account_id: tenant.whatsapp_business_account_id || "",
+        has_wa_token: Boolean(tenant.whatsapp_access_token),
+        is_active: tenant.is_active || false,
+        is_verified: tenant.is_verified || false,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.patch("/tenant/bot-settings", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantPhone } = req.tenantSession;
+    const { ai_model, ai_provider, ai_api_key, whatsapp_access_token, whatsapp_phone_number_id, whatsapp_business_account_id } = req.body || {};
+    const ALLOWED_MODELS = ["gpt-4o", "gpt-4o-mini", "gpt-4", "gpt-3.5-turbo", "claude-3-haiku-20240307", "claude-3-5-sonnet-20241022"];
+    if (ai_model && !ALLOWED_MODELS.includes(ai_model)) {
+      return res.status(400).json({ error: `Invalid ai_model. Allowed: ${ALLOWED_MODELS.join(", ")}` });
+    }
+    const updates = { updated_at: new Date().toISOString() };
+    if (ai_model) updates.ai_model = ai_model;
+    if (ai_provider) updates.ai_provider = String(ai_provider).trim();
+    if (ai_api_key) updates.ai_api_key = String(ai_api_key).trim();
+    if (whatsapp_access_token) updates.whatsapp_access_token = String(whatsapp_access_token).trim();
+    if (whatsapp_phone_number_id) updates.whatsapp_phone_number_id = String(whatsapp_phone_number_id).trim();
+    if (whatsapp_business_account_id) updates.whatsapp_business_account_id = String(whatsapp_business_account_id).trim();
+    const rows = await updateAlphadomeTenantByPhone(tenantPhone, updates);
+    if (!rows.length) return res.status(404).json({ error: "Tenant not found — bot settings not updated" });
+    return res.json({ ok: true });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// ===== TENANT ANALYTICS API =====
+
+app.get("/tenant/analytics", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+    const { data: pubTenant } = await supabase
+      .from("bot_tenants")
+      .select("brand_id")
+      .eq("id", tenantId)
+      .maybeSingle();
+    const brandId = pubTenant?.brand_id || null;
+    if (!brandId) {
+      return res.json({
+        analytics: {
+          total_conversations: 0, inbound_count: 0, outbound_count: 0,
+          llm_calls_total: 0, last_7_days: [],
+          note: "Brand ID not linked yet.",
+        },
+      });
+    }
+    const since7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const [allRes, llmRes, recentRes] = await Promise.all([
+      supabase.from("conversations").select("direction", { count: "exact" }).eq("brand_id", brandId),
+      supabase.from("conversations").select("id", { count: "exact" }).eq("brand_id", brandId).eq("llm_used", true),
+      supabase.from("conversations").select("direction, created_at").eq("brand_id", brandId).gte("created_at", since7d).order("created_at", { ascending: true }),
+    ]);
+    const allRows = allRes.data || [];
+    const total = allRes.count || 0;
+    const inbound = allRows.filter((r) => r.direction === "inbound").length;
+    const dayMap = {};
+    (recentRes.data || []).forEach((row) => {
+      const day = row.created_at?.slice(0, 10);
+      if (!day) return;
+      if (!dayMap[day]) dayMap[day] = { date: day, messages: 0 };
+      dayMap[day].messages++;
+    });
+    return res.json({
+      analytics: {
+        total_conversations: total,
+        inbound_count: inbound,
+        outbound_count: total - inbound,
+        llm_calls_total: llmRes.count || 0,
+        last_7_days: Object.values(dayMap).sort((a, b) => a.date.localeCompare(b.date)),
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// ===== TENANT PAYMENTS / SUBSCRIPTIONS API =====
+
+app.get("/tenant/payments", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantPhone } = req.tenantSession;
+    const candidates = buildPhoneCandidates(tenantPhone);
+    const { data, error } = await supabase
+      .from("subscriptions")
+      .select("id, phone, amount, plan_type, level, status, created_at, metadata")
+      .in("phone", candidates)
+      .order("created_at", { ascending: false })
+      .limit(50);
+    if (error) return res.status(500).json({ error: error.message });
+    return res.json({ payments: data || [] });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
 const upload = multer({
   dest: "uploads/",
   limits: { fileSize: ADMIN_UPLOAD_MAX_MB * 1024 * 1024 }
