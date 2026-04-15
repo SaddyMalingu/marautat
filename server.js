@@ -74,6 +74,7 @@ const supabase = createClient(
   process.env.SB_URL,
   process.env.SB_SERVICE_ROLE_KEY
 );
+const supabaseAlphadome = supabase.schema("alphadome");
 
 // ===== ADMIN: ADD AGENT/TENANT API =====
 // POST /admin/agents - Add a new agent/tenant
@@ -93,8 +94,8 @@ app.post('/admin/agents', tenantDashboardAuth, async (req, res) => {
   if (!client_name || !client_phone) {
     return res.status(400).json({ error: 'Business Name and Contact Phone are required.' });
   }
-  const { data, error } = await supabase
-    .from('alphadome.bot_tenants')
+  const { data, error } = await supabaseAlphadome
+    .from('bot_tenants')
     .upsert([
       {
         client_name,
@@ -206,8 +207,8 @@ async function findTenantByPhone(tenantPhone, requireActive = true) {
   const normalizedPhone = String(tenantPhone || "").trim();
   if (!normalizedPhone) return null;
 
-  let query = supabase
-    .from("alphadome.bot_tenants")
+  let query = supabaseAlphadome
+    .from("bot_tenants")
     .select("id, client_phone, client_name, is_active")
     .eq("client_phone", normalizedPhone)
     .limit(1);
@@ -304,8 +305,8 @@ app.post("/tenant/session/logout", (req, res) => {
 app.get("/tenant/training", tenantSessionAuth, async (req, res) => {
   try {
     const { tenantId } = req.tenantSession;
-    const { data, error } = await supabase
-      .from("alphadome.bot_training_data")
+    const { data, error } = await supabaseAlphadome
+      .from("bot_training_data")
       .select("*")
       .eq("bot_tenant_id", tenantId)
       .order("priority", { ascending: false })
@@ -327,8 +328,8 @@ app.post("/tenant/training", tenantSessionAuth, async (req, res) => {
       return res.status(400).json({ error: "question and answer are required" });
     }
 
-    const { data, error } = await supabase
-      .from("alphadome.bot_training_data")
+    const { data, error } = await supabaseAlphadome
+      .from("bot_training_data")
       .insert([
         {
           bot_tenant_id: tenantId,
@@ -367,8 +368,8 @@ app.patch("/tenant/training/:id", tenantSessionAuth, async (req, res) => {
 
     Object.keys(updates).forEach((key) => updates[key] === undefined && delete updates[key]);
 
-    const { data, error } = await supabase
-      .from("alphadome.bot_training_data")
+    const { data, error } = await supabaseAlphadome
+      .from("bot_training_data")
       .update(updates)
       .eq("id", id)
       .eq("bot_tenant_id", tenantId)
@@ -388,8 +389,8 @@ app.delete("/tenant/training/:id", tenantSessionAuth, async (req, res) => {
     const { tenantId } = req.tenantSession;
     const { id } = req.params;
 
-    const { data, error } = await supabase
-      .from("alphadome.bot_training_data")
+    const { data, error } = await supabaseAlphadome
+      .from("bot_training_data")
       .delete()
       .eq("id", id)
       .eq("bot_tenant_id", tenantId)
@@ -409,8 +410,8 @@ app.get("/tenant/catalog", tenantSessionAuth, async (req, res) => {
   try {
     const { tenantId } = req.tenantSession;
     const q = String(req.query.q || "").trim();
-    let query = supabase
-      .from("alphadome.bot_products")
+    let query = supabaseAlphadome
+      .from("bot_products")
       .select("*")
       .eq("bot_tenant_id", tenantId)
       .eq("is_active", true)
@@ -454,8 +455,8 @@ app.post("/tenant/catalog", tenantSessionAuth, async (req, res) => {
       updated_at: new Date().toISOString(),
     };
 
-    const { data: existing } = await supabase
-      .from("alphadome.bot_products")
+    const { data: existing } = await supabaseAlphadome
+      .from("bot_products")
       .select("id")
       .eq("bot_tenant_id", tenantId)
       .eq("sku", sku)
@@ -463,8 +464,8 @@ app.post("/tenant/catalog", tenantSessionAuth, async (req, res) => {
       .maybeSingle();
 
     const query = existing
-      ? supabase.from("alphadome.bot_products").update(entity).eq("id", existing.id)
-      : supabase.from("alphadome.bot_products").insert([{ ...entity, created_at: new Date().toISOString() }]);
+      ? supabaseAlphadome.from("bot_products").update(entity).eq("id", existing.id)
+      : supabaseAlphadome.from("bot_products").insert([{ ...entity, created_at: new Date().toISOString() }]);
 
     const { data, error } = await query.select("*").maybeSingle();
     if (error) return res.status(500).json({ error: error.message });
@@ -483,8 +484,8 @@ app.delete("/tenant/catalog", tenantSessionAuth, async (req, res) => {
       return res.status(400).json({ error: "sku is required" });
     }
 
-    const { data, error } = await supabase
-      .from("alphadome.bot_products")
+    const { data, error } = await supabaseAlphadome
+      .from("bot_products")
       .delete()
       .eq("bot_tenant_id", tenantId)
       .eq("sku", sku)
@@ -503,8 +504,8 @@ app.delete("/tenant/catalog", tenantSessionAuth, async (req, res) => {
 app.get("/tenant/orders", tenantSessionAuth, async (req, res) => {
   try {
     const { tenantId } = req.tenantSession;
-    const { data, error } = await supabase
-      .from("alphadome.bot_orders")
+    const { data, error } = await supabaseAlphadome
+      .from("bot_orders")
       .select("*")
       .eq("bot_tenant_id", tenantId)
       .order("created_at", { ascending: false });
@@ -529,8 +530,8 @@ app.post("/tenant/orders", tenantSessionAuth, async (req, res) => {
       return res.status(400).json({ error: "total_amount must be numeric" });
     }
 
-    const { data, error } = await supabase
-      .from("alphadome.bot_orders")
+    const { data, error } = await supabaseAlphadome
+      .from("bot_orders")
       .insert([
         {
           bot_tenant_id: tenantId,
@@ -567,8 +568,8 @@ app.patch("/tenant/orders/:id", tenantSessionAuth, async (req, res) => {
 
     Object.keys(updates).forEach((key) => updates[key] === undefined && delete updates[key]);
 
-    const { data, error } = await supabase
-      .from("alphadome.bot_orders")
+    const { data, error } = await supabaseAlphadome
+      .from("bot_orders")
       .update(updates)
       .eq("id", id)
       .eq("bot_tenant_id", tenantId)
@@ -588,8 +589,8 @@ app.delete("/tenant/orders/:id", tenantSessionAuth, async (req, res) => {
     const { tenantId } = req.tenantSession;
     const { id } = req.params;
 
-    const { data, error } = await supabase
-      .from("alphadome.bot_orders")
+    const { data, error } = await supabaseAlphadome
+      .from("bot_orders")
       .delete()
       .eq("id", id)
       .eq("bot_tenant_id", tenantId)
@@ -694,8 +695,8 @@ async function loadTenantContext(req, res, next) {
     let lastLookupError = null;
 
     if (businessPhoneId) {
-      const { data, error } = await supabase
-        .from("alphadome.bot_tenants")
+      const { data, error } = await supabaseAlphadome
+        .from("bot_tenants")
         .select("*")
         .eq("whatsapp_phone_number_id", businessPhoneId)
         .eq("is_active", true)
@@ -706,8 +707,8 @@ async function loadTenantContext(req, res, next) {
     }
 
     if (!tenant && businessPhoneCandidates.length) {
-      const { data, error } = await supabase
-        .from("alphadome.bot_tenants")
+      const { data, error } = await supabaseAlphadome
+        .from("bot_tenants")
         .select("*")
         .in("client_phone", businessPhoneCandidates)
         .eq("is_active", true)
@@ -1063,8 +1064,8 @@ app.get("/admin/catalog/data", adminAuth, async (req, res) => {
 
     let resolvedPhone = tenantPhone;
     if (!resolvedPhone && tenantName) {
-      const { data: tenant } = await supabase
-        .from("alphadome.bot_tenants")
+      const { data: tenant } = await supabaseAlphadome
+        .from("bot_tenants")
         .select("client_phone")
         .ilike("client_name", `%${tenantName}%`)
         .order("created_at", { ascending: false })
@@ -1148,8 +1149,8 @@ app.post("/admin/catalog/upload", adminAuth, upload.array("images"), async (req,
     // If only tenant_name is provided, resolve phone
     let resolvedPhone = targetPhone;
     if (!resolvedPhone && tenantName) {
-      const { data: tenant } = await supabase
-        .from("alphadome.bot_tenants")
+      const { data: tenant } = await supabaseAlphadome
+        .from("bot_tenants")
         .select("client_phone")
         .ilike("client_name", `%${tenantName}%`)
         .order("created_at", { ascending: false })
@@ -1191,8 +1192,8 @@ app.post("/admin/catalog/simple", adminAuth, upload.array("images"), async (req,
 
     let resolvedPhone = tenantPhone;
     if (!resolvedPhone && tenantName) {
-      const { data: tenant } = await supabase
-        .from("alphadome.bot_tenants")
+      const { data: tenant } = await supabaseAlphadome
+        .from("bot_tenants")
         .select("client_phone")
         .ilike("client_name", `%${tenantName}%`)
         .order("created_at", { ascending: false })
@@ -1341,8 +1342,8 @@ app.post("/admin/catalog/import-csv", adminAuth, upload.single("catalog_csv"), a
 
     let resolvedPhone = tenantPhone;
     if (!resolvedPhone && tenantName) {
-      const { data: tenant } = await supabase
-        .from("alphadome.bot_tenants")
+      const { data: tenant } = await supabaseAlphadome
+        .from("bot_tenants")
         .select("client_phone")
         .ilike("client_name", `%${tenantName}%`)
         .order("created_at", { ascending: false })
@@ -2685,4 +2686,6 @@ app.listen(process.env.PORT, () => {
   log(`Server running on port ${process.env.PORT}`, "SYSTEM");
   console.log(`🚀 Server running on port ${process.env.PORT}`);
 });
+
+
 
