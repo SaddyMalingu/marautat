@@ -9,7 +9,7 @@ import multer from "multer";
 import { createClient } from "@supabase/supabase-js";
 import OpenAI from "openai";
 import { log } from "./utils/logger.js";
-import { sendMessage } from "./utils/messenger.js";
+import { sendMessage, sendImage, sendInteractiveList } from "./utils/messenger.js";
 import { startHealthMonitor, runHealthCheck, incrementErrorCount } from "./utils/healthMonitor.js";
 
 const app = express();
@@ -274,6 +274,34 @@ async function resolveAlphadomeTenantByPhone(tenantPhone) {
   return null;
 }
 
+async function deleteAlphadomeProductByTenantPhoneAndSku(tenantPhone, sku) {
+  const alphaTenant = await resolveAlphadomeTenantByPhone(tenantPhone);
+  if (!alphaTenant?.id) return null;
+
+  const knownItems = await fetchCatalogForTenant(tenantPhone, sku);
+  const knownItem = knownItems.find((item) => String(item.sku || "").toLowerCase() === String(sku || "").toLowerCase()) || null;
+  if (!knownItem?.id) return null;
+
+  const url = `${process.env.SB_URL}/rest/v1/bot_products?bot_tenant_id=eq.${encodeURIComponent(alphaTenant.id)}&sku=eq.${encodeURIComponent(sku)}`;
+  try {
+    await axios.delete(url, {
+      headers: {
+        apikey: process.env.SB_SERVICE_ROLE_KEY,
+        Authorization: `Bearer ${process.env.SB_SERVICE_ROLE_KEY}`,
+        "Content-Type": "application/json",
+        "Content-Profile": "alphadome",
+      },
+    });
+  } catch (err) {
+    // Some PostgREST setups return 406 for DELETE when no representation is requested.
+    if (err?.response?.status !== 406) {
+      throw err;
+    }
+  }
+
+  return { id: knownItem.id };
+}
+
 function tenantDashboardAuth(req, res, next) {
   if (!TENANT_DASHBOARD_PASS) {
     return res.status(500).send("TENANT_DASHBOARD_PASS environment variable must be set (separate from ADMIN_PASS)");
@@ -471,6 +499,34 @@ app.delete("/tenant/training/:id", tenantSessionAuth, async (req, res) => {
   }
 });
 
+function normalizeCatalogItem(item = {}) {
+  const metadata = item?.metadata && typeof item.metadata === "object" ? item.metadata : {};
+  const primaryImage =
+    item.primary_image ||
+    item.image_url ||
+    metadata.image_url ||
+    null;
+  const storeUrl =
+    item.store_url ||
+    metadata.store_url ||
+    metadata.product_url ||
+    metadata.url ||
+    null;
+
+  return {
+    ...item,
+    metadata,
+    primary_image: primaryImage,
+    image_url: item.image_url || primaryImage || null,
+    store_url: storeUrl,
+  };
+}
+
+function normalizeCatalogItems(items = []) {
+  if (!Array.isArray(items)) return [];
+  return items.map((item) => normalizeCatalogItem(item));
+}
+
 // ===== TENANT CATALOG API =====
 app.get("/tenant/catalog", tenantSessionAuth, async (req, res) => {
   try {
@@ -495,11 +551,11 @@ app.get("/tenant/catalog", tenantSessionAuth, async (req, res) => {
         q: q || null,
       });
       if (rpcError) return res.status(500).json({ error: rpcError.message });
-      return res.json({ items: rpcData?.items || [] });
+      return res.json({ items: normalizeCatalogItems(rpcData?.items || []) });
     }
 
     if (error) return res.status(500).json({ error: error.message });
-    return res.json({ items: data || [] });
+    return res.json({ items: normalizeCatalogItems(data || []) });
   } catch (error) {
     return res.status(500).json({ error: error.message });
   }
@@ -507,7 +563,7 @@ app.get("/tenant/catalog", tenantSessionAuth, async (req, res) => {
 
 app.post("/tenant/catalog", tenantSessionAuth, async (req, res) => {
   try {
-    const { tenantId } = req.tenantSession;
+    const { tenantId, tenantPhone } = req.tenantSession;
     const payload = req.body || {};
     const sku = String(payload.sku || "").trim() || generateSku(payload.name || "ITEM", "TEN");
     const name = String(payload.name || "").trim();
@@ -515,6 +571,12 @@ app.post("/tenant/catalog", tenantSessionAuth, async (req, res) => {
     if (!name) {
       return res.status(400).json({ error: "name is required" });
     }
+
+    const rawMetadata = payload.metadata && typeof payload.metadata === "object" ? payload.metadata : {};
+    const metadata = {
+      ...rawMetadata,
+      ...(payload.store_url !== undefined ? { store_url: payload.store_url || null } : {}),
+    };
 
     const entity = {
       bot_tenant_id: tenantId,
@@ -525,7 +587,7 @@ app.post("/tenant/catalog", tenantSessionAuth, async (req, res) => {
       currency: payload.currency || "KES",
       stock_count: Number.isFinite(Number(payload.stock_count)) ? Number(payload.stock_count) : 0,
       image_url: payload.image_url || null,
-      metadata: payload.metadata || {},
+      metadata,
       is_active: payload.is_active !== false,
       updated_at: new Date().toISOString(),
     };
@@ -543,8 +605,33 @@ app.post("/tenant/catalog", tenantSessionAuth, async (req, res) => {
       : supabase.from("bot_products").insert([{ ...entity, created_at: new Date().toISOString() }]);
 
     const { data, error } = await query.select("*").maybeSingle();
+    if (error && isMissingTableInSchemaCache(error)) {
+      const rpcPayload = {
+        products: [
+          {
+            sku,
+            name,
+            description: payload.description || null,
+            price: Number.isFinite(Number(payload.price)) ? Number(payload.price) : null,
+            currency: payload.currency || "KES",
+            stock_count: Number.isFinite(Number(payload.stock_count)) ? Number(payload.stock_count) : 0,
+            image_url: payload.image_url || null,
+            metadata,
+          },
+        ],
+      };
+      const { error: rpcError } = await supabase.rpc("seed_portfolio", {
+        tenant_phone: tenantPhone,
+        payload: rpcPayload,
+      });
+      if (rpcError) return res.status(500).json({ error: rpcError.message });
+
+      const refreshed = await fetchCatalogForTenant(tenantPhone, sku);
+      const saved = refreshed.find((item) => String(item.sku || "").toLowerCase() === sku.toLowerCase()) || refreshed[0] || null;
+      return res.json({ item: normalizeCatalogItem(saved || {}), mode: existing ? "updated" : "created" });
+    }
     if (error) return res.status(500).json({ error: error.message });
-    return res.json({ item: data, mode: existing ? "updated" : "created" });
+    return res.json({ item: normalizeCatalogItem(data || {}), mode: existing ? "updated" : "created" });
   } catch (error) {
     return res.status(500).json({ error: error.message });
   }
@@ -552,7 +639,7 @@ app.post("/tenant/catalog", tenantSessionAuth, async (req, res) => {
 
 app.delete("/tenant/catalog", tenantSessionAuth, async (req, res) => {
   try {
-    const { tenantId } = req.tenantSession;
+    const { tenantId, tenantPhone } = req.tenantSession;
     const sku = String(req.query.sku || "").trim();
 
     if (!sku) {
@@ -567,6 +654,11 @@ app.delete("/tenant/catalog", tenantSessionAuth, async (req, res) => {
       .select("id")
       .maybeSingle();
 
+    if (error && isMissingTableInSchemaCache(error)) {
+      const deleted = await deleteAlphadomeProductByTenantPhoneAndSku(tenantPhone, sku);
+      if (!deleted) return res.status(404).json({ error: "Product not found" });
+      return res.json({ ok: true, deleted_id: deleted.id });
+    }
     if (error) return res.status(500).json({ error: error.message });
     if (!data) return res.status(404).json({ error: "Product not found" });
     return res.json({ ok: true, deleted_id: data.id });
@@ -1916,6 +2008,68 @@ if (text.trim().toUpperCase().startsWith("JOIN ALPHADOME") || text.trim().toUppe
   }
 }
 
+// ✅ PRODUCT BUY FLOW: BUY <SKU>
+const buyMatch = text.match(/^buy\s+([A-Za-z0-9._-]+)/i);
+if (buyMatch) {
+  try {
+    if (!tenantPhone) {
+      await sendMessage(from, "⚠️ Product checkout is only available for tenant-linked chats.");
+      return res.sendStatus(200);
+    }
+
+    const requestedSku = String(buyMatch[1] || "").trim();
+    const productCandidates = await fetchCatalogForTenant(tenantPhone, requestedSku);
+    const product = productCandidates.find((p) =>
+      String(p.sku || "").toLowerCase() === requestedSku.toLowerCase()
+    ) || productCandidates[0];
+
+    if (!product) {
+      await sendMessage(from, `⚠️ I couldn't find SKU *${requestedSku}*. Please check the SKU from the catalog list and try again.`);
+      return res.sendStatus(200);
+    }
+
+    const amount = Number(product.price);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      const storeLine = product.store_url ? `\nStore link: ${product.store_url}` : "";
+      await sendMessage(
+        from,
+        `⚠️ *${product.name || product.sku}* has no valid price set for automated checkout.${storeLine}\nPlease ask a human agent for assisted checkout.`
+      );
+      return res.sendStatus(200);
+    }
+
+    const safeSku = String(product.sku || requestedSku).replace(/[^A-Za-z0-9]/g, "").slice(0, 8) || "ITEM";
+    const accountRef = `PRD${safeSku}`;
+
+    await supabase
+      .from("user_sessions")
+      .upsert({
+        phone: from,
+        context: {
+          step: "awaiting_product_payment_number",
+          sku: product.sku || requestedSku,
+          product_name: product.name || "Product",
+          amount,
+          account_ref: accountRef,
+          store_url: product.store_url || null,
+        },
+        updated_at: new Date().toISOString(),
+      });
+
+    const storeLine = product.store_url ? `\nStore link: ${product.store_url}` : "";
+    await sendMessage(
+      from,
+      `🛒 You selected *${product.name || product.sku}* (${product.sku || requestedSku}).\n💰 Price: ${product.currency || "KES"} ${amount}.\n\nReply with the M-Pesa number (2547XXXXXXXX) or type *same* to use your WhatsApp number.${storeLine}`
+    );
+
+    return res.sendStatus(200);
+  } catch (err) {
+    log(`Product checkout start error for ${from}: ${err.message}`, "ERROR");
+    await sendMessage(from, "⚠️ We couldn't start product checkout right now. Please try again shortly.");
+    return res.sendStatus(200);
+  }
+}
+
 // ✅ PAYMENT NUMBER RESPONSE HANDLER
 const phoneMatch = text.trim().match(/^(\+?254|0)\d{9}$/) || text.trim().toLowerCase() === "same";
 
@@ -1925,6 +2079,66 @@ if (phoneMatch) {
     .select("context")
     .eq("phone", from)
     .maybeSingle();
+
+  if (session?.context?.step === "awaiting_product_payment_number") {
+    let paymentPhone = text.trim().toLowerCase() === "same" ? from : text.trim();
+
+    if (paymentPhone.startsWith("0")) paymentPhone = "254" + paymentPhone.slice(1);
+    if (paymentPhone.startsWith("+")) paymentPhone = paymentPhone.replace(/^\+/, "");
+
+    const { amount, sku, product_name, account_ref, store_url } = session.context;
+
+    try {
+      await sendMessage(
+        from,
+        `💳 Processing payment for *${product_name || sku}* (KES ${amount}). Please wait...`
+      );
+
+      const stkResp = await initiateStkPush({
+        phone: paymentPhone,
+        amount,
+        accountRef: account_ref || `PRD${String(sku || "ITEM").replace(/[^A-Za-z0-9]/g, "").slice(0, 8)}`,
+        transactionDesc: `Product ${sku || "checkout"}`,
+      });
+
+      const checkoutId = stkResp?.CheckoutRequestID || stkResp?.checkoutRequestID || null;
+      if (checkoutId) {
+        await supabase.from("subscriptions").insert([
+          {
+            user_id: userData.id,
+            phone: paymentPhone,
+            amount,
+            plan_type: "product_checkout",
+            level: 1,
+            account_ref: account_ref || null,
+            status: "pending",
+            mpesa_checkout_request_id: checkoutId,
+            metadata: {
+              ...(stkResp || {}),
+              checkout_type: "product",
+              sku: sku || null,
+              product_name: product_name || null,
+              store_url: store_url || null,
+              customer_wa: from,
+            },
+          },
+        ]);
+      }
+
+      const storeLine = store_url ? `\nStore link: ${store_url}` : "";
+      await sendMessage(
+        from,
+        `✅ Payment prompt sent to ${paymentPhone}. Please complete payment on your phone to confirm your order for *${product_name || sku}*.${storeLine}`
+      );
+
+      await supabase.from("user_sessions").delete().eq("phone", from);
+      return res.sendStatus(200);
+    } catch (err) {
+      log(`Product payment flow error for ${from}: ${err.message}`, "ERROR");
+      await sendMessage(from, "⚠️ We couldn't start the product payment flow. Please try again shortly.");
+      return res.sendStatus(200);
+    }
+  }
 
   if (session?.context?.step === "awaiting_payment_number") {
     let paymentPhone = text.trim().toLowerCase() === "same" ? from : text.trim();
@@ -2115,12 +2329,20 @@ if (text.match(/^2547\d{7}$/) || text.toLowerCase() === "same") {
     const replyMeta = typeof reply === "object" ? reply.meta : null;
     if (reply?.type === "catalog") {
       const items = reply.items || [];
-      const firstImage = items.find((i) => i.primary_image)?.primary_image || null;
+      const firstItem = items.find(Boolean) || null;
+      const firstImage =
+        items.find((i) => i.primary_image || i.image_url)?.primary_image ||
+        items.find((i) => i.primary_image || i.image_url)?.image_url ||
+        null;
       if (firstImage) {
         await sendImage(from, firstImage, "Top match", creds);
       }
       const sections = buildCatalogList(items);
       await sendInteractiveList(from, "Here are matching items:", "View items", sections, creds);
+      const firstStore = firstItem?.store_url || null;
+      const buyHint = firstItem?.sku ? `\nTo buy now, reply: *BUY ${firstItem.sku}*` : "\nTo buy now, reply: *BUY <SKU>*";
+      const storeHint = firstStore ? `\nStore link: ${firstStore}` : "";
+      await sendMessage(from, `Use the list to browse products.${buyHint}${storeHint}`, creds);
     } else {
       const replyText = typeof reply === "string" ? reply : reply?.text || "";
       await sendMessage(from, replyText, creds);
@@ -2404,7 +2626,7 @@ async function fetchCatalogForTenant(tenantPhone, query) {
     log(`Catalog RPC error: ${error.message}`, "WARN");
     return [];
   }
-  return data?.items || [];
+  return normalizeCatalogItems(data?.items || []);
 }
 
 async function fetchConversationContext(userId, brandId, limit = 8) {
@@ -2505,6 +2727,7 @@ function buildDbContext({ userProfile, brandProfile, tenant, catalogMatches = []
       price: item.price,
       currency: item.currency || "KES",
       stock_count: item.stock_count,
+      store_url: item.store_url || null,
       category: item.category || item.metadata?.category || null,
       tags: item.tags || item.metadata?.tags || null,
     }));

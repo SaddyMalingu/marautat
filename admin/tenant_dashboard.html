@@ -365,7 +365,7 @@ async function renderCatalog() {
             ${items.length === 0 ? `<tr><td colspan="7" class="text-center py-4" style="color:var(--text-muted);">No products yet.</td></tr>` :
               items.map(it => `<tr>
                 <td><code style="font-size:0.77rem;color:var(--text-muted);">${esc(it.sku||'')}</code></td>
-                <td><b>${esc(it.name||'')}</b>${it.description?`<br><span style="font-size:0.77rem;color:var(--text-muted);">${esc(it.description.substring(0,60))}</span>`:''}</td>
+                <td><b>${esc(it.name||'')}</b>${it.description?`<br><span style="font-size:0.77rem;color:var(--text-muted);">${esc(it.description.substring(0,60))}</span>`:''}${(it.store_url||it.metadata?.store_url)?`<br><a href="${esc(it.store_url||it.metadata?.store_url)}" target="_blank" style="font-size:0.75rem;">Store link</a>`:''}</td>
                 <td>${it.price!=null?`<b>${parseFloat(it.price).toLocaleString()}</b> <span style="color:var(--text-muted);">${esc(it.currency||'KES')}</span>`:'—'}</td>
                 <td>${it.stock_count??'—'}</td>
                 <td>${esc(it.metadata?.category||'')}</td>
@@ -399,8 +399,9 @@ window.showProdForm = function(it) {
           <div class="col-12 col-md-4"><label class="form-label">Price (KES)</label><input type="number" class="form-control" name="price" value="${it?.price??''}" step="0.01"/></div>
           <div class="col-12 col-md-4"><label class="form-label">Currency</label><input type="text" class="form-control" name="currency" value="${esc(it?.currency||'KES')}"/></div>
           <div class="col-12 col-md-4"><label class="form-label">Stock</label><input type="number" class="form-control" name="stock" value="${it?.stock_count??0}"/></div>
-          <div class="col-12 col-md-6"><label class="form-label">Category</label><input type="text" class="form-control" name="cat" value="${esc(it?.metadata?.category||'')}"/></div>
-          <div class="col-12 col-md-6"><label class="form-label">Image URL</label><input type="url" class="form-control" name="img" value="${esc(it?.image_url||'')}"/></div>
+          <div class="col-12 col-md-4"><label class="form-label">Category</label><input type="text" class="form-control" name="cat" value="${esc(it?.metadata?.category||'')}"/></div>
+          <div class="col-12 col-md-4"><label class="form-label">Image URL</label><input type="url" class="form-control" name="img" value="${esc(it?.image_url||'')}"/></div>
+          <div class="col-12 col-md-4"><label class="form-label">Store URL</label><input type="url" class="form-control" name="store" value="${esc(it?.store_url||it?.metadata?.store_url||'')}" placeholder="https://your-store/product/..."/></div>
           <div class="col-12"><label class="form-label">Description</label><textarea class="form-control" name="desc" rows="2">${esc(it?.description||'')}</textarea></div>
           ${ed?`<div class="col-12 col-md-4"><label class="form-label">Status</label><select class="form-select" name="active"><option value="true" ${it.is_active!==false?'selected':''}>Active</option><option value="false" ${it.is_active===false?'selected':''}>Inactive</option></select></div>`:''}
           <div class="col-12 d-flex gap-2"><button type="submit" class="btn btn-accent">${ed?'Save':'Add Product'}</button><button type="button" class="btn btn-outline-acc" onclick="document.getElementById('prodModal').innerHTML=''">Cancel</button></div>
@@ -409,7 +410,7 @@ window.showProdForm = function(it) {
     </div>`;
   document.getElementById('pForm').onsubmit = async function(e) {
     e.preventDefault(); const f = e.target;
-    const payload = { sku: f.sku.value.trim(), name: f.name.value.trim(), price: f.price.value ? parseFloat(f.price.value) : null, currency: f.currency.value || 'KES', stock_count: parseInt(f.stock.value,10)||0, description: f.desc.value.trim(), image_url: f.img.value.trim()||null, metadata: { category: f.cat.value.trim() } };
+    const payload = { sku: f.sku.value.trim(), name: f.name.value.trim(), price: f.price.value ? parseFloat(f.price.value) : null, currency: f.currency.value || 'KES', stock_count: parseInt(f.stock.value,10)||0, description: f.desc.value.trim(), image_url: f.img.value.trim()||null, store_url: f.store.value.trim()||null, metadata: { category: f.cat.value.trim(), store_url: f.store.value.trim()||null } };
     if (ed && f.active) payload.is_active = f.active.value === 'true';
     const { ok, data } = await apiJson('/tenant/catalog', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
     if (!ok) { toast(data.error||'Error saving product', 'err'); return; }
