@@ -1438,6 +1438,339 @@ app.get("/tenant/conversations/search", tenantSessionAuth, async (req, res) => {
   }
 });
 
+// GET /tenant/preferences — customer opt-ins and preference profile
+app.get("/tenant/preferences", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+    const q = String(req.query.q || "").trim().toLowerCase();
+
+    const { data: tenantRow } = await supabase
+      .from("bot_tenants")
+      .select("brand_id")
+      .eq("id", tenantId)
+      .maybeSingle();
+
+    const brandId = tenantRow?.brand_id;
+    if (!brandId) return res.json({ customers: [] });
+
+    const { data: convRows } = await supabase
+      .from("conversations")
+      .select("user_id, created_at")
+      .eq("brand_id", brandId)
+      .eq("direction", "incoming")
+      .order("created_at", { ascending: false })
+      .limit(1000);
+
+    const seen = new Map();
+    (convRows || []).forEach((row) => {
+      if (!row?.user_id || seen.has(row.user_id)) return;
+      seen.set(row.user_id, row.created_at);
+    });
+    const userIds = [...seen.keys()];
+    if (!userIds.length) return res.json({ customers: [] });
+
+    const { data: users } = await supabase
+      .from("users")
+      .select("id, phone, full_name, email")
+      .in("id", userIds);
+
+    const phones = (users || []).map((u) => u.phone).filter(Boolean);
+    const { data: sessions } = phones.length
+      ? await supabase
+          .from("user_sessions")
+          .select("phone, context, updated_at")
+          .eq("tenant_id", tenantId)
+          .in("phone", phones)
+      : { data: [] };
+
+    const sessionMap = new Map((sessions || []).map((s) => [s.phone, s]));
+    let customers = (users || []).map((u) => {
+      const s = sessionMap.get(u.phone) || {};
+      const ctx = s.context && typeof s.context === "object" ? s.context : {};
+      return {
+        phone: u.phone,
+        name: u.full_name || u.phone || "Unknown",
+        email: u.email || null,
+        marketing_opt_in: ctx.marketing_opt_in !== false,
+        do_not_disturb: ctx.do_not_disturb === true,
+        preferred_language: ctx.preferred_language || null,
+        preferred_categories: Array.isArray(ctx.preferred_categories) ? ctx.preferred_categories.slice(0, 10) : [],
+        updated_at: s.updated_at || null,
+      };
+    });
+
+    if (q) {
+      customers = customers.filter((c) =>
+        (c.name || "").toLowerCase().includes(q) ||
+        (c.phone || "").toLowerCase().includes(q) ||
+        (c.email || "").toLowerCase().includes(q)
+      );
+    }
+
+    return res.json({ customers });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// PATCH /tenant/preferences/:phone
+app.patch("/tenant/preferences/:phone", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+    const phone = decodeURIComponent(req.params.phone || "").trim();
+    if (!phone) return res.status(400).json({ error: "phone is required" });
+
+    const { data: existing } = await supabase
+      .from("user_sessions")
+      .select("context")
+      .eq("tenant_id", tenantId)
+      .eq("phone", phone)
+      .maybeSingle();
+
+    const context = existing?.context && typeof existing.context === "object" ? existing.context : {};
+    const preferredCategories = Array.isArray(req.body?.preferred_categories)
+      ? req.body.preferred_categories.map((v) => String(v || "").trim()).filter(Boolean).slice(0, 10)
+      : context.preferred_categories || [];
+
+    const nextContext = {
+      ...context,
+      marketing_opt_in: req.body?.marketing_opt_in !== undefined ? Boolean(req.body.marketing_opt_in) : context.marketing_opt_in !== false,
+      do_not_disturb: req.body?.do_not_disturb !== undefined ? Boolean(req.body.do_not_disturb) : context.do_not_disturb === true,
+      preferred_language: req.body?.preferred_language !== undefined ? String(req.body.preferred_language || "").trim().slice(0, 20) || null : context.preferred_language || null,
+      preferred_categories: preferredCategories,
+    };
+
+    const { error } = await supabase
+      .from("user_sessions")
+      .upsert({ phone, tenant_id: tenantId, context: nextContext, updated_at: new Date().toISOString() });
+    if (error) return res.status(500).json({ error: error.message });
+
+    return res.json({ success: true, preferences: nextContext });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /tenant/favorites — favorite SKUs grouped by customer
+app.get("/tenant/favorites", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+    const { data: sessions, error } = await supabase
+      .from("user_sessions")
+      .select("phone, context, updated_at")
+      .eq("tenant_id", tenantId)
+      .order("updated_at", { ascending: false })
+      .limit(1000);
+    if (error) return res.status(500).json({ error: error.message });
+
+    const allSkus = new Set();
+    const byCustomer = (sessions || []).map((s) => {
+      const ctx = s.context && typeof s.context === "object" ? s.context : {};
+      const favorites = Array.isArray(ctx.favorite_skus) ? ctx.favorite_skus.map((v) => String(v || "").trim()).filter(Boolean).slice(0, 30) : [];
+      favorites.forEach((sku) => allSkus.add(sku));
+      return { phone: s.phone, favorite_skus: favorites, updated_at: s.updated_at };
+    }).filter((row) => row.favorite_skus.length > 0);
+
+    const skuList = [...allSkus];
+    const { data: products } = skuList.length
+      ? await supabase
+          .from("bot_products")
+          .select("sku, name, price, currency")
+          .eq("bot_tenant_id", tenantId)
+          .in("sku", skuList)
+      : { data: [] };
+
+    const productMap = new Map((products || []).map((p) => [p.sku, p]));
+    const skuCount = {};
+    byCustomer.forEach((c) => c.favorite_skus.forEach((sku) => { skuCount[sku] = (skuCount[sku] || 0) + 1; }));
+
+    const topFavorites = Object.entries(skuCount)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 20)
+      .map(([sku, count]) => ({ sku, count, product: productMap.get(sku) || null }));
+
+    const customers = byCustomer.map((c) => ({
+      ...c,
+      favorites: c.favorite_skus.map((sku) => ({ sku, product: productMap.get(sku) || null })),
+    }));
+
+    return res.json({ customers, top_favorites: topFavorites });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /tenant/favorites/:phone — add favorite sku
+app.post("/tenant/favorites/:phone", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+    const phone = decodeURIComponent(req.params.phone || "").trim();
+    const sku = String(req.body?.sku || "").trim();
+    if (!phone || !sku) return res.status(400).json({ error: "phone and sku are required" });
+
+    const { data: product } = await supabase
+      .from("bot_products")
+      .select("sku")
+      .eq("bot_tenant_id", tenantId)
+      .eq("sku", sku)
+      .maybeSingle();
+    if (!product) return res.status(404).json({ error: "SKU not found" });
+
+    const { data: existing } = await supabase
+      .from("user_sessions")
+      .select("context")
+      .eq("tenant_id", tenantId)
+      .eq("phone", phone)
+      .maybeSingle();
+    const ctx = existing?.context && typeof existing.context === "object" ? existing.context : {};
+    const favoriteSet = new Set(Array.isArray(ctx.favorite_skus) ? ctx.favorite_skus : []);
+    favoriteSet.add(sku);
+
+    const nextContext = { ...ctx, favorite_skus: [...favoriteSet].slice(0, 50) };
+    const { error } = await supabase
+      .from("user_sessions")
+      .upsert({ phone, tenant_id: tenantId, context: nextContext, updated_at: new Date().toISOString() });
+    if (error) return res.status(500).json({ error: error.message });
+    return res.json({ success: true, favorite_skus: nextContext.favorite_skus });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// DELETE /tenant/favorites/:phone/:sku
+app.delete("/tenant/favorites/:phone/:sku", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+    const phone = decodeURIComponent(req.params.phone || "").trim();
+    const sku = decodeURIComponent(req.params.sku || "").trim();
+    if (!phone || !sku) return res.status(400).json({ error: "phone and sku are required" });
+
+    const { data: existing } = await supabase
+      .from("user_sessions")
+      .select("context")
+      .eq("tenant_id", tenantId)
+      .eq("phone", phone)
+      .maybeSingle();
+    const ctx = existing?.context && typeof existing.context === "object" ? existing.context : {};
+    const next = Array.isArray(ctx.favorite_skus) ? ctx.favorite_skus.filter((v) => String(v) !== sku) : [];
+    const nextContext = { ...ctx, favorite_skus: next };
+
+    const { error } = await supabase
+      .from("user_sessions")
+      .upsert({ phone, tenant_id: tenantId, context: nextContext, updated_at: new Date().toISOString() });
+    if (error) return res.status(500).json({ error: error.message });
+
+    return res.json({ success: true, favorite_skus: next });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /tenant/referrals — summary of referral code usage and pipeline
+app.get("/tenant/referrals", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+
+    const [{ data: subs }, { data: sessions }] = await Promise.all([
+      supabase
+        .from("subscriptions")
+        .select("id, user_id, amount, status, created_at, metadata")
+        .eq("tenant_id", tenantId)
+        .order("created_at", { ascending: false })
+        .limit(1000),
+      supabase
+        .from("user_sessions")
+        .select("phone, context, updated_at")
+        .eq("tenant_id", tenantId)
+        .order("updated_at", { ascending: false })
+        .limit(1000),
+    ]);
+
+    const codeStats = {};
+    (subs || []).forEach((s) => {
+      const md = s?.metadata && typeof s.metadata === "object" ? s.metadata : {};
+      const code = String(md.referral_code || md.ref_code || "").trim().toUpperCase();
+      if (!code) return;
+      if (!codeStats[code]) {
+        codeStats[code] = {
+          referral_code: code,
+          attributed_sales: 0,
+          attributed_revenue: 0,
+          completed_sales: 0,
+          last_seen: null,
+        };
+      }
+      codeStats[code].attributed_sales += 1;
+      if (s.status === "completed" || s.status === "active") {
+        codeStats[code].completed_sales += 1;
+        codeStats[code].attributed_revenue += Number(s.amount || 0);
+      }
+      if (!codeStats[code].last_seen || new Date(s.created_at) > new Date(codeStats[code].last_seen)) {
+        codeStats[code].last_seen = s.created_at;
+      }
+    });
+
+    const leads = (sessions || []).map((s) => {
+      const ctx = s.context && typeof s.context === "object" ? s.context : {};
+      if (!ctx.referral_code) return null;
+      return {
+        phone: s.phone,
+        referral_code: String(ctx.referral_code || "").toUpperCase(),
+        referrer_phone: ctx.referrer_phone || null,
+        captured_at: ctx.referral_captured_at || s.updated_at,
+      };
+    }).filter(Boolean);
+
+    const codes = Object.values(codeStats).sort((a, b) => b.attributed_sales - a.attributed_sales);
+    return res.json({
+      totals: {
+        referral_codes_used: codes.length,
+        attributed_sales: codes.reduce((sum, c) => sum + c.attributed_sales, 0),
+        attributed_revenue: Math.round(codes.reduce((sum, c) => sum + c.attributed_revenue, 0) * 100) / 100,
+        pending_leads: leads.length,
+      },
+      codes,
+      leads: leads.slice(0, 200),
+    });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /tenant/referrals/track — set referral context for a phone
+app.post("/tenant/referrals/track", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+    const phone = String(req.body?.phone || "").trim();
+    const referralCode = String(req.body?.referral_code || "").trim().toUpperCase();
+    const referrerPhone = String(req.body?.referrer_phone || "").trim() || null;
+    if (!phone || !referralCode) return res.status(400).json({ error: "phone and referral_code are required" });
+
+    const { data: existing } = await supabase
+      .from("user_sessions")
+      .select("context")
+      .eq("tenant_id", tenantId)
+      .eq("phone", phone)
+      .maybeSingle();
+    const ctx = existing?.context && typeof existing.context === "object" ? existing.context : {};
+    const nextContext = {
+      ...ctx,
+      referral_code: referralCode,
+      referrer_phone: referrerPhone,
+      referral_captured_at: new Date().toISOString(),
+    };
+
+    const { error } = await supabase
+      .from("user_sessions")
+      .upsert({ phone, tenant_id: tenantId, context: nextContext, updated_at: new Date().toISOString() });
+    if (error) return res.status(500).json({ error: error.message });
+
+    return res.json({ success: true, referral_code: referralCode });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
 // GET /tenant/products/performance — product conversion metrics
 app.get("/tenant/products/performance", tenantSessionAuth, async (req, res) => {
   try {
@@ -3084,6 +3417,18 @@ app.post("/webhook", loadTenantContext, async (req, res) => {
 
   log(`Received from ${from}: ${text}`, "INCOMING");
 
+  // Allow customers to attach a referral code via WhatsApp: REF CODE123
+  const referralMatch = text.match(/^ref\s+([a-z0-9_-]{3,30})$/i);
+  if (referralMatch) {
+    const referralCode = String(referralMatch[1] || "").toUpperCase();
+    await mergeUserSessionContext(from, {
+      referral_code: referralCode,
+      referral_captured_at: new Date().toISOString(),
+    });
+    await sendMessage(from, `✅ Referral code *${referralCode}* saved. Continue with *JOIN ALPHADOME* or *BUY <SKU>*.`);
+    return res.sendStatus(200);
+  }
+
   try {
     // STEP 1: Find or create user
     let { data: userData, error: userErr } = await supabase
@@ -3355,6 +3700,8 @@ if (phoneMatch) {
 
       const checkoutId = stkResp?.CheckoutRequestID || stkResp?.checkoutRequestID || null;
       if (checkoutId) {
+        const referralCode = session?.context?.referral_code || null;
+        const referrerPhone = session?.context?.referrer_phone || null;
         await supabase.from("subscriptions").insert([
           {
             user_id: userData.id,
@@ -3372,6 +3719,8 @@ if (phoneMatch) {
               product_name: product_name || null,
               store_url: store_url || null,
               customer_wa: from,
+              referral_code: referralCode,
+              referrer_phone: referrerPhone,
             },
           },
         ]);
@@ -3424,6 +3773,8 @@ if (phoneMatch) {
       });
 
       if (stkResp?.CheckoutRequestID) {
+        const referralCode = session?.context?.referral_code || null;
+        const referrerPhone = session?.context?.referrer_phone || null;
         await supabase.from("subscriptions").insert([
           {
             user_id: userData.id,
@@ -3434,7 +3785,11 @@ if (phoneMatch) {
             account_ref: accountRef,
             status: "pending",
             mpesa_checkout_request_id: stkResp.CheckoutRequestID,
-            metadata: stkResp,
+            metadata: {
+              ...(stkResp || {}),
+              referral_code: referralCode,
+              referrer_phone: referrerPhone,
+            },
           },
         ]);
 

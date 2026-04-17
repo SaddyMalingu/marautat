@@ -147,6 +147,9 @@
     <div class="sidebar-label">Customers</div>
     <div class="nav-item" data-sec="customers"><span class="nav-icon"><i class="fa-solid fa-users"></i></span>Directory</div>
     <div class="nav-item" data-sec="search"><span class="nav-icon"><i class="fa-solid fa-magnifying-glass"></i></span>Chat Search</div>
+    <div class="nav-item" data-sec="preferences"><span class="nav-icon"><i class="fa-solid fa-sliders"></i></span>Preferences</div>
+    <div class="nav-item" data-sec="favorites"><span class="nav-icon"><i class="fa-solid fa-star"></i></span>Favorites</div>
+    <div class="nav-item" data-sec="referrals"><span class="nav-icon"><i class="fa-solid fa-link"></i></span>Referrals</div>
 
     <div class="sidebar-label">Store</div>
     <div class="nav-item" data-sec="catalog"><span class="nav-icon"><i class="fa-solid fa-box"></i></span>Product Catalog</div>
@@ -277,7 +280,7 @@ function go(sec) {
   document.getElementById('sidebar').classList.remove('open');
   const sp = document.getElementById('spa');
   sp.innerHTML = spinner();
-  const map = { home:renderHome, revenue:renderRevenue, analytics:renderAnalytics, customers:renderCustomers, search:renderSearch, catalog:renderCatalog, performance:renderPerformance, suppliers:renderSuppliers, orders:renderOrders, training:renderTraining, 'bot-config':renderBotConfig, profile:renderProfile, smtp:renderSmtp, payments:renderPayments, 'add-agent':renderAddAgent, broadcast:renderBroadcast, abandoned:renderAbandoned, insights:renderInsights, 'auto-responses':renderAutoResponses, scheduled:renderScheduled, workflows:renderWorkflows, escalations:renderEscalations, 'agent-performance':renderAgentPerformance, help:renderHelp };
+  const map = { home:renderHome, revenue:renderRevenue, analytics:renderAnalytics, customers:renderCustomers, search:renderSearch, preferences:renderPreferences, favorites:renderFavorites, referrals:renderReferrals, catalog:renderCatalog, performance:renderPerformance, suppliers:renderSuppliers, orders:renderOrders, training:renderTraining, 'bot-config':renderBotConfig, profile:renderProfile, smtp:renderSmtp, payments:renderPayments, 'add-agent':renderAddAgent, broadcast:renderBroadcast, abandoned:renderAbandoned, insights:renderInsights, 'auto-responses':renderAutoResponses, scheduled:renderScheduled, workflows:renderWorkflows, escalations:renderEscalations, 'agent-performance':renderAgentPerformance, help:renderHelp };
   (map[sec] || renderHome)();
 }
 
@@ -1442,6 +1445,180 @@ window.viewCustomer = async function(phone) {
     body.innerHTML = `<div style="color:var(--danger);">Failed to load: ${esc(e.message)}</div>`;
   }
 };
+
+// CUSTOMER PREFERENCES
+async function renderPreferences() {
+  const sp = document.getElementById('spa');
+  sp.innerHTML = spinner('Loading preferences…');
+  const { ok, data } = await apiJson('/tenant/preferences');
+  if (!ok) { showErr(data.error || 'Failed to load preferences'); return; }
+  const customers = data.customers || [];
+
+  const rows = customers.map((c, idx) => `
+    <tr>
+      <td><b>${esc(c.name || c.phone)}</b><br><span style="font-size:0.78rem;color:var(--text-muted);">${esc(c.phone || '')}</span></td>
+      <td class="text-center"><input class="form-check-input pref-opt" data-i="${idx}" type="checkbox" ${c.marketing_opt_in !== false ? 'checked' : ''}></td>
+      <td><input class="form-control form-control-sm pref-lang" data-i="${idx}" value="${esc(c.preferred_language || '')}" placeholder="en"></td>
+      <td><input class="form-control form-control-sm pref-cats" data-i="${idx}" value="${esc((c.preferred_categories || []).join(', '))}" placeholder="music, tech"></td>
+      <td class="text-center"><input class="form-check-input pref-dnd" data-i="${idx}" type="checkbox" ${c.do_not_disturb ? 'checked' : ''}></td>
+      <td><button class="btn btn-sm btn-outline-primary pref-save" data-i="${idx}">Save</button></td>
+    </tr>`).join('');
+
+  sp.innerHTML = `
+    <div class="section-hdr"><i class="fa-solid fa-sliders"></i> Customer Preferences</div>
+    <div class="panel p-0" style="overflow:hidden;">
+      <div class="table-responsive">
+        <table class="table mb-0">
+          <thead><tr><th>Customer</th><th>Opt-in</th><th>Language</th><th>Preferred Categories</th><th>DND</th><th></th></tr></thead>
+          <tbody>${rows || '<tr><td colspan="6" class="text-center py-4" style="color:var(--text-muted);">No customer preference data yet.</td></tr>'}</tbody>
+        </table>
+      </div>
+    </div>`;
+
+  document.querySelectorAll('.pref-save').forEach((btn) => {
+    btn.onclick = async () => {
+      const i = Number(btn.dataset.i);
+      const c = customers[i];
+      if (!c) return;
+      const marketing_opt_in = document.querySelector(`.pref-opt[data-i="${i}"]`)?.checked !== false;
+      const preferred_language = document.querySelector(`.pref-lang[data-i="${i}"]`)?.value?.trim() || null;
+      const preferred_categories = (document.querySelector(`.pref-cats[data-i="${i}"]`)?.value || '').split(',').map((v) => v.trim()).filter(Boolean);
+      const do_not_disturb = document.querySelector(`.pref-dnd[data-i="${i}"]`)?.checked === true;
+      const { ok: ok2, data: d2 } = await apiJson(`/tenant/preferences/${encodeURIComponent(c.phone)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ marketing_opt_in, preferred_language, preferred_categories, do_not_disturb }),
+      });
+      if (!ok2) { toast(d2.error || 'Save failed', 'err'); return; }
+      toast(`Preferences saved for ${c.phone}`, 'ok');
+    };
+  });
+}
+
+// CUSTOMER FAVORITES
+async function renderFavorites() {
+  const sp = document.getElementById('spa');
+  sp.innerHTML = spinner('Loading favorites…');
+  const { ok, data } = await apiJson('/tenant/favorites');
+  if (!ok) { showErr(data.error || 'Failed to load favorites'); return; }
+  const top = data.top_favorites || [];
+  const customers = data.customers || [];
+
+  const topRows = top.map((f) => `<tr>
+    <td><b>${esc(f.sku)}</b></td>
+    <td>${esc(f.product?.name || 'Unknown product')}</td>
+    <td>${f.count}</td>
+  </tr>`).join('');
+
+  const customerRows = customers.map((c) => `<tr>
+    <td>${esc(c.phone)}</td>
+    <td style="max-width:420px;word-break:break-word;">${c.favorites.map((f) => `<span class="badge me-1" style="background:var(--bg-main);color:var(--text-light);border:1px solid var(--border)">${esc(f.sku)}</span>`).join('')}</td>
+    <td style="font-size:0.8rem;color:var(--text-muted);">${fmtDT(c.updated_at)}</td>
+  </tr>`).join('');
+
+  sp.innerHTML = `
+    <div class="section-hdr"><i class="fa-solid fa-star"></i> Customer Favorites</div>
+    <div class="row g-3">
+      <div class="col-12 col-lg-5">
+        <div class="panel p-0" style="overflow:hidden;">
+          <div class="panel-title px-3 pt-3">Top Favorited Products</div>
+          <div class="table-responsive">
+            <table class="table mb-0">
+              <thead><tr><th>SKU</th><th>Product</th><th>Favorites</th></tr></thead>
+              <tbody>${topRows || '<tr><td colspan="3" class="text-center py-4" style="color:var(--text-muted);">No favorite products yet.</td></tr>'}</tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-lg-7">
+        <div class="panel p-0" style="overflow:hidden;">
+          <div class="panel-title px-3 pt-3">Favorites by Customer</div>
+          <div class="table-responsive">
+            <table class="table mb-0">
+              <thead><tr><th>Customer</th><th>Favorite SKUs</th><th>Updated</th></tr></thead>
+              <tbody>${customerRows || '<tr><td colspan="3" class="text-center py-4" style="color:var(--text-muted);">No customer favorites yet.</td></tr>'}</tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+// REFERRALS
+async function renderReferrals() {
+  const sp = document.getElementById('spa');
+  sp.innerHTML = spinner('Loading referral analytics…');
+  const { ok, data } = await apiJson('/tenant/referrals');
+  if (!ok) { showErr(data.error || 'Failed to load referrals'); return; }
+
+  const totals = data.totals || {};
+  const codeRows = (data.codes || []).map((r) => `<tr>
+    <td><b>${esc(r.referral_code)}</b></td>
+    <td>${r.attributed_sales || 0}</td>
+    <td>${r.completed_sales || 0}</td>
+    <td>KES ${parseFloat(r.attributed_revenue || 0).toLocaleString()}</td>
+    <td style="font-size:0.8rem;color:var(--text-muted);">${fmtDT(r.last_seen)}</td>
+  </tr>`).join('');
+
+  const leadRows = (data.leads || []).map((l) => `<tr>
+    <td>${esc(l.phone)}</td>
+    <td><b>${esc(l.referral_code)}</b></td>
+    <td>${esc(l.referrer_phone || '—')}</td>
+    <td style="font-size:0.8rem;color:var(--text-muted);">${fmtDT(l.captured_at)}</td>
+  </tr>`).join('');
+
+  sp.innerHTML = `
+    <div class="section-hdr"><i class="fa-solid fa-link"></i> Referral Tracking</div>
+    <div class="row g-3 mb-3">
+      <div class="col-12 col-md-3"><div class="stat-card"><div class="stat-label">Codes Used</div><div class="stat-value">${totals.referral_codes_used || 0}</div></div></div>
+      <div class="col-12 col-md-3"><div class="stat-card"><div class="stat-label">Attributed Sales</div><div class="stat-value">${totals.attributed_sales || 0}</div></div></div>
+      <div class="col-12 col-md-3"><div class="stat-card"><div class="stat-label">Attributed Revenue</div><div class="stat-value">KES ${parseFloat(totals.attributed_revenue || 0).toLocaleString()}</div></div></div>
+      <div class="col-12 col-md-3"><div class="stat-card"><div class="stat-label">Pending Leads</div><div class="stat-value">${totals.pending_leads || 0}</div></div></div>
+    </div>
+
+    <div class="panel mb-3">
+      <div class="panel-title">Track Referral for Customer</div>
+      <form id="refTrackForm" class="row g-2">
+        <div class="col-12 col-md-4"><input class="form-control" name="phone" placeholder="Customer phone" required></div>
+        <div class="col-12 col-md-3"><input class="form-control" name="referral_code" placeholder="Referral code" required></div>
+        <div class="col-12 col-md-3"><input class="form-control" name="referrer_phone" placeholder="Referrer phone (optional)"></div>
+        <div class="col-12 col-md-2"><button class="btn btn-accent w-100" type="submit">Save</button></div>
+      </form>
+    </div>
+
+    <div class="row g-3">
+      <div class="col-12 col-lg-7">
+        <div class="panel p-0" style="overflow:hidden;">
+          <div class="panel-title px-3 pt-3">Referral Code Performance</div>
+          <div class="table-responsive"><table class="table mb-0"><thead><tr><th>Code</th><th>Sales</th><th>Completed</th><th>Revenue</th><th>Last Seen</th></tr></thead><tbody>${codeRows || '<tr><td colspan="5" class="text-center py-4" style="color:var(--text-muted);">No referral attributions yet.</td></tr>'}</tbody></table></div>
+        </div>
+      </div>
+      <div class="col-12 col-lg-5">
+        <div class="panel p-0" style="overflow:hidden;">
+          <div class="panel-title px-3 pt-3">Captured Referral Leads</div>
+          <div class="table-responsive"><table class="table mb-0"><thead><tr><th>Customer</th><th>Code</th><th>Referrer</th><th>Captured</th></tr></thead><tbody>${leadRows || '<tr><td colspan="4" class="text-center py-4" style="color:var(--text-muted);">No referral leads yet.</td></tr>'}</tbody></table></div>
+        </div>
+      </div>
+    </div>`;
+
+  document.getElementById('refTrackForm').onsubmit = async (e) => {
+    e.preventDefault();
+    const f = e.target;
+    const payload = {
+      phone: f.phone.value.trim(),
+      referral_code: f.referral_code.value.trim(),
+      referrer_phone: f.referrer_phone.value.trim() || null,
+    };
+    const { ok: ok2, data: d2 } = await apiJson('/tenant/referrals/track', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!ok2) { toast(d2.error || 'Failed to save referral', 'err'); return; }
+    toast('Referral tracked', 'ok');
+    renderReferrals();
+  };
+}
 
 // CHAT SEARCH
 async function renderSearch() {
