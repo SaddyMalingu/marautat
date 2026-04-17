@@ -2194,6 +2194,125 @@ app.get("/tenant/top-questions", tenantSessionAuth, async (req, res) => {
   } catch (error) { return res.status(500).json({ error: error.message }); }
 });
 
+// GET /tenant/customer-ltv — lifetime value buckets and top customers
+app.get("/tenant/customer-ltv", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+    const { data: subs } = await supabase
+      .from("subscriptions")
+      .select("user_id, phone, amount, status, created_at")
+      .eq("tenant_id", tenantId)
+      .in("status", ["completed", "active"])
+      .order("created_at", { ascending: false })
+      .limit(3000);
+
+    const totals = {};
+    (subs || []).forEach((s) => {
+      const key = s.user_id || s.phone;
+      if (!key) return;
+      if (!totals[key]) totals[key] = { key, user_id: s.user_id || null, phone: s.phone || null, total_spent: 0, orders: 0, last_purchase: null };
+      totals[key].total_spent += Number(s.amount || 0);
+      totals[key].orders += 1;
+      if (!totals[key].last_purchase || new Date(s.created_at) > new Date(totals[key].last_purchase)) totals[key].last_purchase = s.created_at;
+    });
+
+    const rows = Object.values(totals).map((r) => ({ ...r, total_spent: Math.round(r.total_spent * 100) / 100 }));
+    const buckets = { low: 0, medium: 0, high: 0, vip: 0 };
+    rows.forEach((r) => {
+      if (r.total_spent < 500) buckets.low += 1;
+      else if (r.total_spent < 2000) buckets.medium += 1;
+      else if (r.total_spent < 10000) buckets.high += 1;
+      else buckets.vip += 1;
+    });
+
+    rows.sort((a, b) => b.total_spent - a.total_spent);
+    return res.json({
+      summary: {
+        customers_with_purchases: rows.length,
+        avg_ltv: rows.length ? Math.round((rows.reduce((s, r) => s + r.total_spent, 0) / rows.length) * 100) / 100 : 0,
+        buckets,
+      },
+      top_customers: rows.slice(0, 20),
+    });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /tenant/ai-summary — weekly AI digest from live metrics
+app.get("/tenant/ai-summary", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+    const periodDays = Math.max(1, Math.min(30, parseInt(req.query.period_days || "7", 10)));
+    const since = new Date(Date.now() - periodDays * 24 * 60 * 60 * 1000).toISOString();
+
+    const { data: tenantRow } = await supabase
+      .from("bot_tenants")
+      .select("id, client_name, ai_api_key, ai_provider, ai_model, brand_id")
+      .eq("id", tenantId)
+      .maybeSingle();
+
+    const [{ data: subs }, { data: convRows }] = await Promise.all([
+      supabase
+        .from("subscriptions")
+        .select("amount, status, created_at, product_sku")
+        .eq("tenant_id", tenantId)
+        .gte("created_at", since)
+        .in("status", ["completed", "active"]),
+      tenantRow?.brand_id
+        ? supabase
+            .from("conversations")
+            .select("direction, message, created_at")
+            .eq("brand_id", tenantRow.brand_id)
+            .gte("created_at", since)
+            .limit(2000)
+        : Promise.resolve({ data: [] }),
+    ]);
+
+    const revenue = (subs || []).reduce((sum, s) => sum + Number(s.amount || 0), 0);
+    const orders = (subs || []).length;
+    const inCount = (convRows || []).filter((r) => r.direction === "incoming").length;
+    const outCount = (convRows || []).filter((r) => r.direction === "outgoing").length;
+
+    const productCount = {};
+    (subs || []).forEach((s) => {
+      const sku = String(s.product_sku || "").trim();
+      if (!sku) return;
+      productCount[sku] = (productCount[sku] || 0) + 1;
+    });
+    const topSku = Object.entries(productCount).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+
+    let summary = `Weekly digest (${periodDays}d)\n`
+      + `- Revenue: KES ${Math.round(revenue).toLocaleString()} from ${orders} paid orders\n`
+      + `- Conversations: ${inCount} inbound / ${outCount} outbound\n`
+      + `- Top selling SKU: ${topSku || "N/A"}\n`
+      + `- Priority: ${orders === 0 ? "Boost conversions with targeted broadcasts and cart recovery" : "Scale top performers and improve response speed"}`;
+
+    const shouldRegenerate = String(req.query.regenerate || "").toLowerCase() === "true";
+    const creds = getDecryptedCredentials(tenantRow || null);
+    if (shouldRegenerate && creds.aiApiKey) {
+      try {
+        const openaiClient = new OpenAI({ apiKey: creds.aiApiKey });
+        const aiResp = await openaiClient.chat.completions.create({
+          model: creds.aiModel || "gpt-4o-mini",
+          messages: [
+            { role: "system", content: "You are a concise business analyst. Return a short weekly digest in 5 bullet points." },
+            { role: "user", content: `Create a weekly digest for this tenant metrics:\n${summary}` },
+          ],
+        });
+        const aiText = aiResp?.choices?.[0]?.message?.content?.trim();
+        if (aiText) summary = aiText;
+      } catch (err) {
+        log(`AI summary fallback used: ${err.message}`, "WARN");
+      }
+    }
+
+    return res.json({ summary, period_days: periodDays, generated_at: new Date().toISOString() });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
 // GET /tenant/auto-responses
 app.get("/tenant/auto-responses", tenantSessionAuth, async (req, res) => {
   try {
@@ -2257,6 +2376,90 @@ app.delete("/tenant/scheduled-messages/:id", tenantSessionAuth, async (req, res)
     await supabase.from("bot_tenants").update({ metadata: { ...existing, scheduled_messages: queue }, updated_at: new Date().toISOString() }).eq("id", tenantId);
     return res.json({ success: true });
   } catch (error) { return res.status(500).json({ error: error.message }); }
+});
+
+// POST /tenant/scheduled-messages/run — execute due pending messages now
+app.post("/tenant/scheduled-messages/run", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+    const { data: pubTenant } = await supabase
+      .from("bot_tenants")
+      .select("id, brand_id, metadata, whatsapp_access_token, whatsapp_phone_number_id, ai_api_key, ai_provider, ai_model")
+      .eq("id", tenantId)
+      .maybeSingle();
+    if (!pubTenant) return res.status(404).json({ error: "Tenant not found" });
+
+    const now = new Date();
+    const metadata = pubTenant.metadata || {};
+    const queue = Array.isArray(metadata.scheduled_messages) ? [...metadata.scheduled_messages] : [];
+    const dueIndexes = [];
+    queue.forEach((m, i) => {
+      const when = new Date(m.scheduled_at || 0);
+      if (m?.status === "pending" && !isNaN(when.getTime()) && when <= now) dueIndexes.push(i);
+    });
+
+    if (!dueIndexes.length) return res.json({ success: true, processed: 0, sent: 0, failed: 0, message: "No due scheduled messages" });
+
+    const creds = getDecryptedCredentials(pubTenant);
+    let totalSent = 0;
+    let totalFailed = 0;
+
+    for (const idx of dueIndexes) {
+      const item = queue[idx];
+      const segment = item?.segment || "all";
+      const safeMsg = String(item?.message || "").trim().slice(0, 1024);
+      if (!safeMsg) {
+        queue[idx] = { ...item, status: "failed", error: "Empty message", processed_at: new Date().toISOString() };
+        totalFailed += 1;
+        continue;
+      }
+
+      const { data: convRows } = await supabase
+        .from("conversations")
+        .select("user_id")
+        .eq("brand_id", pubTenant.brand_id)
+        .eq("direction", "incoming")
+        .gte("created_at", new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString());
+      let userIds = [...new Set((convRows || []).map((r) => r.user_id).filter(Boolean))];
+      userIds = await filterUsersBySegment(userIds, pubTenant.brand_id, tenantId, segment);
+
+      if (!userIds.length) {
+        queue[idx] = { ...item, status: "sent", sent: 0, failed: 0, processed_at: new Date().toISOString(), note: "No users in segment" };
+        continue;
+      }
+
+      const { data: users } = await supabase.from("users").select("phone").in("id", userIds.slice(0, 500));
+      const phones = (users || []).map((u) => u.phone).filter(Boolean);
+      let sent = 0;
+      let failed = 0;
+      for (const phone of phones) {
+        try {
+          await sendMessage(phone, safeMsg, creds);
+          sent += 1;
+        } catch {
+          failed += 1;
+        }
+      }
+      totalSent += sent;
+      totalFailed += failed;
+      queue[idx] = {
+        ...item,
+        status: failed > 0 ? "partial" : "sent",
+        sent,
+        failed,
+        processed_at: new Date().toISOString(),
+      };
+    }
+
+    await supabase
+      .from("bot_tenants")
+      .update({ metadata: { ...metadata, scheduled_messages: queue }, updated_at: new Date().toISOString() })
+      .eq("id", tenantId);
+
+    return res.json({ success: true, processed: dueIndexes.length, sent: totalSent, failed: totalFailed });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
 });
 
 // ===== WORKFLOWS, ESCALATIONS, TEAM PERFORMANCE =====
@@ -3047,6 +3250,20 @@ function findTrainingAnswer(trainingData = [], userMessage = "") {
     });
 
   return candidates[0]?.answer || null;
+}
+
+function findAutoResponse(templates = [], userMessage = "") {
+  const text = String(userMessage || "").toLowerCase().trim();
+  if (!text || !Array.isArray(templates) || !templates.length) return null;
+
+  for (const tpl of templates) {
+    if (!tpl || tpl.enabled === false) continue;
+    const trigger = String(tpl.trigger || "").toLowerCase().trim();
+    const response = String(tpl.response || "").trim();
+    if (!trigger || !response) continue;
+    if (text === trigger || text.includes(trigger)) return response;
+  }
+  return null;
 }
 
 // ========== Get Decrypted Credentials ==========
@@ -4171,7 +4388,33 @@ if (text.match(/^2547\d{7}$/) || text.toLowerCase() === "same") {
 
    
 
-    // STEP 5: Generate AI reply (TENANT-AWARE)
+    // STEP 5: Try tenant auto-response templates before AI
+    const autoResponses = Array.isArray(req.tenant?.metadata?.auto_responses)
+      ? req.tenant.metadata.auto_responses
+      : [];
+    const matchedAutoResponse = findAutoResponse(autoResponses, text);
+    if (matchedAutoResponse) {
+      const creds = getDecryptedCredentials(req.tenant);
+      await sendMessage(from, matchedAutoResponse, creds);
+      const { error: outErr } = await supabase.from("conversations").insert([
+        {
+          brand_id: brandId,
+          user_id: userData.id,
+          direction: "outgoing",
+          message_text: matchedAutoResponse,
+          llm_used: false,
+          llm_reason: "auto_response",
+          raw_payload: { reply_type: "text", llm_used: false, reason: "auto_response" },
+          created_at: new Date().toISOString(),
+        },
+      ]);
+      if (outErr) {
+        log(`Auto-response conversation insert error: ${JSON.stringify(outErr)}`, "ERROR");
+      }
+      return res.sendStatus(200);
+    }
+
+    // STEP 6: Generate AI reply (TENANT-AWARE)
     const reply = await generateReply(
       text,
       req.tenant || null,
@@ -4221,7 +4464,7 @@ if (text.match(/^2547\d{7}$/) || text.toLowerCase() === "same") {
       await sendMessage(from, replyText, creds);
     }
 
-    // STEP 6: Log outbound message
+    // STEP 7: Log outbound message
     const { error: outErr } = await supabase.from("conversations").insert([
       {
         brand_id: brandId,

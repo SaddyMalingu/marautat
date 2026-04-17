@@ -887,11 +887,19 @@ async function renderSmtp() {
 async function renderInsights() {
     const spa = document.getElementById('spa');
     spa.innerHTML = `<div class="section-hdr"><i class="fa-solid fa-lightbulb"></i> Insights</div><div class="text-center p-5"><div class="spinner-border text-primary"></div></div>`;
-    const [funnelRes, rtRes, faqRes] = await Promise.all([apiJson('/tenant/funnel'), apiJson('/tenant/response-time'), apiJson('/tenant/top-questions')]);
-    const funnel = funnelRes?.funnel || [];
-    const rt = rtRes || {};
-    const topW = faqRes?.top_words || [];
-    const topP = faqRes?.top_phrases || [];
+    const [funnelRes, rtRes, faqRes, digestRes, ltvRes] = await Promise.all([
+      apiJson('/tenant/funnel'),
+      apiJson('/tenant/response-time'),
+      apiJson('/tenant/top-questions'),
+      apiJson('/tenant/ai-summary?period_days=7'),
+      apiJson('/tenant/customer-ltv')
+    ]);
+    const funnel = funnelRes?.data?.funnel || [];
+    const rt = rtRes?.data || {};
+    const topW = faqRes?.data?.top_words || [];
+    const topP = faqRes?.data?.top_phrases || [];
+    const digest = digestRes?.data?.summary || '';
+    const ltv = ltvRes?.data?.summary || {};
     const funnelRows = funnel.map(s => `<tr><td>${s.stage}</td><td><div style="display:flex;align-items:center;gap:8px;"><div style="width:${s.rate}%;background:var(--accent);height:8px;border-radius:4px;min-width:4px;"></div><span>${s.count}</span></div></td><td class="text-end">${s.rate}%</td></tr>`).join('');
     const wordBadges = topW.map(w => `<span class="badge me-1 mb-1" style="background:var(--bg-panel);color:var(--text-light);border:1px solid var(--border);font-size:.8rem;">${w.word} <span style="color:var(--accent)">${w.count}</span></span>`).join('');
     const phraseRows = topP.map(p => `<tr><td>${p.phrase}</td><td class="text-end">${p.count}</td></tr>`).join('');
@@ -925,14 +933,41 @@ async function renderInsights() {
             <table class="table table-sm mb-0"><tbody>${phraseRows || '<tr><td colspan="2" class="text-center text-muted">No recurring phrases</td></tr>'}</tbody></table>
           </div>
         </div>
+        <div class="col-12">
+          <div class="panel">
+            <div class="panel-title">AI Weekly Digest</div>
+            <div id="aiDigestText" style="font-size:0.9rem;white-space:pre-wrap;color:var(--text-light);">${esc(digest || 'No summary available yet.')}</div>
+            <button class="btn btn-sm btn-outline-primary mt-3" id="regenDigestBtn"><i class="fa-solid fa-wand-magic-sparkles me-1"></i>Regenerate</button>
+          </div>
+        </div>
+        <div class="col-12">
+          <div class="panel">
+            <div class="panel-title">Customer LTV Snapshot</div>
+            <div class="row g-2" style="font-size:0.86rem;">
+              <div class="col-6 col-md-2"><div class="stat-card"><div class="stat-label">Customers</div><div class="stat-value">${ltv.customers_with_purchases || 0}</div></div></div>
+              <div class="col-6 col-md-2"><div class="stat-card"><div class="stat-label">Avg LTV</div><div class="stat-value">KES ${parseFloat(ltv.avg_ltv || 0).toLocaleString()}</div></div></div>
+              <div class="col-6 col-md-2"><div class="stat-card"><div class="stat-label">Low</div><div class="stat-value">${ltv.buckets?.low || 0}</div></div></div>
+              <div class="col-6 col-md-2"><div class="stat-card"><div class="stat-label">Medium</div><div class="stat-value">${ltv.buckets?.medium || 0}</div></div></div>
+              <div class="col-6 col-md-2"><div class="stat-card"><div class="stat-label">High</div><div class="stat-value">${ltv.buckets?.high || 0}</div></div></div>
+              <div class="col-6 col-md-2"><div class="stat-card"><div class="stat-label">VIP</div><div class="stat-value">${ltv.buckets?.vip || 0}</div></div></div>
+            </div>
+          </div>
+        </div>
       </div>`;
+
+    document.getElementById('regenDigestBtn').onclick = async () => {
+      const el = document.getElementById('aiDigestText');
+      el.textContent = 'Generating summary...';
+      const { ok, data } = await apiJson('/tenant/ai-summary?period_days=7&regenerate=true');
+      el.textContent = ok ? (data.summary || 'No summary available.') : (data.error || 'Failed to generate summary.');
+    };
   }
 
   async function renderAutoResponses() {
     const spa = document.getElementById('spa');
     spa.innerHTML = `<div class="section-hdr"><i class="fa-solid fa-reply"></i> Auto-Responses</div><div class="text-center p-4"><div class="spinner-border text-primary"></div></div>`;
-    const data = await apiJson('/tenant/auto-responses');
-    let templates = data?.templates || [];
+    const r0 = await apiJson('/tenant/auto-responses');
+    let templates = r0?.data?.templates || [];
     const renderRows = () => templates.map((t,i) => `
       <tr>
         <td><input class="form-control form-control-sm ar-trigger" data-i="${i}" value="${t.trigger.replace(/"/g,'&quot;')}" placeholder="trigger word..."></td>
@@ -965,7 +1000,7 @@ async function renderInsights() {
       document.getElementById('arSave').onclick = async () => {
         templates = collect();
         document.getElementById('arMsg').innerHTML = '<span style="color:var(--text-muted)">Saving...</span>';
-        const r = await api('/tenant/auto-responses', {method:'PUT',body:JSON.stringify({templates})});
+        const r = await api('/tenant/auto-responses', {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({templates})});
         const d = await r.json();
         document.getElementById('arMsg').innerHTML = d.success ? '<span style="color:var(--success)">Saved!</span>' : `<span style="color:var(--danger)">${d.error||'Error'}</span>`;
       };
@@ -977,8 +1012,8 @@ async function renderInsights() {
     const spa = document.getElementById('spa');
     spa.innerHTML = `<div class="section-hdr"><i class="fa-solid fa-clock"></i> Scheduled Messages</div><div class="text-center p-4"><div class="spinner-border text-primary"></div></div>`;
     const load = async () => {
-      const data = await apiJson('/tenant/scheduled-messages');
-      const scheduled = data?.scheduled || [];
+      const r0 = await apiJson('/tenant/scheduled-messages');
+      const scheduled = r0?.data?.scheduled || [];
       const rows = scheduled.map(m => `
         <tr>
           <td style="max-width:300px;word-break:break-word;">${m.message}</td>
@@ -998,6 +1033,9 @@ async function renderInsights() {
             <div class="col-2 d-flex align-items-end"><button class="btn btn-primary w-100" id="schAdd"><i class="fa-solid fa-plus"></i></button></div>
           </div>
           <div id="schMsg2" class="mt-2"></div>
+          <div class="mt-2 d-flex gap-2">
+            <button class="btn btn-sm btn-outline-primary" id="schRunNow"><i class="fa-solid fa-play me-1"></i>Run Due Messages</button>
+          </div>
         </div>
         <div class="panel">
           <div class="panel-title">Scheduled Queue</div>
@@ -1009,9 +1047,20 @@ async function renderInsights() {
         const seg = document.getElementById('schSeg').value;
         if (!msg||!at) { document.getElementById('schMsg2').innerHTML='<span style="color:var(--danger)">Message and date required</span>'; return; }
         document.getElementById('schMsg2').innerHTML='<span style="color:var(--text-muted)">Scheduling...</span>';
-        const r = await api('/tenant/scheduled-messages',{method:'POST',body:JSON.stringify({message:msg,scheduled_at:at,segment:seg})});
+        const r = await api('/tenant/scheduled-messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg,scheduled_at:at,segment:seg})});
         const d = await r.json();
         if (d.success) { await load(); } else { document.getElementById('schMsg2').innerHTML=`<span style="color:var(--danger)">${d.error||'Error'}</span>`; }
+      };
+      document.getElementById('schRunNow').onclick = async () => {
+        document.getElementById('schMsg2').innerHTML='<span style="color:var(--text-muted)">Running due messages...</span>';
+        const r = await api('/tenant/scheduled-messages/run',{method:'POST'});
+        const d = await r.json();
+        if (d.success) {
+          document.getElementById('schMsg2').innerHTML=`<span style="color:var(--success)">Processed ${d.processed||0} messages · Sent ${d.sent||0} · Failed ${d.failed||0}</span>`;
+          await load();
+        } else {
+          document.getElementById('schMsg2').innerHTML=`<span style="color:var(--danger)">${d.error||'Run failed'}</span>`;
+        }
       };
       document.querySelectorAll('.sch-del').forEach(btn => btn.onclick = async () => {
         await api(`/tenant/scheduled-messages/${btn.dataset.id}`,{method:'DELETE'});
