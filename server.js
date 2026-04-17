@@ -1079,6 +1079,104 @@ app.get("/tenant/broadcast/history", tenantSessionAuth, async (req, res) => {
   }
 });
 
+// GET /tenant/abandoned-carts — find users who viewed product but didn't buy in last 24h
+app.get("/tenant/abandoned-carts", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+    const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+    // Get user sessions with last_selected_sku in the last 24h
+    const { data: sessions } = await supabase
+      .from("user_sessions")
+      .select("phone, context")
+      .eq("tenant_id", tenantId)
+      .gte("updated_at", since24h);
+
+    const abandoned = [];
+    const seen = new Set();
+
+    for (const session of sessions || []) {
+      const context = session.context || {};
+      const sku = context.last_selected_sku;
+      const phone = session.phone;
+
+      if (!sku || !phone) continue;
+      const key = `${phone}:${sku}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      // Check if this user bought this sku
+      const { data: purchases } = await supabase
+        .from("subscriptions")
+        .select("id")
+        .eq("tenant_id", tenantId)
+        .eq("user_id", phone) // Assuming user_id can be phone
+        .eq("product_sku", sku)
+        .in("status", ["completed", "active"])
+        .limit(1);
+
+      if (!purchases || purchases.length === 0) {
+        // Not purchased — user abandoned this product
+        // Get product name by sku
+        const { data: product } = await supabase
+          .from("bot_products")
+          .select("name, price")
+          .eq("sku", sku)
+          .eq("tenant_id", tenantId)
+          .maybeSingle();
+
+        abandoned.push({
+          phone,
+          sku,
+          product_name: product?.name || sku,
+          price: product?.price || null,
+          last_viewed: session.updated_at,
+        });
+      }
+    }
+
+    // Cap at 100 for performance
+    res.json({ carts: abandoned.slice(0, 100), total: abandoned.length });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /tenant/abandoned-cart-recovery — send recovery message to specific user for abandoned product
+app.post("/tenant/abandoned-cart-recovery", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+    const { phone, sku, message } = req.body;
+
+    if (!phone || !sku || !message || String(message).trim().length < 3) {
+      return res.status(400).json({ error: "phone, sku, and message (3+ chars) are required" });
+    }
+
+    const { data: pubTenant } = await supabase
+      .from("bot_tenants")
+      .select("whatsapp_access_token, whatsapp_phone_number_id")
+      .eq("id", tenantId)
+      .maybeSingle();
+
+    if (!pubTenant?.whatsapp_access_token) {
+      return res.status(400).json({ error: "WhatsApp not configured" });
+    }
+
+    const creds = getDecryptedCredentials(pubTenant);
+    const safeMsg = String(message).trim().slice(0, 1024);
+
+    try {
+      await sendMessage(phone, safeMsg, creds);
+      log(`Abandoned cart recovery sent to ${phone} for SKU ${sku}`, "SYSTEM");
+      return res.json({ success: true, message: `Message sent to ${phone}` });
+    } catch (sendErr) {
+      return res.status(502).json({ error: `Send failed: ${sendErr.message}` });
+    }
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
 // ===== TENANT PROFILE API =====
 
 app.get("/tenant/profile", tenantSessionAuth, async (req, res) => {

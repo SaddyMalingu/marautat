@@ -149,6 +149,7 @@
     <div class="nav-item" data-sec="training"><span class="nav-icon"><i class="fa-solid fa-robot"></i></span>Bot Training</div>
     <div class="nav-item" data-sec="bot-config"><span class="nav-icon"><i class="fa-solid fa-sliders"></i></span>Bot Config</div>
     <div class="nav-item" data-sec="broadcast"><span class="nav-icon"><i class="fa-solid fa-bullhorn"></i></span>Bulk Message</div>
+    <div class="nav-item" data-sec="abandoned"><span class="nav-icon"><i class="fa-solid fa-cart-shopping"></i></span>Cart Recovery</div>
 
     <div class="sidebar-label">Settings</div>
     <div class="nav-item" data-sec="profile"><span class="nav-icon"><i class="fa-solid fa-user"></i></span>Profile</div>
@@ -261,7 +262,7 @@ function go(sec) {
   document.getElementById('sidebar').classList.remove('open');
   const sp = document.getElementById('spa');
   sp.innerHTML = spinner();
-  const map = { home:renderHome, analytics:renderAnalytics, catalog:renderCatalog, orders:renderOrders, training:renderTraining, 'bot-config':renderBotConfig, profile:renderProfile, smtp:renderSmtp, payments:renderPayments, 'add-agent':renderAddAgent, broadcast:renderBroadcast, help:renderHelp };
+  const map = { home:renderHome, analytics:renderAnalytics, catalog:renderCatalog, orders:renderOrders, training:renderTraining, 'bot-config':renderBotConfig, profile:renderProfile, smtp:renderSmtp, payments:renderPayments, 'add-agent':renderAddAgent, broadcast:renderBroadcast, abandoned:renderAbandoned, help:renderHelp };
   (map[sec] || renderHome)();
 }
 
@@ -1040,6 +1041,131 @@ async function renderBroadcast() {
   if (audienceData.count > 0) {
     document.getElementById('bcSendBtn').disabled = false;
   }
+}
+
+// ══════════════════════ ABANDONED CARTS ════════════════════════════════════
+async function renderAbandoned() {
+  const sp = document.getElementById('spa');
+  let cartsData = { carts: [] };
+
+  try {
+    const r = await api('/tenant/abandoned-carts');
+    cartsData = await r.json();
+  } catch(e) { /* non-fatal */ }
+
+  const carts = cartsData.carts || [];
+  const rows = carts.map((cart, idx) => `
+    <tr>
+      <td style="font-size:0.82rem;">${esc(cart.phone)}</td>
+      <td><strong>${esc(cart.product_name)}</strong></td>
+      <td>${cart.price ? 'KES ' + parseFloat(cart.price).toLocaleString() : '—'}</td>
+      <td style="font-size:0.8rem;color:var(--text-muted);">${esc(new Date(cart.last_viewed).toLocaleString())}</td>
+      <td><button class="btn btn-sm btn-outline-acc" onclick="window.recoverChart=${idx};document.getElementById('spa').scrollIntoView();document.getElementById('acMsg').focus();"><i class="fa-solid fa-paper-plane me-1"></i>Recover</button></td>
+    </tr>`).join('');
+
+  sp.innerHTML = `
+    <div class="section-hdr"><i class="fa-solid fa-cart-shopping"></i> Cart Recovery</div>
+
+    <div class="alert" style="background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.35);border-radius:10px;padding:12px 16px;font-size:0.84rem;color:var(--info);margin-bottom:20px;">
+      <i class="fa-solid fa-lightbulb me-2"></i>
+      <strong>Win Back Customers:</strong> Send personalized recovery messages to users who viewed a product in the last 24 hours but didn't complete checkout.
+    </div>
+
+    <div class="row g-3">
+      <div class="col-12 col-lg-8">
+        <div class="panel">
+          <div class="panel-title">Abandoned Carts (${carts.length})</div>
+          ${carts.length > 0 ? `
+          <div class="table-responsive">
+            <table class="table table-sm">
+              <thead><tr><th>Phone</th><th>Product</th><th>Price</th><th>Last Viewed</th><th></th></tr></thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>` : `<div style="color:var(--text-muted);font-size:0.88rem;padding:20px;text-align:center;"><i class="fa-solid fa-inbox me-2"></i>No abandoned carts in the last 24 hours. Great job!</div>`}
+        </div>
+      </div>
+
+      <div class="col-12 col-lg-4">
+        <div class="panel">
+          <div class="panel-title">Recovery Message</div>
+          ${carts.length > 0 ? `
+          <div id="acForm">
+            <div class="mb-3">
+              <label class="form-label">Customer</label>
+              <select class="form-select" id="acPhone">
+                <option value="">Select a customer...</option>
+                ${carts.map((c, i) => `<option value="${i}">${esc(c.phone)} — ${esc(c.product_name)}</option>`).join('')}
+              </select>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Message</label>
+              <textarea class="form-control" id="acMsg" rows="5" placeholder="Hi! We noticed you were interested in [PRODUCT]. It's still available. Tap BUY to complete your checkout."></textarea>
+            </div>
+            <button class="btn btn-accent w-100" id="acSendBtn"><i class="fa-solid fa-paper-plane me-2"></i>Send Recovery Message</button>
+            <div id="acResult" class="mt-3" style="display:none;"></div>
+          </div>` : `<div style="color:var(--text-muted);font-size:0.86rem;padding:15px;text-align:center;">No carts to recover yet.</div>`}
+        </div>
+      </div>
+    </div>`;
+
+  if (carts.length === 0) return;
+
+  const phoneSelect = document.getElementById('acPhone');
+  const acMsg = document.getElementById('acMsg');
+  const acSendBtn = document.getElementById('acSendBtn');
+  const acResult = document.getElementById('acResult');
+
+  // Pre-fill message based on selected customer
+  phoneSelect.addEventListener('change', () => {
+    const idx = parseInt(phoneSelect.value);
+    if (idx >= 0) {
+      const cart = carts[idx];
+      acMsg.value = `Hi! 👋 We noticed you were interested in ${cart.product_name} (KES ${parseFloat(cart.price||0).toLocaleString()}). It's still available! 🛒\n\nTap BUY to complete your order now.`;
+    }
+  });
+
+  acSendBtn.onclick = async () => {
+    const idx = parseInt(phoneSelect.value);
+    if (idx < 0) {
+      toast('Please select a customer', 'err');
+      return;
+    }
+    const cart = carts[idx];
+    const msg = acMsg.value.trim();
+    if (!msg) {
+      toast('Please enter a message', 'err');
+      return;
+    }
+
+    acSendBtn.disabled = true;
+    acSendBtn.innerHTML = '<span class="spinner-border spinner-sm me-2"></span>Sending…';
+    acResult.style.display = 'none';
+
+    try {
+      const r = await api('/tenant/abandoned-cart-recovery', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: cart.phone, sku: cart.sku, message: msg })
+      });
+      const d = await r.json();
+      if (d.error) {
+        toast(d.error, 'err');
+        return;
+      }
+      acResult.style.display = 'block';
+      acResult.innerHTML = `<div style="background:rgba(34,211,160,0.08);border:1px solid rgba(34,211,160,0.3);border-radius:8px;padding:12px;"><i class="fa-solid fa-circle-check me-2" style="color:var(--success);"></i><strong style="color:var(--success);">Message sent!</strong><br><span style="font-size:0.85rem;color:var(--text-muted);">Recovery message sent to ${esc(cart.phone)}</span></div>`;
+      toast(`Recovery message sent: ${cart.phone}`, 'ok');
+      phoneSelect.value = '';
+      acMsg.value = '';
+      // Refresh in 1.5s
+      setTimeout(() => renderAbandoned(), 1500);
+    } catch(e) {
+      toast('Send failed: ' + e.message, 'err');
+    } finally {
+      acSendBtn.disabled = false;
+      acSendBtn.innerHTML = '<i class="fa-solid fa-paper-plane me-2"></i>Send Recovery Message';
+    }
+  };
 }
 
 function renderHelp() {
