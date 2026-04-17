@@ -1177,6 +1177,300 @@ app.post("/tenant/abandoned-cart-recovery", tenantSessionAuth, async (req, res) 
   }
 });
 
+// ===== CUSTOMER INTELLIGENCE APIS =====
+
+// GET /tenant/customers — customer directory with search/filter
+app.get("/tenant/customers", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+    const search = String(req.query.search || "").trim().toLowerCase();
+    const limit = Math.min(parseInt(req.query.limit || "50", 10), 200);
+
+    const { data: pubTenant } = await supabase
+      .from("bot_tenants")
+      .select("brand_id")
+      .eq("id", tenantId)
+      .maybeSingle();
+
+    const brandId = pubTenant?.brand_id;
+    if (!brandId) return res.json({ customers: [] });
+
+    // Get all users who have chatted with this brand
+    const { data: convRows } = await supabase
+      .from("conversations")
+      .select("user_id, created_at")
+      .eq("brand_id", brandId)
+      .eq("direction", "incoming")
+      .order("created_at", { ascending: false });
+
+    const userLastSeen = {};
+    const userMsgCount = {};
+    (convRows || []).forEach((c) => {
+      if (!userLastSeen[c.user_id]) userLastSeen[c.user_id] = c.created_at;
+      userMsgCount[c.user_id] = (userMsgCount[c.user_id] || 0) + 1;
+    });
+
+    const allUserIds = Object.keys(userLastSeen);
+    if (!allUserIds.length) return res.json({ customers: [] });
+
+    const { data: userRows } = await supabase
+      .from("users")
+      .select("id, phone, full_name, email")
+      .in("id", allUserIds);
+
+    // Get purchase counts
+    const { data: subRows } = await supabase
+      .from("subscriptions")
+      .select("user_id, amount, status")
+      .eq("tenant_id", tenantId);
+
+    const userPurchaseCount = {};
+    const userSpend = {};
+    (subRows || []).filter((s) => s.status === "completed" || s.status === "active").forEach((s) => {
+      if (s.user_id) {
+        userPurchaseCount[s.user_id] = (userPurchaseCount[s.user_id] || 0) + 1;
+        userSpend[s.user_id] = (userSpend[s.user_id] || 0) + parseFloat(s.amount || 0);
+      }
+    });
+
+    let customers = (userRows || []).map((u) => ({
+      id: u.id,
+      phone: u.phone,
+      name: u.full_name || u.phone || "Unknown",
+      email: u.email || null,
+      messages: userMsgCount[u.id] || 0,
+      purchases: userPurchaseCount[u.id] || 0,
+      total_spent: Math.round((userSpend[u.id] || 0) * 100) / 100,
+      last_seen: userLastSeen[u.id] || null,
+    }));
+
+    // Apply search
+    if (search) {
+      customers = customers.filter(
+        (c) =>
+          c.name.toLowerCase().includes(search) ||
+          (c.phone || "").includes(search) ||
+          (c.email || "").toLowerCase().includes(search)
+      );
+    }
+
+    customers.sort((a, b) => new Date(b.last_seen) - new Date(a.last_seen));
+
+    return res.json({ customers: customers.slice(0, limit), total: customers.length });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /tenant/customers/:phone — Customer 360 view: full conversation + purchase history
+app.get("/tenant/customers/:phone", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+    const phone = decodeURIComponent(req.params.phone);
+
+    const { data: pubTenant } = await supabase
+      .from("bot_tenants")
+      .select("brand_id")
+      .eq("id", tenantId)
+      .maybeSingle();
+
+    const brandId = pubTenant?.brand_id;
+
+    // Get user record
+    const { data: user } = await supabase
+      .from("users")
+      .select("id, phone, full_name, email, created_at")
+      .eq("phone", phone)
+      .maybeSingle();
+
+    if (!user) return res.status(404).json({ error: "Customer not found" });
+
+    // Get conversation history
+    const { data: conversations } = await supabase
+      .from("conversations")
+      .select("id, message, direction, created_at, llm_used")
+      .eq("brand_id", brandId)
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(50);
+
+    // Get purchase history
+    const { data: purchases } = await supabase
+      .from("subscriptions")
+      .select("id, amount, product_sku, plan_type, status, created_at, mpesa_receipt_no")
+      .eq("tenant_id", tenantId)
+      .in("user_id", [user.id, phone])
+      .order("created_at", { ascending: false });
+
+    // Get session context
+    const { data: session } = await supabase
+      .from("user_sessions")
+      .select("context, updated_at")
+      .eq("phone", phone)
+      .eq("tenant_id", tenantId)
+      .maybeSingle();
+
+    const totalSpent = (purchases || [])
+      .filter((p) => p.status === "completed" || p.status === "active")
+      .reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
+
+    return res.json({
+      customer: {
+        id: user.id,
+        phone: user.phone,
+        name: user.full_name || "Unknown",
+        email: user.email,
+        joined: user.created_at,
+        total_spent: Math.round(totalSpent * 100) / 100,
+        purchase_count: (purchases || []).filter((p) => p.status === "completed" || p.status === "active").length,
+        last_session: session?.context || {},
+        last_active: session?.updated_at || null,
+      },
+      conversations: (conversations || []).map((c) => ({
+        id: c.id,
+        text: c.message,
+        direction: c.direction,
+        time: c.created_at,
+        ai: c.llm_used || false,
+      })),
+      purchases: purchases || [],
+    });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /tenant/conversations/search — full-text search across all conversations
+app.get("/tenant/conversations/search", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+    const q = String(req.query.q || "").trim();
+    if (q.length < 2) return res.json({ results: [] });
+
+    const { data: pubTenant } = await supabase
+      .from("bot_tenants")
+      .select("brand_id")
+      .eq("id", tenantId)
+      .maybeSingle();
+
+    const brandId = pubTenant?.brand_id;
+    if (!brandId) return res.json({ results: [] });
+
+    const { data: convRows } = await supabase
+      .from("conversations")
+      .select("id, message, direction, user_id, created_at")
+      .eq("brand_id", brandId)
+      .ilike("message", `%${q}%`)
+      .order("created_at", { ascending: false })
+      .limit(50);
+
+    if (!convRows || !convRows.length) return res.json({ results: [] });
+
+    const userIds = [...new Set(convRows.map((c) => c.user_id).filter(Boolean))];
+    const { data: userRows } = await supabase
+      .from("users")
+      .select("id, phone, full_name")
+      .in("id", userIds);
+
+    const userMap = {};
+    (userRows || []).forEach((u) => (userMap[u.id] = u));
+
+    const results = convRows.map((c) => {
+      const user = userMap[c.user_id] || {};
+      return {
+        id: c.id,
+        message: c.message,
+        direction: c.direction,
+        time: c.created_at,
+        phone: user.phone || "Unknown",
+        name: user.full_name || user.phone || "Unknown",
+        user_id: c.user_id,
+      };
+    });
+
+    return res.json({ results, query: q });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /tenant/products/performance — product conversion metrics
+app.get("/tenant/products/performance", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+    const since30d = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+
+    const { data: pubTenant } = await supabase
+      .from("bot_tenants")
+      .select("brand_id")
+      .eq("id", tenantId)
+      .maybeSingle();
+
+    const brandId = pubTenant?.brand_id;
+
+    // Get products
+    const { data: products } = await supabase
+      .from("bot_products")
+      .select("sku, name, price, stock_quantity, is_available")
+      .eq("tenant_id", tenantId)
+      .eq("is_available", true);
+
+    // Get sessions to count SKU views
+    const { data: sessions } = await supabase
+      .from("user_sessions")
+      .select("context")
+      .eq("tenant_id", tenantId)
+      .gte("updated_at", since30d);
+
+    const skuViews = {};
+    (sessions || []).forEach((s) => {
+      const sku = s.context?.last_selected_sku;
+      if (sku) skuViews[sku] = (skuViews[sku] || 0) + 1;
+    });
+
+    // Get conversions from subscriptions
+    const { data: subs } = await supabase
+      .from("subscriptions")
+      .select("product_sku, amount, status")
+      .eq("tenant_id", tenantId)
+      .gte("created_at", since30d);
+
+    const skuRevenue = {};
+    const skuConversions = {};
+    (subs || []).filter((s) => s.status === "completed" || s.status === "active").forEach((s) => {
+      const sku = s.product_sku;
+      if (sku) {
+        skuRevenue[sku] = (skuRevenue[sku] || 0) + parseFloat(s.amount || 0);
+        skuConversions[sku] = (skuConversions[sku] || 0) + 1;
+      }
+    });
+
+    const performance = (products || []).map((p) => {
+      const views = skuViews[p.sku] || 0;
+      const conversions = skuConversions[p.sku] || 0;
+      const revenue = skuRevenue[p.sku] || 0;
+      const convRate = views > 0 ? Math.round((conversions / views) * 100) : 0;
+
+      return {
+        sku: p.sku,
+        name: p.name,
+        price: p.price,
+        stock: p.stock_quantity ?? null,
+        low_stock: p.stock_quantity !== null && p.stock_quantity <= 5,
+        views,
+        conversions,
+        revenue: Math.round(revenue * 100) / 100,
+        conversion_rate: convRate,
+      };
+    });
+
+    performance.sort((a, b) => b.revenue - a.revenue);
+    return res.json({ performance, period: "30 days" });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
 // ===== TENANT PROFILE API =====
 
 app.get("/tenant/profile", tenantSessionAuth, async (req, res) => {
