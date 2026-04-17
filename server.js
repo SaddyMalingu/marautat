@@ -872,10 +872,54 @@ async function updateAlphadomeTenantByPhone(tenantPhone, updates) {
 
 // ===== TENANT BROADCAST API =====
 
-// GET /tenant/broadcast/audience — returns count + sample of reachable users
+// HELPER: Apply segment filters to user list
+async function filterUsersBySegment(userIds, brandId, tenantId, segment = "all") {
+  let filtered = userIds;
+  if (segment === "have_purchased") {
+    const { data: purchasers } = await supabase
+      .from("subscriptions")
+      .select("user_id")
+      .eq("tenant_id", tenantId)
+      .in("status", ["completed", "active"]);
+    const purchaserIds = new Set((purchasers || []).map((p) => p.user_id).filter(Boolean));
+    filtered = filtered.filter((uid) => purchaserIds.has(uid));
+  } else if (segment === "inactive_30plus") {
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const { data: activeUsers } = await supabase
+      .from("conversations")
+      .select("user_id")
+      .eq("brand_id", brandId)
+      .gte("created_at", thirtyDaysAgo);
+    const activeIds = new Set((activeUsers || []).map((u) => u.user_id).filter(Boolean));
+    filtered = filtered.filter((uid) => !activeIds.has(uid)); // Exclude active, keep inactive
+  } else if (segment === "high_value") {
+    const { data: highSpenders } = await supabase
+      .from("subscriptions")
+      .select("user_id, amount")
+      .eq("tenant_id", tenantId)
+      .in("status", ["completed", "active"]);
+    const userTotals = {};
+    (highSpenders || []).forEach((s) => {
+      if (s.user_id) userTotals[s.user_id] = (userTotals[s.user_id] || 0) + parseFloat(s.amount || 0);
+    });
+    filtered = filtered.filter((uid) => (userTotals[uid] || 0) >= 1000);
+  } else if (segment === "first_time") {
+    const { data: purchasers } = await supabase
+      .from("subscriptions")
+      .select("user_id")
+      .eq("tenant_id", tenantId)
+      .in("status", ["completed", "active"]);
+    const purchaserIds = new Set((purchasers || []).map((p) => p.user_id).filter(Boolean));
+    filtered = filtered.filter((uid) => !purchaserIds.has(uid)); // Exclude buyers, keep non-buyers
+  }
+  return filtered;
+}
+
+// GET /tenant/broadcast/audience — returns count + sample of reachable users with segment filter
 app.get("/tenant/broadcast/audience", tenantSessionAuth, async (req, res) => {
   try {
     const { tenantId } = req.tenantSession;
+    const segment = req.query.segment || "all"; // all, have_purchased, inactive_30plus, high_value, first_time
 
     const { data: pubTenant } = await supabase
       .from("bot_tenants")
@@ -899,8 +943,12 @@ app.get("/tenant/broadcast/audience", tenantSessionAuth, async (req, res) => {
 
     if (convErr) return res.status(500).json({ error: convErr.message });
 
-    const distinctUserIds = [...new Set((convRows || []).map((r) => r.user_id).filter(Boolean))];
-    if (!distinctUserIds.length) return res.json({ count: 0, users: [] });
+    let distinctUserIds = [...new Set((convRows || []).map((r) => r.user_id).filter(Boolean))];
+    if (!distinctUserIds.length) return res.json({ count: 0, users: [], segment });
+
+    // Apply segment filter
+    distinctUserIds = await filterUsersBySegment(distinctUserIds, brandId, tenantId, segment);
+    if (!distinctUserIds.length) return res.json({ count: 0, users: [], segment, message: "No users match this segment." });
 
     // Cap at 500 per send for safety
     const cappedIds = distinctUserIds.slice(0, 500);
@@ -915,6 +963,7 @@ app.get("/tenant/broadcast/audience", tenantSessionAuth, async (req, res) => {
     const users = (userRows || []).filter((u) => u.phone);
     return res.json({
       count: users.length,
+      segment,
       capped: distinctUserIds.length > 500,
       users: users.slice(0, 5).map((u) => ({ phone: u.phone, name: u.full_name || "User" })),
     });
@@ -923,11 +972,11 @@ app.get("/tenant/broadcast/audience", tenantSessionAuth, async (req, res) => {
   }
 });
 
-// POST /tenant/broadcast — sends a WhatsApp message to all reachable users
+// POST /tenant/broadcast — sends a WhatsApp message to segmented users
 app.post("/tenant/broadcast", tenantSessionAuth, async (req, res) => {
   try {
     const { tenantId } = req.tenantSession;
-    const { message, window_hours = 168 } = req.body || {};
+    const { message, window_hours = 168, segment = "all" } = req.body || {};
 
     if (!message || String(message).trim().length < 3) {
       return res.status(400).json({ error: "Message must be at least 3 characters." });
@@ -955,8 +1004,12 @@ app.post("/tenant/broadcast", tenantSessionAuth, async (req, res) => {
       .eq("direction", "incoming")
       .gte("created_at", since);
 
-    const distinctUserIds = [...new Set((convRows || []).map((r) => r.user_id).filter(Boolean))].slice(0, 500);
-    if (!distinctUserIds.length) return res.json({ sent: 0, failed: 0, message: "No eligible users found in the selected window." });
+    let distinctUserIds = [...new Set((convRows || []).map((r) => r.user_id).filter(Boolean))].slice(0, 500);
+    
+    // Apply segment filter
+    distinctUserIds = await filterUsersBySegment(distinctUserIds, brandId, tenantId, segment);
+    
+    if (!distinctUserIds.length) return res.json({ sent: 0, failed: 0, message: "No users match this segment in the selected window." });
 
     const { data: userRows } = await supabase
       .from("users")
@@ -994,6 +1047,7 @@ app.post("/tenant/broadcast", tenantSessionAuth, async (req, res) => {
       sent,
       failed,
       window_hours: parseInt(window_hours, 10),
+      segment,
     });
     const trimmedHistory = history.slice(0, 20);
     await supabase
@@ -1001,8 +1055,8 @@ app.post("/tenant/broadcast", tenantSessionAuth, async (req, res) => {
       .update({ metadata: { ...existing, broadcast_history: trimmedHistory }, updated_at: new Date().toISOString() })
       .eq("id", tenantId);
 
-    log(`Broadcast by tenant ${tenantId}: ${sent} sent, ${failed} failed`, "SYSTEM");
-    return res.json({ sent, failed, total: sent + failed });
+    log(`Broadcast by tenant ${tenantId} (segment: ${segment}): ${sent} sent, ${failed} failed`, "SYSTEM");
+    return res.json({ sent, failed, total: sent + failed, segment });
   } catch (error) {
     log(`Broadcast error: ${error.message}`, "ERROR");
     return res.status(500).json({ error: error.message });
