@@ -13,7 +13,11 @@ import { sendMessage, sendImage, sendInteractiveList } from "./utils/messenger.j
 import { startHealthMonitor, runHealthCheck, incrementErrorCount } from "./utils/healthMonitor.js";
 
 const app = express();
-app.use(express.json());
+app.use(express.json({
+  verify: (req, res, buf) => {
+    req.rawBody = buf ? buf.toString("utf8") : "";
+  },
+}));
 // Tenant APIs are defined below with session protection.
 
 // Robust request logging middleware (console + file)
@@ -527,6 +531,69 @@ function normalizeCatalogItems(items = []) {
   return items.map((item) => normalizeCatalogItem(item));
 }
 
+function detectNaturalLanguageBuyIntent(text = "") {
+  const value = String(text || "").trim().toLowerCase();
+  if (!value) return false;
+
+  if (/^buy\s+/i.test(value)) return true;
+
+  const intentPatterns = [
+    /\b(i\s*(want|wanna|would like|need|am ready)\s*(to\s*)?(buy|purchase|order|checkout|pay))\b/i,
+    /\b(can i|please|help me)\b.*\b(buy|purchase|order|checkout|pay)\b/i,
+    /\b(buy|purchase|order|checkout|pay)\b.*\b(it|this|that|one)\b/i,
+    /\bproceed\s+to\s+(checkout|payment|buy)\b/i,
+  ];
+
+  return intentPatterns.some((pattern) => pattern.test(value));
+}
+
+function extractSkuFromMessage(text = "") {
+  const value = String(text || "").trim();
+  if (!value) return null;
+
+  const directBuy = value.match(/^buy\s+([A-Za-z0-9._-]{2,})\b/i);
+  if (directBuy?.[1]) return directBuy[1];
+
+  const skuLabel = value.match(/\bsku\s*[:\-]?\s*([A-Za-z0-9._-]{2,})\b/i);
+  if (skuLabel?.[1]) return skuLabel[1];
+
+  const actionSku = value.match(/\b(?:buy|purchase|order|checkout)\s+([A-Za-z0-9._-]{2,})\b/i);
+  if (actionSku?.[1]) {
+    const candidate = String(actionSku[1]).toLowerCase();
+    const stopWords = new Set(["it", "this", "that", "one", "now", "please"]);
+    if (!stopWords.has(candidate)) return actionSku[1];
+  }
+
+  return null;
+}
+
+async function mergeUserSessionContext(phone, patch = {}) {
+  const { data: existing } = await supabase
+    .from("user_sessions")
+    .select("context")
+    .eq("phone", phone)
+    .maybeSingle();
+
+  const existingContext = existing?.context && typeof existing.context === "object"
+    ? existing.context
+    : {};
+
+  const merged = {
+    ...existingContext,
+    ...patch,
+  };
+
+  await supabase
+    .from("user_sessions")
+    .upsert({
+      phone,
+      context: merged,
+      updated_at: new Date().toISOString(),
+    });
+
+  return merged;
+}
+
 // ===== TENANT CATALOG API =====
 app.get("/tenant/catalog", tenantSessionAuth, async (req, res) => {
   try {
@@ -802,6 +869,161 @@ async function updateAlphadomeTenantByPhone(tenantPhone, updates) {
   }
   return [];
 }
+
+// ===== TENANT BROADCAST API =====
+
+// GET /tenant/broadcast/audience — returns count + sample of reachable users
+app.get("/tenant/broadcast/audience", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+
+    const { data: pubTenant } = await supabase
+      .from("bot_tenants")
+      .select("brand_id")
+      .eq("id", tenantId)
+      .maybeSingle();
+
+    const brandId = pubTenant?.brand_id || null;
+    if (!brandId) return res.json({ count: 0, users: [], warning: "Brand ID not linked yet." });
+
+    const windowHours = parseInt(req.query.window_hours || "168", 10); // default 7 days
+    const since = new Date(Date.now() - windowHours * 60 * 60 * 1000).toISOString();
+
+    // Get distinct user_ids from inbound conversations within window
+    const { data: convRows, error: convErr } = await supabase
+      .from("conversations")
+      .select("user_id")
+      .eq("brand_id", brandId)
+      .eq("direction", "incoming")
+      .gte("created_at", since);
+
+    if (convErr) return res.status(500).json({ error: convErr.message });
+
+    const distinctUserIds = [...new Set((convRows || []).map((r) => r.user_id).filter(Boolean))];
+    if (!distinctUserIds.length) return res.json({ count: 0, users: [] });
+
+    // Cap at 500 per send for safety
+    const cappedIds = distinctUserIds.slice(0, 500);
+
+    const { data: userRows, error: userErr } = await supabase
+      .from("users")
+      .select("id, phone, full_name")
+      .in("id", cappedIds);
+
+    if (userErr) return res.status(500).json({ error: userErr.message });
+
+    const users = (userRows || []).filter((u) => u.phone);
+    return res.json({
+      count: users.length,
+      capped: distinctUserIds.length > 500,
+      users: users.slice(0, 5).map((u) => ({ phone: u.phone, name: u.full_name || "User" })),
+    });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /tenant/broadcast — sends a WhatsApp message to all reachable users
+app.post("/tenant/broadcast", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+    const { message, window_hours = 168 } = req.body || {};
+
+    if (!message || String(message).trim().length < 3) {
+      return res.status(400).json({ error: "Message must be at least 3 characters." });
+    }
+    if (String(message).trim().length > 1024) {
+      return res.status(400).json({ error: "Message exceeds 1024 character limit." });
+    }
+
+    const { data: pubTenant } = await supabase
+      .from("bot_tenants")
+      .select("brand_id, metadata, whatsapp_access_token, whatsapp_phone_number_id, ai_api_key, ai_provider, ai_model")
+      .eq("id", tenantId)
+      .maybeSingle();
+
+    const brandId = pubTenant?.brand_id || null;
+    if (!brandId) return res.status(400).json({ error: "Brand ID not linked. Cannot send broadcast." });
+
+    const windowMs = Math.min(parseInt(window_hours, 10), 720) * 60 * 60 * 1000;
+    const since = new Date(Date.now() - windowMs).toISOString();
+
+    const { data: convRows } = await supabase
+      .from("conversations")
+      .select("user_id")
+      .eq("brand_id", brandId)
+      .eq("direction", "incoming")
+      .gte("created_at", since);
+
+    const distinctUserIds = [...new Set((convRows || []).map((r) => r.user_id).filter(Boolean))].slice(0, 500);
+    if (!distinctUserIds.length) return res.json({ sent: 0, failed: 0, message: "No eligible users found in the selected window." });
+
+    const { data: userRows } = await supabase
+      .from("users")
+      .select("id, phone")
+      .in("id", distinctUserIds);
+
+    const phones = (userRows || []).map((u) => u.phone).filter(Boolean);
+    if (!phones.length) return res.json({ sent: 0, failed: 0, message: "No valid phone numbers found." });
+
+    const creds = getDecryptedCredentials(pubTenant);
+    const safeMsg = String(message).trim();
+
+    let sent = 0;
+    let failed = 0;
+
+    for (const phone of phones) {
+      try {
+        await sendMessage(phone, safeMsg, creds);
+        sent++;
+      } catch (sendErr) {
+        log(`Broadcast send failed to ${phone}: ${sendErr.message}`, "WARN");
+        failed++;
+      }
+      // 350ms gap between messages — conservative rate limit
+      await new Promise((resolve) => setTimeout(resolve, 350));
+    }
+
+    // Store last 20 broadcast records in tenant metadata
+    const existing = pubTenant?.metadata || {};
+    const history = Array.isArray(existing.broadcast_history) ? existing.broadcast_history : [];
+    history.unshift({
+      sent_at: new Date().toISOString(),
+      message: safeMsg.slice(0, 120) + (safeMsg.length > 120 ? "…" : ""),
+      total: sent + failed,
+      sent,
+      failed,
+      window_hours: parseInt(window_hours, 10),
+    });
+    const trimmedHistory = history.slice(0, 20);
+    await supabase
+      .from("bot_tenants")
+      .update({ metadata: { ...existing, broadcast_history: trimmedHistory }, updated_at: new Date().toISOString() })
+      .eq("id", tenantId);
+
+    log(`Broadcast by tenant ${tenantId}: ${sent} sent, ${failed} failed`, "SYSTEM");
+    return res.json({ sent, failed, total: sent + failed });
+  } catch (error) {
+    log(`Broadcast error: ${error.message}`, "ERROR");
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /tenant/broadcast/history — returns past broadcast records
+app.get("/tenant/broadcast/history", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+    const { data: pubTenant } = await supabase
+      .from("bot_tenants")
+      .select("metadata")
+      .eq("id", tenantId)
+      .maybeSingle();
+    const history = pubTenant?.metadata?.broadcast_history || [];
+    return res.json({ history });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
 
 // ===== TENANT PROFILE API =====
 
@@ -1795,6 +2017,52 @@ app.post("/admin/catalog/import-csv", adminAuth, upload.single("catalog_csv"), a
   }
 });
 
+// ===== WEBHOOK SIGNATURE VERIFICATION =====
+// Validates X-Hub-Signature header per WhatsApp Cloud API security requirements
+function verifyWebhookSignature(req) {
+  const signature = req.get("X-Hub-Signature-256");
+  if (!signature) return false;
+
+  const body = req.rawBody || (typeof req.body === "string" ? req.body : JSON.stringify(req.body));
+  const appSecret = process.env.WHATSAPP_APP_SECRET || "";
+
+  if (!appSecret) {
+    log("WHATSAPP_APP_SECRET not configured - signature verification skipped", "WARN");
+    return true; // Skip if not configured
+  }
+
+  const expectedSignature = "sha256=" + crypto
+    .createHmac("sha256", appSecret)
+    .update(body)
+
+    .digest("hex");
+
+  let isValid = false;
+  try {
+    const received = Buffer.from(signature, "utf8");
+    const expected = Buffer.from(expectedSignature, "utf8");
+    isValid = received.length === expected.length && crypto.timingSafeEqual(received, expected);
+  } catch {
+    isValid = false;
+  }
+
+  if (!isValid) {
+    log(`Invalid webhook signature detected from ${req.ip}`, "WARN");
+  }
+  return isValid;
+}
+
+// ===== WEBHOOK SIGNATURE MIDDLEWARE =====
+app.post("/webhook", (req, res, next) => {
+  // Verify signature before processing
+  if (!verifyWebhookSignature(req)) {
+    log("Webhook signature validation failed", "ERROR");
+    // Still return 200 to prevent WhatsApp retries on invalid webhooks
+    return res.sendStatus(200);
+  }
+  next();
+});
+
 // ===== HANDLE INCOMING WHATSAPP MESSAGES =====
 app.post("/webhook", loadTenantContext, async (req, res) => {
   const body = req.body;
@@ -1949,6 +2217,13 @@ app.post("/webhook", loadTenantContext, async (req, res) => {
       tenantPhone ? fetchCatalogForTenant(tenantPhone, text) : Promise.resolve([]),
     ]);
 
+    if (catalogMatches?.length > 0) {
+      log(
+        `CATALOG_SEARCH query="${text}" results=${catalogMatches.length} customer=${from} tenant=${tenantPhone || "unknown"}`,
+        "PRODUCT_EVENT"
+      );
+    }
+
     const dbContext = buildDbContext({
       userProfile,
       brandProfile,
@@ -1986,13 +2261,12 @@ if (text.trim().toUpperCase().startsWith("JOIN ALPHADOME") || text.trim().toUppe
     const amount = getPaymentAmount(plan, level);
 
     // store session waiting for phone
-    await supabase
-      .from("user_sessions")
-      .upsert({
-        phone: from,
-        context: { step: "awaiting_payment_number", plan, level, amount },
-        updated_at: new Date().toISOString(),
-      });
+    await mergeUserSessionContext(from, {
+      step: "awaiting_payment_number",
+      plan,
+      level,
+      amount,
+    });
 
     // prompt user for number
     await sendMessage(
@@ -2008,16 +2282,57 @@ if (text.trim().toUpperCase().startsWith("JOIN ALPHADOME") || text.trim().toUppe
   }
 }
 
-// ✅ PRODUCT BUY FLOW: BUY <SKU>
-const buyMatch = text.match(/^buy\s+([A-Za-z0-9._-]+)/i);
-if (buyMatch) {
+// ✅ PRODUCT BUY FLOW: explicit SKU and natural-language intents
+const naturalBuyIntent = detectNaturalLanguageBuyIntent(text);
+const extractedSku = extractSkuFromMessage(text);
+if (naturalBuyIntent || extractedSku) {
   try {
     if (!tenantPhone) {
       await sendMessage(from, "⚠️ Product checkout is only available for tenant-linked chats.");
       return res.sendStatus(200);
     }
 
-    const requestedSku = String(buyMatch[1] || "").trim();
+    const { data: buySession } = await supabase
+      .from("user_sessions")
+      .select("context")
+      .eq("phone", from)
+      .maybeSingle();
+
+    const sessionContext = buySession?.context && typeof buySession.context === "object"
+      ? buySession.context
+      : {};
+
+    let requestedSku = String(extractedSku || "").trim();
+
+    if (!requestedSku) {
+      const recentItems = Array.isArray(sessionContext.last_catalog_items)
+        ? sessionContext.last_catalog_items
+        : [];
+
+      if (recentItems.length === 1 && recentItems[0]?.sku) {
+        requestedSku = String(recentItems[0].sku);
+      } else if (sessionContext.last_selected_sku) {
+        requestedSku = String(sessionContext.last_selected_sku);
+      } else if (catalogMatches.length === 1 && catalogMatches[0]?.sku) {
+        requestedSku = String(catalogMatches[0].sku);
+      }
+
+      if (!requestedSku) {
+        const suggestions = recentItems
+          .filter((item) => item?.sku)
+          .slice(0, 3)
+          .map((item) => `• ${item.sku} - ${item.name || "Product"}`)
+          .join("\n");
+
+        const suggestionText = suggestions
+          ? `\nHere are recent options:\n${suggestions}\n\nReply with *BUY <SKU>* or just say *buy SKU123*.`
+          : "\nPlease share the SKU to buy, for example: *BUY SKU123*.";
+
+        await sendMessage(from, `🛒 I can help you check out right away.${suggestionText}`);
+        return res.sendStatus(200);
+      }
+    }
+
     const productCandidates = await fetchCatalogForTenant(tenantPhone, requestedSku);
     const product = productCandidates.find((p) =>
       String(p.sku || "").toLowerCase() === requestedSku.toLowerCase()
@@ -2041,20 +2356,20 @@ if (buyMatch) {
     const safeSku = String(product.sku || requestedSku).replace(/[^A-Za-z0-9]/g, "").slice(0, 8) || "ITEM";
     const accountRef = `PRD${safeSku}`;
 
-    await supabase
-      .from("user_sessions")
-      .upsert({
-        phone: from,
-        context: {
-          step: "awaiting_product_payment_number",
-          sku: product.sku || requestedSku,
-          product_name: product.name || "Product",
-          amount,
-          account_ref: accountRef,
-          store_url: product.store_url || null,
-        },
-        updated_at: new Date().toISOString(),
-      });
+    await mergeUserSessionContext(from, {
+      step: "awaiting_product_payment_number",
+      sku: product.sku || requestedSku,
+      product_name: product.name || "Product",
+      amount,
+      account_ref: accountRef,
+      store_url: product.store_url || null,
+      last_selected_sku: product.sku || requestedSku,
+    });
+
+    log(
+      `PRODUCT_CHECKOUT_STARTED sku=${product.sku || requestedSku} source=${extractedSku ? "explicit" : "nlp"} customer=${from}`,
+      "PRODUCT_EVENT"
+    );
 
     const storeLine = product.store_url ? `\nStore link: ${product.store_url}` : "";
     await sendMessage(
@@ -2082,6 +2397,8 @@ if (phoneMatch) {
 
   if (session?.context?.step === "awaiting_product_payment_number") {
     let paymentPhone = text.trim().toLowerCase() === "same" ? from : text.trim();
+    const paymentSku = session?.context?.sku || "UNKNOWN";
+    log(`PAYMENT_PHONE_PROVIDED sku=${paymentSku} paymentPhone=${paymentPhone} customer=${from}`, "PRODUCT_EVENT");
 
     if (paymentPhone.startsWith("0")) paymentPhone = "254" + paymentPhone.slice(1);
     if (paymentPhone.startsWith("+")) paymentPhone = paymentPhone.replace(/^\+/, "");
@@ -2089,6 +2406,8 @@ if (phoneMatch) {
     const { amount, sku, product_name, account_ref, store_url } = session.context;
 
     try {
+      log(`🛍️ PRODUCT_PURCHASE_INITIATED: SKU=${sku}, Amount=KES${amount}, Customer=${from}, Phone=${paymentPhone}`, "PRODUCT_EVENT");
+      
       await sendMessage(
         from,
         `💳 Processing payment for *${product_name || sku}* (KES ${amount}). Please wait...`
@@ -2123,6 +2442,7 @@ if (phoneMatch) {
             },
           },
         ]);
+        log(`✅ STK_PUSH_RECORDED: CheckoutID=${checkoutId}, Customer=${from}`, "PRODUCT_EVENT");
       }
 
       const storeLine = store_url ? `\nStore link: ${store_url}` : "";
@@ -2134,8 +2454,14 @@ if (phoneMatch) {
       await supabase.from("user_sessions").delete().eq("phone", from);
       return res.sendStatus(200);
     } catch (err) {
-      log(`Product payment flow error for ${from}: ${err.message}`, "ERROR");
-      await sendMessage(from, "⚠️ We couldn't start the product payment flow. Please try again shortly.");
+      log(`❌ PRODUCT_PURCHASE_FAILED: SKU=${sku}, Error=${err.message}, Customer=${from}`, "PRODUCT_EVENT");
+      
+      // Use parsed M-Pesa error message if available, otherwise generic message
+      const userMessage = err.mpesaCode 
+        ? err.message 
+        : "⚠️ We couldn't start the product payment flow. Please try again shortly.";
+      
+      await sendMessage(from, userMessage);
       return res.sendStatus(200);
     }
   }
@@ -2334,6 +2660,22 @@ if (text.match(/^2547\d{7}$/) || text.toLowerCase() === "same") {
         items.find((i) => i.primary_image || i.image_url)?.primary_image ||
         items.find((i) => i.primary_image || i.image_url)?.image_url ||
         null;
+
+      await mergeUserSessionContext(from, {
+        last_catalog_items: items
+          .filter(Boolean)
+          .slice(0, 10)
+          .map((item) => ({
+            sku: item.sku || null,
+            name: item.name || null,
+            price: Number(item.price) || null,
+            currency: item.currency || "KES",
+            store_url: item.store_url || null,
+          })),
+        last_selected_sku: firstItem?.sku || null,
+        last_catalog_at: new Date().toISOString(),
+      });
+
       if (firstImage) {
         await sendImage(from, firstImage, "Top match", creds);
       }
@@ -2341,8 +2683,9 @@ if (text.match(/^2547\d{7}$/) || text.toLowerCase() === "same") {
       await sendInteractiveList(from, "Here are matching items:", "View items", sections, creds);
       const firstStore = firstItem?.store_url || null;
       const buyHint = firstItem?.sku ? `\nTo buy now, reply: *BUY ${firstItem.sku}*` : "\nTo buy now, reply: *BUY <SKU>*";
+      const smartBuyHint = "\nYou can also say things like: *I want to buy it*";
       const storeHint = firstStore ? `\nStore link: ${firstStore}` : "";
-      await sendMessage(from, `Use the list to browse products.${buyHint}${storeHint}`, creds);
+      await sendMessage(from, `Use the list to browse products.${buyHint}${smartBuyHint}${storeHint}`, creds);
     } else {
       const replyText = typeof reply === "string" ? reply : reply?.text || "";
       await sendMessage(from, replyText, creds);
@@ -2388,7 +2731,24 @@ if (text.match(/^2547\d{7}$/) || text.toLowerCase() === "same") {
 });
 
   // ---------- INSERT START: M-Pesa callback endpoint ----------
-    
+
+// POST /mpesa/stk-push — tenant dashboard manual STK push
+app.post("/mpesa/stk-push", tenantSessionAuth, async (req, res) => {
+  try {
+    const { phone, amount, accountRef, callbackUrl } = req.body;
+    if (!phone || !amount) return res.status(400).json({ error: "phone and amount are required" });
+    const result = await initiateStkPush({
+      phone: String(phone).trim(),
+      amount: parseFloat(amount),
+      accountRef: accountRef || "TenantPayment",
+      transactionDesc: accountRef || "Tenant Dashboard Payment",
+    });
+    res.json({ success: true, CheckoutRequestID: result.CheckoutRequestID, CustomerMessage: result.CustomerMessage });
+  } catch (err) {
+    res.status(502).json({ error: err.message || "STK push failed" });
+  }
+});
+
 app.post("/mpesa/callback", async (req, res) => {
   try {
     const body = req.body;
@@ -3004,6 +3364,26 @@ async function getMpesaAuthToken() {
 
 // helper: initiate STK push
 // phone must be in format 2547XXXXXXXX (no leading 0)
+// ===== PARSE M-PESA ERROR CODES =====
+// Maps M-Pesa error codes to user-friendly messages
+function getMpesaErrorMessage(errorCode) {
+  const errorMap = {
+    '400': '❌ Invalid phone number format. Use format: 254712345678',
+    '401': '⚠️ Invalid phone number. Check the number and try again.',
+    '402': '💳 Phone number is not registered for M-Pesa.',
+    '403': '🔒 Access denied - contact support.',
+    '404': '❌ Phone number not found.',
+    '500': '⚠️ M-Pesa system error. Please try again in a few moments.',
+    '501': '⚠️ Service temporarily unavailable. Retry shortly.',
+    '502': '💬 M-Pesa is temporarily unavailable. Try again soon.',
+    '17': '❌ Phone number format invalid. Ensure it starts with 254.',
+    'INVALID_PHONENUMBER': '❌ Invalid phone number. Use format: 254712345678',
+    'INVALID_PARTYB': '❌ Business shortcode error. Contact support.',
+    'EXPIRED_TRANSACTION': '⏱️ Transaction expired. Please try again.',
+  };
+  return errorMap[errorCode] || '⚠️ Payment processing error. Please try again or contact support.';
+}
+
 async function initiateStkPush({ phone, amount, accountRef, transactionDesc }) {
   try {
     // ✅ Step 1: Validate environment variables
@@ -3060,11 +3440,19 @@ async function initiateStkPush({ phone, amount, accountRef, transactionDesc }) {
     });
 
     // ✅ Step 5: Return Safaricom response
+    log(`✅ STK push initiated for ${accountRef || 'transaction'} - CheckoutRequestID: ${resp.data?.CheckoutRequestID}`, "PAYMENT");
     return resp.data;
 
   } catch (err) {
-    log(`❌ STK Push error: ${err.response?.data ? JSON.stringify(err.response.data) : err.message}`, "ERROR");
-    throw err;
+    const errorCode = err.response?.data?.errorCode || err.response?.status || 'UNKNOWN';
+    const errorMsg = err.response?.data?.errorMessage || err.message;
+    log(`❌ STK Push error [${errorCode}]: ${errorMsg}`, "PAYMENT");
+    
+    // Attach parsed error for caller to handle
+    const parsedError = new Error(getMpesaErrorMessage(errorCode));
+    parsedError.mpesaCode = errorCode;
+    parsedError.mpesaMessage = errorMsg;
+    throw parsedError;
   }
 }
 
