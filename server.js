@@ -1378,6 +1378,76 @@ app.get("/tenant/analytics", tenantSessionAuth, async (req, res) => {
   }
 });
 
+// GET /tenant/revenue — sales analytics for dashboard (daily trend, top products, MRR)
+app.get("/tenant/revenue", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+
+    const since30d = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+
+    // Get all completed/active subscriptions in last 30 days
+    const { data: subs } = await supabase
+      .from("subscriptions")
+      .select("id, amount, product_sku, status, created_at")
+      .eq("tenant_id", tenantId)
+      .gte("created_at", since30d)
+      .in("status", ["completed", "active"]);
+
+    const subscriptions = subs || [];
+
+    // Calculate daily trend
+    const dayMap = {};
+    subscriptions.forEach((sub) => {
+      const day = sub.created_at?.slice(0, 10);
+      if (!day) return;
+      if (!dayMap[day]) dayMap[day] = { date: day, sales: 0, count: 0 };
+      dayMap[day].sales += parseFloat(sub.amount || 0);
+      dayMap[day].count += 1;
+    });
+
+    const dailyTrend = Object.values(dayMap)
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .map((d) => ({ ...d, sales: Math.round(d.sales * 100) / 100 }));
+
+    // Calculate top 5 products
+    const productMap = {};
+    subscriptions.forEach((sub) => {
+      const sku = sub.product_sku || "unknown";
+      if (!productMap[sku]) productMap[sku] = { sku, revenue: 0, count: 0 };
+      productMap[sku].revenue += parseFloat(sub.amount || 0);
+      productMap[sku].count += 1;
+    });
+
+    const topProducts = Object.values(productMap)
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 5)
+      .map((p) => ({ ...p, revenue: Math.round(p.revenue * 100) / 100 }));
+
+    // Calculate metrics
+    const totalRevenue = subscriptions.reduce((sum, s) => sum + parseFloat(s.amount || 0), 0);
+    const totalOrders = subscriptions.length;
+    const avgOrderValue = totalOrders > 0 ? Math.round((totalRevenue / totalOrders) * 100) / 100 : 0;
+
+    // MRR (Monthly Recurring Revenue) — assume subscriptions are monthly
+    const mrrSubscriptions = subscriptions.filter((s) => s.status === "active");
+    const mrr = mrrSubscriptions.reduce((sum, s) => sum + parseFloat(s.amount || 0), 0);
+
+    return res.json({
+      revenue: {
+        total_revenue: Math.round(totalRevenue * 100) / 100,
+        total_orders: totalOrders,
+        avg_order_value: avgOrderValue,
+        mrr: Math.round(mrr * 100) / 100,
+        daily_trend: dailyTrend,
+        top_products: topProducts,
+        period: "30 days",
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
 // ===== TENANT PAYMENTS / SUBSCRIPTIONS API =====
 
 app.get("/tenant/payments", tenantSessionAuth, async (req, res) => {

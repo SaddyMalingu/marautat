@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
@@ -22,10 +22,10 @@
     }
     *, *::before, *::after { box-sizing: border-box; }
     body { font-family: 'Inter', system-ui, Arial, sans-serif; background: var(--bg-main); color: var(--text-light); min-height: 100vh; margin: 0; }
-    /* ─── App Shell ─── */
+    /* â”€â”€â”€ App Shell â”€â”€â”€ */
     .app-shell { display: grid; grid-template-columns: 240px 1fr; grid-template-rows: 60px 1fr; min-height: 100vh; }
     @media (max-width: 767px) { .app-shell { grid-template-columns: 1fr; } .sidebar { display: none; } .sidebar.open { display: flex; position: fixed; inset: 60px 0 0 0; z-index: 200; width: 240px; } }
-    /* ─── Topbar ─── */
+    /* â”€â”€â”€ Topbar â”€â”€â”€ */
     .topbar { grid-column: 1 / -1; background: var(--bg-sidebar); border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 20px; gap: 14px; position: sticky; top: 0; z-index: 100; }
     .topbar-brand { font-weight: 700; font-size: 1.05rem; color: var(--accent); flex: 1; }
     .topbar-user { font-size: 0.88rem; color: var(--text-muted); }
@@ -33,17 +33,17 @@
     .topbar-logout:hover { background: rgba(244,63,94,0.13); }
     .topbar-menu-btn { display: none; background: none; border: none; color: var(--text-light); font-size: 1.2rem; cursor: pointer; }
     @media (max-width: 767px) { .topbar-menu-btn { display: block; } }
-    /* ─── Sidebar ─── */
+    /* â”€â”€â”€ Sidebar â”€â”€â”€ */
     .sidebar { background: var(--bg-sidebar); border-right: 1px solid var(--border); display: flex; flex-direction: column; padding: 18px 0; overflow-y: auto; }
     .sidebar-label { font-size: 0.72rem; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: var(--text-muted); padding: 14px 20px 6px 20px; }
     .nav-item { display: flex; align-items: center; gap: 10px; padding: 10px 20px; cursor: pointer; font-size: 0.92rem; font-weight: 500; color: var(--text-muted); transition: all 0.15s; border-left: 3px solid transparent; user-select: none; }
     .nav-item:hover { background: rgba(56,189,248,0.07); color: var(--text-light); }
     .nav-item.active { background: rgba(56,189,248,0.12); color: var(--accent); border-left-color: var(--accent); }
     .nav-icon { width: 18px; text-align: center; font-size: 0.95rem; }
-    /* ─── Main ─── */
+    /* â”€â”€â”€ Main â”€â”€â”€ */
     .main-area { overflow-y: auto; padding: 28px 28px 60px; background: var(--bg-main); }
     @media (max-width: 575px) { .main-area { padding: 16px 12px 60px; } }
-    /* ─── Cards ─── */
+    /* â”€â”€â”€ Cards â”€â”€â”€ */
     .section-hdr { font-size: 1.3rem; font-weight: 700; color: var(--text-light); margin-bottom: 20px; display: flex; align-items: center; gap: 10px; }
     .section-hdr i { color: var(--accent); }
     .stat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); gap: 14px; margin-bottom: 22px; }
@@ -53,42 +53,42 @@
     .stat-sub { font-size: 0.79rem; color: var(--text-muted); }
     .panel { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 22px; margin-bottom: 18px; }
     .panel-title { font-size: 0.93rem; font-weight: 600; color: var(--text-light); margin-bottom: 16px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
-    /* ─── Tables ─── */
+    /* â”€â”€â”€ Tables â”€â”€â”€ */
     .table { color: var(--text-light); border-color: var(--border); }
     .table thead th { color: var(--text-muted); font-size: 0.77rem; text-transform: uppercase; letter-spacing: 0.5px; border-color: var(--border); background: var(--bg-main); font-weight: 600; }
     .table td, .table th { padding: 10px 12px; vertical-align: middle; border-color: var(--border); }
     .table tbody tr:hover { background: rgba(56,189,248,0.04); }
-    /* ─── Forms ─── */
+    /* â”€â”€â”€ Forms â”€â”€â”€ */
     .form-control, .form-select { background: var(--bg-main); border: 1px solid var(--border); color: var(--text-light); border-radius: 8px; }
     .form-control:focus, .form-select:focus { background: var(--bg-main); border-color: var(--accent); color: var(--text-light); box-shadow: 0 0 0 2px rgba(56,189,248,0.18); }
     .form-control::placeholder { color: var(--text-muted); }
     .form-label { font-size: 0.84rem; color: var(--text-muted); font-weight: 500; }
     .form-text { color: var(--text-muted); font-size: 0.78rem; }
-    /* ─── Buttons ─── */
+    /* â”€â”€â”€ Buttons â”€â”€â”€ */
     .btn-accent { background: var(--accent); color: #0f1117; border: none; font-weight: 600; border-radius: 8px; padding: 8px 18px; transition: opacity 0.2s; }
     .btn-accent:hover { opacity: 0.88; color: #0f1117; }
     .btn-outline-acc { border: 1px solid var(--accent); color: var(--accent); background: transparent; border-radius: 8px; padding: 6px 14px; font-size: 0.85rem; transition: all 0.2s; }
     .btn-outline-acc:hover { background: rgba(56,189,248,0.12); color: var(--accent); }
     .btn-danger-out { border: 1px solid var(--danger); color: var(--danger); background: transparent; border-radius: 8px; padding: 5px 12px; font-size: 0.83rem; transition: all 0.2s; }
     .btn-danger-out:hover { background: rgba(244,63,94,0.12); color: var(--danger); }
-    /* ─── Badges ─── */
+    /* â”€â”€â”€ Badges â”€â”€â”€ */
     .badge-ok { background: rgba(34,211,160,0.15); color: var(--success); border: 1px solid rgba(34,211,160,0.3); border-radius: 20px; padding: 2px 9px; font-size: 0.74rem; font-weight: 600; }
     .badge-off { background: rgba(244,63,94,0.12); color: var(--danger); border: 1px solid rgba(244,63,94,0.25); border-radius: 20px; padding: 2px 9px; font-size: 0.74rem; font-weight: 600; }
     .badge-mid { background: rgba(245,158,11,0.15); color: var(--warning); border: 1px solid rgba(245,158,11,0.3); border-radius: 20px; padding: 2px 9px; font-size: 0.74rem; font-weight: 600; }
-    /* ─── Toasts ─── */
+    /* â”€â”€â”€ Toasts â”€â”€â”€ */
     .toast-area { position: fixed; top: 70px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; max-width: 340px; }
     .toast-msg { background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 11px 15px; font-size: 0.88rem; display: flex; align-items: center; gap: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); animation: slideIn 0.2s ease; }
     .toast-ok { border-left: 3px solid var(--success); }
     .toast-err { border-left: 3px solid var(--danger); }
     @keyframes slideIn { from { transform: translateX(30px); opacity: 0; } to { transform: none; opacity: 1; } }
-    /* ─── Login ─── */
+    /* â”€â”€â”€ Login â”€â”€â”€ */
     .login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #0f1117 0%, #181c2f 100%); }
     .login-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 18px; padding: 40px 36px; width: 100%; max-width: 440px; box-shadow: 0 8px 40px rgba(0,0,0,0.4); }
     .login-logo { text-align: center; margin-bottom: 24px; }
     .login-logo i { font-size: 2.4rem; color: var(--accent); }
     .login-logo h2 { font-size: 1.4rem; font-weight: 700; margin-top: 8px; color: var(--text-light); }
     .login-logo p { font-size: 0.88rem; color: var(--text-muted); margin: 4px 0 0; }
-    /* ─── Misc ─── */
+    /* â”€â”€â”€ Misc â”€â”€â”€ */
     .spinner-sm { width: 16px; height: 16px; border-width: 2px; display: inline-block; vertical-align: text-bottom; }
     .app-hidden { display: none !important; }
     #floating-wa { position: fixed; right: 22px; bottom: 22px; z-index: 999; }
@@ -109,7 +109,7 @@
 
 <div class="toast-area" id="toastArea"></div>
 
-<!-- ── Login Screen ─────────────────────────────────────────────────────── -->
+<!-- â”€â”€ Login Screen â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
 <div id="loginScreen" class="login-wrap">
   <div class="login-card">
     <div class="login-logo">
@@ -127,7 +127,7 @@
   </div>
 </div>
 
-<!-- ── App Shell ─────────────────────────────────────────────────────────── -->
+<!-- â”€â”€ App Shell â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
 <div id="appShell" class="app-shell app-hidden">
   <header class="topbar">
     <button class="topbar-menu-btn" id="menuBtn"><i class="fa-solid fa-bars"></i></button>
@@ -139,7 +139,9 @@
   <nav class="sidebar" id="sidebar">
     <div class="sidebar-label">Overview</div>
     <div class="nav-item active" data-sec="home"><span class="nav-icon"><i class="fa-solid fa-gauge-high"></i></span>Dashboard</div>
-    <div class="nav-item" data-sec="analytics"><span class="nav-icon"><i class="fa-solid fa-chart-line"></i></span>Analytics</div>
+    <div class="sidebar-label">Sales</div>
+    <div class="nav-item" data-sec="revenue"><span class="nav-icon"><i class="fa-solid fa-chart-line"></i></span>Revenue</div>
+    <div class="nav-item" data-sec="analytics"><span class="nav-icon"><i class="fa-solid fa-chart-bar"></i></span>Analytics</div>
 
     <div class="sidebar-label">Store</div>
     <div class="nav-item" data-sec="catalog"><span class="nav-icon"><i class="fa-solid fa-box"></i></span>Product Catalog</div>
@@ -171,12 +173,12 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 <script>
 "use strict";
-// ══════════════════════ STATE ══════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• STATE â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 const STORAGE_KEY = 'td_v3';
 const S = { key: new URLSearchParams(location.search).get('key') || '', token: '', phone: '', name: '', expires: null };
 let curSec = 'home';
 
-// ══════════════════════ TOAST ══════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• TOAST â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 function toast(msg, type = 'ok', ms = 4200) {
   const el = Object.assign(document.createElement('div'), { className: `toast-msg toast-${type}` });
   const icon = type === 'ok' ? 'fa-circle-check' : 'fa-circle-exclamation';
@@ -186,19 +188,19 @@ function toast(msg, type = 'ok', ms = 4200) {
   setTimeout(() => el.remove(), ms);
 }
 
-// ══════════════════════ UTILS ══════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• UTILS â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
-function fmtDate(d) { return d ? new Date(d).toLocaleDateString('en-KE',{year:'numeric',month:'short',day:'numeric'}) : '—'; }
-function fmtDT(d) { return d ? new Date(d).toLocaleString('en-KE',{year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '—'; }
+function fmtDate(d) { return d ? new Date(d).toLocaleDateString('en-KE',{year:'numeric',month:'short',day:'numeric'}) : 'â€”'; }
+function fmtDT(d) { return d ? new Date(d).toLocaleString('en-KE',{year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : 'â€”'; }
 function badge(s) {
   const ok=['active','live','paid','delivered','completed','verified'];
   const off=['inactive','cancelled','failed','suspended'];
   const cls = ok.includes(String(s).toLowerCase()) ? 'badge-ok' : off.includes(String(s).toLowerCase()) ? 'badge-off' : 'badge-mid';
   return `<span class="${cls}">${esc(s)}</span>`;
 }
-function spinner(text='Loading…') { return `<div class="text-center p-5"><div class="spinner-border text-info spinner-sm"></div> <span style="color:var(--text-muted);margin-left:8px;">${esc(text)}</span></div>`; }
+function spinner(text='Loadingâ€¦') { return `<div class="text-center p-5"><div class="spinner-border text-info spinner-sm"></div> <span style="color:var(--text-muted);margin-left:8px;">${esc(text)}</span></div>`; }
 
-// ══════════════════════ SESSION ═══════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• SESSION â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 function saveSession(d) {
   Object.assign(S, { token: d.token, phone: d.tenant_phone, name: d.tenant_name || '', expires: d.expires_at });
   sessionStorage.setItem(STORAGE_KEY, JSON.stringify(d));
@@ -215,7 +217,7 @@ function loadSession() {
   } catch { sessionStorage.removeItem(STORAGE_KEY); return false; }
 }
 
-// ══════════════════════ API ════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• API â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 async function api(url, opts = {}) {
   const headers = { ...(opts.headers || {}) };
   if (S.token) headers['x-tenant-session'] = S.token;
@@ -230,7 +232,7 @@ async function apiJson(url, opts = {}) {
   return { ok: r.ok, status: r.status, data: d };
 }
 
-// ══════════════════════ AUTH ═══════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• AUTH â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 async function doLogin(phone, key) {
   const r = await fetch('/tenant/session/login', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ tenant_phone: phone, key }) });
   const d = await r.json().catch(() => ({ error: 'Invalid response' }));
@@ -241,7 +243,7 @@ async function doLogout() {
   clearSession(); showLogin();
 }
 
-// ══════════════════════ SHOW / HIDE ═══════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• SHOW / HIDE â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 function showLogin(msg = '') {
   document.getElementById('loginScreen').classList.remove('app-hidden');
   document.getElementById('appShell').classList.add('app-hidden');
@@ -255,14 +257,14 @@ function showApp() {
   document.getElementById('topUser').textContent = S.name || S.phone || 'Tenant';
 }
 
-// ══════════════════════ NAVIGATION ═══════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• NAVIGATION â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 function go(sec) {
   curSec = sec;
   document.querySelectorAll('.nav-item[data-sec]').forEach(el => el.classList.toggle('active', el.dataset.sec === sec));
   document.getElementById('sidebar').classList.remove('open');
   const sp = document.getElementById('spa');
   sp.innerHTML = spinner();
-  const map = { home:renderHome, analytics:renderAnalytics, catalog:renderCatalog, orders:renderOrders, training:renderTraining, 'bot-config':renderBotConfig, profile:renderProfile, smtp:renderSmtp, payments:renderPayments, 'add-agent':renderAddAgent, broadcast:renderBroadcast, abandoned:renderAbandoned, help:renderHelp };
+  const map = { home:renderHome, revenue:renderRevenue, analytics:renderAnalytics, catalog:renderCatalog, orders:renderOrders, training:renderTraining, 'bot-config':renderBotConfig, profile:renderProfile, smtp:renderSmtp, payments:renderPayments, 'add-agent':renderAddAgent, broadcast:renderBroadcast, abandoned:renderAbandoned, help:renderHelp };
   (map[sec] || renderHome)();
 }
 
@@ -270,21 +272,21 @@ function showErr(msg) {
   document.getElementById('spa').innerHTML = `<div class="text-center p-5"><i class="fa-solid fa-circle-exclamation fa-2x mb-3" style="color:var(--danger);"></i><div style="color:var(--danger);">${esc(msg)}</div><button class="btn btn-outline-acc mt-3" onclick="go('${esc(curSec)}')">Retry</button></div>`;
 }
 
-// ══════════════════════ HOME ═══════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• HOME â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 async function renderHome() {
   document.getElementById('spa').innerHTML = `
     <div class="section-hdr"><i class="fa-solid fa-gauge-high"></i> Dashboard</div>
     <div class="stat-grid">
-      <div class="stat-card"><div class="stat-label">Catalog</div><div class="stat-value" id="hC">—</div><div class="stat-sub">Products</div></div>
-      <div class="stat-card"><div class="stat-label">Orders</div><div class="stat-value" id="hO">—</div><div class="stat-sub">All time</div></div>
-      <div class="stat-card"><div class="stat-label">Training</div><div class="stat-value" id="hT">—</div><div class="stat-sub">FAQ entries</div></div>
-      <div class="stat-card"><div class="stat-label">Conversations</div><div class="stat-value" id="hV">—</div><div class="stat-sub">All time</div></div>
+      <div class="stat-card"><div class="stat-label">Catalog</div><div class="stat-value" id="hC">â€”</div><div class="stat-sub">Products</div></div>
+      <div class="stat-card"><div class="stat-label">Orders</div><div class="stat-value" id="hO">â€”</div><div class="stat-sub">All time</div></div>
+      <div class="stat-card"><div class="stat-label">Training</div><div class="stat-value" id="hT">â€”</div><div class="stat-sub">FAQ entries</div></div>
+      <div class="stat-card"><div class="stat-label">Conversations</div><div class="stat-value" id="hV">â€”</div><div class="stat-sub">All time</div></div>
     </div>
     <div class="row g-3">
       <div class="col-12 col-md-6">
         <div class="panel">
           <div class="panel-title"><i class="fa-solid fa-circle-dot me-2" style="color:var(--success);"></i>Bot Status</div>
-          <div id="hBot" style="color:var(--text-muted);font-size:0.88rem;">Loading…</div>
+          <div id="hBot" style="color:var(--text-muted);font-size:0.88rem;">Loadingâ€¦</div>
         </div>
       </div>
       <div class="col-12 col-md-6">
@@ -311,17 +313,88 @@ async function renderHome() {
   set('hC', (cr.data?.items || []).length);
   set('hO', (or.data?.orders || []).length);
   set('hT', (tr.data?.training || []).length);
-  set('hV', ar.data?.analytics?.total_conversations ?? '—');
+  set('hV', ar.data?.analytics?.total_conversations ?? 'â€”');
   const s = br.data?.settings || {};
   const botEl = document.getElementById('hBot');
   if (botEl) botEl.innerHTML = `
     <div class="kv-row"><span class="kv-key">Status</span>${badge(s.is_active ? 'active' : 'inactive')}</div>
     <div class="kv-row"><span class="kv-key">Verified</span>${s.is_verified ? '<span class="badge-ok">Yes</span>' : '<span class="badge-off">No</span>'}</div>
-    <div class="kv-row"><span class="kv-key">AI Model</span><span>${esc(s.ai_model || '—')}</span></div>
+    <div class="kv-row"><span class="kv-key">AI Model</span><span>${esc(s.ai_model || 'â€”')}</span></div>
     <div class="kv-row"><span class="kv-key">WA Token</span>${s.has_wa_token ? '<span class="badge-ok">Configured</span>' : '<span class="badge-off">Missing</span>'}</div>`;
 }
 
-// ══════════════════════ ANALYTICS ══════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• ANALYTICS â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// REVENUE DASHBOARD
+async function renderRevenue() {
+  const { data } = await apiJson('/tenant/revenue');
+  const rev = data?.revenue || { total_revenue: 0, total_orders: 0, avg_order_value: 0, mrr: 0, daily_trend: [], top_products: [] };
+
+  const trend = rev.daily_trend || [];
+  const maxSales = Math.max(...(trend.map(d => d.sales) || [1]));
+
+  const chartBars = trend.slice(-30).map(d => {
+    const hPercent = maxSales > 0 ? (d.sales / maxSales * 100) : 0;
+    const dateObj = new Date(d.date || '');
+    const dayStr = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dateObj.getUTCDay()];
+    return `<div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:1;">
+      <div style="background:linear-gradient(180deg,var(--accent) 0%,rgba(88,166,255,0.3) 100%);height:${Math.max(hPercent, 5)}%;width:100%;border-radius:4px 4px 0 0;" title="KES ${d.sales.toLocaleString()}"></div>
+      <span style="font-size:0.7rem;color:var(--text-muted);">${d.date.slice(5)}</span>
+    </div>`;
+  }).join('');
+
+  const topProdsHtml = (rev.top_products || []).map(p => `
+    <tr>
+      <td><strong>${esc(p.sku)}</strong></td>
+      <td><span class="badge-info">${p.count}</span></td>
+      <td><strong>KES ${parseFloat(p.revenue).toLocaleString()}</strong></td>
+    </tr>`).join('');
+
+  document.getElementById('spa').innerHTML = `
+    <div class="section-hdr"><i class="fa-solid fa-chart-line"></i> Revenue (Last 30 Days)</div>
+
+    <div class="row g-3 mb-4">
+      <div class="col-12 col-sm-6 col-lg-3">
+        <div class="stat-card"><div class="stat-label">Total Revenue</div>
+          <div class="stat-value" style="color:var(--success);font-size:1.7rem;">KES ${parseFloat(rev.total_revenue).toLocaleString()}</div>
+          <div class="stat-sub">${rev.total_orders} orders</div></div>
+      </div>
+      <div class="col-12 col-sm-6 col-lg-3">
+        <div class="stat-card"><div class="stat-label">MRR</div>
+          <div class="stat-value" style="color:var(--info);font-size:1.7rem;">KES ${parseFloat(rev.mrr).toLocaleString()}</div>
+          <div class="stat-sub">active subscriptions</div></div>
+      </div>
+      <div class="col-12 col-sm-6 col-lg-3">
+        <div class="stat-card"><div class="stat-label">Avg Order Value</div>
+          <div class="stat-value" style="color:var(--warning);font-size:1.7rem;">KES ${parseFloat(rev.avg_order_value).toLocaleString()}</div>
+          <div class="stat-sub">per transaction</div></div>
+      </div>
+      <div class="col-12 col-sm-6 col-lg-3">
+        <div class="stat-card"><div class="stat-label">Total Orders</div>
+          <div class="stat-value" style="color:var(--accent);font-size:1.7rem;">${rev.total_orders}</div>
+          <div class="stat-sub">completed/active</div></div>
+      </div>
+    </div>
+
+    <div class="row g-3">
+      <div class="col-12 col-lg-8">
+        <div class="panel">
+          <div class="panel-title">Daily Sales Trend</div>
+          <div style="height:260px;display:flex;align-items:flex-end;gap:3px;padding:16px 8px 8px;background:var(--bg-main);border-radius:10px;border:1px solid var(--border);">
+            ${chartBars.length > 0 ? chartBars : '<div style="text-align:center;width:100%;padding-bottom:60px;color:var(--text-muted);font-size:0.88rem;"><i class="fa-solid fa-chart-simple me-2"></i>No sales yet in the last 30 days.</div>'}
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-lg-4">
+        <div class="panel">
+          <div class="panel-title">Top 5 Products</div>
+          ${topProdsHtml.length > 0 ? `<div class="table-responsive"><table class="table table-sm">
+              <thead><tr><th>SKU</th><th>Orders</th><th>Revenue</th></tr></thead>
+              <tbody>${topProdsHtml}</tbody>
+            </table></div>` : '<div style="color:var(--text-muted);font-size:0.88rem;padding:20px;text-align:center;"><i class="fa-solid fa-box me-2"></i>No product sales yet.</div>'}
+        </div>
+      </div>
+    </div>`;
+}
 async function renderAnalytics() {
   const { data } = await apiJson('/tenant/analytics');
   const a = data?.analytics || {};
@@ -337,7 +410,7 @@ async function renderAnalytics() {
     </div>
     ${a.note ? `<div class="alert py-2 mb-3" style="background:var(--bg-card);border:1px solid var(--border);font-size:0.84rem;color:var(--text-muted);">${esc(a.note)}</div>` : ''}
     <div class="panel">
-      <div class="panel-title">Messages — Last 7 Days</div>
+      <div class="panel-title">Messages â€” Last 7 Days</div>
       ${days.length === 0 ? '<p style="color:var(--text-muted);font-size:0.88rem;margin:0;">No data in last 7 days.</p>' : `
         <div class="bar-wrap">${days.map(d => `
           <div class="bar-row">
@@ -349,7 +422,7 @@ async function renderAnalytics() {
     </div>`;
 }
 
-// ══════════════════════ CATALOG ════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• CATALOG â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 async function renderCatalog() {
   const { ok, data } = await apiJson('/tenant/catalog');
   if (!ok) { showErr(data.error || 'Failed to load catalog'); return; }
@@ -357,7 +430,7 @@ async function renderCatalog() {
   document.getElementById('spa').innerHTML = `
     <div class="section-hdr"><i class="fa-solid fa-box"></i> Product Catalog</div>
     <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-      <input type="text" class="form-control" id="catSearch" placeholder="Search products…" style="max-width:240px;" oninput="filterTbl('catTbl',this.value)" />
+      <input type="text" class="form-control" id="catSearch" placeholder="Search productsâ€¦" style="max-width:240px;" oninput="filterTbl('catTbl',this.value)" />
       <button class="btn btn-accent" onclick="showProdForm()"><i class="fa-solid fa-plus me-2"></i>Add Product</button>
     </div>
     <div class="panel p-0" style="overflow:hidden;">
@@ -369,8 +442,8 @@ async function renderCatalog() {
               items.map(it => `<tr>
                 <td><code style="font-size:0.77rem;color:var(--text-muted);">${esc(it.sku||'')}</code></td>
                 <td><b>${esc(it.name||'')}</b>${it.description?`<br><span style="font-size:0.77rem;color:var(--text-muted);">${esc(it.description.substring(0,60))}</span>`:''}${(it.store_url||it.metadata?.store_url)?`<br><a href="${esc(it.store_url||it.metadata?.store_url)}" target="_blank" style="font-size:0.75rem;">Store link</a>`:''}</td>
-                <td>${it.price!=null?`<b>${parseFloat(it.price).toLocaleString()}</b> <span style="color:var(--text-muted);">${esc(it.currency||'KES')}</span>`:'—'}</td>
-                <td>${it.stock_count??'—'}</td>
+                <td>${it.price!=null?`<b>${parseFloat(it.price).toLocaleString()}</b> <span style="color:var(--text-muted);">${esc(it.currency||'KES')}</span>`:'â€”'}</td>
+                <td>${it.stock_count??'â€”'}</td>
                 <td>${esc(it.metadata?.category||'')}</td>
                 <td>${badge(it.is_active!==false?'active':'inactive')}</td>
                 <td class="d-flex gap-1">
@@ -428,7 +501,7 @@ window.delProduct = async function(sku) {
   toast('Product deleted.', 'ok'); renderCatalog();
 };
 
-// ══════════════════════ ORDERS ═════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• ORDERS â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 async function renderOrders() {
   const { ok, data } = await apiJson('/tenant/orders');
   if (!ok) { showErr(data.error || 'Failed to load orders'); return; }
@@ -443,8 +516,8 @@ async function renderOrders() {
             ${orders.length === 0 ? `<tr><td colspan="6" class="text-center py-4" style="color:var(--text-muted);">No orders yet.</td></tr>` :
               orders.map(o => `<tr>
                 <td style="font-size:0.8rem;">${fmtDT(o.created_at)}</td>
-                <td>${esc(o.customer_name||'—')}</td>
-                <td>${esc(o.customer_phone||'—')}</td>
+                <td>${esc(o.customer_name||'â€”')}</td>
+                <td>${esc(o.customer_phone||'â€”')}</td>
                 <td><b>${parseFloat(o.total_amount||0).toLocaleString()}</b> <span style="color:var(--text-muted);">${esc(o.currency||'KES')}</span></td>
                 <td>${badge(o.status||'pending')}</td>
                 <td><button class="btn btn-outline-acc btn-sm" onclick='showOrderDetail(${JSON.stringify(o).replace(/'/g,"&#39;")})'>Manage</button></td>
@@ -459,10 +532,10 @@ async function renderOrders() {
 window.showOrderDetail = function(o) {
   document.getElementById('ordModal').innerHTML = `
     <div class="panel mt-3">
-      <div class="panel-title">Order — #${esc(String(o.id||'').slice(0,8))}…</div>
+      <div class="panel-title">Order â€” #${esc(String(o.id||'').slice(0,8))}â€¦</div>
       <div class="row g-2 mb-3" style="font-size:0.88rem;">
-        <div class="col-12 col-md-6"><span style="color:var(--text-muted);">Customer:</span> <b>${esc(o.customer_name||'—')}</b></div>
-        <div class="col-12 col-md-6"><span style="color:var(--text-muted);">Phone:</span> ${esc(o.customer_phone||'—')}</div>
+        <div class="col-12 col-md-6"><span style="color:var(--text-muted);">Customer:</span> <b>${esc(o.customer_name||'â€”')}</b></div>
+        <div class="col-12 col-md-6"><span style="color:var(--text-muted);">Phone:</span> ${esc(o.customer_phone||'â€”')}</div>
         <div class="col-12"><span style="color:var(--text-muted);">Items:</span><pre style="background:var(--bg-main);border-radius:8px;padding:10px;margin-top:5px;font-size:0.79rem;color:var(--text-muted);overflow:auto;max-height:160px;">${esc(JSON.stringify(o.order_items,null,2))}</pre></div>
         ${o.notes ? `<div class="col-12"><span style="color:var(--text-muted);">Notes:</span> ${esc(o.notes)}</div>` : ''}
       </div>
@@ -490,7 +563,7 @@ window.showOrderDetail = function(o) {
   };
 };
 
-// ══════════════════════ TRAINING ═══════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• TRAINING â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 async function renderTraining() {
   const { ok, data } = await apiJson('/tenant/training');
   if (!ok) { showErr(data.error || 'Failed to load training data'); return; }
@@ -506,8 +579,8 @@ async function renderTraining() {
             ${items.length === 0 ? `<tr><td colspan="6" class="text-center py-4" style="color:var(--text-muted);">No training data yet. Add your first FAQ!</td></tr>` :
               items.map(t => `<tr>
                 <td style="max-width:200px;font-size:0.86rem;">${esc(t.question||'')}</td>
-                <td style="max-width:260px;"><span style="font-size:0.8rem;color:var(--text-muted);">${esc((t.answer||'').substring(0,80))}${(t.answer||'').length>80?'…':''}</span></td>
-                <td>${esc(t.category||'—')}</td><td>${t.priority??0}</td>
+                <td style="max-width:260px;"><span style="font-size:0.8rem;color:var(--text-muted);">${esc((t.answer||'').substring(0,80))}${(t.answer||'').length>80?'â€¦':''}</span></td>
+                <td>${esc(t.category||'â€”')}</td><td>${t.priority??0}</td>
                 <td>${badge(t.is_active!==false?'active':'inactive')}</td>
                 <td class="d-flex gap-1">
                   <button class="btn btn-outline-acc btn-sm" onclick='showTrainForm(${JSON.stringify(t).replace(/'/g,"&#39;")})'>Edit</button>
@@ -531,8 +604,8 @@ window.showTrainForm = function(t) {
           <div class="col-12"><label class="form-label">Question *</label><input type="text" class="form-control" name="q" value="${esc(t?.question||'')}" required /></div>
           <div class="col-12"><label class="form-label">Answer *</label><textarea class="form-control" name="a" rows="3" required>${esc(t?.answer||'')}</textarea></div>
           <div class="col-12 col-md-4"><label class="form-label">Category</label><input type="text" class="form-control" name="cat" value="${esc(t?.category||'')}"/></div>
-          <div class="col-12 col-md-4"><label class="form-label">Priority (0–100)</label><input type="number" class="form-control" name="pri" value="${t?.priority??0}" min="0" max="100"/></div>
-          <div class="col-12 col-md-4"><label class="form-label">Confidence (0–1)</label><input type="number" class="form-control" name="conf" value="${t?.confidence_score??1}" step="0.01" min="0" max="1"/></div>
+          <div class="col-12 col-md-4"><label class="form-label">Priority (0â€“100)</label><input type="number" class="form-control" name="pri" value="${t?.priority??0}" min="0" max="100"/></div>
+          <div class="col-12 col-md-4"><label class="form-label">Confidence (0â€“1)</label><input type="number" class="form-control" name="conf" value="${t?.confidence_score??1}" step="0.01" min="0" max="1"/></div>
           ${ed?`<div class="col-12 col-md-4"><label class="form-label">Status</label><select class="form-select" name="active"><option value="true" ${t.is_active!==false?'selected':''}>Active</option><option value="false" ${t.is_active===false?'selected':''}>Inactive</option></select></div>`:''}
           <div class="col-12 d-flex gap-2">
             <button type="submit" class="btn btn-accent">${ed?'Save Changes':'Add Entry'}</button>
@@ -559,7 +632,7 @@ window.delTrain = async function(id) {
   toast('Entry deleted.','ok'); renderTraining();
 };
 
-// ══════════════════════ BOT CONFIG ════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• BOT CONFIG â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 async function renderBotConfig() {
   const { ok, data } = await apiJson('/tenant/bot-settings');
   if (!ok) { showErr(data.error || 'Failed to load bot settings'); return; }
@@ -631,7 +704,7 @@ async function renderBotConfig() {
   };
 }
 
-// ══════════════════════ PROFILE ════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• PROFILE â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 async function renderProfile() {
   const { ok, data } = await apiJson('/tenant/profile');
   if (!ok) { showErr(data.error || 'Failed to load profile'); return; }
@@ -650,7 +723,7 @@ async function renderProfile() {
               <div class="col-12 col-md-6"><label class="form-label">Industry</label><input type="text" class="form-control" name="ind" value="${esc(p.industry||'')}" placeholder="e.g. Music Instruments"/></div>
               <div class="col-12"><label class="form-label">Business Description</label><textarea class="form-control" name="desc" rows="3">${esc(p.description||'')}</textarea></div>
               <div class="col-12"><label class="form-label">Business Address</label><input type="text" class="form-control" name="addr" value="${esc(p.business_address||'')}"/></div>
-              <div class="col-12"><label class="form-label">Logo URL</label><input type="url" class="form-control" name="logo" value="${esc(p.logo||'')}" placeholder="https://…"/></div>
+              <div class="col-12"><label class="form-label">Logo URL</label><input type="url" class="form-control" name="logo" value="${esc(p.logo||'')}" placeholder="https://â€¦"/></div>
               <div class="col-12"><button type="submit" class="btn btn-accent"><i class="fa-solid fa-floppy-disk me-2"></i>Save Profile</button></div>
             </div>
           </form>
@@ -690,7 +763,7 @@ async function renderProfile() {
   };
 }
 
-// ══════════════════════ SMTP ═══════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• SMTP â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 async function renderSmtp() {
   const { ok, data } = await apiJson('/tenant/smtp');
   if (!ok) { showErr(data.error || 'Failed to load SMTP settings'); return; }
@@ -743,7 +816,7 @@ async function renderSmtp() {
   };
 }
 
-// ══════════════════════ PAYMENTS ═══════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• PAYMENTS â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 async function renderPayments() {
   const { ok, data } = await apiJson('/tenant/payments');
   if (!ok) { showErr(data.error || 'Failed to load payments'); return; }
@@ -756,8 +829,8 @@ async function renderPayments() {
         <div class="panel">
           <div class="panel-title"><i class="fa-solid fa-receipt me-2"></i>Subscription</div>
           ${latest ? `
-            <div class="kv-row"><span class="kv-key">Plan</span><b>${esc(latest.plan_type||'—')}</b></div>
-            <div class="kv-row"><span class="kv-key">Level</span><b>${latest.level??'—'}</b></div>
+            <div class="kv-row"><span class="kv-key">Plan</span><b>${esc(latest.plan_type||'â€”')}</b></div>
+            <div class="kv-row"><span class="kv-key">Level</span><b>${latest.level??'â€”'}</b></div>
             <div class="kv-row"><span class="kv-key">Status</span>${badge(latest.status||'unknown')}</div>
             <div class="kv-row"><span class="kv-key">Amount</span><b>KES ${parseFloat(latest.amount||0).toLocaleString()}</b></div>
             <div class="kv-row"><span class="kv-key">Last Payment</span><span style="font-size:0.83rem;">${fmtDate(latest.created_at)}</span></div>
@@ -789,8 +862,8 @@ async function renderPayments() {
             ${payments.length === 0 ? `<tr><td colspan="5" class="text-center py-4" style="color:var(--text-muted);">No payment records found.</td></tr>` :
               payments.map(p => `<tr>
                 <td style="font-size:0.8rem;">${fmtDate(p.created_at)}</td>
-                <td>${esc(p.plan_type||'—')}</td>
-                <td>${p.level??'—'}</td>
+                <td>${esc(p.plan_type||'â€”')}</td>
+                <td>${p.level??'â€”'}</td>
                 <td><b>KES ${parseFloat(p.amount||0).toLocaleString()}</b></td>
                 <td>${badge(p.status||'unknown')}</td>
               </tr>`).join('')}
@@ -804,7 +877,7 @@ async function renderPayments() {
     const phone = f.sp.value.trim(), amount = parseFloat(f.sa.value), ref = f.sr.value.trim() || 'Tenant Payment';
     if (!phone || !amount) { toast('Phone and amount required.','err'); return; }
     const btn = document.getElementById('stkBtn');
-    btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-sm me-2"></span>Sending…';
+    btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-sm me-2"></span>Sendingâ€¦';
     let r, d;
     try {
       r = await fetch('/mpesa/stk-push', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ phone, amount, accountRef:ref, callbackUrl: location.origin+'/mpesa/callback' }) });
@@ -820,7 +893,7 @@ async function renderPayments() {
   };
 }
 
-// ══════════════════════ ADD AGENT ══════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• ADD AGENT â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 function renderAddAgent() {
   document.getElementById('spa').innerHTML = `
     <div class="section-hdr"><i class="fa-solid fa-user-plus"></i> Add New Agent</div>
@@ -828,7 +901,7 @@ function renderAddAgent() {
       <form id="agtForm">
         <div class="row g-3">
           <div class="col-12 col-md-6"><label class="form-label">Business Name *</label><input type="text" class="form-control" name="cn" required/></div>
-          <div class="col-12 col-md-6"><label class="form-label">Business Phone *</label><input type="text" class="form-control" name="cp" required placeholder="254712…"/></div>
+          <div class="col-12 col-md-6"><label class="form-label">Business Phone *</label><input type="text" class="form-control" name="cp" required placeholder="254712â€¦"/></div>
           <div class="col-12 col-md-6"><label class="form-label">Contact Person *</label><input type="text" class="form-control" name="poc" required/></div>
           <div class="col-12 col-md-6"><label class="form-label">Email</label><input type="email" class="form-control" name="em"/></div>
           <div class="col-12 col-md-6"><label class="form-label">Industry</label><input type="text" class="form-control" name="ind"/></div>
@@ -854,11 +927,11 @@ function renderAddAgent() {
   };
 }
 
-// ══════════════════════ HELP ═══════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• HELP â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 async function renderBroadcast() {
   const sp = document.getElementById('spa');
 
-  // ── Load audience preview + history in parallel ──
+  // â”€â”€ Load audience preview + history in parallel â”€â”€
   let audienceData = { count: 0, users: [] };
   let historyData = { history: [] };
   try {
@@ -869,14 +942,14 @@ async function renderBroadcast() {
   } catch(e) { /* non-fatal */ }
 
   const sampleHtml = (audienceData.users || []).length
-    ? `<div style="font-size:0.8rem;color:var(--text-muted);margin-top:6px;">Sample: ${esc((audienceData.users||[]).map(u=>u.name||u.phone).slice(0,4).join(', '))}${audienceData.count>4?` …+${audienceData.count-4} more`:''}</div>`
+    ? `<div style="font-size:0.8rem;color:var(--text-muted);margin-top:6px;">Sample: ${esc((audienceData.users||[]).map(u=>u.name||u.phone).slice(0,4).join(', '))}${audienceData.count>4?` â€¦+${audienceData.count-4} more`:''}</div>`
     : '';
 
   const segmentLabels = {
     all: "All Users",
     have_purchased: "Purchased Customers",
     inactive_30plus: "Inactive (30+ days)",
-    high_value: "High Value (≥KES 1000)",
+    high_value: "High Value (â‰¥KES 1000)",
     first_time: "First-time Viewers (No Purchase)"
   };
 
@@ -918,7 +991,7 @@ async function renderBroadcast() {
                 <option value="all">All Users</option>
                 <option value="have_purchased">Purchased Customers</option>
                 <option value="inactive_30plus">Inactive (30+ days)</option>
-                <option value="high_value">High Value (≥KES 1000)</option>
+                <option value="high_value">High Value (â‰¥KES 1000)</option>
                 <option value="first_time">First-time Viewers</option>
               </select>
               <div class="form-text">Narrow down your audience by customer type.</div>
@@ -931,7 +1004,7 @@ async function renderBroadcast() {
               <span id="bcCharCount" style="color:var(--text-muted);font-size:0.8rem;">0 / 1024</span>
             </label>
             <textarea class="form-control" id="bcMsg" rows="5" maxlength="1024"
-              placeholder="Hi! We have a special offer just for you…"></textarea>
+              placeholder="Hi! We have a special offer just for youâ€¦"></textarea>
           </div>
 
           <div class="d-flex align-items-center gap-3 flex-wrap">
@@ -956,7 +1029,7 @@ async function renderBroadcast() {
           ${histRows.length ? `
           <div class="table-responsive">
             <table class="table table-sm">
-              <thead><tr><th>Sent</th><th>Message</th><th>Segment</th><th>✓</th><th>✗</th></tr></thead>
+              <thead><tr><th>Sent</th><th>Message</th><th>Segment</th><th>âœ“</th><th>âœ—</th></tr></thead>
               <tbody id="bcHistBody">${histRows}</tbody>
             </table>
           </div>` : `<div style="color:var(--text-muted);font-size:0.88rem;">No broadcasts sent yet.</div>`}
@@ -964,7 +1037,7 @@ async function renderBroadcast() {
       </div>
     </div>`;
 
-  // ── Char counter ──
+  // â”€â”€ Char counter â”€â”€
   const msgEl = document.getElementById('bcMsg');
   const charEl = document.getElementById('bcCharCount');
   msgEl.addEventListener('input', () => {
@@ -973,20 +1046,20 @@ async function renderBroadcast() {
     charEl.style.color = len > 900 ? 'var(--warning)' : 'var(--text-muted)';
   });
 
-  // ── Preview audience (triggered by Preview or by changing window/segment) ──
+  // â”€â”€ Preview audience (triggered by Preview or by changing window/segment) â”€â”€
   const previewAudience = async () => {
     const win = document.getElementById('bcWindow').value;
     const seg = document.getElementById('bcSegment').value;
     const info = document.getElementById('bcAudienceInfo');
     const btn = document.getElementById('bcPreviewBtn');
     btn.disabled = true;
-    btn.innerHTML = '<span class="spinner-border spinner-sm me-1"></span>Loading…';
+    btn.innerHTML = '<span class="spinner-border spinner-sm me-1"></span>Loadingâ€¦';
     try {
       const r = await api(`/tenant/broadcast/audience?window_hours=${win}&segment=${seg}`);
       const d = await r.json();
       if (d.error) { toast(d.error, 'err'); return; }
       const sample = (d.users||[]).map(u=>esc(u.name||u.phone)).slice(0,4).join(', ');
-      const more = d.count > 4 ? ` …+${d.count-4} more` : '';
+      const more = d.count > 4 ? ` â€¦+${d.count-4} more` : '';
       info.style.display = d.count > 0 ? 'block' : 'block';
       info.innerHTML = `<span style="color:var(--success);"><i class="fa-solid fa-users me-1"></i>${d.count} eligible user${d.count!==1?'s':''}${d.capped?' (capped at 500)':''}</span>${d.count>0?`<div style="font-size:0.8rem;color:var(--text-muted);margin-top:4px;">${sample}${more}</div>`:'<div style="font-size:0.8rem;color:var(--text-muted);margin-top:4px;">No users match this segment in the selected window.</div>'}`;
       document.getElementById('bcSendBtn').disabled = d.count === 0;
@@ -1000,7 +1073,7 @@ async function renderBroadcast() {
   document.getElementById('bcWindow').addEventListener('change', previewAudience);
   document.getElementById('bcSegment').addEventListener('change', previewAudience);
 
-  // ── Send broadcast ──
+  // â”€â”€ Send broadcast â”€â”€
   document.getElementById('bcSendBtn').onclick = async () => {
     const msg = msgEl.value.trim();
     const win = document.getElementById('bcWindow').value;
@@ -1010,12 +1083,12 @@ async function renderBroadcast() {
     const countMatch = audienceEl.textContent.match(/(\d+) eligible/);
     const count = countMatch ? parseInt(countMatch[1]) : '?';
     const segLabel = segmentLabels[seg] || seg;
-    if (!confirm(`Send to ${count} ${segLabel.toLowerCase()}?\n\nMessage preview:\n"${msg.slice(0,120)}${msg.length>120?'…':''}"\n\nThis cannot be undone.`)) return;
+    if (!confirm(`Send to ${count} ${segLabel.toLowerCase()}?\n\nMessage preview:\n"${msg.slice(0,120)}${msg.length>120?'â€¦':''}"\n\nThis cannot be undone.`)) return;
 
     const btn = document.getElementById('bcSendBtn');
     const result = document.getElementById('bcResult');
     btn.disabled = true;
-    btn.innerHTML = '<span class="spinner-border spinner-sm me-1"></span>Sending…';
+    btn.innerHTML = '<span class="spinner-border spinner-sm me-1"></span>Sendingâ€¦';
     result.style.display = 'none';
 
     try {
@@ -1026,7 +1099,7 @@ async function renderBroadcast() {
       result.innerHTML = `<div style="background:rgba(34,211,160,0.08);border:1px solid rgba(34,211,160,0.3);border-radius:8px;padding:12px;">
         <i class="fa-solid fa-circle-check me-2" style="color:var(--success);"></i>
         <strong style="color:var(--success);">Broadcast complete!</strong><br>
-        <span style="font-size:0.86rem;color:var(--text-muted);"><b style="color:var(--success);">${d.sent}</b> sent &nbsp;·&nbsp; <b style="color:var(--danger);">${d.failed}</b> failed &nbsp;·&nbsp; ${d.total} total</span>
+        <span style="font-size:0.86rem;color:var(--text-muted);"><b style="color:var(--success);">${d.sent}</b> sent &nbsp;Â·&nbsp; <b style="color:var(--danger);">${d.failed}</b> failed &nbsp;Â·&nbsp; ${d.total} total</span>
       </div>`;
       toast(`Broadcast sent: ${d.sent} delivered`, 'ok');
       msgEl.value = '';
@@ -1043,7 +1116,7 @@ async function renderBroadcast() {
   }
 }
 
-// ══════════════════════ ABANDONED CARTS ════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• ABANDONED CARTS â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 async function renderAbandoned() {
   const sp = document.getElementById('spa');
   let cartsData = { carts: [] };
@@ -1058,7 +1131,7 @@ async function renderAbandoned() {
     <tr>
       <td style="font-size:0.82rem;">${esc(cart.phone)}</td>
       <td><strong>${esc(cart.product_name)}</strong></td>
-      <td>${cart.price ? 'KES ' + parseFloat(cart.price).toLocaleString() : '—'}</td>
+      <td>${cart.price ? 'KES ' + parseFloat(cart.price).toLocaleString() : 'â€”'}</td>
       <td style="font-size:0.8rem;color:var(--text-muted);">${esc(new Date(cart.last_viewed).toLocaleString())}</td>
       <td><button class="btn btn-sm btn-outline-acc" onclick="window.recoverChart=${idx};document.getElementById('spa').scrollIntoView();document.getElementById('acMsg').focus();"><i class="fa-solid fa-paper-plane me-1"></i>Recover</button></td>
     </tr>`).join('');
@@ -1094,7 +1167,7 @@ async function renderAbandoned() {
               <label class="form-label">Customer</label>
               <select class="form-select" id="acPhone">
                 <option value="">Select a customer...</option>
-                ${carts.map((c, i) => `<option value="${i}">${esc(c.phone)} — ${esc(c.product_name)}</option>`).join('')}
+                ${carts.map((c, i) => `<option value="${i}">${esc(c.phone)} â€” ${esc(c.product_name)}</option>`).join('')}
               </select>
             </div>
             <div class="mb-3">
@@ -1120,7 +1193,7 @@ async function renderAbandoned() {
     const idx = parseInt(phoneSelect.value);
     if (idx >= 0) {
       const cart = carts[idx];
-      acMsg.value = `Hi! 👋 We noticed you were interested in ${cart.product_name} (KES ${parseFloat(cart.price||0).toLocaleString()}). It's still available! 🛒\n\nTap BUY to complete your order now.`;
+      acMsg.value = `Hi! ðŸ‘‹ We noticed you were interested in ${cart.product_name} (KES ${parseFloat(cart.price||0).toLocaleString()}). It's still available! ðŸ›’\n\nTap BUY to complete your order now.`;
     }
   });
 
@@ -1138,7 +1211,7 @@ async function renderAbandoned() {
     }
 
     acSendBtn.disabled = true;
-    acSendBtn.innerHTML = '<span class="spinner-border spinner-sm me-2"></span>Sending…';
+    acSendBtn.innerHTML = '<span class="spinner-border spinner-sm me-2"></span>Sendingâ€¦';
     acResult.style.display = 'none';
 
     try {
@@ -1189,8 +1262,8 @@ function renderHelp() {
         <div class="panel">
           <div class="panel-title">Quick Help Guide</div>
           <ul style="font-size:0.86rem;color:var(--text-muted);padding-left:18px;line-height:2.2;">
-            <li>Add products in <b>Product Catalog</b> — they'll appear in bot searches.</li>
-            <li>Add FAQs in <b>Bot Training</b> — improves chatbot accuracy.</li>
+            <li>Add products in <b>Product Catalog</b> â€” they'll appear in bot searches.</li>
+            <li>Add FAQs in <b>Bot Training</b> â€” improves chatbot accuracy.</li>
             <li>Configure AI model &amp; WhatsApp token in <b>Bot Config</b>.</li>
             <li>Set up outgoing email in <b>Email Setup</b> (SMTP).</li>
             <li>View subscription history and trigger M-Pesa payments in <b>Payments</b>.</li>
@@ -1203,7 +1276,7 @@ function renderHelp() {
     </div>`;
 }
 
-// ══════════════════════ BOOT ═══════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• BOOT â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 function boot() {
   document.querySelectorAll('.nav-item[data-sec]').forEach(el => el.addEventListener('click', () => go(el.dataset.sec)));
   document.getElementById('menuBtn').addEventListener('click', () => document.getElementById('sidebar').classList.toggle('open'));
@@ -1215,7 +1288,7 @@ function boot() {
     const key = document.getElementById('lKey').value.trim() || S.key;
     if (!phone || !key) { toast('Phone and key are required.','err'); return; }
     const btn = document.getElementById('loginBtn');
-    btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-sm me-2"></span>Signing in…';
+    btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-sm me-2"></span>Signing inâ€¦';
     const { ok, data } = await doLogin(phone, key);
     btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-right-to-bracket me-2"></i>Sign In';
     if (!ok || data.error) {
