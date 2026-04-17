@@ -2492,6 +2492,197 @@ app.get("/tenant/agent-performance", tenantSessionAuth, async (req, res) => {
   }
 });
 
+// GET /tenant/agent-assignments
+app.get("/tenant/agent-assignments", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+    const { data: tenantRow, error } = await supabase
+      .from("bot_tenants")
+      .select("metadata")
+      .eq("id", tenantId)
+      .maybeSingle();
+    if (error) return res.status(500).json({ error: error.message });
+
+    const metadata = tenantRow?.metadata || {};
+    const workflows = metadata.workflows || {};
+    const teamAgents = Array.isArray(workflows.team_agents) ? workflows.team_agents : [];
+    const assignments = Array.isArray(metadata.agent_assignments) ? metadata.agent_assignments : [];
+
+    return res.json({
+      default_agent: workflows.default_agent || "",
+      team_agents: teamAgents,
+      assignments: assignments
+        .slice()
+        .sort((a, b) => new Date(b.updated_at || 0).getTime() - new Date(a.updated_at || 0).getTime())
+        .slice(0, 500),
+    });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// PUT /tenant/agent-assignments
+app.put("/tenant/agent-assignments", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+    const phone = String(req.body?.phone || "").trim();
+    const agentId = String(req.body?.agent_id || "").trim();
+    const notes = String(req.body?.notes || "").trim().slice(0, 500);
+    if (!phone || !agentId) return res.status(400).json({ error: "phone and agent_id are required" });
+
+    const { data: tenantRow, error: readErr } = await supabase
+      .from("bot_tenants")
+      .select("metadata")
+      .eq("id", tenantId)
+      .maybeSingle();
+    if (readErr) return res.status(500).json({ error: readErr.message });
+
+    const metadata = tenantRow?.metadata || {};
+    const current = Array.isArray(metadata.agent_assignments) ? [...metadata.agent_assignments] : [];
+    const idx = current.findIndex((a) => String(a?.phone || "") === phone);
+    const now = new Date().toISOString();
+    const item = {
+      phone,
+      agent_id: agentId,
+      notes: notes || null,
+      updated_at: now,
+      created_at: idx >= 0 ? current[idx]?.created_at || now : now,
+    };
+    if (idx >= 0) current[idx] = item;
+    else current.push(item);
+
+    const { error: writeErr } = await supabase
+      .from("bot_tenants")
+      .update({ metadata: { ...metadata, agent_assignments: current }, updated_at: now })
+      .eq("id", tenantId);
+    if (writeErr) return res.status(500).json({ error: writeErr.message });
+
+    return res.json({ success: true, assignment: item });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// DELETE /tenant/agent-assignments/:phone
+app.delete("/tenant/agent-assignments/:phone", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+    const phone = decodeURIComponent(req.params.phone || "").trim();
+    if (!phone) return res.status(400).json({ error: "phone is required" });
+
+    const { data: tenantRow, error: readErr } = await supabase
+      .from("bot_tenants")
+      .select("metadata")
+      .eq("id", tenantId)
+      .maybeSingle();
+    if (readErr) return res.status(500).json({ error: readErr.message });
+
+    const metadata = tenantRow?.metadata || {};
+    const current = Array.isArray(metadata.agent_assignments) ? metadata.agent_assignments : [];
+    const next = current.filter((a) => String(a?.phone || "") !== phone);
+
+    const { error: writeErr } = await supabase
+      .from("bot_tenants")
+      .update({ metadata: { ...metadata, agent_assignments: next }, updated_at: new Date().toISOString() })
+      .eq("id", tenantId);
+    if (writeErr) return res.status(500).json({ error: writeErr.message });
+
+    return res.json({ success: true });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /tenant/reviews
+app.get("/tenant/reviews", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+    const { data: subs, error } = await supabase
+      .from("subscriptions")
+      .select("id, user_id, phone, amount, plan_type, level, product_sku, status, created_at, metadata")
+      .eq("tenant_id", tenantId)
+      .order("created_at", { ascending: false })
+      .limit(1500);
+    if (error) return res.status(500).json({ error: error.message });
+
+    const rows = (subs || []).map((s) => {
+      const md = s?.metadata && typeof s.metadata === "object" ? s.metadata : {};
+      const rating = Number(md.rating || md.review_rating || 0);
+      return {
+        id: s.id,
+        phone: s.phone,
+        amount: Number(s.amount || 0),
+        plan_type: s.plan_type,
+        level: s.level,
+        product_sku: s.product_sku || md.sku || null,
+        status: s.status,
+        created_at: s.created_at,
+        rating: rating >= 1 && rating <= 5 ? rating : null,
+        review_text: md.review_text || null,
+        review_at: md.review_at || null,
+      };
+    });
+
+    const reviewed = rows.filter((r) => r.rating != null);
+    const avgRating = reviewed.length ? reviewed.reduce((sum, r) => sum + r.rating, 0) / reviewed.length : null;
+    const dist = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+    reviewed.forEach((r) => { dist[r.rating] = (dist[r.rating] || 0) + 1; });
+
+    return res.json({
+      summary: {
+        total_orders: rows.length,
+        reviewed_orders: reviewed.length,
+        review_rate_pct: rows.length ? Math.round((reviewed.length / rows.length) * 100) : 0,
+        avg_rating: avgRating != null ? Number(avgRating.toFixed(2)) : null,
+        distribution: dist,
+      },
+      reviews: rows.slice(0, 300),
+    });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// PATCH /tenant/reviews/:id
+app.patch("/tenant/reviews/:id", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+    const id = req.params.id;
+    const rating = Number(req.body?.rating);
+    const reviewText = String(req.body?.review_text || "").trim().slice(0, 800) || null;
+    if (!Number.isFinite(rating) || rating < 1 || rating > 5) return res.status(400).json({ error: "rating must be between 1 and 5" });
+
+    const { data: sub, error: readErr } = await supabase
+      .from("subscriptions")
+      .select("id, metadata")
+      .eq("tenant_id", tenantId)
+      .eq("id", id)
+      .maybeSingle();
+    if (readErr) return res.status(500).json({ error: readErr.message });
+    if (!sub) return res.status(404).json({ error: "Review target not found" });
+
+    const md = sub.metadata && typeof sub.metadata === "object" ? sub.metadata : {};
+    const nextMetadata = {
+      ...md,
+      rating,
+      review_text: reviewText,
+      review_at: new Date().toISOString(),
+      reviewed_via: "dashboard",
+    };
+
+    const { error: writeErr } = await supabase
+      .from("subscriptions")
+      .update({ metadata: nextMetadata, updated_at: new Date().toISOString() })
+      .eq("tenant_id", tenantId)
+      .eq("id", id);
+    if (writeErr) return res.status(500).json({ error: writeErr.message });
+
+    return res.json({ success: true });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
 // ===== TENANT PAYMENTS / SUBSCRIPTIONS API =====
 
 app.get("/tenant/payments", tenantSessionAuth, async (req, res) => {
@@ -3451,6 +3642,57 @@ app.post("/webhook", loadTenantContext, async (req, res) => {
       log(`New user created: ${from}`, "SYSTEM");
     }
 
+    // Collect post-purchase ratings when awaiting review feedback.
+    const reviewMatch = text.trim().match(/^([1-5])(?:\s*(?:stars?)?)?(?:[\s,:-]+(.+))?$/i);
+    if (reviewMatch) {
+      const rating = Number(reviewMatch[1]);
+      const reviewText = String(reviewMatch[2] || "").trim().slice(0, 800) || null;
+      const { data: reviewSession } = await supabase
+        .from("user_sessions")
+        .select("context")
+        .eq("phone", from)
+        .maybeSingle();
+      const reviewCtx = reviewSession?.context && typeof reviewSession.context === "object" ? reviewSession.context : {};
+      const targetSubId = reviewCtx.awaiting_review_subscription_id || null;
+      if (targetSubId) {
+        const { data: targetSub } = await supabase
+          .from("subscriptions")
+          .select("id, metadata")
+          .eq("id", targetSubId)
+          .maybeSingle();
+
+        if (targetSub) {
+          const md = targetSub.metadata && typeof targetSub.metadata === "object" ? targetSub.metadata : {};
+          await supabase
+            .from("subscriptions")
+            .update({
+              metadata: {
+                ...md,
+                rating,
+                review_text: reviewText,
+                review_at: new Date().toISOString(),
+                reviewed_via: "whatsapp",
+              },
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", targetSubId);
+
+          await mergeUserSessionContext(from, {
+            awaiting_review_subscription_id: null,
+            awaiting_review_since: null,
+          });
+
+          await sendMessage(
+            from,
+            reviewText
+              ? `🙏 Thank you for rating us *${rating}/5* and sharing your feedback!`
+              : `🙏 Thank you for rating us *${rating}/5*!`
+          );
+          return res.sendStatus(200);
+        }
+      }
+    }
+
     // STEP 2: Identify brand (TENANT-AWARE)
     let brandId = DEFAULT_BRAND_ID;
     
@@ -4070,7 +4312,7 @@ app.post("/mpesa/callback", async (req, res) => {
       await supabase.from("subscriptions").update({
         status: "subscribed",
         mpesa_receipt_no: receipt,
-        metadata: { callback: body },
+        metadata: { ...(subs.metadata && typeof subs.metadata === "object" ? subs.metadata : {}), callback: body },
         updated_at: new Date().toISOString()
       }).eq("id", subs.id);
 
@@ -4087,6 +4329,12 @@ app.post("/mpesa/callback", async (req, res) => {
         phone,
         `🎉 *Payment Successful!*\n\nThank you for joining Alphadome.\nYour *${subs.plan_type.toUpperCase()} Plan - Level ${subs.level}* has been activated.\n\n🧾 Receipt: ${receipt}\n💰 Amount: KES ${amount}`
       );
+
+      await mergeUserSessionContext(phone, {
+        awaiting_review_subscription_id: subs.id,
+        awaiting_review_since: new Date().toISOString(),
+      });
+      await sendMessage(phone, "⭐ Quick one: how would you rate your experience today? Reply with 1-5 (you can add a short comment).\nExample: `5 Great support`.");
 
       log(`✅ Subscription ${subs.id} marked paid (receipt ${receipt})`, "SYSTEM");
     } else {

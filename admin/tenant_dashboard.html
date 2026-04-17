@@ -176,6 +176,8 @@
 
     <div class="sidebar-label">More</div>
     <div class="nav-item" data-sec="add-agent"><span class="nav-icon"><i class="fa-solid fa-user-plus"></i></span>Add Agent</div>
+    <div class="nav-item" data-sec="assignments"><span class="nav-icon"><i class="fa-solid fa-users-gear"></i></span>Team Assignments</div>
+    <div class="nav-item" data-sec="reviews"><span class="nav-icon"><i class="fa-solid fa-star-half-stroke"></i></span>Reviews</div>
     <div class="nav-item" data-sec="help"><span class="nav-icon"><i class="fa-solid fa-circle-question"></i></span>Help &amp; Support</div>
   </nav>
 
@@ -280,7 +282,7 @@ function go(sec) {
   document.getElementById('sidebar').classList.remove('open');
   const sp = document.getElementById('spa');
   sp.innerHTML = spinner();
-  const map = { home:renderHome, revenue:renderRevenue, analytics:renderAnalytics, customers:renderCustomers, search:renderSearch, preferences:renderPreferences, favorites:renderFavorites, referrals:renderReferrals, catalog:renderCatalog, performance:renderPerformance, suppliers:renderSuppliers, orders:renderOrders, training:renderTraining, 'bot-config':renderBotConfig, profile:renderProfile, smtp:renderSmtp, payments:renderPayments, 'add-agent':renderAddAgent, broadcast:renderBroadcast, abandoned:renderAbandoned, insights:renderInsights, 'auto-responses':renderAutoResponses, scheduled:renderScheduled, workflows:renderWorkflows, escalations:renderEscalations, 'agent-performance':renderAgentPerformance, help:renderHelp };
+  const map = { home:renderHome, revenue:renderRevenue, analytics:renderAnalytics, customers:renderCustomers, search:renderSearch, preferences:renderPreferences, favorites:renderFavorites, referrals:renderReferrals, catalog:renderCatalog, performance:renderPerformance, suppliers:renderSuppliers, orders:renderOrders, training:renderTraining, 'bot-config':renderBotConfig, profile:renderProfile, smtp:renderSmtp, payments:renderPayments, 'add-agent':renderAddAgent, assignments:renderAssignments, reviews:renderReviews, broadcast:renderBroadcast, abandoned:renderAbandoned, insights:renderInsights, 'auto-responses':renderAutoResponses, scheduled:renderScheduled, workflows:renderWorkflows, escalations:renderEscalations, 'agent-performance':renderAgentPerformance, help:renderHelp };
   (map[sec] || renderHome)();
 }
 
@@ -1130,6 +1132,159 @@ function renderAddAgent() {
     el.innerHTML = `<div class="alert py-2" style="background:rgba(34,211,160,0.1);border:1px solid var(--success);color:var(--success);"><i class="fa-solid fa-circle-check me-1"></i>Agent created!</div>`;
     f.reset();
   };
+}
+
+async function renderAssignments() {
+  const sp = document.getElementById('spa');
+  sp.innerHTML = spinner('Loading team assignments…');
+
+  const { ok, data } = await apiJson('/tenant/agent-assignments');
+  if (!ok) { showErr(data.error || 'Failed to load assignments'); return; }
+
+  const teamAgents = data.team_agents || [];
+  const assignments = data.assignments || [];
+
+  const assignmentRows = assignments.map((a) => `
+    <tr>
+      <td>${esc(a.phone || '—')}</td>
+      <td>${esc(a.agent_id || '—')}</td>
+      <td style="max-width:280px;word-break:break-word;">${esc(a.notes || '—')}</td>
+      <td style="font-size:0.8rem;color:var(--text-muted);">${fmtDT(a.updated_at)}</td>
+      <td>
+        <button class="btn btn-sm btn-outline-primary as-edit" data-phone="${esc(a.phone || '')}" data-agent="${esc(a.agent_id || '')}" data-notes="${esc(a.notes || '')}">Edit</button>
+        <button class="btn btn-sm btn-outline-danger as-del" data-phone="${esc(a.phone || '')}">Remove</button>
+      </td>
+    </tr>`).join('');
+
+  sp.innerHTML = `
+    <div class="section-hdr"><i class="fa-solid fa-users-gear"></i> Multi-Agent Assignments</div>
+    <div class="panel mb-3">
+      <div class="panel-title">Assign Customer to Agent</div>
+      <form id="assignForm" class="row g-2">
+        <div class="col-12 col-md-3"><input class="form-control" name="phone" placeholder="Customer phone" required></div>
+        <div class="col-12 col-md-3">
+          <select class="form-select" name="agent_id" required>
+            <option value="">Select agent</option>
+            ${teamAgents.map((a) => `<option value="${esc(a.id)}">${esc(a.name || a.id)} (${esc(a.id)})</option>`).join('')}
+          </select>
+        </div>
+        <div class="col-12 col-md-4"><input class="form-control" name="notes" placeholder="Notes (optional)"></div>
+        <div class="col-12 col-md-2"><button class="btn btn-accent w-100" type="submit">Save</button></div>
+      </form>
+      <div style="font-size:0.82rem;color:var(--text-muted);margin-top:8px;">Manage team members in <b>Workflows</b> under team agents.</div>
+    </div>
+    <div class="panel p-0" style="overflow:hidden;">
+      <div class="table-responsive">
+        <table class="table mb-0">
+          <thead><tr><th>Customer</th><th>Assigned Agent</th><th>Notes</th><th>Updated</th><th></th></tr></thead>
+          <tbody>${assignmentRows || '<tr><td colspan="5" class="text-center py-4" style="color:var(--text-muted);">No assignments yet.</td></tr>'}</tbody>
+        </table>
+      </div>
+    </div>`;
+
+  const form = document.getElementById('assignForm');
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const f = e.target;
+    const payload = {
+      phone: f.phone.value.trim(),
+      agent_id: f.agent_id.value.trim(),
+      notes: f.notes.value.trim(),
+    };
+    const { ok: ok2, data: d2 } = await apiJson('/tenant/agent-assignments', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!ok2) { toast(d2.error || 'Assignment save failed', 'err'); return; }
+    toast('Assignment saved', 'ok');
+    renderAssignments();
+  };
+
+  document.querySelectorAll('.as-edit').forEach((btn) => {
+    btn.onclick = () => {
+      form.phone.value = btn.dataset.phone || '';
+      form.agent_id.value = btn.dataset.agent || '';
+      form.notes.value = btn.dataset.notes || '';
+      form.phone.focus();
+    };
+  });
+
+  document.querySelectorAll('.as-del').forEach((btn) => {
+    btn.onclick = async () => {
+      const phone = btn.dataset.phone || '';
+      if (!phone) return;
+      const { ok: ok2, data: d2 } = await apiJson(`/tenant/agent-assignments/${encodeURIComponent(phone)}`, { method: 'DELETE' });
+      if (!ok2) { toast(d2.error || 'Remove failed', 'err'); return; }
+      toast('Assignment removed', 'ok');
+      renderAssignments();
+    };
+  });
+}
+
+async function renderReviews() {
+  const sp = document.getElementById('spa');
+  sp.innerHTML = spinner('Loading ratings and reviews…');
+
+  const { ok, data } = await apiJson('/tenant/reviews');
+  if (!ok) { showErr(data.error || 'Failed to load reviews'); return; }
+
+  const summary = data.summary || {};
+  const reviews = data.reviews || [];
+
+  const stars = (n) => '★★★★★'.slice(0, n) + '☆☆☆☆☆'.slice(0, 5 - n);
+  const rows = reviews.map((r) => `
+    <tr>
+      <td style="font-size:0.82rem;">${fmtDate(r.created_at)}</td>
+      <td>${esc(r.phone || '—')}</td>
+      <td>${esc(r.product_sku || r.plan_type || '—')}</td>
+      <td>${r.rating ? `<span style="color:#f59e0b;">${stars(r.rating)}</span>` : '<span style="color:var(--text-muted);">Pending</span>'}</td>
+      <td style="max-width:260px;word-break:break-word;">${esc(r.review_text || '—')}</td>
+      <td>
+        <select class="form-select form-select-sm rv-rate" data-id="${r.id}">
+          <option value="">Rate</option>
+          ${[1,2,3,4,5].map((n) => `<option value="${n}" ${r.rating===n?'selected':''}>${n}</option>`).join('')}
+        </select>
+      </td>
+      <td><button class="btn btn-sm btn-outline-primary rv-save" data-id="${r.id}">Save</button></td>
+    </tr>`).join('');
+
+  sp.innerHTML = `
+    <div class="section-hdr"><i class="fa-solid fa-star-half-stroke"></i> Ratings & Reviews</div>
+    <div class="row g-3 mb-3">
+      <div class="col-12 col-md-3"><div class="stat-card"><div class="stat-label">Avg Rating</div><div class="stat-value">${summary.avg_rating != null ? summary.avg_rating : '—'}</div></div></div>
+      <div class="col-12 col-md-3"><div class="stat-card"><div class="stat-label">Reviewed Orders</div><div class="stat-value">${summary.reviewed_orders || 0}</div></div></div>
+      <div class="col-12 col-md-3"><div class="stat-card"><div class="stat-label">Review Rate</div><div class="stat-value">${summary.review_rate_pct || 0}%</div></div></div>
+      <div class="col-12 col-md-3"><div class="stat-card"><div class="stat-label">Total Orders</div><div class="stat-value">${summary.total_orders || 0}</div></div></div>
+    </div>
+    <div class="panel p-0" style="overflow:hidden;">
+      <div class="table-responsive">
+        <table class="table mb-0">
+          <thead><tr><th>Date</th><th>Customer</th><th>Purchase</th><th>Rating</th><th>Review</th><th>Set</th><th></th></tr></thead>
+          <tbody>${rows || '<tr><td colspan="7" class="text-center py-4" style="color:var(--text-muted);">No orders found.</td></tr>'}</tbody>
+        </table>
+      </div>
+    </div>`;
+
+  document.querySelectorAll('.rv-save').forEach((btn) => {
+    btn.onclick = async () => {
+      const id = btn.dataset.id;
+      const ratingVal = document.querySelector(`.rv-rate[data-id="${id}"]`)?.value;
+      const rating = Number(ratingVal);
+      if (!ratingVal || !Number.isFinite(rating) || rating < 1 || rating > 5) {
+        toast('Select a rating 1-5', 'err');
+        return;
+      }
+      const { ok: ok2, data: d2 } = await apiJson(`/tenant/reviews/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rating }),
+      });
+      if (!ok2) { toast(d2.error || 'Failed to save rating', 'err'); return; }
+      toast('Rating saved', 'ok');
+      renderReviews();
+    };
+  });
 }
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• HELP â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
