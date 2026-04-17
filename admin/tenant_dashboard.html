@@ -151,6 +151,7 @@
     <div class="sidebar-label">Store</div>
     <div class="nav-item" data-sec="catalog"><span class="nav-icon"><i class="fa-solid fa-box"></i></span>Product Catalog</div>
     <div class="nav-item" data-sec="performance"><span class="nav-icon"><i class="fa-solid fa-fire"></i></span>Product Performance</div>
+    <div class="nav-item" data-sec="suppliers"><span class="nav-icon"><i class="fa-solid fa-truck-field"></i></span>Suppliers</div>
     <div class="nav-item" data-sec="orders"><span class="nav-icon"><i class="fa-solid fa-cart-shopping"></i></span>Orders</div>
 
     <div class="sidebar-label">Bot</div>
@@ -158,9 +159,12 @@
     <div class="nav-item" data-sec="bot-config"><span class="nav-icon"><i class="fa-solid fa-sliders"></i></span>Bot Config</div>
     <div class="nav-item" data-sec="broadcast"><span class="nav-icon"><i class="fa-solid fa-bullhorn"></i></span>Bulk Message</div>
     <div class="nav-item" data-sec="abandoned"><span class="nav-icon"><i class="fa-solid fa-cart-shopping"></i></span>Cart Recovery</div>
-  <div class="nav-item" data-sec="insights"><span class="nav-icon"><i class="fa-solid fa-lightbulb"></i></span>Insights</div>
-  <div class="nav-item" data-sec="auto-responses"><span class="nav-icon"><i class="fa-solid fa-reply"></i></span>Auto-Responses</div>
-  <div class="nav-item" data-sec="scheduled"><span class="nav-icon"><i class="fa-solid fa-clock"></i></span>Scheduled Msgs</div>
+    <div class="nav-item" data-sec="insights"><span class="nav-icon"><i class="fa-solid fa-lightbulb"></i></span>Insights</div>
+    <div class="nav-item" data-sec="auto-responses"><span class="nav-icon"><i class="fa-solid fa-reply"></i></span>Auto-Responses</div>
+    <div class="nav-item" data-sec="scheduled"><span class="nav-icon"><i class="fa-solid fa-clock"></i></span>Scheduled Msgs</div>
+    <div class="nav-item" data-sec="workflows"><span class="nav-icon"><i class="fa-solid fa-diagram-project"></i></span>Workflows</div>
+    <div class="nav-item" data-sec="escalations"><span class="nav-icon"><i class="fa-solid fa-headset"></i></span>Escalation Queue</div>
+    <div class="nav-item" data-sec="agent-performance"><span class="nav-icon"><i class="fa-solid fa-user-gear"></i></span>Agent Performance</div>
 
     <div class="sidebar-label">Settings</div>
     <div class="nav-item" data-sec="profile"><span class="nav-icon"><i class="fa-solid fa-user"></i></span>Profile</div>
@@ -273,7 +277,7 @@ function go(sec) {
   document.getElementById('sidebar').classList.remove('open');
   const sp = document.getElementById('spa');
   sp.innerHTML = spinner();
-  const map = { home:renderHome, revenue:renderRevenue, analytics:renderAnalytics, customers:renderCustomers, search:renderSearch, catalog:renderCatalog, performance:renderPerformance, orders:renderOrders, training:renderTraining, 'bot-config':renderBotConfig, profile:renderProfile, smtp:renderSmtp, payments:renderPayments, 'add-agent':renderAddAgent, broadcast:renderBroadcast, abandoned:renderAbandoned, insights:renderInsights, 'auto-responses':renderAutoResponses, scheduled:renderScheduled, help:renderHelp };
+  const map = { home:renderHome, revenue:renderRevenue, analytics:renderAnalytics, customers:renderCustomers, search:renderSearch, catalog:renderCatalog, performance:renderPerformance, suppliers:renderSuppliers, orders:renderOrders, training:renderTraining, 'bot-config':renderBotConfig, profile:renderProfile, smtp:renderSmtp, payments:renderPayments, 'add-agent':renderAddAgent, broadcast:renderBroadcast, abandoned:renderAbandoned, insights:renderInsights, 'auto-responses':renderAutoResponses, scheduled:renderScheduled, workflows:renderWorkflows, escalations:renderEscalations, 'agent-performance':renderAgentPerformance, help:renderHelp };
   (map[sec] || renderHome)();
 }
 
@@ -445,15 +449,16 @@ async function renderCatalog() {
     <div class="panel p-0" style="overflow:hidden;">
       <div class="table-responsive">
         <table class="table mb-0" id="catTbl">
-          <thead><tr><th>SKU</th><th>Name</th><th>Price</th><th>Stock</th><th>Category</th><th>Status</th><th>Actions</th></tr></thead>
+          <thead><tr><th>SKU</th><th>Name</th><th>Price</th><th>Stock</th><th>Category</th><th>Supplier</th><th>Status</th><th>Actions</th></tr></thead>
           <tbody>
-            ${items.length === 0 ? `<tr><td colspan="7" class="text-center py-4" style="color:var(--text-muted);">No products yet.</td></tr>` :
+            ${items.length === 0 ? `<tr><td colspan="8" class="text-center py-4" style="color:var(--text-muted);">No products yet.</td></tr>` :
               items.map(it => `<tr>
                 <td><code style="font-size:0.77rem;color:var(--text-muted);">${esc(it.sku||'')}</code></td>
                 <td><b>${esc(it.name||'')}</b>${it.description?`<br><span style="font-size:0.77rem;color:var(--text-muted);">${esc(it.description.substring(0,60))}</span>`:''}${(it.store_url||it.metadata?.store_url)?`<br><a href="${esc(it.store_url||it.metadata?.store_url)}" target="_blank" style="font-size:0.75rem;">Store link</a>`:''}</td>
                 <td>${it.price!=null?`<b>${parseFloat(it.price).toLocaleString()}</b> <span style="color:var(--text-muted);">${esc(it.currency||'KES')}</span>`:'â€”'}</td>
                 <td>${it.stock_count??'â€”'}</td>
                 <td>${esc(it.metadata?.category||'')}</td>
+                <td>${esc(it.metadata?.supplier_name||it.metadata?.vendor_name||'')}</td>
                 <td>${badge(it.is_active!==false?'active':'inactive')}</td>
                 <td class="d-flex gap-1">
                   <button class="btn btn-outline-acc btn-sm" onclick='showProdForm(${JSON.stringify(it).replace(/'/g,"&#39;")})'>Edit</button>
@@ -465,6 +470,36 @@ async function renderCatalog() {
       </div>
     </div>
     <div id="prodModal"></div>`;
+}
+
+async function renderSuppliers() {
+  const { ok, data } = await apiJson('/tenant/suppliers');
+  if (!ok) { showErr(data.error || 'Failed to load suppliers'); return; }
+  const suppliers = data.suppliers || [];
+  const rows = suppliers.map((s) => `<tr>
+    <td><b>${esc(s.supplier_name || 'Unassigned')}</b>${s.supplier_id ? `<br><span style="font-size:0.78rem;color:var(--text-muted);">${esc(s.supplier_id)}</span>` : ''}</td>
+    <td>${esc(s.supplier_contact || '—')}</td>
+    <td>${s.products_count || 0}</td>
+    <td>${s.active_products || 0}</td>
+    <td>${s.low_stock_products || 0}</td>
+    <td style="font-size:0.8rem;color:var(--text-muted);">${(s.sample_products || []).map(p => esc(p.sku)).join(', ') || '—'}</td>
+  </tr>`).join('');
+
+  document.getElementById('spa').innerHTML = `
+    <div class="section-hdr"><i class="fa-solid fa-truck-field"></i> Suppliers</div>
+    <div class="row g-3 mb-3">
+      <div class="col-12 col-md-4"><div class="stat-card"><div class="stat-label">Suppliers</div><div class="stat-value">${suppliers.length}</div><div class="stat-sub">with linked products</div></div></div>
+      <div class="col-12 col-md-4"><div class="stat-card"><div class="stat-label">Catalog Products</div><div class="stat-value">${data.total_products || 0}</div><div class="stat-sub">all SKUs</div></div></div>
+      <div class="col-12 col-md-4"><div class="stat-card"><div class="stat-label">Low Stock SKUs</div><div class="stat-value" style="color:var(--warning)">${suppliers.reduce((sum, s) => sum + (s.low_stock_products || 0), 0)}</div><div class="stat-sub">across suppliers</div></div></div>
+    </div>
+    <div class="panel p-0" style="overflow:hidden;">
+      <div class="table-responsive">
+        <table class="table mb-0">
+          <thead><tr><th>Supplier</th><th>Contact</th><th>Products</th><th>Active</th><th>Low Stock</th><th>Sample SKUs</th></tr></thead>
+          <tbody>${rows || '<tr><td colspan="6" class="text-center py-4" style="color:var(--text-muted);">No supplier metadata yet. Edit products and set supplier fields.</td></tr>'}</tbody>
+        </table>
+      </div>
+    </div>`;
 }
 
 window.filterTbl = function(tblId, q) {
@@ -487,6 +522,9 @@ window.showProdForm = function(it) {
           <div class="col-12 col-md-4"><label class="form-label">Category</label><input type="text" class="form-control" name="cat" value="${esc(it?.metadata?.category||'')}"/></div>
           <div class="col-12 col-md-4"><label class="form-label">Image URL</label><input type="url" class="form-control" name="img" value="${esc(it?.image_url||'')}"/></div>
           <div class="col-12 col-md-4"><label class="form-label">Store URL</label><input type="url" class="form-control" name="store" value="${esc(it?.store_url||it?.metadata?.store_url||'')}" placeholder="https://your-store/product/..."/></div>
+          <div class="col-12 col-md-4"><label class="form-label">Supplier Name</label><input type="text" class="form-control" name="supplier_name" value="${esc(it?.metadata?.supplier_name||it?.metadata?.vendor_name||'')}"/></div>
+          <div class="col-12 col-md-4"><label class="form-label">Supplier ID</label><input type="text" class="form-control" name="supplier_id" value="${esc(it?.metadata?.supplier_id||it?.metadata?.vendor_id||'')}"/></div>
+          <div class="col-12 col-md-4"><label class="form-label">Supplier Contact</label><input type="text" class="form-control" name="supplier_contact" value="${esc(it?.metadata?.supplier_contact||it?.metadata?.vendor_contact||'')}" placeholder="phone/email"/></div>
           <div class="col-12"><label class="form-label">Description</label><textarea class="form-control" name="desc" rows="2">${esc(it?.description||'')}</textarea></div>
           ${ed?`<div class="col-12 col-md-4"><label class="form-label">Status</label><select class="form-select" name="active"><option value="true" ${it.is_active!==false?'selected':''}>Active</option><option value="false" ${it.is_active===false?'selected':''}>Inactive</option></select></div>`:''}
           <div class="col-12 d-flex gap-2"><button type="submit" class="btn btn-accent">${ed?'Save':'Add Product'}</button><button type="button" class="btn btn-outline-acc" onclick="document.getElementById('prodModal').innerHTML=''">Cancel</button></div>
@@ -495,7 +533,23 @@ window.showProdForm = function(it) {
     </div>`;
   document.getElementById('pForm').onsubmit = async function(e) {
     e.preventDefault(); const f = e.target;
-    const payload = { sku: f.sku.value.trim(), name: f.name.value.trim(), price: f.price.value ? parseFloat(f.price.value) : null, currency: f.currency.value || 'KES', stock_count: parseInt(f.stock.value,10)||0, description: f.desc.value.trim(), image_url: f.img.value.trim()||null, store_url: f.store.value.trim()||null, metadata: { category: f.cat.value.trim(), store_url: f.store.value.trim()||null } };
+    const payload = {
+      sku: f.sku.value.trim(),
+      name: f.name.value.trim(),
+      price: f.price.value ? parseFloat(f.price.value) : null,
+      currency: f.currency.value || 'KES',
+      stock_count: parseInt(f.stock.value,10)||0,
+      description: f.desc.value.trim(),
+      image_url: f.img.value.trim()||null,
+      store_url: f.store.value.trim()||null,
+      metadata: {
+        category: f.cat.value.trim(),
+        store_url: f.store.value.trim()||null,
+        supplier_name: f.supplier_name.value.trim()||null,
+        supplier_id: f.supplier_id.value.trim()||null,
+        supplier_contact: f.supplier_contact.value.trim()||null,
+      }
+    };
     if (ed && f.active) payload.is_active = f.active.value === 'true';
     const { ok, data } = await apiJson('/tenant/catalog', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
     if (!ok) { toast(data.error||'Error saving product', 'err'); return; }
@@ -815,7 +869,17 @@ async function renderSmtp() {
       </div>
     </div>`;
 
-  async function renderInsights() {
+  document.getElementById('smtpForm').onsubmit = async function(e) {
+    e.preventDefault(); const f = e.target;
+    const payload = { smtp_host:f.host.value.trim(), smtp_port:parseInt(f.port.value,10)||587, smtp_user:f.user.value.trim(), smtp_from_name:f.from_name.value.trim() };
+    if (f.pass.value) payload.smtp_pass = f.pass.value;
+    const { ok, data } = await apiJson('/tenant/smtp', { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+    if (!ok) { toast(data.error||'Save failed','err'); return; }
+    toast('Email settings saved!','ok'); f.pass.value = ''; renderSmtp();
+  };
+}
+
+async function renderInsights() {
     const spa = document.getElementById('spa');
     spa.innerHTML = `<div class="section-hdr"><i class="fa-solid fa-lightbulb"></i> Insights</div><div class="text-center p-5"><div class="spinner-border text-primary"></div></div>`;
     const [funnelRes, rtRes, faqRes] = await Promise.all([apiJson('/tenant/funnel'), apiJson('/tenant/response-time'), apiJson('/tenant/top-questions')]);
@@ -952,15 +1016,7 @@ async function renderSmtp() {
     await load();
   }
 
-  document.getElementById('smtpForm').onsubmit = async function(e) {
-    e.preventDefault(); const f = e.target;
-    const payload = { smtp_host:f.host.value.trim(), smtp_port:parseInt(f.port.value,10)||587, smtp_user:f.user.value.trim(), smtp_from_name:f.from_name.value.trim() };
-    if (f.pass.value) payload.smtp_pass = f.pass.value;
-    const { ok, data } = await apiJson('/tenant/smtp', { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
-    if (!ok) { toast(data.error||'Save failed','err'); return; }
-    toast('Email settings saved!','ok'); f.pass.value = ''; renderSmtp();
-  };
-}
+ 
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• PAYMENTS â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 async function renderPayments() {
@@ -1263,8 +1319,7 @@ async function renderBroadcast() {
 }
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• ABANDONED CARTS â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-  }
-}
+
 
 // CUSTOMERS DIRECTORY
 async function renderCustomers() {
@@ -1593,6 +1648,165 @@ async function renderAbandoned() {
       acSendBtn.innerHTML = '<i class="fa-solid fa-paper-plane me-2"></i>Send Recovery Message';
     }
   };
+}
+
+async function renderWorkflows() {
+  const { ok, data } = await apiJson('/tenant/workflows');
+  if (!ok) { showErr(data.error || 'Failed to load workflows'); return; }
+  const wf = data.workflows || {};
+  const teamText = (wf.team_agents || []).map((a) => `${a.id}|${a.name}|${a.role || 'agent'}|${a.active !== false ? 'active' : 'inactive'}`).join('\n');
+  document.getElementById('spa').innerHTML = `
+    <div class="section-hdr"><i class="fa-solid fa-diagram-project"></i> Conversation Workflows</div>
+    <div class="panel">
+      <div class="panel-title">Escalation Rules</div>
+      <form id="wfForm">
+        <div class="row g-3">
+          <div class="col-12 col-md-6">
+            <label class="form-label">Escalation Keywords (comma separated)</label>
+            <input type="text" class="form-control" name="keywords" value="${esc((wf.escalation_keywords || []).join(', '))}" placeholder="human, manager, support" />
+          </div>
+          <div class="col-12 col-md-3">
+            <label class="form-label">Default Agent ID</label>
+            <input type="text" class="form-control" name="default_agent" value="${esc(wf.default_agent || '')}" placeholder="agent_01" />
+          </div>
+          <div class="col-12 col-md-3 d-flex align-items-end">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="wfAuto" ${wf.auto_assign_enabled !== false ? 'checked' : ''}>
+              <label class="form-check-label" for="wfAuto">Auto-assign enabled</label>
+            </div>
+          </div>
+          <div class="col-12">
+            <label class="form-label">Team Agents (one per line: id|name|role|active/inactive)</label>
+            <textarea class="form-control" name="team" rows="7" placeholder="agent_01|Mary N.|sales|active">${esc(teamText)}</textarea>
+          </div>
+          <div class="col-12 d-flex gap-2">
+            <button type="submit" class="btn btn-accent"><i class="fa-solid fa-floppy-disk me-2"></i>Save Workflows</button>
+            <span id="wfMsg" style="font-size:0.85rem;color:var(--text-muted);"></span>
+          </div>
+        </div>
+      </form>
+    </div>`;
+
+  document.getElementById('wfForm').onsubmit = async (e) => {
+    e.preventDefault();
+    const f = e.target;
+    const keywords = f.keywords.value.split(',').map((s) => s.trim()).filter(Boolean);
+    const teamAgents = f.team.value.split('\n').map((line) => line.trim()).filter(Boolean).map((line) => {
+      const [id, name, role, active] = line.split('|').map((v) => (v || '').trim());
+      return { id, name, role: role || 'agent', active: String(active || 'active').toLowerCase() !== 'inactive' };
+    }).filter((a) => a.id && a.name);
+    document.getElementById('wfMsg').textContent = 'Saving...';
+    const { ok: ok2, data: d2 } = await apiJson('/tenant/workflows', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        escalation_keywords: keywords,
+        default_agent: f.default_agent.value.trim(),
+        auto_assign_enabled: document.getElementById('wfAuto').checked,
+        team_agents: teamAgents,
+      }),
+    });
+    document.getElementById('wfMsg').textContent = ok2 ? 'Saved.' : (d2.error || 'Save failed');
+    if (ok2) toast('Workflow settings saved', 'ok');
+  };
+}
+
+async function renderEscalations() {
+  const { ok, data } = await apiJson('/tenant/escalations');
+  if (!ok) { showErr(data.error || 'Failed to load escalations'); return; }
+  const escalations = data.escalations || [];
+  const rows = escalations.map((e) => `<tr>
+    <td>${esc(e.phone || '—')}</td>
+    <td style="max-width:220px;word-break:break-word;">${esc(e.reason || '')}</td>
+    <td>
+      <select class="form-select form-select-sm esc-status" data-id="${esc(e.id)}">
+        ${['open','in_progress','resolved','closed'].map(s => `<option value="${s}" ${e.status===s?'selected':''}>${s}</option>`).join('')}
+      </select>
+    </td>
+    <td><input class="form-control form-control-sm esc-agent" data-id="${esc(e.id)}" value="${esc(e.assigned_agent || '')}" placeholder="agent id" /></td>
+    <td style="font-size:0.8rem;">${fmtDT(e.created_at)}</td>
+    <td><button class="btn btn-sm btn-outline-primary esc-save" data-id="${esc(e.id)}">Save</button></td>
+  </tr>`).join('');
+
+  document.getElementById('spa').innerHTML = `
+    <div class="section-hdr"><i class="fa-solid fa-headset"></i> Escalation Queue</div>
+    <div class="panel mb-3">
+      <div class="panel-title">Create Escalation</div>
+      <form id="escForm" class="row g-2">
+        <div class="col-12 col-md-3"><input class="form-control" name="phone" placeholder="Customer phone" /></div>
+        <div class="col-12 col-md-5"><input class="form-control" name="reason" placeholder="Reason for escalation" /></div>
+        <div class="col-6 col-md-2"><select class="form-select" name="priority"><option>low</option><option selected>medium</option><option>high</option><option>urgent</option></select></div>
+        <div class="col-6 col-md-2"><button class="btn btn-accent w-100" type="submit">Add</button></div>
+      </form>
+    </div>
+    <div class="panel p-0" style="overflow:hidden;">
+      <div class="table-responsive">
+        <table class="table mb-0">
+          <thead><tr><th>Phone</th><th>Reason</th><th>Status</th><th>Assigned</th><th>Created</th><th></th></tr></thead>
+          <tbody>${rows || '<tr><td colspan="6" class="text-center py-4" style="color:var(--text-muted);">No escalations in queue.</td></tr>'}</tbody>
+        </table>
+      </div>
+    </div>`;
+
+  document.getElementById('escForm').onsubmit = async (e) => {
+    e.preventDefault();
+    const f = e.target;
+    const payload = { phone: f.phone.value.trim(), reason: f.reason.value.trim(), priority: f.priority.value };
+    const { ok: ok2, data: d2 } = await apiJson('/tenant/escalations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!ok2) { toast(d2.error || 'Failed to create escalation', 'err'); return; }
+    toast('Escalation added', 'ok');
+    renderEscalations();
+  };
+
+  document.querySelectorAll('.esc-save').forEach((btn) => {
+    btn.onclick = async () => {
+      const id = btn.dataset.id;
+      const status = document.querySelector(`.esc-status[data-id="${id}"]`)?.value || 'open';
+      const assigned_agent = document.querySelector(`.esc-agent[data-id="${id}"]`)?.value || '';
+      const { ok: ok2, data: d2 } = await apiJson(`/tenant/escalations/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status, assigned_agent }),
+      });
+      if (!ok2) { toast(d2.error || 'Update failed', 'err'); return; }
+      toast('Escalation updated', 'ok');
+      renderEscalations();
+    };
+  });
+}
+
+async function renderAgentPerformance() {
+  const { ok, data } = await apiJson('/tenant/agent-performance');
+  if (!ok) { showErr(data.error || 'Failed to load performance data'); return; }
+  const totals = data.totals || {};
+  const agents = data.agents || [];
+  const rows = agents.map((a) => `<tr>
+    <td><b>${esc(a.agent_name || a.agent_id || 'Unassigned')}</b><br><span style="font-size:0.78rem;color:var(--text-muted);">${esc(a.role || 'agent')}</span></td>
+    <td>${a.assigned_total || 0}</td>
+    <td>${a.resolved_total || 0}</td>
+    <td>${a.open_total || 0}</td>
+    <td>${a.avg_resolution_hours != null ? `${a.avg_resolution_hours}h` : '—'}</td>
+  </tr>`).join('');
+
+  document.getElementById('spa').innerHTML = `
+    <div class="section-hdr"><i class="fa-solid fa-user-gear"></i> Agent Performance</div>
+    <div class="row g-3 mb-3">
+      <div class="col-12 col-md-4"><div class="stat-card"><div class="stat-label">Total Escalations</div><div class="stat-value">${totals.escalations_total || 0}</div></div></div>
+      <div class="col-12 col-md-4"><div class="stat-card"><div class="stat-label">Open</div><div class="stat-value" style="color:var(--warning)">${totals.escalations_open || 0}</div></div></div>
+      <div class="col-12 col-md-4"><div class="stat-card"><div class="stat-label">Resolved</div><div class="stat-value" style="color:var(--success)">${totals.escalations_resolved || 0}</div></div></div>
+    </div>
+    <div class="panel p-0" style="overflow:hidden;">
+      <div class="table-responsive">
+        <table class="table mb-0">
+          <thead><tr><th>Agent</th><th>Assigned</th><th>Resolved</th><th>Open</th><th>Avg Resolve Time</th></tr></thead>
+          <tbody>${rows || '<tr><td colspan="5" class="text-center py-4" style="color:var(--text-muted);">No agent workload data yet.</td></tr>'}</tbody>
+        </table>
+      </div>
+    </div>`;
 }
 
 function renderHelp() {

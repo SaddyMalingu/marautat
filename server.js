@@ -734,6 +734,50 @@ app.delete("/tenant/catalog", tenantSessionAuth, async (req, res) => {
   }
 });
 
+// GET /tenant/suppliers — supplier/vendor rollup from product metadata
+app.get("/tenant/suppliers", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+    const { data, error } = await supabase
+      .from("bot_products")
+      .select("sku, name, stock_count, is_active, metadata")
+      .eq("bot_tenant_id", tenantId);
+
+    if (error) return res.status(500).json({ error: error.message });
+
+    const bySupplier = {};
+    (data || []).forEach((item) => {
+      const md = item?.metadata && typeof item.metadata === "object" ? item.metadata : {};
+      const supplierName = String(md.supplier_name || md.vendor_name || "Unassigned").trim() || "Unassigned";
+      const supplierId = String(md.supplier_id || md.vendor_id || "").trim();
+      const supplierContact = String(md.supplier_contact || md.vendor_contact || "").trim();
+      const key = `${supplierName.toLowerCase()}::${supplierId.toLowerCase()}`;
+      if (!bySupplier[key]) {
+        bySupplier[key] = {
+          supplier_name: supplierName,
+          supplier_id: supplierId || null,
+          supplier_contact: supplierContact || null,
+          products_count: 0,
+          active_products: 0,
+          low_stock_products: 0,
+          sample_products: [],
+        };
+      }
+      bySupplier[key].products_count += 1;
+      if (item.is_active !== false) bySupplier[key].active_products += 1;
+      if (Number(item.stock_count || 0) > 0 && Number(item.stock_count || 0) <= 5) bySupplier[key].low_stock_products += 1;
+      if (bySupplier[key].sample_products.length < 5) {
+        bySupplier[key].sample_products.push({ sku: item.sku, name: item.name, stock_count: item.stock_count || 0 });
+      }
+    });
+
+    const suppliers = Object.values(bySupplier).sort((a, b) => b.products_count - a.products_count);
+    return res.json({ suppliers, total_products: (data || []).length });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
 // ===== TENANT ORDERS API =====
 app.get("/tenant/orders", tenantSessionAuth, async (req, res) => {
   try {
@@ -1880,6 +1924,239 @@ app.delete("/tenant/scheduled-messages/:id", tenantSessionAuth, async (req, res)
     await supabase.from("bot_tenants").update({ metadata: { ...existing, scheduled_messages: queue }, updated_at: new Date().toISOString() }).eq("id", tenantId);
     return res.json({ success: true });
   } catch (error) { return res.status(500).json({ error: error.message }); }
+});
+
+// ===== WORKFLOWS, ESCALATIONS, TEAM PERFORMANCE =====
+
+// GET /tenant/workflows
+app.get("/tenant/workflows", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+    const { data: tenantRow, error } = await supabase.from("bot_tenants").select("metadata").eq("id", tenantId).maybeSingle();
+    if (error) return res.status(500).json({ error: error.message });
+    const metadata = tenantRow?.metadata || {};
+    const workflows = metadata.workflows || {};
+    return res.json({
+      workflows: {
+        escalation_keywords: Array.isArray(workflows.escalation_keywords) ? workflows.escalation_keywords : ["human", "agent", "manager", "support", "help"],
+        auto_assign_enabled: workflows.auto_assign_enabled !== false,
+        default_agent: workflows.default_agent || "",
+        team_agents: Array.isArray(workflows.team_agents) ? workflows.team_agents : [],
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// PUT /tenant/workflows
+app.put("/tenant/workflows", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+    const body = req.body || {};
+    const escalationKeywords = Array.isArray(body.escalation_keywords)
+      ? body.escalation_keywords.map((k) => String(k || "").trim().toLowerCase()).filter(Boolean).slice(0, 30)
+      : [];
+    const teamAgents = Array.isArray(body.team_agents)
+      ? body.team_agents
+          .map((a) => ({
+            id: String(a?.id || "").trim().slice(0, 40),
+            name: String(a?.name || "").trim().slice(0, 80),
+            role: String(a?.role || "agent").trim().slice(0, 40),
+            active: a?.active !== false,
+          }))
+          .filter((a) => a.id && a.name)
+          .slice(0, 50)
+      : [];
+
+    const { data: tenantRow, error: readErr } = await supabase.from("bot_tenants").select("metadata").eq("id", tenantId).maybeSingle();
+    if (readErr) return res.status(500).json({ error: readErr.message });
+
+    const metadata = tenantRow?.metadata || {};
+    const workflows = {
+      escalation_keywords: escalationKeywords,
+      auto_assign_enabled: body.auto_assign_enabled !== false,
+      default_agent: String(body.default_agent || "").trim().slice(0, 40),
+      team_agents: teamAgents,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { error: writeErr } = await supabase
+      .from("bot_tenants")
+      .update({ metadata: { ...metadata, workflows }, updated_at: new Date().toISOString() })
+      .eq("id", tenantId);
+    if (writeErr) return res.status(500).json({ error: writeErr.message });
+    return res.json({ success: true, workflows });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /tenant/escalations
+app.get("/tenant/escalations", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+    const { data: tenantRow, error } = await supabase.from("bot_tenants").select("metadata").eq("id", tenantId).maybeSingle();
+    if (error) return res.status(500).json({ error: error.message });
+    const metadata = tenantRow?.metadata || {};
+    const escalations = Array.isArray(metadata.escalations) ? metadata.escalations : [];
+    escalations.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+    return res.json({ escalations: escalations.slice(0, 200) });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /tenant/escalations
+app.post("/tenant/escalations", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+    const { phone, reason, priority = "medium", assigned_agent = "", notes = "" } = req.body || {};
+    const cleanPhone = String(phone || "").trim();
+    const cleanReason = String(reason || "").trim();
+    if (!cleanPhone || !cleanReason) return res.status(400).json({ error: "phone and reason are required" });
+
+    const { data: tenantRow, error: readErr } = await supabase.from("bot_tenants").select("metadata").eq("id", tenantId).maybeSingle();
+    if (readErr) return res.status(500).json({ error: readErr.message });
+    const metadata = tenantRow?.metadata || {};
+    const escalations = Array.isArray(metadata.escalations) ? metadata.escalations : [];
+
+    const now = new Date().toISOString();
+    const item = {
+      id: `esc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      phone: cleanPhone,
+      reason: cleanReason.slice(0, 500),
+      priority: ["low", "medium", "high", "urgent"].includes(String(priority)) ? String(priority) : "medium",
+      status: "open",
+      assigned_agent: String(assigned_agent || "").trim().slice(0, 40) || null,
+      notes: String(notes || "").trim().slice(0, 1000) || null,
+      created_at: now,
+      updated_at: now,
+      resolved_at: null,
+    };
+
+    escalations.push(item);
+
+    const { error: writeErr } = await supabase
+      .from("bot_tenants")
+      .update({ metadata: { ...metadata, escalations: escalations.slice(-500) }, updated_at: now })
+      .eq("id", tenantId);
+    if (writeErr) return res.status(500).json({ error: writeErr.message });
+    return res.json({ success: true, escalation: item });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// PATCH /tenant/escalations/:id
+app.patch("/tenant/escalations/:id", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+    const escalationId = String(req.params.id || "").trim();
+    if (!escalationId) return res.status(400).json({ error: "id is required" });
+
+    const { data: tenantRow, error: readErr } = await supabase.from("bot_tenants").select("metadata").eq("id", tenantId).maybeSingle();
+    if (readErr) return res.status(500).json({ error: readErr.message });
+    const metadata = tenantRow?.metadata || {};
+    const escalations = Array.isArray(metadata.escalations) ? [...metadata.escalations] : [];
+    const idx = escalations.findIndex((e) => e?.id === escalationId);
+    if (idx < 0) return res.status(404).json({ error: "Escalation not found" });
+
+    const current = escalations[idx] || {};
+    const nextStatus = req.body?.status ? String(req.body.status).trim().toLowerCase() : current.status;
+    const now = new Date().toISOString();
+    const updated = {
+      ...current,
+      status: ["open", "in_progress", "resolved", "closed"].includes(nextStatus) ? nextStatus : current.status,
+      priority: req.body?.priority ? String(req.body.priority).trim().toLowerCase() : current.priority,
+      assigned_agent: req.body?.assigned_agent !== undefined ? String(req.body.assigned_agent || "").trim().slice(0, 40) || null : current.assigned_agent,
+      notes: req.body?.notes !== undefined ? String(req.body.notes || "").trim().slice(0, 1000) || null : current.notes,
+      updated_at: now,
+      resolved_at: ["resolved", "closed"].includes(nextStatus) ? now : current.resolved_at || null,
+    };
+    escalations[idx] = updated;
+
+    const { error: writeErr } = await supabase
+      .from("bot_tenants")
+      .update({ metadata: { ...metadata, escalations }, updated_at: now })
+      .eq("id", tenantId);
+    if (writeErr) return res.status(500).json({ error: writeErr.message });
+    return res.json({ success: true, escalation: updated });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /tenant/agent-performance
+app.get("/tenant/agent-performance", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+    const { data: tenantRow, error } = await supabase.from("bot_tenants").select("metadata").eq("id", tenantId).maybeSingle();
+    if (error) return res.status(500).json({ error: error.message });
+    const metadata = tenantRow?.metadata || {};
+    const escalations = Array.isArray(metadata.escalations) ? metadata.escalations : [];
+    const teamAgents = Array.isArray(metadata?.workflows?.team_agents) ? metadata.workflows.team_agents : [];
+
+    const buckets = {};
+    teamAgents.forEach((a) => {
+      const id = String(a?.id || "").trim();
+      if (!id) return;
+      buckets[id] = {
+        agent_id: id,
+        agent_name: a.name || id,
+        role: a.role || "agent",
+        assigned_total: 0,
+        resolved_total: 0,
+        open_total: 0,
+        avg_resolution_hours: null,
+      };
+    });
+
+    const resolutionMsByAgent = {};
+    escalations.forEach((e) => {
+      const agent = String(e?.assigned_agent || "").trim() || "unassigned";
+      if (!buckets[agent]) {
+        buckets[agent] = {
+          agent_id: agent,
+          agent_name: agent,
+          role: agent === "unassigned" ? "queue" : "agent",
+          assigned_total: 0,
+          resolved_total: 0,
+          open_total: 0,
+          avg_resolution_hours: null,
+        };
+      }
+      buckets[agent].assigned_total += 1;
+      if (e?.status === "resolved" || e?.status === "closed") {
+        buckets[agent].resolved_total += 1;
+        const start = new Date(e.created_at || 0).getTime();
+        const end = new Date(e.resolved_at || e.updated_at || 0).getTime();
+        if (start > 0 && end > start) {
+          if (!resolutionMsByAgent[agent]) resolutionMsByAgent[agent] = [];
+          resolutionMsByAgent[agent].push(end - start);
+        }
+      } else {
+        buckets[agent].open_total += 1;
+      }
+    });
+
+    Object.keys(resolutionMsByAgent).forEach((agent) => {
+      const arr = resolutionMsByAgent[agent] || [];
+      if (!arr.length) return;
+      const avgMs = arr.reduce((a, b) => a + b, 0) / arr.length;
+      buckets[agent].avg_resolution_hours = Number((avgMs / (1000 * 60 * 60)).toFixed(2));
+    });
+
+    const agents = Object.values(buckets).sort((a, b) => b.assigned_total - a.assigned_total);
+    const totals = {
+      escalations_total: escalations.length,
+      escalations_open: escalations.filter((e) => !["resolved", "closed"].includes(String(e?.status || ""))).length,
+      escalations_resolved: escalations.filter((e) => ["resolved", "closed"].includes(String(e?.status || ""))).length,
+    };
+    return res.json({ totals, agents });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
 });
 
 // ===== TENANT PAYMENTS / SUBSCRIPTIONS API =====
