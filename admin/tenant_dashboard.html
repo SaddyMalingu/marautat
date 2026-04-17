@@ -158,6 +158,9 @@
     <div class="nav-item" data-sec="bot-config"><span class="nav-icon"><i class="fa-solid fa-sliders"></i></span>Bot Config</div>
     <div class="nav-item" data-sec="broadcast"><span class="nav-icon"><i class="fa-solid fa-bullhorn"></i></span>Bulk Message</div>
     <div class="nav-item" data-sec="abandoned"><span class="nav-icon"><i class="fa-solid fa-cart-shopping"></i></span>Cart Recovery</div>
+  <div class="nav-item" data-sec="insights"><span class="nav-icon"><i class="fa-solid fa-lightbulb"></i></span>Insights</div>
+  <div class="nav-item" data-sec="auto-responses"><span class="nav-icon"><i class="fa-solid fa-reply"></i></span>Auto-Responses</div>
+  <div class="nav-item" data-sec="scheduled"><span class="nav-icon"><i class="fa-solid fa-clock"></i></span>Scheduled Msgs</div>
 
     <div class="sidebar-label">Settings</div>
     <div class="nav-item" data-sec="profile"><span class="nav-icon"><i class="fa-solid fa-user"></i></span>Profile</div>
@@ -270,7 +273,7 @@ function go(sec) {
   document.getElementById('sidebar').classList.remove('open');
   const sp = document.getElementById('spa');
   sp.innerHTML = spinner();
-  const map = { home:renderHome, revenue:renderRevenue, analytics:renderAnalytics, customers:renderCustomers, search:renderSearch, catalog:renderCatalog, performance:renderPerformance, orders:renderOrders, training:renderTraining, 'bot-config':renderBotConfig, profile:renderProfile, smtp:renderSmtp, payments:renderPayments, 'add-agent':renderAddAgent, broadcast:renderBroadcast, abandoned:renderAbandoned, help:renderHelp };
+  const map = { home:renderHome, revenue:renderRevenue, analytics:renderAnalytics, customers:renderCustomers, search:renderSearch, catalog:renderCatalog, performance:renderPerformance, orders:renderOrders, training:renderTraining, 'bot-config':renderBotConfig, profile:renderProfile, smtp:renderSmtp, payments:renderPayments, 'add-agent':renderAddAgent, broadcast:renderBroadcast, abandoned:renderAbandoned, insights:renderInsights, 'auto-responses':renderAutoResponses, scheduled:renderScheduled, help:renderHelp };
   (map[sec] || renderHome)();
 }
 
@@ -811,6 +814,143 @@ async function renderSmtp() {
         </div>
       </div>
     </div>`;
+
+  async function renderInsights() {
+    const spa = document.getElementById('spa');
+    spa.innerHTML = `<div class="section-hdr"><i class="fa-solid fa-lightbulb"></i> Insights</div><div class="text-center p-5"><div class="spinner-border text-primary"></div></div>`;
+    const [funnelRes, rtRes, faqRes] = await Promise.all([apiJson('/tenant/funnel'), apiJson('/tenant/response-time'), apiJson('/tenant/top-questions')]);
+    const funnel = funnelRes?.funnel || [];
+    const rt = rtRes || {};
+    const topW = faqRes?.top_words || [];
+    const topP = faqRes?.top_phrases || [];
+    const funnelRows = funnel.map(s => `<tr><td>${s.stage}</td><td><div style="display:flex;align-items:center;gap:8px;"><div style="width:${s.rate}%;background:var(--accent);height:8px;border-radius:4px;min-width:4px;"></div><span>${s.count}</span></div></td><td class="text-end">${s.rate}%</td></tr>`).join('');
+    const wordBadges = topW.map(w => `<span class="badge me-1 mb-1" style="background:var(--bg-panel);color:var(--text-light);border:1px solid var(--border);font-size:.8rem;">${w.word} <span style="color:var(--accent)">${w.count}</span></span>`).join('');
+    const phraseRows = topP.map(p => `<tr><td>${p.phrase}</td><td class="text-end">${p.count}</td></tr>`).join('');
+    spa.innerHTML = `
+      <div class="section-hdr"><i class="fa-solid fa-lightbulb"></i> Insights <small style="font-size:.75rem;color:var(--text-muted);">(7-day window)</small></div>
+      <div class="row g-3 mb-3">
+        <div class="col-12 col-md-4">
+          <div class="panel text-center">
+            <div style="font-size:.8rem;color:var(--text-muted);">Avg Response Time</div>
+            <div style="font-size:2rem;font-weight:700;color:var(--accent)">${rt.avg_response_s != null ? rt.avg_response_s + 's' : 'N/A'}</div>
+            <div style="font-size:.75rem;color:var(--text-muted)">${rt.under_5s_pct != null ? rt.under_5s_pct + '% under 5s' : ''} · ${rt.samples || 0} samples</div>
+          </div>
+        </div>
+        <div class="col-12 col-md-8">
+          <div class="panel">
+            <div class="panel-title">Sales Funnel <span style="font-size:.75rem;color:var(--text-muted)">(30 days)</span></div>
+            <table class="table table-sm mb-0"><tbody>${funnelRows || '<tr><td colspan="3" class="text-center text-muted">No data</td></tr>'}</tbody></table>
+          </div>
+        </div>
+      </div>
+      <div class="row g-3">
+        <div class="col-12 col-md-7">
+          <div class="panel">
+            <div class="panel-title">Top Words in Chats</div>
+            <div>${wordBadges || '<span style="color:var(--text-muted)">No data yet</span>'}</div>
+          </div>
+        </div>
+        <div class="col-12 col-md-5">
+          <div class="panel">
+            <div class="panel-title">Common Phrases (FAQ candidates)</div>
+            <table class="table table-sm mb-0"><tbody>${phraseRows || '<tr><td colspan="2" class="text-center text-muted">No recurring phrases</td></tr>'}</tbody></table>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  async function renderAutoResponses() {
+    const spa = document.getElementById('spa');
+    spa.innerHTML = `<div class="section-hdr"><i class="fa-solid fa-reply"></i> Auto-Responses</div><div class="text-center p-4"><div class="spinner-border text-primary"></div></div>`;
+    const data = await apiJson('/tenant/auto-responses');
+    let templates = data?.templates || [];
+    const renderRows = () => templates.map((t,i) => `
+      <tr>
+        <td><input class="form-control form-control-sm ar-trigger" data-i="${i}" value="${t.trigger.replace(/"/g,'&quot;')}" placeholder="trigger word..."></td>
+        <td><input class="form-control form-control-sm ar-response" data-i="${i}" value="${t.response.replace(/"/g,'&quot;')}" placeholder="bot reply..."></td>
+        <td class="text-center"><input type="checkbox" class="form-check-input ar-enabled" data-i="${i}" ${t.enabled!==false?'checked':''}></td>
+        <td><button class="btn btn-sm btn-outline-danger ar-del" data-i="${i}"><i class="fa-solid fa-trash"></i></button></td>
+      </tr>`).join('');
+    const build = () => {
+      spa.innerHTML = `
+        <div class="section-hdr"><i class="fa-solid fa-reply"></i> Auto-Responses</div>
+        <div class="panel">
+          <div class="panel-title">Keyword → Reply Templates <span style="font-size:.75rem;color:var(--text-muted);">(max 20)</span></div>
+          <table class="table table-sm align-middle">
+            <thead><tr><th>Trigger keyword</th><th>Bot reply</th><th>On</th><th></th></tr></thead>
+            <tbody id="arBody">${renderRows()}</tbody>
+          </table>
+          <div class="d-flex gap-2 mt-2">
+            <button class="btn btn-sm btn-outline-primary" id="arAdd"><i class="fa-solid fa-plus me-1"></i>Add Row</button>
+            <button class="btn btn-sm btn-primary" id="arSave"><i class="fa-solid fa-floppy-disk me-1"></i>Save All</button>
+          </div>
+          <div id="arMsg" class="mt-2"></div>
+        </div>`;
+      const collect = () => [...document.querySelectorAll('#arBody tr')].map((_,i2) => ({
+        trigger: document.querySelector(`.ar-trigger[data-i="${i2}"]`)?.value.trim()||'',
+        response: document.querySelector(`.ar-response[data-i="${i2}"]`)?.value.trim()||'',
+        enabled: document.querySelector(`.ar-enabled[data-i="${i2}"]`)?.checked!==false
+      })).filter(t=>t.trigger&&t.response);
+      document.getElementById('arAdd').onclick = () => { templates.push({trigger:'',response:'',enabled:true}); build(); };
+      document.querySelectorAll('.ar-del').forEach(btn => btn.onclick = () => { templates.splice(+btn.dataset.i,1); build(); });
+      document.getElementById('arSave').onclick = async () => {
+        templates = collect();
+        document.getElementById('arMsg').innerHTML = '<span style="color:var(--text-muted)">Saving...</span>';
+        const r = await api('/tenant/auto-responses', {method:'PUT',body:JSON.stringify({templates})});
+        const d = await r.json();
+        document.getElementById('arMsg').innerHTML = d.success ? '<span style="color:var(--success)">Saved!</span>' : `<span style="color:var(--danger)">${d.error||'Error'}</span>`;
+      };
+    };
+    build();
+  }
+
+  async function renderScheduled() {
+    const spa = document.getElementById('spa');
+    spa.innerHTML = `<div class="section-hdr"><i class="fa-solid fa-clock"></i> Scheduled Messages</div><div class="text-center p-4"><div class="spinner-border text-primary"></div></div>`;
+    const load = async () => {
+      const data = await apiJson('/tenant/scheduled-messages');
+      const scheduled = data?.scheduled || [];
+      const rows = scheduled.map(m => `
+        <tr>
+          <td style="max-width:300px;word-break:break-word;">${m.message}</td>
+          <td>${new Date(m.scheduled_at).toLocaleString()}</td>
+          <td><span class="badge" style="background:var(--bg-panel);color:var(--text-muted);border:1px solid var(--border)">${m.segment||'all'}</span></td>
+          <td><span class="badge" style="background:${m.status==='sent'?'var(--success)':m.status==='failed'?'var(--danger)':'var(--accent)'}20;color:${m.status==='sent'?'var(--success)':m.status==='failed'?'var(--danger)':'var(--accent)'}">${m.status||'pending'}</span></td>
+          <td><button class="btn btn-sm btn-outline-danger sch-del" data-id="${m.id}"><i class="fa-solid fa-trash"></i></button></td>
+        </tr>`).join('');
+      spa.innerHTML = `
+        <div class="section-hdr"><i class="fa-solid fa-clock"></i> Scheduled Messages</div>
+        <div class="panel mb-3">
+          <div class="panel-title">Schedule a Broadcast</div>
+          <div class="row g-2">
+            <div class="col-12"><textarea class="form-control" id="schMsg" rows="2" placeholder="Message to send..."></textarea></div>
+            <div class="col-6"><input type="datetime-local" class="form-control" id="schAt"></div>
+            <div class="col-4"><select class="form-select" id="schSeg"><option value="all">All users</option><option value="have_purchased">Purchased</option><option value="inactive_30plus">Inactive 30d+</option><option value="high_value">High value</option><option value="first_time">First-time</option></select></div>
+            <div class="col-2 d-flex align-items-end"><button class="btn btn-primary w-100" id="schAdd"><i class="fa-solid fa-plus"></i></button></div>
+          </div>
+          <div id="schMsg2" class="mt-2"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-title">Scheduled Queue</div>
+          ${scheduled.length===0 ? '<p class="text-muted text-center p-3">No scheduled messages.</p>' : `<table class="table table-sm"><thead><tr><th>Message</th><th>Scheduled At</th><th>Segment</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table>`}
+        </div>`;
+      document.getElementById('schAdd').onclick = async () => {
+        const msg = document.getElementById('schMsg').value.trim();
+        const at = document.getElementById('schAt').value;
+        const seg = document.getElementById('schSeg').value;
+        if (!msg||!at) { document.getElementById('schMsg2').innerHTML='<span style="color:var(--danger)">Message and date required</span>'; return; }
+        document.getElementById('schMsg2').innerHTML='<span style="color:var(--text-muted)">Scheduling...</span>';
+        const r = await api('/tenant/scheduled-messages',{method:'POST',body:JSON.stringify({message:msg,scheduled_at:at,segment:seg})});
+        const d = await r.json();
+        if (d.success) { await load(); } else { document.getElementById('schMsg2').innerHTML=`<span style="color:var(--danger)">${d.error||'Error'}</span>`; }
+      };
+      document.querySelectorAll('.sch-del').forEach(btn => btn.onclick = async () => {
+        await api(`/tenant/scheduled-messages/${btn.dataset.id}`,{method:'DELETE'});
+        await load();
+      });
+    };
+    await load();
+  }
 
   document.getElementById('smtpForm').onsubmit = async function(e) {
     e.preventDefault(); const f = e.target;

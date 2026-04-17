@@ -1742,6 +1742,146 @@ app.get("/tenant/revenue", tenantSessionAuth, async (req, res) => {
   }
 });
 
+// ===== INSIGHTS, FUNNEL, AUTOMATION APIS =====
+
+// GET /tenant/funnel — sales funnel analysis
+app.get("/tenant/funnel", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+    const since30d = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const { data: pubTenant } = await supabase.from("bot_tenants").select("brand_id").eq("id", tenantId).maybeSingle();
+    const brandId = pubTenant?.brand_id;
+    if (!brandId) return res.json({ funnel: null });
+    const { data: inboundConvs } = await supabase.from("conversations").select("user_id").eq("brand_id", brandId).eq("direction", "incoming").gte("created_at", since30d);
+    const searched = new Set((inboundConvs || []).map((c) => c.user_id).filter(Boolean));
+    const { data: sessions } = await supabase.from("user_sessions").select("phone, context").eq("tenant_id", tenantId).gte("updated_at", since30d);
+    const viewed = new Set((sessions || []).filter((s) => s.context?.last_selected_sku).map((s) => s.phone));
+    const { data: allSubs } = await supabase.from("subscriptions").select("user_id, status").eq("tenant_id", tenantId).gte("created_at", since30d);
+    const initiated = new Set((allSubs || []).map((s) => s.user_id).filter(Boolean));
+    const completed = new Set((allSubs || []).filter((s) => s.status === "completed" || s.status === "active").map((s) => s.user_id).filter(Boolean));
+    const s1 = searched.size; const s2 = viewed.size; const s3 = initiated.size; const s4 = completed.size;
+    return res.json({ funnel: [
+      { stage: "Messaged Bot", count: s1, rate: 100 },
+      { stage: "Viewed Product", count: s2, rate: s1 > 0 ? Math.round((s2/s1)*100) : 0 },
+      { stage: "Checkout Started", count: s3, rate: s1 > 0 ? Math.round((s3/s1)*100) : 0 },
+      { stage: "Purchase Complete", count: s4, rate: s1 > 0 ? Math.round((s4/s1)*100) : 0 },
+    ], period: "30 days" });
+  } catch (error) { return res.status(500).json({ error: error.message }); }
+});
+
+// GET /tenant/response-time — avg bot response time
+app.get("/tenant/response-time", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+    const { data: pubTenant } = await supabase.from("bot_tenants").select("brand_id").eq("id", tenantId).maybeSingle();
+    const brandId = pubTenant?.brand_id;
+    if (!brandId) return res.json({ avg_response_s: null });
+    const since7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const { data: convRows } = await supabase.from("conversations").select("user_id, direction, created_at").eq("brand_id", brandId).gte("created_at", since7d).order("created_at", { ascending: true });
+    const rows = convRows || [];
+    const responseTimes = [];
+    const lastInbound = {};
+    for (const row of rows) {
+      if (row.direction === "incoming") { lastInbound[row.user_id] = new Date(row.created_at).getTime(); }
+      else if (row.direction === "outgoing" && lastInbound[row.user_id]) {
+        const delta = new Date(row.created_at).getTime() - lastInbound[row.user_id];
+        if (delta > 0 && delta < 300000) { responseTimes.push(delta); delete lastInbound[row.user_id]; }
+      }
+    }
+    const avg = responseTimes.length > 0 ? Math.round(responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length) : null;
+    const under5s = responseTimes.filter((t) => t < 5000).length;
+    return res.json({ avg_response_s: avg !== null ? Math.round(avg / 1000) : null, samples: responseTimes.length, under_5s_pct: responseTimes.length > 0 ? Math.round((under5s/responseTimes.length)*100) : null, period: "7 days" });
+  } catch (error) { return res.status(500).json({ error: error.message }); }
+});
+
+// GET /tenant/top-questions — word clustering from inbound chats
+app.get("/tenant/top-questions", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+    const { data: pubTenant } = await supabase.from("bot_tenants").select("brand_id").eq("id", tenantId).maybeSingle();
+    const brandId = pubTenant?.brand_id;
+    if (!brandId) return res.json({ top_words: [], top_phrases: [] });
+    const since7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const { data: convRows } = await supabase.from("conversations").select("message").eq("brand_id", brandId).eq("direction", "incoming").gte("created_at", since7d).limit(500);
+    const stopWords = new Set(["the","a","an","in","is","it","to","i","you","my","me","we","be","do","so","if","of","at","on","or","and","but","for","not","can","yes","no","hi","hey","hello","please","thanks","thank","ok","okay","how","what","when","where","who","why","this","that","with","your"]);
+    const wordFreq = {}; const phraseFreq = {};
+    (convRows || []).forEach((row) => {
+      const text = (row.message || "").toLowerCase().replace(/[^a-z0-9\s]/g, " ");
+      const words = text.split(/\s+/).filter((w) => w.length > 2 && !stopWords.has(w));
+      words.forEach((w) => { wordFreq[w] = (wordFreq[w] || 0) + 1; });
+      for (let i = 0; i < words.length - 1; i++) { const p = `${words[i]} ${words[i+1]}`; phraseFreq[p] = (phraseFreq[p] || 0) + 1; }
+    });
+    const topWords = Object.entries(wordFreq).sort((a,b)=>b[1]-a[1]).slice(0,15).map(([word,count])=>({word,count}));
+    const topPhrases = Object.entries(phraseFreq).filter(([,c])=>c>=2).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([phrase,count])=>({phrase,count}));
+    return res.json({ top_words: topWords, top_phrases: topPhrases, messages_analyzed: (convRows||[]).length });
+  } catch (error) { return res.status(500).json({ error: error.message }); }
+});
+
+// GET /tenant/auto-responses
+app.get("/tenant/auto-responses", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+    const { data: pubTenant } = await supabase.from("bot_tenants").select("metadata").eq("id", tenantId).maybeSingle();
+    return res.json({ templates: pubTenant?.metadata?.auto_responses || [] });
+  } catch (error) { return res.status(500).json({ error: error.message }); }
+});
+
+// PUT /tenant/auto-responses — save templates
+app.put("/tenant/auto-responses", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+    const { templates } = req.body;
+    if (!Array.isArray(templates)) return res.status(400).json({ error: "templates must be an array" });
+    const sanitized = templates.slice(0,20).map((t) => ({ trigger: String(t.trigger||"").trim().slice(0,100), response: String(t.response||"").trim().slice(0,1024), enabled: Boolean(t.enabled!==false) })).filter((t) => t.trigger && t.response);
+    const { data: pubTenant } = await supabase.from("bot_tenants").select("metadata").eq("id", tenantId).maybeSingle();
+    const existing = pubTenant?.metadata || {};
+    await supabase.from("bot_tenants").update({ metadata: { ...existing, auto_responses: sanitized }, updated_at: new Date().toISOString() }).eq("id", tenantId);
+    return res.json({ success: true, saved: sanitized.length });
+  } catch (error) { return res.status(500).json({ error: error.message }); }
+});
+
+// GET /tenant/scheduled-messages
+app.get("/tenant/scheduled-messages", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+    const { data: pubTenant } = await supabase.from("bot_tenants").select("metadata").eq("id", tenantId).maybeSingle();
+    const scheduled = (pubTenant?.metadata?.scheduled_messages || []).map((m, i) => ({ ...m, id: i }));
+    return res.json({ scheduled });
+  } catch (error) { return res.status(500).json({ error: error.message }); }
+});
+
+// POST /tenant/scheduled-messages
+app.post("/tenant/scheduled-messages", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+    const { message, scheduled_at, segment = "all" } = req.body;
+    if (!message || !scheduled_at) return res.status(400).json({ error: "message and scheduled_at required" });
+    const scheduledTime = new Date(scheduled_at);
+    if (isNaN(scheduledTime.getTime()) || scheduledTime < new Date()) return res.status(400).json({ error: "scheduled_at must be a valid future date" });
+    const { data: pubTenant } = await supabase.from("bot_tenants").select("metadata").eq("id", tenantId).maybeSingle();
+    const existing = pubTenant?.metadata || {};
+    const queue = Array.isArray(existing.scheduled_messages) ? existing.scheduled_messages : [];
+    queue.push({ message: String(message).trim().slice(0,1024), scheduled_at: scheduledTime.toISOString(), segment, created_at: new Date().toISOString(), status: "pending" });
+    await supabase.from("bot_tenants").update({ metadata: { ...existing, scheduled_messages: queue.slice(-50) }, updated_at: new Date().toISOString() }).eq("id", tenantId);
+    return res.json({ success: true, total_scheduled: queue.length });
+  } catch (error) { return res.status(500).json({ error: error.message }); }
+});
+
+// DELETE /tenant/scheduled-messages/:id
+app.delete("/tenant/scheduled-messages/:id", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+    const idx = parseInt(req.params.id, 10);
+    const { data: pubTenant } = await supabase.from("bot_tenants").select("metadata").eq("id", tenantId).maybeSingle();
+    const existing = pubTenant?.metadata || {};
+    const queue = Array.isArray(existing.scheduled_messages) ? [...existing.scheduled_messages] : [];
+    if (idx < 0 || idx >= queue.length) return res.status(404).json({ error: "Not found" });
+    queue.splice(idx, 1);
+    await supabase.from("bot_tenants").update({ metadata: { ...existing, scheduled_messages: queue }, updated_at: new Date().toISOString() }).eq("id", tenantId);
+    return res.json({ success: true });
+  } catch (error) { return res.status(500).json({ error: error.message }); }
+});
+
 // ===== TENANT PAYMENTS / SUBSCRIPTIONS API =====
 
 app.get("/tenant/payments", tenantSessionAuth, async (req, res) => {
