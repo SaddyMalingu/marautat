@@ -3432,6 +3432,7 @@ function buildTrainingContext(trainingData = []) {
 
 function getSystemPrompt(tenant = null, templates = [], trainingData = []) {
   const brandName = tenant?.client_name || "Alphadome";
+  const isAlphadomeBrand = /alphadome/i.test(String(brandName));
   let basePrompt = `You are a helpful WhatsApp assistant for ${brandName}. Be professional, warm, and concise.`;
 
   if (templates.length > 0) {
@@ -3459,10 +3460,25 @@ IMPORTANT RULES:
 10. Always be helpful, professional, and encourage customers to explore the full catalog
 `.trim();
 
+  const consultativeStyle = isAlphadomeBrand
+    ? `
+ALPHADOME CONSULTATIVE STYLE:
+1. Keep outreach low-pressure and never nag users
+2. Start by understanding the user before selling: ask one short discovery question at a time
+3. Prioritize business discovery: profession, business type, current workflow, and key bottleneck
+4. Provide practical help first (concierge/consultant style), then suggest relevant Alphadome solutions
+5. When context is sufficient, introduce Alphadome Basic as the best starting point to begin system building
+6. Explain value in outcomes, not hype: saved time, faster follow-up, better lead handling, clearer operations
+7. Recommend WhatsApp bot automation first, then expand to additional AI workflows based on business needs
+8. Use clear CTAs only after value is established (example: "If you'd like, we can start you on Basic and set up your first workflow.")
+`.trim()
+    : "";
+
   const trainingContext = buildTrainingContext(trainingData);
+  const styleBlock = consultativeStyle ? `\n\n${consultativeStyle}` : "";
   const trainingBlock = trainingContext 
-    ? `\n\n${guardrails}\n\n---\n\nKNOWLEDGE BASE:\n\n${trainingContext}` 
-    : `\n\n${guardrails}`;
+    ? `\n\n${guardrails}${styleBlock}\n\n---\n\nKNOWLEDGE BASE:\n\n${trainingContext}` 
+    : `\n\n${guardrails}${styleBlock}`;
 
   return `${basePrompt}${trainingBlock}`.trim();
 }
@@ -3648,6 +3664,93 @@ function countRecentErrorsFromLog(hours = 24) {
     log(`Error counting logs: ${err.message}`, "WARN");
     return 0;
   }
+}
+
+function normalizeCampaignPhone(raw) {
+  const digits = String(raw || "").replace(/\D/g, "");
+  if (!digits) return null;
+  if (digits.startsWith("254") && digits.length >= 12) return digits;
+  if (digits.startsWith("0") && digits.length === 10) return `254${digits.slice(1)}`;
+  if (digits.length === 9) return `254${digits}`;
+  return digits.length >= 10 ? digits : null;
+}
+
+function sleepMs(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchAdminCampaignLeads({
+  windowHours = 8760,
+  limit = 100,
+  excludeKeywords = ["gideon", "kassangas"],
+  excludePhones = ["254702245555", "254117604817", "254743780542"],
+}) {
+  const since = new Date(Date.now() - Math.max(1, Number(windowHours || 8760)) * 60 * 60 * 1000).toISOString();
+
+  const { data: convRows, error: convErr } = await supabase
+    .from("conversations")
+    .select("user_id")
+    .eq("direction", "incoming")
+    .gte("created_at", since);
+
+  if (convErr) throw convErr;
+
+  const distinctUserIds = [...new Set((convRows || []).map((r) => r.user_id).filter(Boolean))];
+  if (!distinctUserIds.length) return [];
+
+  const { data: users, error: userErr } = await supabase
+    .from("users")
+    .select("id, phone, full_name")
+    .in("id", distinctUserIds);
+
+  if (userErr) throw userErr;
+
+  const kw = (excludeKeywords || []).map((x) => String(x || "").toLowerCase()).filter(Boolean);
+  const blocked = new Set((excludePhones || []).map((x) => normalizeCampaignPhone(x)).filter(Boolean));
+  const seen = new Set();
+  const leads = [];
+
+  for (const user of users || []) {
+    const phone = normalizeCampaignPhone(user.phone);
+    if (!phone || blocked.has(phone) || seen.has(phone)) continue;
+    const text = `${user.full_name || ""} ${user.phone || ""}`.toLowerCase();
+    if (kw.some((k) => text.includes(k))) continue;
+    seen.add(phone);
+    leads.push({ phone, name: user.full_name || "Unknown" });
+    if (leads.length >= Math.max(1, Number(limit || 100))) break;
+  }
+
+  return leads;
+}
+
+async function sendTemplateDirect(to, templateName = "afrika", languageCode = "en") {
+  const phoneNumberId = process.env.PHONE_NUMBER_ID;
+  const token = process.env.WHATSAPP_TOKEN;
+  if (!phoneNumberId || !token) {
+    throw new Error("Missing PHONE_NUMBER_ID or WHATSAPP_TOKEN");
+  }
+
+  const response = await axios.post(
+    `https://graph.facebook.com/v21.0/${phoneNumberId}/messages`,
+    {
+      messaging_product: "whatsapp",
+      to,
+      type: "template",
+      template: {
+        name: templateName,
+        language: { code: languageCode },
+      },
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      timeout: 20000,
+    }
+  );
+
+  return response.data || null;
 }
 
 function isMissingColumnError(error) {
@@ -3966,6 +4069,77 @@ app.get("/admin/api/performance-report", adminAuth, async (req, res) => {
     return res.json(report);
   } catch (err) {
     log(`Admin performance report error: ${err.message}`, "ERROR");
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/admin/api/campaign/send-template", adminAuth, async (req, res) => {
+  try {
+    const template = String(req.body?.template || "afrika").trim() || "afrika";
+    const language = String(req.body?.language || "en").trim() || "en";
+    const windowHours = parseInt(req.body?.window_hours || "8760", 10);
+    const limit = parseInt(req.body?.limit || "25", 10);
+    const delayMs = Math.max(0, parseInt(req.body?.delay_ms || "1200", 10));
+    const dryRun = Boolean(req.body?.dry_run);
+    const excludeKeywords = Array.isArray(req.body?.exclude_keywords)
+      ? req.body.exclude_keywords
+      : ["gideon", "kassangas"];
+    const excludePhones = Array.isArray(req.body?.exclude_phones)
+      ? req.body.exclude_phones
+      : ["254702245555", "254117604817", "254743780542"];
+
+    const leads = await fetchAdminCampaignLeads({
+      windowHours,
+      limit,
+      excludeKeywords,
+      excludePhones,
+    });
+
+    if (dryRun) {
+      return res.json({
+        ok: true,
+        dry_run: true,
+        template,
+        language,
+        count: leads.length,
+        sample: leads.slice(0, 10),
+      });
+    }
+
+    let success = 0;
+    let failed = 0;
+    const errors = [];
+
+    for (let i = 0; i < leads.length; i += 1) {
+      const lead = leads[i];
+      try {
+        await sendTemplateDirect(lead.phone, template, language);
+        success += 1;
+      } catch (err) {
+        failed += 1;
+        errors.push({
+          phone: lead.phone,
+          error: err?.response?.data || err.message,
+        });
+      }
+      if (i < leads.length - 1 && delayMs > 0) {
+        await sleepMs(delayMs);
+      }
+    }
+
+    log(`Admin template campaign: template=${template} sent=${success} failed=${failed} total=${leads.length}`, "SYSTEM");
+    return res.json({
+      ok: true,
+      template,
+      language,
+      total: leads.length,
+      success,
+      failed,
+      errors: errors.slice(0, 20),
+      sample: leads.slice(0, 10),
+    });
+  } catch (err) {
+    log(`Admin campaign send-template error: ${err.message}`, "ERROR");
     return res.status(500).json({ error: err.message });
   }
 });
