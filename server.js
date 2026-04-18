@@ -3609,6 +3609,235 @@ app.get("/admin/catalog", adminAuth, (req, res) => {
   return res.sendFile(dashboardPath);
 });
 
+function parseIsoDate(dateValue) {
+  const ts = new Date(dateValue || "").getTime();
+  return Number.isFinite(ts) ? ts : 0;
+}
+
+function extractWaTargetFromSubscription(sub) {
+  if (sub?.metadata?.customer_wa) return String(sub.metadata.customer_wa);
+  if (sub?.phone) return String(sub.phone);
+  return "unknown";
+}
+
+function getLeadActionHint(sub) {
+  const status = String(sub?.status || "").toLowerCase();
+  if (status === "pending") return "Send RETRY prompt and check STK completion";
+  if (status === "failed") return "Offer BANK first, COD second";
+  if (status === "manual_pending_verification") return "Verify bank receipt and mark subscribed";
+  if (status === "cod_pending_delivery") return "Confirm dispatch and delivery timeline";
+  return "Review customer context and follow up";
+}
+
+function countRecentErrorsFromLog(hours = 24) {
+  try {
+    const logPath = path.join(process.cwd(), "logs", "bot.log");
+    if (!fs.existsSync(logPath)) return 0;
+    const cutoff = Date.now() - hours * 60 * 60 * 1000;
+    const content = fs.readFileSync(logPath, "utf8");
+    const lines = content.split(/\r?\n/).filter(Boolean);
+    let errors = 0;
+    for (const line of lines) {
+      if (!line.includes("[ERROR]")) continue;
+      const tsMatch = line.match(/^\[([^\]]+)\]/);
+      const ts = tsMatch?.[1] ? new Date(tsMatch[1]).getTime() : 0;
+      if (ts && ts >= cutoff) errors += 1;
+    }
+    return errors;
+  } catch (err) {
+    log(`Error counting logs: ${err.message}`, "WARN");
+    return 0;
+  }
+}
+
+async function buildAdminOpsOverview() {
+  const now = Date.now();
+  const since24h = new Date(now - 24 * 60 * 60 * 1000).toISOString();
+  const since7d = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const since30d = new Date(now - 30 * 24 * 60 * 60 * 1000).toISOString();
+
+  const [tenantResp, subResp, convResp, userResp] = await Promise.all([
+    supabase.from("bot_tenants").select("id, client_name, client_phone, status, is_active, updated_at"),
+    supabase
+      .from("subscriptions")
+      .select("id, user_id, phone, amount, plan_type, level, status, metadata, created_at, updated_at")
+      .gte("created_at", since30d),
+    supabase
+      .from("conversations")
+      .select("id, user_id, direction, llm_used, created_at")
+      .gte("created_at", since7d),
+    supabase.from("users").select("id, created_at").gte("created_at", since30d),
+  ]);
+
+  if (tenantResp.error) throw tenantResp.error;
+  if (subResp.error) throw subResp.error;
+  if (convResp.error) throw convResp.error;
+  if (userResp.error) throw userResp.error;
+
+  const tenants = tenantResp.data || [];
+  const subscriptions = subResp.data || [];
+  const conversations = convResp.data || [];
+  const users = userResp.data || [];
+
+  const completedStatuses = new Set(["subscribed", "completed", "active"]);
+
+  const successfulSubs = subscriptions.filter((s) => completedStatuses.has(String(s.status || "").toLowerCase()));
+  const failedSubs = subscriptions.filter((s) => String(s.status || "").toLowerCase() === "failed");
+  const pendingSubs = subscriptions.filter((s) => String(s.status || "").toLowerCase() === "pending");
+  const manualPending = subscriptions.filter((s) => String(s.status || "").toLowerCase() === "manual_pending_verification");
+  const codPending = subscriptions.filter((s) => String(s.status || "").toLowerCase() === "cod_pending_delivery");
+
+  const revenueKes = successfulSubs.reduce((sum, s) => sum + (Number(s.amount) || 0), 0);
+  const attemptsCount = subscriptions.length;
+  const successCount = successfulSubs.length;
+  const failedCount = failedSubs.length;
+  const pendingCount = pendingSubs.length;
+  const conversionRate = attemptsCount > 0 ? Math.round((successCount / attemptsCount) * 100) : 0;
+
+  const recentIncoming24h = conversations.filter((c) => {
+    const ts = parseIsoDate(c.created_at);
+    return ts >= parseIsoDate(since24h) && c.direction === "incoming";
+  });
+  const recentOutgoing24h = conversations.filter((c) => {
+    const ts = parseIsoDate(c.created_at);
+    return ts >= parseIsoDate(since24h) && c.direction === "outgoing";
+  });
+  const llmUsage24h = conversations.filter((c) => parseIsoDate(c.created_at) >= parseIsoDate(since24h) && c.llm_used).length;
+
+  const hotLeads = subscriptions
+    .filter((s) => {
+      const status = String(s.status || "").toLowerCase();
+      if (!["pending", "failed", "manual_pending_verification", "cod_pending_delivery"].includes(status)) return false;
+      return parseIsoDate(s.updated_at || s.created_at) >= parseIsoDate(since24h);
+    })
+    .sort((a, b) => parseIsoDate(b.updated_at || b.created_at) - parseIsoDate(a.updated_at || a.created_at))
+    .slice(0, 15)
+    .map((s) => ({
+      subscription_id: s.id,
+      wa_phone: extractWaTargetFromSubscription(s),
+      amount: Number(s.amount) || 0,
+      status: s.status,
+      plan: `${String(s.plan_type || "").toUpperCase()}${s.level ? ` L${s.level}` : ""}`,
+      updated_at: s.updated_at || s.created_at,
+      action_hint: getLeadActionHint(s),
+    }));
+
+  const recentProgress = subscriptions
+    .slice()
+    .sort((a, b) => parseIsoDate(b.updated_at || b.created_at) - parseIsoDate(a.updated_at || a.created_at))
+    .slice(0, 12)
+    .map((s) => ({
+      when: s.updated_at || s.created_at,
+      subscription_id: s.id,
+      phone: extractWaTargetFromSubscription(s),
+      status: s.status,
+      amount: Number(s.amount) || 0,
+      note: `Subscription ${s.id.slice(0, 8)} moved to ${String(s.status || "unknown").toUpperCase()}`,
+    }));
+
+  const strategies = [];
+  if (recentIncoming24h.length === 0) {
+    strategies.push("Traffic is zero in last 24h. Run outbound template campaign immediately and target at least 50 contacts today.");
+  }
+  if (attemptsCount === 0) {
+    strategies.push("No payment attempts yet. Push every active chat to checkout with JOIN ALPHADOME MONTHLY LEVEL 1 flow.");
+  }
+  if (failedCount > successCount) {
+    strategies.push("Failed payments exceed successful ones. Default recovery script to BANK first, COD second while M-Pesa EPI stabilizes.");
+  }
+  if (pendingCount > 0) {
+    strategies.push(`There are ${pendingCount} pending payments. Use the hot lead queue and close each one within 10 minutes.`);
+  }
+  if (manualPending.length > 0) {
+    strategies.push(`You have ${manualPending.length} bank receipts pending verification. Clear these first for fastest revenue recognition.`);
+  }
+  if (codPending.length > 0) {
+    strategies.push(`You have ${codPending.length} COD orders pending delivery confirmation. Trigger logistics follow-up now.`);
+  }
+  if (!strategies.length) {
+    strategies.push("Maintain current momentum: run outreach every morning, monitor hot leads hourly, and optimize top converting payment route.");
+  }
+
+  const activeTenants = tenants.filter((t) => isTenantRecordActive(t));
+  const errors24h = countRecentErrorsFromLog(24);
+
+  return {
+    generated_at: new Date().toISOString(),
+    kpis: {
+      active_tenants: activeTenants.length,
+      total_tenants: tenants.length,
+      total_revenue_kes_30d: Math.round(revenueKes),
+      payment_attempts_30d: attemptsCount,
+      successful_payments_30d: successCount,
+      failed_payments_30d: failedCount,
+      pending_payments_30d: pendingCount,
+      conversion_rate_pct_30d: conversionRate,
+      llm_usage_24h: llmUsage24h,
+      incoming_messages_24h: recentIncoming24h.length,
+      outgoing_messages_24h: recentOutgoing24h.length,
+      new_users_30d: users.length,
+      errors_24h: errors24h,
+      health_status: errors24h > 20 ? "degraded" : "healthy",
+    },
+    operations: {
+      hot_leads: hotLeads,
+      fallback_pipeline: {
+        failed: failedCount,
+        bank_pending_verification: manualPending.length,
+        cod_pending_delivery: codPending.length,
+      },
+    },
+    progress: recentProgress,
+    strategies,
+  };
+}
+
+app.get("/admin/api/ops-overview", adminAuth, async (req, res) => {
+  try {
+    const payload = await buildAdminOpsOverview();
+    return res.json(payload);
+  } catch (err) {
+    log(`Admin ops overview error: ${err.message}`, "ERROR");
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/admin/api/tenants/active", adminAuth, async (req, res) => {
+  try {
+    const payload = await buildAdminOpsOverview();
+    return res.json({ count: payload.kpis.active_tenants });
+  } catch (err) {
+    return res.status(500).json({ error: err.message, count: "--" });
+  }
+});
+
+app.get("/admin/api/llm/usage", adminAuth, async (req, res) => {
+  try {
+    const payload = await buildAdminOpsOverview();
+    return res.json({ count: payload.kpis.llm_usage_24h });
+  } catch (err) {
+    return res.status(500).json({ error: err.message, count: "--" });
+  }
+});
+
+app.get("/admin/api/errors/count", adminAuth, async (req, res) => {
+  try {
+    const payload = await buildAdminOpsOverview();
+    return res.json({ count: payload.kpis.errors_24h });
+  } catch (err) {
+    return res.status(500).json({ error: err.message, count: "--" });
+  }
+});
+
+app.get("/admin/api/health", adminAuth, async (req, res) => {
+  try {
+    const payload = await buildAdminOpsOverview();
+    return res.json({ status: payload.kpis.health_status });
+  } catch (err) {
+    return res.status(500).json({ error: err.message, status: "unknown" });
+  }
+});
+
 app.get("/admin/catalog/data", adminAuth, async (req, res) => {
   try {
     const tenantPhone = req.query.tenant_phone || "";

@@ -133,6 +133,38 @@
             <div class="mt-2 small text-muted">Track all admin actions for security and compliance.</div>
           </div>
         </div>
+        <section class="card p-4 mb-4 border-warning shadow-sm" style="background:rgba(24,28,47,0.97);">
+          <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+            <h3 class="mb-0"><i class="fa-solid fa-satellite-dish"></i> Operations Intelligence</h3>
+            <small class="text-muted" id="opsGeneratedAt">Waiting for live data...</small>
+          </div>
+          <div class="row g-3 mb-3" id="opsKpiRow">
+            <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Revenue (30d)</div><div class="h4 mb-0" id="opsRevenue">--</div></div></div>
+            <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Payment Attempts</div><div class="h4 mb-0" id="opsAttempts">--</div></div></div>
+            <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Conversion Rate</div><div class="h4 mb-0" id="opsConversion">--</div></div></div>
+            <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Hot Leads</div><div class="h4 mb-0" id="opsHotLeadsCount">--</div></div></div>
+          </div>
+          <div class="row g-3">
+            <div class="col-12 col-lg-4">
+              <div class="bg-dark rounded-3 p-3 h-100">
+                <h5 class="mb-2"><i class="fa-solid fa-lightbulb"></i> Strategy Recommendations</h5>
+                <ul class="mb-0 small" id="opsStrategies"><li class="text-muted">Loading...</li></ul>
+              </div>
+            </div>
+            <div class="col-12 col-lg-4">
+              <div class="bg-dark rounded-3 p-3 h-100">
+                <h5 class="mb-2"><i class="fa-solid fa-fire"></i> Hot Lead Queue</h5>
+                <div id="opsHotLeads" class="small text-muted">Loading...</div>
+              </div>
+            </div>
+            <div class="col-12 col-lg-4">
+              <div class="bg-dark rounded-3 p-3 h-100">
+                <h5 class="mb-2"><i class="fa-solid fa-timeline"></i> Progress Updates</h5>
+                <div id="opsProgress" class="small text-muted">Loading...</div>
+              </div>
+            </div>
+          </div>
+        </section>
         <hr class="my-4 border-info opacity-50">
         <div class="row g-4">
           <div class="col-12 col-lg-8">
@@ -351,6 +383,38 @@
           <h2>Welcome to the Alphadome Admin Portal</h2>
           <p class="text-muted">Use the sidebar to manage tenants, upload catalogs, view logs, and monitor LLM usage. All features are optimized for desktop and mobile.</p>
         </div>
+        <section class="card p-4 mt-4 border-warning shadow-sm" style="background:rgba(24,28,47,0.97);">
+          <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+            <h3 class="mb-0"><i class="fa-solid fa-satellite-dish"></i> Operations Intelligence</h3>
+            <small class="text-muted" id="opsGeneratedAt">Waiting for live data...</small>
+          </div>
+          <div class="row g-3 mb-3" id="opsKpiRow">
+            <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Revenue (30d)</div><div class="h4 mb-0" id="opsRevenue">--</div></div></div>
+            <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Payment Attempts</div><div class="h4 mb-0" id="opsAttempts">--</div></div></div>
+            <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Conversion Rate</div><div class="h4 mb-0" id="opsConversion">--</div></div></div>
+            <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Hot Leads</div><div class="h4 mb-0" id="opsHotLeadsCount">--</div></div></div>
+          </div>
+          <div class="row g-3">
+            <div class="col-12 col-lg-4">
+              <div class="bg-dark rounded-3 p-3 h-100">
+                <h5 class="mb-2"><i class="fa-solid fa-lightbulb"></i> Strategy Recommendations</h5>
+                <ul class="mb-0 small" id="opsStrategies"><li class="text-muted">Loading...</li></ul>
+              </div>
+            </div>
+            <div class="col-12 col-lg-4">
+              <div class="bg-dark rounded-3 p-3 h-100">
+                <h5 class="mb-2"><i class="fa-solid fa-fire"></i> Hot Lead Queue</h5>
+                <div id="opsHotLeads" class="small text-muted">Loading...</div>
+              </div>
+            </div>
+            <div class="col-12 col-lg-4">
+              <div class="bg-dark rounded-3 p-3 h-100">
+                <h5 class="mb-2"><i class="fa-solid fa-timeline"></i> Progress Updates</h5>
+                <div id="opsProgress" class="small text-muted">Loading...</div>
+              </div>
+            </div>
+          </div>
+        </section>
         `;
       } else if (hash === '#logs') {
         // For logs, open in new tab for now
@@ -361,19 +425,75 @@
       }
     }
     // Fetch dashboard stats via AJAX and update cards
+    function getAdminKeyFromUrl() {
+      const url = new URL(window.location.href);
+      return url.searchParams.get('key') || '';
+    }
+    function buildAdminApiUrl(path) {
+      const key = getAdminKeyFromUrl();
+      if (!key) return path;
+      const sep = path.includes('?') ? '&' : '?';
+      return `${path}${sep}key=${encodeURIComponent(key)}`;
+    }
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+    function renderOpsOverview(ops) {
+      if (!ops || !ops.kpis) return;
+      const k = ops.kpis;
+
+      document.getElementById('opsGeneratedAt')?.replaceChildren(document.createTextNode(`Updated: ${new Date(ops.generated_at || Date.now()).toLocaleString()}`));
+      document.getElementById('opsRevenue')?.replaceChildren(document.createTextNode(`KES ${Number(k.total_revenue_kes_30d || 0).toLocaleString()}`));
+      document.getElementById('opsAttempts')?.replaceChildren(document.createTextNode(String(k.payment_attempts_30d ?? '--')));
+      document.getElementById('opsConversion')?.replaceChildren(document.createTextNode(`${k.conversion_rate_pct_30d ?? 0}%`));
+      document.getElementById('opsHotLeadsCount')?.replaceChildren(document.createTextNode(String(ops.operations?.hot_leads?.length ?? 0)));
+
+      const strategiesHtml = (ops.strategies || []).length
+        ? ops.strategies.map(s => `<li>${escapeHtml(s)}</li>`).join('')
+        : '<li class="text-muted">No strategy recommendations yet.</li>';
+      const hotLeadsHtml = (ops.operations?.hot_leads || []).length
+        ? `<div class="list-group list-group-flush">${ops.operations.hot_leads.slice(0, 6).map(lead => `
+          <div class="list-group-item bg-transparent text-light px-0 py-2 border-secondary">
+            <div class="fw-semibold">${escapeHtml(lead.wa_phone)} - KES ${Number(lead.amount || 0).toLocaleString()}</div>
+            <div class="small text-warning">${escapeHtml(lead.status || '')}</div>
+            <div class="small text-muted">${escapeHtml(lead.action_hint || '')}</div>
+          </div>`).join('')}</div>`
+        : '<div class="text-muted">No hot leads currently.</div>';
+      const progressHtml = (ops.progress || []).length
+        ? `<div class="list-group list-group-flush">${ops.progress.slice(0, 6).map(item => `
+          <div class="list-group-item bg-transparent text-light px-0 py-2 border-secondary">
+            <div class="fw-semibold">${escapeHtml(item.note || '')}</div>
+            <div class="small text-muted">${escapeHtml(item.phone || '')} - ${new Date(item.when || Date.now()).toLocaleString()}</div>
+          </div>`).join('')}</div>`
+        : '<div class="text-muted">No progress events yet.</div>';
+
+      const strategiesEl = document.getElementById('opsStrategies');
+      const leadsEl = document.getElementById('opsHotLeads');
+      const progressEl = document.getElementById('opsProgress');
+      if (strategiesEl) strategiesEl.innerHTML = strategiesHtml;
+      if (leadsEl) leadsEl.innerHTML = hotLeadsHtml;
+      if (progressEl) progressEl.innerHTML = progressHtml;
+    }
+
     async function updateDashboardCards() {
       try {
-        // Example endpoints, replace with your actual API endpoints
-        const [tenants, llm, errors, health] = await Promise.all([
-          fetch('/admin/api/tenants/active').then(r => r.json()).catch(() => ({count: '--'})),
-          fetch('/admin/api/llm/usage').then(r => r.json()).catch(() => ({count: '--'})),
-          fetch('/admin/api/errors/count').then(r => r.json()).catch(() => ({count: '--'})),
-          fetch('/admin/api/health').then(r => r.json()).catch(() => ({status: '--'})),
+        const [tenants, llm, errors, health, ops] = await Promise.all([
+          fetch(buildAdminApiUrl('/admin/api/tenants/active')).then(r => r.json()).catch(() => ({count: '--'})),
+          fetch(buildAdminApiUrl('/admin/api/llm/usage')).then(r => r.json()).catch(() => ({count: '--'})),
+          fetch(buildAdminApiUrl('/admin/api/errors/count')).then(r => r.json()).catch(() => ({count: '--'})),
+          fetch(buildAdminApiUrl('/admin/api/health')).then(r => r.json()).catch(() => ({status: '--'})),
+          fetch(buildAdminApiUrl('/admin/api/ops-overview')).then(r => r.json()).catch(() => null),
         ]);
         document.getElementById('tenantCount')?.innerText = tenants.count ?? '--';
         document.getElementById('llmUsage')?.innerText = llm.count ?? '--';
         document.getElementById('errorCount')?.innerText = errors.count ?? '--';
         document.getElementById('healthStatus')?.innerText = health.status ?? '--';
+        renderOpsOverview(ops);
       } catch (e) {
         // fallback: do nothing
       }
