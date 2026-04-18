@@ -417,7 +417,15 @@ async function renderAnalytics() {
   const { data } = await apiJson('/tenant/analytics');
   const a = data?.analytics || {};
   const days = a.last_7_days || [];
+  const cohorts = a.cohorts || [];
   const maxD = Math.max(...days.map(d => d.messages), 1);
+  const cohortRows = cohorts.map(c => `<tr>
+    <td>${esc(c.cohort_day || '')}</td>
+    <td>${c.users || 0}</td>
+    <td>${c.d7_rate || 0}%</td>
+    <td>${c.d30_rate || 0}%</td>
+  </tr>`).join('');
+
   document.getElementById('spa').innerHTML = `
     <div class="section-hdr"><i class="fa-solid fa-chart-line"></i> Analytics</div>
     <div class="stat-grid">
@@ -427,16 +435,26 @@ async function renderAnalytics() {
       <div class="stat-card"><div class="stat-label">LLM Calls</div><div class="stat-value">${a.llm_calls_total || 0}</div><div class="stat-sub">AI responses</div></div>
     </div>
     ${a.note ? `<div class="alert py-2 mb-3" style="background:var(--bg-card);border:1px solid var(--border);font-size:0.84rem;color:var(--text-muted);">${esc(a.note)}</div>` : ''}
-    <div class="panel">
-      <div class="panel-title">Messages â€” Last 7 Days</div>
-      ${days.length === 0 ? '<p style="color:var(--text-muted);font-size:0.88rem;margin:0;">No data in last 7 days.</p>' : `
-        <div class="bar-wrap">${days.map(d => `
-          <div class="bar-row">
-            <span class="bar-label">${esc(d.date?.slice(5)||'')}</span>
-            <div class="bar-track"><div class="bar-fill" style="width:${Math.round(d.messages/maxD*100)}%"></div></div>
-            <span class="bar-count">${d.messages}</span>
-          </div>`).join('')}
-        </div>`}
+    <div class="row g-3">
+      <div class="col-12 col-lg-7">
+        <div class="panel">
+          <div class="panel-title">Messages â€” Last 7 Days</div>
+          ${days.length === 0 ? '<p style="color:var(--text-muted);font-size:0.88rem;margin:0;">No data in last 7 days.</p>' : `
+            <div class="bar-wrap">${days.map(d => `
+              <div class="bar-row">
+                <span class="bar-label">${esc(d.date?.slice(5)||'')}</span>
+                <div class="bar-track"><div class="bar-fill" style="width:${Math.round(d.messages/maxD*100)}%"></div></div>
+                <span class="bar-count">${d.messages}</span>
+              </div>`).join('')}
+            </div>`}
+        </div>
+      </div>
+      <div class="col-12 col-lg-5">
+        <div class="panel">
+          <div class="panel-title">Cohort Retention</div>
+          ${cohorts.length === 0 ? '<p style="color:var(--text-muted);font-size:0.88rem;margin:0;">No cohort data yet.</p>' : `<table class="table table-sm mb-0"><thead><tr><th>Cohort</th><th>Users</th><th>D7</th><th>D30</th></tr></thead><tbody>${cohortRows}</tbody></table>`}
+        </div>
+      </div>
     </div>`;
 }
 

@@ -2027,7 +2027,7 @@ app.get("/tenant/analytics", tenantSessionAuth, async (req, res) => {
     ]);
     const allRows = allRes.data || [];
     const total = allRes.count || 0;
-    const inbound = allRows.filter((r) => r.direction === "inbound").length;
+    const inbound = allRows.filter((r) => r.direction === "incoming" || r.direction === "inbound").length;
     const dayMap = {};
     (recentRes.data || []).forEach((row) => {
       const day = row.created_at?.slice(0, 10);
@@ -2035,6 +2035,51 @@ app.get("/tenant/analytics", tenantSessionAuth, async (req, res) => {
       if (!dayMap[day]) dayMap[day] = { date: day, messages: 0 };
       dayMap[day].messages++;
     });
+
+    // Cohort retention: users grouped by first inbound message day in last 8 weeks,
+    // then compute return rates on D7 and D30.
+    const since56d = new Date(Date.now() - 56 * 24 * 60 * 60 * 1000).toISOString();
+    const { data: cohortRows } = await supabase
+      .from("conversations")
+      .select("user_id, direction, created_at")
+      .eq("brand_id", brandId)
+      .gte("created_at", since56d)
+      .order("created_at", { ascending: true });
+
+    const firstInboundByUser = {};
+    const inboundDaysByUser = {};
+    (cohortRows || []).forEach((row) => {
+      const isInbound = row.direction === "incoming" || row.direction === "inbound";
+      if (!isInbound || !row.user_id) return;
+      const day = row.created_at?.slice(0, 10);
+      if (!day) return;
+      if (!firstInboundByUser[row.user_id]) firstInboundByUser[row.user_id] = day;
+      if (!inboundDaysByUser[row.user_id]) inboundDaysByUser[row.user_id] = new Set();
+      inboundDaysByUser[row.user_id].add(day);
+    });
+
+    const cohortMap = {};
+    Object.entries(firstInboundByUser).forEach(([userId, cohortDay]) => {
+      if (!cohortMap[cohortDay]) cohortMap[cohortDay] = { cohort_day: cohortDay, users: 0, retained_d7: 0, retained_d30: 0 };
+      cohortMap[cohortDay].users += 1;
+
+      const cohortDate = new Date(`${cohortDay}T00:00:00.000Z`);
+      const d7 = new Date(cohortDate.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      const d30 = new Date(cohortDate.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      const userDays = inboundDaysByUser[userId] || new Set();
+      if (userDays.has(d7)) cohortMap[cohortDay].retained_d7 += 1;
+      if (userDays.has(d30)) cohortMap[cohortDay].retained_d30 += 1;
+    });
+
+    const cohorts = Object.values(cohortMap)
+      .sort((a, b) => a.cohort_day.localeCompare(b.cohort_day))
+      .slice(-8)
+      .map((c) => ({
+        ...c,
+        d7_rate: c.users ? Math.round((c.retained_d7 / c.users) * 100) : 0,
+        d30_rate: c.users ? Math.round((c.retained_d30 / c.users) * 100) : 0,
+      }));
+
     return res.json({
       analytics: {
         total_conversations: total,
@@ -2042,6 +2087,7 @@ app.get("/tenant/analytics", tenantSessionAuth, async (req, res) => {
         outbound_count: total - inbound,
         llm_calls_total: llmRes.count || 0,
         last_7_days: Object.values(dayMap).sort((a, b) => a.date.localeCompare(b.date)),
+        cohorts,
       },
     });
   } catch (error) {
