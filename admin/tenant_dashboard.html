@@ -414,16 +414,36 @@ async function renderRevenue() {
     </div>`;
 }
 async function renderAnalytics() {
-  const { data } = await apiJson('/tenant/analytics');
-  const a = data?.analytics || {};
+  const [ana, attr] = await Promise.all([
+    apiJson('/tenant/analytics'),
+    apiJson('/tenant/attribution'),
+  ]);
+  const a = ana?.data?.analytics || {};
+  const attr_data = attr?.data?.attribution || {};
   const days = a.last_7_days || [];
   const cohorts = a.cohorts || [];
+  const firstTouch = attr_data.first_touch || [];
+  const lastTouch = attr_data.last_touch || [];
   const maxD = Math.max(...days.map(d => d.messages), 1);
   const cohortRows = cohorts.map(c => `<tr>
     <td>${esc(c.cohort_day || '')}</td>
     <td>${c.users || 0}</td>
     <td>${c.d7_rate || 0}%</td>
     <td>${c.d30_rate || 0}%</td>
+  </tr>`).join('');
+  
+  const ftRows = firstTouch.map(ft => `<tr>
+    <td>${esc(ft.source || 'unknown')}</td>
+    <td>${((ft.revenue || 0) / Math.max(attr_data.total_revenue || 1, 1) * 100).toFixed(1)}%</td>
+    <td>${ft.count || 0}</td>
+    <td><b>${(ft.revenue || 0).toLocaleString('en', {maximumFractionDigits: 0})}</b></td>
+  </tr>`).join('');
+  
+  const ltRows = lastTouch.map(lt => `<tr>
+    <td>${esc(lt.source || 'unknown')}</td>
+    <td>${((lt.revenue || 0) / Math.max(attr_data.total_revenue || 1, 1) * 100).toFixed(1)}%</td>
+    <td>${lt.count || 0}</td>
+    <td><b>${(lt.revenue || 0).toLocaleString('en', {maximumFractionDigits: 0})}</b></td>
   </tr>`).join('');
 
   document.getElementById('spa').innerHTML = `
@@ -453,6 +473,18 @@ async function renderAnalytics() {
         <div class="panel">
           <div class="panel-title">Cohort Retention</div>
           ${cohorts.length === 0 ? '<p style="color:var(--text-muted);font-size:0.88rem;margin:0;">No cohort data yet.</p>' : `<table class="table table-sm mb-0"><thead><tr><th>Cohort</th><th>Users</th><th>D7</th><th>D30</th></tr></thead><tbody>${cohortRows}</tbody></table>`}
+        </div>
+      </div>
+      <div class="col-12 col-lg-6">
+        <div class="panel">
+          <div class="panel-title">First-Touch Attribution <span style="font-size:.75rem;color:var(--text-muted)">Revenue: KES ${(attr_data.total_revenue || 0).toLocaleString('en', {maximumFractionDigits: 0})}</span></div>
+          ${firstTouch.length === 0 ? '<p style="color:var(--text-muted);font-size:0.88rem;margin:0;">No attribution data yet.</p>' : `<table class="table table-sm mb-0"><thead><tr><th>Source</th><th>Share</th><th>Conversions</th><th>Revenue</th></tr></thead><tbody>${ftRows}</tbody></table>`}
+        </div>
+      </div>
+      <div class="col-12 col-lg-6">
+        <div class="panel">
+          <div class="panel-title">Last-Touch Attribution</div>
+          ${lastTouch.length === 0 ? '<p style="color:var(--text-muted);font-size:0.88rem;margin:0;">No attribution data yet.</p>' : `<table class="table table-sm mb-0"><thead><tr><th>Source</th><th>Share</th><th>Conversions</th><th>Revenue</th></tr></thead><tbody>${ltRows}</tbody></table>`}
         </div>
       </div>
     </div>`;

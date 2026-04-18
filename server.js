@@ -567,6 +567,26 @@ function extractSkuFromMessage(text = "") {
   return null;
 }
 
+// Helper: Determine attribution source from message context
+function determineAttributionSource(text = "", sessionContext = {}) {
+  const lowerText = text.toLowerCase();
+  
+  // Check for referral in context
+  if (sessionContext?.referral_code) return "referral";
+  
+  // Check for catalog/product keywords
+  if (/\b(buy|product|order|catalog|sku|price)\b/i.test(text)) return "catalog";
+  
+  // Check for subscription keywords
+  if (/\b(subscribe|plan|level|join|membership)\b/i.test(text)) return "subscription";
+  
+  // Check for writer's flow keywords
+  if (/(writersflow|pitch|opportunity|supply|product)/i.test(text)) return "writers_flow";
+  
+  // Default to organic
+  return "organic";
+}
+
 async function mergeUserSessionContext(phone, patch = {}) {
   const { data: existing } = await supabase
     .from("user_sessions")
@@ -2088,6 +2108,101 @@ app.get("/tenant/analytics", tenantSessionAuth, async (req, res) => {
         llm_calls_total: llmRes.count || 0,
         last_7_days: Object.values(dayMap).sort((a, b) => a.date.localeCompare(b.date)),
         cohorts,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /tenant/attribution — first/last-touch attribution analytics
+app.get("/tenant/attribution", tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantId } = req.tenantSession;
+    // Get completed/active subscriptions scoped to this tenant.
+    const { data: subs } = await supabase
+      .from("subscriptions")
+      .select("user_id, phone, amount, created_at, status")
+      .eq("tenant_id", tenantId)
+      .in("status", ["completed", "active"])
+      .limit(5000);
+    const completedSubs = subs || [];
+    if (!completedSubs.length) {
+      return res.json({ attribution: { first_touch: [], last_touch: [], total_revenue: 0, total_conversions: 0 } });
+    }
+
+    // Join to user phones for rows that only have user_id.
+    const userIds = [...new Set(completedSubs.map((s) => s.user_id).filter(Boolean))];
+    const { data: phoneUsers } = userIds.length
+      ? await supabase.from("users").select("id, phone").in("id", userIds)
+      : { data: [] };
+    const userIdToPhone = new Map((phoneUsers || []).map((u) => [u.id, u.phone]));
+
+    const phonesForSubs = [...new Set(completedSubs.map((s) => s.phone || userIdToPhone.get(s.user_id)).filter(Boolean))];
+    const { data: sessions } = phonesForSubs.length
+      ? await supabase
+          .from("user_sessions")
+          .select("phone, context")
+          .eq("tenant_id", tenantId)
+          .in("phone", phonesForSubs)
+      : { data: [] };
+
+    const phoneToAttribution = new Map();
+    (sessions || []).forEach((s) => {
+      const ctx = s.context && typeof s.context === "object" ? s.context : {};
+      phoneToAttribution.set(s.phone, {
+        first_touch_source: ctx.first_touch_source || "unknown",
+        last_touch_source: ctx.last_touch_source || ctx.first_touch_source || "unknown",
+      });
+    });
+
+    // Build aggregations
+    const firstTouchRevenue = {};
+    const lastTouchRevenue = {};
+    let totalRevenue = 0;
+    let completedCount = 0;
+
+    completedSubs.forEach((sub) => {
+      const amount = Number(sub.amount) || 0;
+      const phone = sub.phone || userIdToPhone.get(sub.user_id);
+      const attribution = phoneToAttribution.get(phone);
+
+      const ft = attribution?.first_touch_source || "unknown";
+      const lt = attribution?.last_touch_source || ft || "unknown";
+
+      if (!firstTouchRevenue[ft]) firstTouchRevenue[ft] = { revenue: 0, count: 0 };
+      if (!lastTouchRevenue[lt]) lastTouchRevenue[lt] = { revenue: 0, count: 0 };
+
+      firstTouchRevenue[ft].revenue += amount;
+      firstTouchRevenue[ft].count += 1;
+      lastTouchRevenue[lt].revenue += amount;
+      lastTouchRevenue[lt].count += 1;
+
+      totalRevenue += amount;
+      completedCount += 1;
+    });
+
+    // Format response
+    const firstTouchArray = Object.entries(firstTouchRevenue).map(([source, data]) => ({
+      source,
+      revenue: Math.round(data.revenue * 100) / 100,
+      count: data.count,
+      avg_value: Math.round((data.revenue / data.count) * 100) / 100,
+    })).sort((a, b) => b.revenue - a.revenue);
+
+    const lastTouchArray = Object.entries(lastTouchRevenue).map(([source, data]) => ({
+      source,
+      revenue: Math.round(data.revenue * 100) / 100,
+      count: data.count,
+      avg_value: Math.round((data.revenue / data.count) * 100) / 100,
+    })).sort((a, b) => b.revenue - a.revenue);
+
+    return res.json({
+      attribution: {
+        first_touch: firstTouchArray,
+        last_touch: lastTouchArray,
+        total_revenue: Math.round(totalRevenue * 100) / 100,
+        total_conversions: completedCount,
       },
     });
   } catch (error) {
@@ -3837,6 +3952,12 @@ app.post("/webhook", loadTenantContext, async (req, res) => {
       if (newUserErr) throw newUserErr;
       userData = newUser;
       log(`New user created: ${from}`, "SYSTEM");
+      
+      // Capture first-touch attribution for Writer's Flow
+      await mergeUserSessionContext(from, {
+        first_touch_source: "writers_flow",
+        first_touch_date: new Date().toISOString(),
+      });
     }
 
     // Extract context/keywords (simple example: everything after the trigger)
@@ -3903,6 +4024,14 @@ app.post("/webhook", loadTenantContext, async (req, res) => {
       if (newUserErr) throw newUserErr;
       userData = newUser;
       log(`New user created: ${from}`, "SYSTEM");
+      
+      // Capture first-touch attribution for main webhook
+      const { data: sessCtx } = await supabase.from("user_sessions").select("context").eq("phone", from).maybeSingle();
+      const ctx = sessCtx?.context && typeof sessCtx.context === "object" ? sessCtx.context : {};
+      await mergeUserSessionContext(from, {
+        first_touch_source: determineAttributionSource(text, ctx),
+        first_touch_date: new Date().toISOString(),
+      });
     }
 
     // Collect post-purchase ratings when awaiting review feedback.
@@ -4229,6 +4358,13 @@ if (phoneMatch) {
             },
           },
         ]);
+        
+        // Capture last-touch attribution on purchase
+        await mergeUserSessionContext(from, {
+          last_touch_source: "product_purchase",
+          last_touch_date: new Date().toISOString(),
+        });
+        
         log(`✅ STK_PUSH_RECORDED: CheckoutID=${checkoutId}, Customer=${from}`, "PRODUCT_EVENT");
       }
 
@@ -4297,6 +4433,11 @@ if (phoneMatch) {
             },
           },
         ]);
+
+        await mergeUserSessionContext(from, {
+          last_touch_source: "subscription_purchase",
+          last_touch_date: new Date().toISOString(),
+        });
 
         await sendMessage(
           from,
