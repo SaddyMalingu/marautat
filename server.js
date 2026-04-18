@@ -3802,7 +3802,26 @@ app.get("/admin/api/ops-overview", adminAuth, async (req, res) => {
   }
 });
 
+app.get("/admin/ops-overview", adminAuth, async (req, res) => {
+  try {
+    const payload = await buildAdminOpsOverview();
+    return res.json(payload);
+  } catch (err) {
+    log(`Admin ops overview alias error: ${err.message}`, "ERROR");
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 app.get("/admin/api/tenants/active", adminAuth, async (req, res) => {
+  try {
+    const payload = await buildAdminOpsOverview();
+    return res.json({ count: payload.kpis.active_tenants });
+  } catch (err) {
+    return res.status(500).json({ error: err.message, count: "--" });
+  }
+});
+
+app.get("/admin/tenants/active", adminAuth, async (req, res) => {
   try {
     const payload = await buildAdminOpsOverview();
     return res.json({ count: payload.kpis.active_tenants });
@@ -3820,6 +3839,15 @@ app.get("/admin/api/llm/usage", adminAuth, async (req, res) => {
   }
 });
 
+app.get("/admin/llm/usage", adminAuth, async (req, res) => {
+  try {
+    const payload = await buildAdminOpsOverview();
+    return res.json({ count: payload.kpis.llm_usage_24h });
+  } catch (err) {
+    return res.status(500).json({ error: err.message, count: "--" });
+  }
+});
+
 app.get("/admin/api/errors/count", adminAuth, async (req, res) => {
   try {
     const payload = await buildAdminOpsOverview();
@@ -3829,7 +3857,25 @@ app.get("/admin/api/errors/count", adminAuth, async (req, res) => {
   }
 });
 
+app.get("/admin/errors/count", adminAuth, async (req, res) => {
+  try {
+    const payload = await buildAdminOpsOverview();
+    return res.json({ count: payload.kpis.errors_24h });
+  } catch (err) {
+    return res.status(500).json({ error: err.message, count: "--" });
+  }
+});
+
 app.get("/admin/api/health", adminAuth, async (req, res) => {
+  try {
+    const payload = await buildAdminOpsOverview();
+    return res.json({ status: payload.kpis.health_status });
+  } catch (err) {
+    return res.status(500).json({ error: err.message, status: "unknown" });
+  }
+});
+
+app.get("/admin/health", adminAuth, async (req, res) => {
   try {
     const payload = await buildAdminOpsOverview();
     return res.json({ status: payload.kpis.health_status });

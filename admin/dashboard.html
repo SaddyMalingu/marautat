@@ -435,6 +435,18 @@
       const sep = path.includes('?') ? '&' : '?';
       return `${path}${sep}key=${encodeURIComponent(key)}`;
     }
+    async function fetchJsonWithFallback(paths, fallbackValue) {
+      for (const path of paths) {
+        try {
+          const res = await fetch(buildAdminApiUrl(path));
+          if (!res.ok) continue;
+          return await res.json();
+        } catch (e) {
+          // try next candidate
+        }
+      }
+      return fallbackValue;
+    }
     function escapeHtml(value) {
       return String(value ?? '')
         .replace(/&/g, '&amp;')
@@ -483,11 +495,11 @@
     async function updateDashboardCards() {
       try {
         const [tenants, llm, errors, health, ops] = await Promise.all([
-          fetch(buildAdminApiUrl('/admin/api/tenants/active')).then(r => r.json()).catch(() => ({count: '--'})),
-          fetch(buildAdminApiUrl('/admin/api/llm/usage')).then(r => r.json()).catch(() => ({count: '--'})),
-          fetch(buildAdminApiUrl('/admin/api/errors/count')).then(r => r.json()).catch(() => ({count: '--'})),
-          fetch(buildAdminApiUrl('/admin/api/health')).then(r => r.json()).catch(() => ({status: '--'})),
-          fetch(buildAdminApiUrl('/admin/api/ops-overview')).then(r => r.json()).catch(() => null),
+          fetchJsonWithFallback(['/admin/api/tenants/active', '/admin/tenants/active'], {count: '--'}),
+          fetchJsonWithFallback(['/admin/api/llm/usage', '/admin/llm/usage'], {count: '--'}),
+          fetchJsonWithFallback(['/admin/api/errors/count', '/admin/errors/count'], {count: '--'}),
+          fetchJsonWithFallback(['/admin/api/health', '/admin/health'], {status: '--'}),
+          fetchJsonWithFallback(['/admin/api/ops-overview', '/admin/ops-overview'], null),
         ]);
         document.getElementById('tenantCount')?.innerText = tenants.count ?? '--';
         document.getElementById('llmUsage')?.innerText = llm.count ?? '--';
