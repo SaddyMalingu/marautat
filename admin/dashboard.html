@@ -71,6 +71,7 @@
             </div>
           </div>
         </section>
+        <div id="apiStatusBanner" class="alert alert-warning d-none" role="alert"></div>
         <div class="dashboard-cards mb-4">
           <div class="dashboard-card position-relative">
             <span class="position-absolute top-0 end-0 badge bg-info text-dark m-2" title="Live count of all active tenants"><i class="fa-solid fa-circle-info"></i></span>
@@ -143,6 +144,10 @@
             <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Payment Attempts</div><div class="h4 mb-0" id="opsAttempts">--</div></div></div>
             <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Conversion Rate</div><div class="h4 mb-0" id="opsConversion">--</div></div></div>
             <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Hot Leads</div><div class="h4 mb-0" id="opsHotLeadsCount">--</div></div></div>
+            <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Failed Payments (30d)</div><div class="h4 mb-0 text-danger" id="opsFailed">--</div></div></div>
+            <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Pending Payments (30d)</div><div class="h4 mb-0 text-warning" id="opsPending">--</div></div></div>
+            <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Incoming Msgs (24h)</div><div class="h4 mb-0" id="opsIncoming24h">--</div></div></div>
+            <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Fallback Queue</div><div class="h4 mb-0" id="opsFallbackQueue">--</div></div></div>
           </div>
           <div class="row g-3">
             <div class="col-12 col-lg-4">
@@ -161,6 +166,20 @@
               <div class="bg-dark rounded-3 p-3 h-100">
                 <h5 class="mb-2"><i class="fa-solid fa-timeline"></i> Progress Updates</h5>
                 <div id="opsProgress" class="small text-muted">Loading...</div>
+              </div>
+            </div>
+          </div>
+          <div class="row g-3 mt-1">
+            <div class="col-12">
+              <div class="bg-dark rounded-3 p-3 h-100">
+                <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+                  <h5 class="mb-0"><i class="fa-solid fa-file-lines"></i> Regular Performance Reports</h5>
+                  <div class="d-flex gap-2">
+                    <button class="btn btn-sm btn-outline-info" id="dailyReportBtn">Daily Report</button>
+                    <button class="btn btn-sm btn-outline-primary" id="weeklyReportBtn">Weekly Report</button>
+                  </div>
+                </div>
+                <div id="reportSummary" class="small text-muted">Loading report...</div>
               </div>
             </div>
           </div>
@@ -435,6 +454,18 @@
       const sep = path.includes('?') ? '&' : '?';
       return `${path}${sep}key=${encodeURIComponent(key)}`;
     }
+    function showApiBanner(message, level = 'warning') {
+      const banner = document.getElementById('apiStatusBanner');
+      if (!banner) return;
+      banner.classList.remove('d-none', 'alert-warning', 'alert-danger', 'alert-success', 'alert-info');
+      banner.classList.add(`alert-${level}`);
+      banner.textContent = message;
+    }
+    function hideApiBanner() {
+      const banner = document.getElementById('apiStatusBanner');
+      if (!banner) return;
+      banner.classList.add('d-none');
+    }
     async function fetchJsonWithFallback(paths, fallbackValue) {
       for (const path of paths) {
         try {
@@ -464,6 +495,11 @@
       document.getElementById('opsAttempts')?.replaceChildren(document.createTextNode(String(k.payment_attempts_30d ?? '--')));
       document.getElementById('opsConversion')?.replaceChildren(document.createTextNode(`${k.conversion_rate_pct_30d ?? 0}%`));
       document.getElementById('opsHotLeadsCount')?.replaceChildren(document.createTextNode(String(ops.operations?.hot_leads?.length ?? 0)));
+      document.getElementById('opsFailed')?.replaceChildren(document.createTextNode(String(k.failed_payments_30d ?? '--')));
+      document.getElementById('opsPending')?.replaceChildren(document.createTextNode(String(k.pending_payments_30d ?? '--')));
+      document.getElementById('opsIncoming24h')?.replaceChildren(document.createTextNode(String(k.incoming_messages_24h ?? '--')));
+      const fallbackCount = Number(ops.operations?.fallback_pipeline?.bank_pending_verification || 0) + Number(ops.operations?.fallback_pipeline?.cod_pending_delivery || 0);
+      document.getElementById('opsFallbackQueue')?.replaceChildren(document.createTextNode(String(fallbackCount)));
 
       const strategiesHtml = (ops.strategies || []).length
         ? ops.strategies.map(s => `<li>${escapeHtml(s)}</li>`).join('')
@@ -492,6 +528,31 @@
       if (progressEl) progressEl.innerHTML = progressHtml;
     }
 
+    function renderPerformanceReport(report) {
+      const node = document.getElementById('reportSummary');
+      if (!node) return;
+      if (!report || !report.summary) {
+        node.innerHTML = '<span class="text-danger">Report unavailable.</span>';
+        return;
+      }
+      const s = report.summary;
+      const actions = (report.action_plan || []).slice(0, 4).map(item => `<li>${escapeHtml(item)}</li>`).join('');
+      node.innerHTML = `
+        <div class="mb-2">Generated: ${new Date(s.generated_at || Date.now()).toLocaleString()} | Period: <strong>${escapeHtml(s.period || 'daily')}</strong> | Band: <strong>${escapeHtml(report.performance_band || 'n/a')}</strong></div>
+        <div class="mb-2">Revenue: <strong>KES ${Number(s.revenue_kes || 0).toLocaleString()}</strong> | Conversion: <strong>${Number(s.conversion_rate_pct || 0)}%</strong> | Hot Leads: <strong>${Number(s.hot_leads_count || 0)}</strong></div>
+        <div><strong>Action Plan:</strong><ul class="mb-0">${actions || '<li>No actions generated.</li>'}</ul></div>
+      `;
+    }
+
+    async function loadPerformanceReport(period = 'daily') {
+      const report = await fetchJsonWithFallback(
+        [`/admin/api/performance-report?period=${encodeURIComponent(period)}`, `/admin/performance-report?period=${encodeURIComponent(period)}`],
+        null
+      );
+      renderPerformanceReport(report);
+      return report;
+    }
+
     async function updateDashboardCards() {
       try {
         const [tenants, llm, errors, health, ops] = await Promise.all([
@@ -506,20 +567,35 @@
         document.getElementById('errorCount')?.innerText = errors.count ?? '--';
         document.getElementById('healthStatus')?.innerText = health.status ?? '--';
         renderOpsOverview(ops);
+        if (!ops || !ops.kpis) {
+          showApiBanner('Operational data is unavailable. Confirm ADMIN key and redeploy latest backend.', 'danger');
+        } else {
+          hideApiBanner();
+        }
       } catch (e) {
-        // fallback: do nothing
+        showApiBanner('Failed to load dashboard APIs. Please check server logs and credentials.', 'danger');
       }
     }
     // Run on dashboard load
     if (window.location.hash === '' || window.location.hash === '#' || window.location.hash === '#dashboard') {
       updateDashboardCards();
+      loadPerformanceReport('daily');
     }
     // Also run when dashboard is loaded via SPA
     window.addEventListener('hashchange', () => {
       if (window.location.hash === '' || window.location.hash === '#' || window.location.hash === '#dashboard') {
         setTimeout(updateDashboardCards, 200);
+        setTimeout(() => loadPerformanceReport('daily'), 250);
       }
     });
+    document.getElementById('dailyReportBtn')?.addEventListener('click', () => loadPerformanceReport('daily'));
+    document.getElementById('weeklyReportBtn')?.addEventListener('click', () => loadPerformanceReport('weekly'));
+    setInterval(() => {
+      if (window.location.hash === '' || window.location.hash === '#' || window.location.hash === '#dashboard') {
+        updateDashboardCards();
+        loadPerformanceReport('daily');
+      }
+    }, 60000);
   </script>
 </body>
 </html>

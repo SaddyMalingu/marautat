@@ -3650,34 +3650,117 @@ function countRecentErrorsFromLog(hours = 24) {
   }
 }
 
+function isMissingColumnError(error) {
+  const msg = String(error?.message || "").toLowerCase();
+  return (
+    (msg.includes("column") && msg.includes("does not exist")) ||
+    msg.includes("schema cache")
+  );
+}
+
+function buildPerformanceReportFromOps(ops, period = "daily") {
+  const k = ops?.kpis || {};
+  const hotLeads = ops?.operations?.hot_leads || [];
+  const conversion = Number(k.conversion_rate_pct_30d || 0);
+  const attempts = Number(k.payment_attempts_30d || 0);
+  const revenue = Number(k.total_revenue_kes_30d || 0);
+
+  const summary = {
+    period,
+    generated_at: new Date().toISOString(),
+    revenue_kes: revenue,
+    attempts,
+    successful_payments: Number(k.successful_payments_30d || 0),
+    failed_payments: Number(k.failed_payments_30d || 0),
+    pending_payments: Number(k.pending_payments_30d || 0),
+    conversion_rate_pct: conversion,
+    incoming_messages_24h: Number(k.incoming_messages_24h || 0),
+    llm_usage_24h: Number(k.llm_usage_24h || 0),
+    health_status: String(k.health_status || "unknown"),
+    hot_leads_count: hotLeads.length,
+  };
+
+  const performanceBand =
+    revenue >= 50000 ? "strong" :
+    revenue >= 10000 ? "building" :
+    attempts > 0 ? "early" : "pre-revenue";
+
+  const actionPlan = [];
+  if (attempts === 0) actionPlan.push("Launch outreach campaign immediately (min 50 contacts) to generate first payment attempts.");
+  if (attempts > 0 && conversion < 20) actionPlan.push("Improve checkout completion: assign fast follow-up on all pending and failed payments.");
+  if (Number(k.failed_payments_30d || 0) > Number(k.successful_payments_30d || 0)) {
+    actionPlan.push("Prioritize BANK fallback in customer scripts until M-Pesa stability improves.");
+  }
+  if (hotLeads.length > 0) actionPlan.push(`Close ${hotLeads.length} hot leads today; target <10 minutes response per lead.`);
+  if (!actionPlan.length) actionPlan.push("Maintain current cadence and scale outreach volume while protecting response speed.");
+
+  return {
+    summary,
+    performance_band: performanceBand,
+    strategies: ops?.strategies || [],
+    action_plan: actionPlan,
+    top_hot_leads: hotLeads.slice(0, 10),
+    recent_progress: (ops?.progress || []).slice(0, 10),
+  };
+}
+
 async function buildAdminOpsOverview() {
   const now = Date.now();
   const since24h = new Date(now - 24 * 60 * 60 * 1000).toISOString();
   const since7d = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString();
   const since30d = new Date(now - 30 * 24 * 60 * 60 * 1000).toISOString();
 
-  const [tenantResp, subResp, convResp, userResp] = await Promise.all([
-    supabase.from("bot_tenants").select("id, client_name, client_phone, status, is_active, updated_at"),
-    supabase
+  let tenants = [];
+  {
+    let resp = await supabase.from("bot_tenants").select("id, client_name, client_phone, status, is_active, updated_at");
+    if (resp.error && isMissingColumnError(resp.error)) {
+      resp = await supabase.from("bot_tenants").select("id, client_name, client_phone, status, updated_at");
+    }
+    if (resp.error) throw resp.error;
+    tenants = resp.data || [];
+  }
+
+  let subscriptions = [];
+  {
+    let resp = await supabase
       .from("subscriptions")
       .select("id, user_id, phone, amount, plan_type, level, status, metadata, created_at, updated_at")
-      .gte("created_at", since30d),
-    supabase
+      .gte("created_at", since30d);
+    if (resp.error && isMissingColumnError(resp.error)) {
+      resp = await supabase
+        .from("subscriptions")
+        .select("id, user_id, phone, amount, status, metadata, created_at, updated_at")
+        .gte("created_at", since30d);
+    }
+    if (resp.error) throw resp.error;
+    subscriptions = resp.data || [];
+  }
+
+  let conversations = [];
+  {
+    let resp = await supabase
       .from("conversations")
       .select("id, user_id, direction, llm_used, created_at")
-      .gte("created_at", since7d),
-    supabase.from("users").select("id, created_at").gte("created_at", since30d),
-  ]);
+      .gte("created_at", since7d);
+    if (resp.error && isMissingColumnError(resp.error)) {
+      resp = await supabase
+        .from("conversations")
+        .select("id, user_id, direction, created_at")
+        .gte("created_at", since7d);
+    }
+    if (resp.error) throw resp.error;
+    conversations = (resp.data || []).map((row) => ({ ...row, llm_used: Boolean(row.llm_used) }));
+  }
 
-  if (tenantResp.error) throw tenantResp.error;
-  if (subResp.error) throw subResp.error;
-  if (convResp.error) throw convResp.error;
-  if (userResp.error) throw userResp.error;
-
-  const tenants = tenantResp.data || [];
-  const subscriptions = subResp.data || [];
-  const conversations = convResp.data || [];
-  const users = userResp.data || [];
+  let users = [];
+  {
+    let resp = await supabase.from("users").select("id, created_at").gte("created_at", since30d);
+    if (resp.error && isMissingColumnError(resp.error)) {
+      resp = await supabase.from("users").select("id");
+    }
+    if (resp.error) throw resp.error;
+    users = resp.data || [];
+  }
 
   const completedStatuses = new Set(["subscribed", "completed", "active"]);
 
@@ -3872,6 +3955,30 @@ app.get("/admin/api/health", adminAuth, async (req, res) => {
     return res.json({ status: payload.kpis.health_status });
   } catch (err) {
     return res.status(500).json({ error: err.message, status: "unknown" });
+  }
+});
+
+app.get("/admin/api/performance-report", adminAuth, async (req, res) => {
+  try {
+    const period = String(req.query.period || "daily").toLowerCase() === "weekly" ? "weekly" : "daily";
+    const ops = await buildAdminOpsOverview();
+    const report = buildPerformanceReportFromOps(ops, period);
+    return res.json(report);
+  } catch (err) {
+    log(`Admin performance report error: ${err.message}`, "ERROR");
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/admin/performance-report", adminAuth, async (req, res) => {
+  try {
+    const period = String(req.query.period || "daily").toLowerCase() === "weekly" ? "weekly" : "daily";
+    const ops = await buildAdminOpsOverview();
+    const report = buildPerformanceReportFromOps(ops, period);
+    return res.json(report);
+  } catch (err) {
+    log(`Admin performance report alias error: ${err.message}`, "ERROR");
+    return res.status(500).json({ error: err.message });
   }
 });
 
