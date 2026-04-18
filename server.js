@@ -3672,7 +3672,7 @@ function normalizeCampaignPhone(raw) {
   if (digits.startsWith("254") && digits.length >= 12) return digits;
   if (digits.startsWith("0") && digits.length === 10) return `254${digits.slice(1)}`;
   if (digits.length === 9) return `254${digits}`;
-  return digits.length >= 10 ? digits : null;
+  return null;
 }
 
 function sleepMs(ms) {
