@@ -4194,6 +4194,238 @@ if (text.trim().toUpperCase().startsWith("JOIN ALPHADOME") || text.trim().toUppe
   }
 }
 
+// 🔄 FALLBACK PAYMENT OPTION HANDLERS - when M-Pesa fails
+// Handle retry M-Pesa button
+if (text.toUpperCase().includes("RETRY") || text.match(/retry.*mpesa|retry_mpesa/i)) {
+  try {
+    const { data: fallbackSession } = await supabase
+      .from("user_sessions")
+      .select("context")
+      .eq("phone", from)
+      .maybeSingle();
+
+    const fbCtx = fallbackSession?.context && typeof fallbackSession.context === "object" ? fallbackSession.context : {};
+    
+    if (fbCtx.failed_checkout_id && fbCtx.failed_plan_type && fbCtx.failed_amount) {
+      await sendMessage(from, `💳 Retrying M-Pesa payment for KES ${fbCtx.failed_amount}. Please enter your M-Pesa PIN on your phone...`);
+      
+      // Trigger STK push again for the same checkout
+      try {
+        const resendStkResp = await initiateStkPush({
+          phone: from.startsWith("254") ? from : "254" + from.slice(1),
+          amount: fbCtx.failed_amount,
+          accountRef: fbCtx.failed_plan_type || "retry",
+          transactionDesc: `Retry ${fbCtx.failed_plan_type || "payment"}`,
+        });
+
+        if (resendStkResp?.CheckoutRequestID) {
+          await mergeUserSessionContext(from, {
+            failed_checkout_id: null,
+            retry_checkout_id: resendStkResp.CheckoutRequestID,
+            retry_attempted_at: new Date().toISOString(),
+          });
+        }
+      } catch (stkErr) {
+        await sendMessage(from, `⚠️ STK retry failed: ${stkErr.message}. Please try again or select another payment method.`);
+      }
+    } else {
+      await sendMessage(from, "⚠️ No failed payment found. Please start fresh with *JOIN ALPHADOME* or *BUY <SKU>*.");
+    }
+    return res.sendStatus(200);
+  } catch (err) {
+    log(`Error handling retry M-Pesa: ${err.message}`, "ERROR");
+    await sendMessage(from, "⚠️ Retry failed. Please contact support at +254117604817.");
+    return res.sendStatus(200);
+  }
+}
+
+// Handle bank transfer button
+if (text.toUpperCase().includes("BANK") || text.match(/bank_transfer|bank.*transfer/i)) {
+  try {
+    const { data: fallbackSession } = await supabase
+      .from("user_sessions")
+      .select("context")
+      .eq("phone", from)
+      .maybeSingle();
+
+    const fbCtx = fallbackSession?.context && typeof fallbackSession.context === "object" ? fallbackSession.context : {};
+    
+    if (fbCtx.failed_amount && fbCtx.failed_plan_type) {
+      await sendBankTransferDetails(from, fbCtx.failed_amount, fbCtx.failed_plan_type, fbCtx.failed_checkout_id || "");
+      
+      await mergeUserSessionContext(from, {
+        selected_fallback_method: "bank_transfer",
+        fallback_method_selected_at: new Date().toISOString(),
+      });
+
+      await sendMessage(from, `📝 Once you've made the bank transfer, reply with:\n*BANK RECEIPT <receipt_number>*\n\nExample: *BANK RECEIPT K2P4A5B6C7*`);
+    } else {
+      await sendMessage(from, "⚠️ No failed payment found. Please start fresh with *JOIN ALPHADOME* or *BUY <SKU>*.");
+    }
+    return res.sendStatus(200);
+  } catch (err) {
+    log(`Error handling bank transfer: ${err.message}`, "ERROR");
+    await sendMessage(from, "⚠️ Error retrieving bank details. Please contact support at +254117604817.");
+    return res.sendStatus(200);
+  }
+}
+
+// Handle Cash on Delivery button
+if (text.toUpperCase().includes("COD") || text.match(/cash.*delivery|cod|cash_on_delivery/i)) {
+  try {
+    const { data: fallbackSession } = await supabase
+      .from("user_sessions")
+      .select("context")
+      .eq("phone", from)
+      .maybeSingle();
+
+    const fbCtx = fallbackSession?.context && typeof fallbackSession.context === "object" ? fallbackSession.context : {};
+    
+    if (fbCtx.failed_plan_type) {
+      await sendMessage(
+        from,
+        `🚚 *Cash on Delivery Selected*\n\n` +
+        `Plan: *${fbCtx.failed_plan_type.toUpperCase()}*\n` +
+        `Amount: *KES ${fbCtx.failed_amount}*\n\n` +
+        `📍 Estimated Delivery: 2-3 business days\n` +
+        `💰 Payment due on delivery\n\n` +
+        `Please confirm your delivery address:\n*<Your address here>*`
+      );
+
+      await mergeUserSessionContext(from, {
+        selected_fallback_method: "cod",
+        fallback_method_selected_at: new Date().toISOString(),
+      });
+
+      await sendMessage(from, `Reply with your delivery address (e.g., *Nairobi CBD, Tom Mboya Street, Building X, Floor 3*)`);
+    } else {
+      await sendMessage(from, "⚠️ No failed payment found. Please start fresh with *JOIN ALPHADOME* or *BUY <SKU>*.");
+    }
+    return res.sendStatus(200);
+  } catch (err) {
+    log(`Error handling COD selection: ${err.message}`, "ERROR");
+    await sendMessage(from, "⚠️ Error processing COD request. Please contact support.");
+    return res.sendStatus(200);
+  }
+}
+
+// Handle Contact Support button
+if (text.toUpperCase().includes("SUPPORT") || text.match(/contact.*support|support_team/i)) {
+  try {
+    await sendMessage(
+      from,
+      `📞 *Alphadome Support Team*\n\n` +
+      `We're here to help!\n\n` +
+      `☎️ Call: *+254117604817* or *+254743780542*\n` +
+      `📧 Email: support@alphadome.com\n` +
+      `⏰ Hours: Mon-Fri, 8AM-6PM EAT\n\n` +
+      `💬 Or continue here - what's your issue?`
+    );
+    return res.sendStatus(200);
+  } catch (err) {
+    log(`Error handling support request: ${err.message}`, "ERROR");
+    return res.sendStatus(200);
+  }
+}
+
+// Handle bank receipt confirmation
+if (text.toUpperCase().match(/^BANK\s+RECEIPT\s+/)) {
+  try {
+    const receiptMatch = text.match(/^BANK\s+RECEIPT\s+([A-Z0-9]+)$/i);
+    if (!receiptMatch) {
+      await sendMessage(from, `Format error. Please reply: *BANK RECEIPT <receipt_number>*\nExample: *BANK RECEIPT K2P4A5B6C7*`);
+      return res.sendStatus(200);
+    }
+
+    const receiptNum = receiptMatch[1];
+    const { data: fallbackSession } = await supabase
+      .from("user_sessions")
+      .select("context")
+      .eq("phone", from)
+      .maybeSingle();
+
+    const fbCtx = fallbackSession?.context && typeof fallbackSession.context === "object" ? fallbackSession.context : {};
+
+    if (fbCtx.failed_amount && fbCtx.failed_plan_type) {
+      await confirmAlternativePayment(from, receiptNum, "bank transfer", fbCtx.failed_amount, fbCtx.failed_plan_type);
+      
+      // Mark subscription as "manual_pending_verification"
+      if (fbCtx.failed_subscription_id) {
+        await supabase.from("subscriptions").update({
+          status: "manual_pending_verification",
+          metadata: {
+            alternative_payment_method: "bank_transfer",
+            bank_receipt: receiptNum,
+            verified_at: new Date().toISOString(),
+          },
+          updated_at: new Date().toISOString()
+        }).eq("id", fbCtx.failed_subscription_id);
+      }
+
+      await mergeUserSessionContext(from, {
+        bank_receipt_verified: receiptNum,
+        bank_receipt_verified_at: new Date().toISOString(),
+      });
+
+      log(`Bank receipt confirmed: ${receiptNum} for ${from}`, "PAYMENT");
+    }
+    return res.sendStatus(200);
+  } catch (err) {
+    log(`Error confirming bank receipt: ${err.message}`, "ERROR");
+    await sendMessage(from, "⚠️ Error processing receipt. Please try again or contact support.");
+    return res.sendStatus(200);
+  }
+}
+
+// Handle delivery address confirmation for COD
+if (text.length > 10 && !text.match(/^(BUY|JOIN|BANK|RETRY|COD|SUPPORT)/i)) {
+  const { data: fallbackSession } = await supabase
+    .from("user_sessions")
+    .select("context")
+    .eq("phone", from)
+    .maybeSingle();
+
+  const fbCtx = fallbackSession?.context && typeof fallbackSession.context === "object" ? fallbackSession.context : {};
+
+  if (fbCtx.selected_fallback_method === "cod" && !fbCtx.cod_address_confirmed) {
+    try {
+      await sendMessage(
+        from,
+        `✅ *COD Order Confirmed*\n\n` +
+        `📍 Delivery Address:\n*${text}*\n\n` +
+        `Plan: *${fbCtx.failed_plan_type?.toUpperCase()}*\n` +
+        `Amount: *KES ${fbCtx.failed_amount}*\n` +
+        `Payment Due: On Delivery\n\n` +
+        `Your order has been registered. Our team will contact you within 24 hours to arrange delivery.\n\n` +
+        `Order Reference: *COD-${Date.now().toString().slice(-8)}*`
+      );
+
+      // Mark subscription as "cod_pending_delivery"
+      if (fbCtx.failed_subscription_id) {
+        await supabase.from("subscriptions").update({
+          status: "cod_pending_delivery",
+          metadata: {
+            alternative_payment_method: "cod",
+            delivery_address: text,
+            confirmed_at: new Date().toISOString(),
+          },
+          updated_at: new Date().toISOString()
+        }).eq("id", fbCtx.failed_subscription_id);
+      }
+
+      await mergeUserSessionContext(from, {
+        cod_address: text,
+        cod_address_confirmed: true,
+        cod_confirmed_at: new Date().toISOString(),
+      });
+
+      log(`COD order confirmed with address: ${text} for ${from}`, "PAYMENT");
+    } catch (err) {
+      log(`Error confirming COD address: ${err.message}`, "ERROR");
+    }
+  }
+}
+
 // ✅ PRODUCT BUY FLOW: explicit SKU and natural-language intents
 const naturalBuyIntent = detectNaturalLanguageBuyIntent(text);
 const extractedSku = extractSkuFromMessage(text);
@@ -4709,6 +4941,109 @@ app.post("/mpesa/stk-push", tenantSessionAuth, async (req, res) => {
   }
 });
 
+// Helper: Send fallback payment options when M-Pesa fails
+async function sendFallbackPaymentOptions(phone, plan_type, level, amount, checkoutId, isProduct = false) {
+  const productInfo = isProduct ? "your order" : `your *${plan_type.toUpperCase()}* Plan`;
+  
+  try {
+    // First message: Acknowledge the failure and offer alternatives
+    await sendMessage(
+      phone,
+      `⚠️ *${plan_type.toUpperCase()} Payment - Alternative Options*\n\n` +
+      `Your M-Pesa payment for ${productInfo} (KES ${amount}) wasn't completed. This happens when M-Pesa's payment gateway is temporarily unavailable.\n\n` +
+      `✅ *No worries!* We have alternative payment methods to complete your order.\n\n` +
+      `Choose one of the options below:`
+    );
+
+    // Second message: Payment options with buttons
+    const options = [
+      {
+        id: `retry_mpesa_${checkoutId}`,
+        title: "🔄 Retry M-Pesa",
+        description: "Try the payment again"
+      },
+      {
+        id: `bank_transfer_${checkoutId}`,
+        title: "🏦 Bank Transfer",
+        description: "Manual bank deposit"
+      },
+      {
+        id: `cod_${checkoutId}`,
+        title: "🚚 Cash on Delivery",
+        description: "Pay when order arrives"
+      },
+      {
+        id: `contact_support_${checkoutId}`,
+        title: "📞 Contact Support",
+        description: "Speak with our team"
+      }
+    ];
+
+    await sendInteractiveList(
+      phone,
+      `${plan_type.toUpperCase()} Payment Options`,
+      `Select preferred payment method for KES ${amount}:`,
+      options
+    );
+
+    log(`✅ FALLBACK_OPTIONS_SENT: Phone=${phone}, Amount=${amount}, CheckoutID=${checkoutId}`, "PAYMENT");
+  } catch (err) {
+    log(`Error sending fallback payment options: ${err.message}`, "ERROR");
+    // Fallback: send simple text message
+    await sendMessage(
+      phone,
+      `⚠️ *M-Pesa Payment Failed*\n\nAlternative options:\n` +
+      `1️⃣ *Retry M-Pesa* - Reply: *retry*\n` +
+      `2️⃣ *Bank Transfer* - Reply: *bankfees kes ${amount}*\n` +
+      `3️⃣ *Cash on Delivery* - Reply: *cod*\n` +
+      `4️⃣ *Contact Support* - +254117604817 or +254743780542`
+    );
+  }
+}
+
+// Helper: Send bank transfer details
+async function sendBankTransferDetails(phone, amount, plan_type, checkoutId) {
+  try {
+    await sendMessage(
+      phone,
+      `🏦 *Bank Transfer Instructions*\n\n` +
+      `Amount to send: *KES ${amount}*\n\n` +
+      `Bank: *KCB Bank Kenya*\n` +
+      `Account Name: *Alphadome Limited*\n` +
+      `Account Number: *1234567890*\n` +
+      `Branch Code: *63000*\n` +
+      `Swift Code: *KCBLKENX*\n\n` +
+      `📌 *Important:*\n` +
+      `• Use Reference: *${plan_type}-${checkoutId.slice(-8)}*\n` +
+      `• Reply with the bank deposit receipt number\n` +
+      `• Allow 2-5 minutes for confirmation\n\n` +
+      `❓ Need help? Call +254117604817`
+    );
+    log(`BANK_TRANSFER_DETAILS_SENT: Phone=${phone}, Amount=${amount}`, "PAYMENT");
+  } catch (err) {
+    log(`Error sending bank transfer details: ${err.message}`, "ERROR");
+  }
+}
+
+// Helper: Confirm alternative payment receipt
+async function confirmAlternativePayment(phone, receiptRef, paymentMethod, amount, planType) {
+  try {
+    await sendMessage(
+      phone,
+      `✅ *${paymentMethod.toUpperCase()} Payment Received*\n\n` +
+      `Receipt Reference: *${receiptRef}*\n` +
+      `Amount: *KES ${amount}*\n` +
+      `Plan: *${planType.toUpperCase()}*\n\n` +
+      `📌 We'll process this within 2-5 minutes.\n` +
+      `You'll receive a confirmation message when your account is activated.\n\n` +
+      `Thank you for choosing Alphadome! 🙌`
+    );
+    log(`ALTERNATIVE_PAYMENT_CONFIRMED: Phone=${phone}, Method=${paymentMethod}, Receipt=${receiptRef}`, "PAYMENT");
+  } catch (err) {
+    log(`Error confirming alternative payment: ${err.message}`, "ERROR");
+  }
+}
+
 app.post("/mpesa/callback", async (req, res) => {
   try {
     const body = req.body;
@@ -4768,19 +5103,37 @@ app.post("/mpesa/callback", async (req, res) => {
 
       log(`✅ Subscription ${subs.id} marked paid (receipt ${receipt})`, "SYSTEM");
     } else {
-      // Payment failed or cancelled
+      // 🔄 Payment failed, cancelled, or refunded - Offer fallback options
+      const isProduct = subs.plan_type === "product_checkout";
+      
       await supabase.from("subscriptions").update({
         status: "failed",
-        metadata: { callback: body },
+        metadata: { callback: body, fallback_offered: true, failed_at: new Date().toISOString() },
         updated_at: new Date().toISOString()
       }).eq("id", subs.id);
 
-      await sendMessage(
+      // Save failed payment context to user session for fallback recovery
+      await mergeUserSessionContext(subs.phone, {
+        failed_subscription_id: subs.id,
+        failed_checkout_id: checkoutId,
+        failed_plan_type: subs.plan_type,
+        failed_level: subs.level,
+        failed_amount: subs.amount,
+        failed_at: new Date().toISOString(),
+        failure_result_code: resultCode,
+      });
+
+      // Send fallback payment options
+      await sendFallbackPaymentOptions(
         subs.phone,
-        `⚠️ Payment not completed for your *${subs.plan_type.toUpperCase()} Plan - Level ${subs.level}*.\nPlease try again or contact +254117604817 or +254743780542 for help.`
+        subs.plan_type,
+        subs.level,
+        subs.amount,
+        checkoutId,
+        isProduct
       );
 
-      log(`Subscription ${subs.id} payment failed (ResultCode ${resultCode})`, "WARN");
+      log(`Subscription ${subs.id} payment failed (ResultCode ${resultCode}) - Fallback options sent`, "WARN");
     }
   } catch (err) {
     log(`MPESA callback processing error: ${err.message}`, "ERROR");
