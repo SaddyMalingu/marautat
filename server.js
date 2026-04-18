@@ -614,6 +614,91 @@ async function mergeUserSessionContext(phone, patch = {}) {
   return merged;
 }
 
+const paymentReminderTimers = new Map();
+
+function scheduleUniqueReminder(key, delayMs, task) {
+  const existingTimer = paymentReminderTimers.get(key);
+  if (existingTimer) clearTimeout(existingTimer);
+
+  const timer = setTimeout(async () => {
+    paymentReminderTimers.delete(key);
+    try {
+      await task();
+    } catch (err) {
+      log(`Reminder task failed [${key}]: ${err.message}`, "ERROR");
+    }
+  }, delayMs);
+
+  paymentReminderTimers.set(key, timer);
+}
+
+function schedulePendingPaymentReminder({ waPhone, checkoutId, amount, planType, level }) {
+  if (!waPhone || !checkoutId) return;
+
+  const key = `pending:${checkoutId}`;
+  scheduleUniqueReminder(key, 10 * 60 * 1000, async () => {
+    const { data: sub } = await supabase
+      .from("subscriptions")
+      .select("status")
+      .eq("mpesa_checkout_request_id", checkoutId)
+      .limit(1)
+      .maybeSingle();
+
+    if (!sub || sub.status !== "pending") return;
+
+    await sendMessage(
+      waPhone,
+      `⏰ Quick reminder: your *${String(planType || "plan").toUpperCase()}${level ? ` Level ${level}` : ""}* payment (KES ${amount}) is still pending.\n\nIf the M-Pesa prompt expired, reply *RETRY*. If it refunded, reply *BANK* or *COD* and we'll complete your order.`
+    );
+
+    await mergeUserSessionContext(waPhone, {
+      pending_payment_reminder_sent_at: new Date().toISOString(),
+      pending_payment_checkout_id: checkoutId,
+    });
+
+    log(`PENDING_PAYMENT_REMINDER_SENT checkout=${checkoutId} wa=${waPhone}`, "PAYMENT");
+  });
+}
+
+function scheduleFallbackReminder({ waPhone, subscriptionId, amount, planType, level }) {
+  if (!waPhone || !subscriptionId) return;
+
+  const key = `fallback:${subscriptionId}`;
+  scheduleUniqueReminder(key, 10 * 60 * 1000, async () => {
+    const [{ data: sub }, { data: sess }] = await Promise.all([
+      supabase
+        .from("subscriptions")
+        .select("status")
+        .eq("id", subscriptionId)
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .from("user_sessions")
+        .select("context")
+        .eq("phone", waPhone)
+        .maybeSingle(),
+    ]);
+
+    if (!sub || sub.status !== "failed") return;
+
+    const ctx = sess?.context && typeof sess.context === "object" ? sess.context : {};
+    const hasSelectedMethod = Boolean(ctx.selected_fallback_method || ctx.bank_receipt_verified || ctx.cod_address_confirmed);
+    if (hasSelectedMethod) return;
+
+    await sendMessage(
+      waPhone,
+      `⏰ Friendly follow-up: we can still complete your *${String(planType || "plan").toUpperCase()}${level ? ` Level ${level}` : ""}* payment (KES ${amount}).\n\nReply *RETRY* for a new STK push, *BANK* for transfer details, or *COD* to pay on delivery.`
+    );
+
+    await mergeUserSessionContext(waPhone, {
+      fallback_followup_sent_at: new Date().toISOString(),
+      fallback_followup_subscription_id: subscriptionId,
+    });
+
+    log(`FALLBACK_REMINDER_SENT subscription=${subscriptionId} wa=${waPhone}`, "PAYMENT");
+  });
+}
+
 // ===== TENANT CATALOG API =====
 app.get("/tenant/catalog", tenantSessionAuth, async (req, res) => {
   try {
@@ -4596,6 +4681,14 @@ if (phoneMatch) {
           last_touch_source: "product_purchase",
           last_touch_date: new Date().toISOString(),
         });
+
+        schedulePendingPaymentReminder({
+          waPhone: from,
+          checkoutId,
+          amount,
+          planType: "product_checkout",
+          level: 1,
+        });
         
         log(`✅ STK_PUSH_RECORDED: CheckoutID=${checkoutId}, Customer=${from}`, "PRODUCT_EVENT");
       }
@@ -4660,6 +4753,7 @@ if (phoneMatch) {
             mpesa_checkout_request_id: stkResp.CheckoutRequestID,
             metadata: {
               ...(stkResp || {}),
+              customer_wa: from,
               referral_code: referralCode,
               referrer_phone: referrerPhone,
             },
@@ -4669,6 +4763,14 @@ if (phoneMatch) {
         await mergeUserSessionContext(from, {
           last_touch_source: "subscription_purchase",
           last_touch_date: new Date().toISOString(),
+        });
+
+        schedulePendingPaymentReminder({
+          waPhone: from,
+          checkoutId: stkResp.CheckoutRequestID,
+          amount,
+          planType: plan,
+          level,
         });
 
         await sendMessage(
@@ -4760,9 +4862,20 @@ if (text.match(/^2547\d{7}$/) || text.toLowerCase() === "same") {
         .from("subscriptions")
         .update({
           mpesa_checkout_request_id: checkoutId,
-          metadata: stkResp,
+          metadata: {
+            ...(stkResp || {}),
+            customer_wa: from,
+          },
         })
         .eq("id", subId);
+
+      schedulePendingPaymentReminder({
+        waPhone: from,
+        checkoutId,
+        amount,
+        planType: plan_type,
+        level,
+      });
     }
 
     await sendMessage(
@@ -5105,6 +5218,7 @@ app.post("/mpesa/callback", async (req, res) => {
     } else {
       // 🔄 Payment failed, cancelled, or refunded - Offer fallback options
       const isProduct = subs.plan_type === "product_checkout";
+      const waTarget = subs?.metadata?.customer_wa || subs.phone;
       
       await supabase.from("subscriptions").update({
         status: "failed",
@@ -5113,7 +5227,7 @@ app.post("/mpesa/callback", async (req, res) => {
       }).eq("id", subs.id);
 
       // Save failed payment context to user session for fallback recovery
-      await mergeUserSessionContext(subs.phone, {
+      await mergeUserSessionContext(waTarget, {
         failed_subscription_id: subs.id,
         failed_checkout_id: checkoutId,
         failed_plan_type: subs.plan_type,
@@ -5125,13 +5239,21 @@ app.post("/mpesa/callback", async (req, res) => {
 
       // Send fallback payment options
       await sendFallbackPaymentOptions(
-        subs.phone,
+        waTarget,
         subs.plan_type,
         subs.level,
         subs.amount,
         checkoutId,
         isProduct
       );
+
+      scheduleFallbackReminder({
+        waPhone: waTarget,
+        subscriptionId: subs.id,
+        amount: subs.amount,
+        planType: subs.plan_type,
+        level: subs.level,
+      });
 
       log(`Subscription ${subs.id} payment failed (ResultCode ${resultCode}) - Fallback options sent`, "WARN");
     }
