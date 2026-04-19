@@ -3607,6 +3607,11 @@ app.get("/tenant-dashboard", tenantDashboardAuth, (req, res) => {
   return res.sendFile(dashboardPath);
 });
 
+app.get("/admin/campaign-tracker", adminAuth, (req, res) => {
+  log(`Campaign tracker loaded by ${req.ip} at ${new Date().toISOString()}`, "PAGE");
+  return res.sendFile(path.join(process.cwd(), "admin", "campaign_tracker.html"));
+});
+
 app.get("/admin/simple", adminAuth, (req, res) => {
   log(`Admin dashboard loaded by ${req.ip} at ${new Date().toISOString()}`, "PAGE");
   if (!ADMIN_DASHBOARD_ENABLED) {
@@ -4071,6 +4076,68 @@ app.get("/admin/api/performance-report", adminAuth, async (req, res) => {
     log(`Admin performance report error: ${err.message}`, "ERROR");
     return res.status(500).json({ error: err.message });
   }
+});
+
+// Campaign reply tracker — shows sent numbers vs who replied
+app.get("/admin/api/campaign/replies", adminAuth, async (req, res) => {
+  try {
+    const phones = String(req.query.phones || "").split(",").map(p => normalizeCampaignPhone(p.trim())).filter(Boolean);
+    const since = req.query.since ? new Date(req.query.since) : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    if (isNaN(since.getTime())) return res.status(400).json({ error: "Invalid since date" });
+    if (!phones.length) return res.status(400).json({ error: "phones required (comma-separated)" });
+
+    // Resolve phones → user_ids
+    const { data: userRows } = await supabase.from("users").select("id, phone, full_name").in("phone", phones);
+    const phoneToUser = new Map((userRows || []).map(u => [normalizeCampaignPhone(u.phone), u]));
+
+    // For each user, get their inbound messages after `since`
+    const userIds = (userRows || []).map(u => u.id).filter(Boolean);
+    let replyMap = new Map();
+    if (userIds.length) {
+      const { data: replies } = await supabase
+        .from("conversations")
+        .select("user_id, message, created_at")
+        .in("user_id", userIds)
+        .eq("direction", "incoming")
+        .gte("created_at", since.toISOString())
+        .order("created_at", { ascending: true });
+      for (const r of replies || []) {
+        if (!replyMap.has(r.user_id)) replyMap.set(r.user_id, { first_reply_at: r.created_at, message: r.message, count: 0 });
+        replyMap.get(r.user_id).count++;
+      }
+    }
+
+    const rows = phones.map(phone => {
+      const user = phoneToUser.get(phone);
+      const reply = user ? replyMap.get(user.id) : null;
+      return {
+        phone,
+        name: user?.full_name || "Unknown",
+        replied: !!reply,
+        reply_count: reply?.count || 0,
+        first_reply_at: reply?.first_reply_at || null,
+        first_message: reply?.message ? reply.message.substring(0, 120) : null,
+      };
+    });
+
+    const replied = rows.filter(r => r.replied).length;
+    return res.json({ ok: true, since: since.toISOString(), total: phones.length, replied, pending: phones.length - replied, rows });
+  } catch (err) {
+    log(`Campaign replies error: ${err.message}`, "ERROR");
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// DB tables health check — confirms key tables are accessible
+app.get("/admin/api/db-tables", adminAuth, async (req, res) => {
+  const tables = ["conversations", "users", "bot_tenants", "bot_products", "subscriptions", "user_sessions", "bot_orders", "whatsapp_logs"];
+  const results = [];
+  for (const t of tables) {
+    const { count, error } = await supabase.from(t).select("*", { count: "exact", head: true });
+    results.push({ table: t, ok: !error, count: count ?? 0, error: error?.message || null });
+  }
+  const allOk = results.every(r => r.ok);
+  return res.json({ ok: allOk, tables: results });
 });
 
 app.post("/admin/api/campaign/send-template", adminAuth, async (req, res) => {
