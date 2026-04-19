@@ -3758,6 +3758,46 @@ async function sendTemplateDirect(to, templateName = "afrika", languageCode = "e
   return response.data || null;
 }
 
+async function fetchTemplateDefinition(templateName = "afrika") {
+  const phoneNumberId = process.env.PHONE_NUMBER_ID;
+  const token = process.env.WHATSAPP_TOKEN;
+  if (!phoneNumberId || !token) {
+    throw new Error("Missing PHONE_NUMBER_ID or WHATSAPP_TOKEN");
+  }
+
+  const phoneRes = await axios.get(
+    `https://graph.facebook.com/v21.0/${phoneNumberId}`,
+    {
+      params: { fields: "whatsapp_business_account" },
+      headers: { Authorization: `Bearer ${token}` },
+      timeout: 20000,
+    }
+  );
+
+  const wabaId = phoneRes?.data?.whatsapp_business_account?.id;
+  if (!wabaId) {
+    throw new Error("Unable to resolve whatsapp_business_account id");
+  }
+
+  const tmplRes = await axios.get(
+    `https://graph.facebook.com/v21.0/${wabaId}/message_templates`,
+    {
+      params: {
+        name: templateName,
+        fields: "name,status,category,language,components",
+      },
+      headers: { Authorization: `Bearer ${token}` },
+      timeout: 20000,
+    }
+  );
+
+  return {
+    waba_id: wabaId,
+    data: tmplRes?.data?.data || [],
+    paging: tmplRes?.data?.paging || null,
+  };
+}
+
 function isMissingColumnError(error) {
   const msg = String(error?.message || "").toLowerCase();
   return (
@@ -4207,6 +4247,17 @@ app.post("/admin/api/campaign/send-template", adminAuth, async (req, res) => {
     });
   } catch (err) {
     log(`Admin campaign send-template error: ${err.message}`, "ERROR");
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/admin/api/campaign/template-preview", adminAuth, async (req, res) => {
+  try {
+    const name = String(req.query.name || "afrika").trim() || "afrika";
+    const result = await fetchTemplateDefinition(name);
+    return res.json({ ok: true, template: name, ...result });
+  } catch (err) {
+    log(`Admin campaign template-preview error: ${err.message}`, "ERROR");
     return res.status(500).json({ error: err.message });
   }
 });
