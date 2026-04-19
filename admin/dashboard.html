@@ -142,12 +142,14 @@
           <div class="row g-3 mb-3" id="opsKpiRow">
             <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Revenue (30d)</div><div class="h4 mb-0" id="opsRevenue">--</div></div></div>
             <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Payment Attempts</div><div class="h4 mb-0" id="opsAttempts">--</div></div></div>
+            <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Successful Payments (30d)</div><div class="h4 mb-0 text-success" id="opsSuccess">--</div></div></div>
             <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Conversion Rate</div><div class="h4 mb-0" id="opsConversion">--</div></div></div>
             <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Hot Leads</div><div class="h4 mb-0" id="opsHotLeadsCount">--</div></div></div>
             <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Failed Payments (30d)</div><div class="h4 mb-0 text-danger" id="opsFailed">--</div></div></div>
             <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Pending Payments (30d)</div><div class="h4 mb-0 text-warning" id="opsPending">--</div></div></div>
             <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Incoming Msgs (24h)</div><div class="h4 mb-0" id="opsIncoming24h">--</div></div></div>
             <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Fallback Queue</div><div class="h4 mb-0" id="opsFallbackQueue">--</div></div></div>
+            <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Wave 1 Replies</div><div class="h4 mb-0" id="opsCampaignReplies">--</div></div></div>
           </div>
           <div class="row g-3">
             <div class="col-12 col-lg-4">
@@ -166,6 +168,21 @@
               <div class="bg-dark rounded-3 p-3 h-100">
                 <h5 class="mb-2"><i class="fa-solid fa-timeline"></i> Progress Updates</h5>
                 <div id="opsProgress" class="small text-muted">Loading...</div>
+              </div>
+            </div>
+            <div class="col-12 col-lg-6">
+              <div class="bg-dark rounded-3 p-3 h-100">
+                <h5 class="mb-2"><i class="fa-solid fa-phone-volume"></i> Failed Payment Outreach</h5>
+                <div id="opsFailedOutreach" class="small text-muted">Loading...</div>
+              </div>
+            </div>
+            <div class="col-12 col-lg-6">
+              <div class="bg-dark rounded-3 p-3 h-100">
+                <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
+                  <h5 class="mb-0"><i class="fa-solid fa-bullhorn"></i> Campaign Snapshot</h5>
+                  <a href="/admin/campaign-tracker" class="btn btn-sm btn-outline-info">Open Tracker</a>
+                </div>
+                <div id="opsCampaignSnapshot" class="small text-muted">Loading...</div>
               </div>
             </div>
           </div>
@@ -410,8 +427,14 @@
           <div class="row g-3 mb-3" id="opsKpiRow">
             <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Revenue (30d)</div><div class="h4 mb-0" id="opsRevenue">--</div></div></div>
             <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Payment Attempts</div><div class="h4 mb-0" id="opsAttempts">--</div></div></div>
+            <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Successful Payments (30d)</div><div class="h4 mb-0 text-success" id="opsSuccess">--</div></div></div>
             <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Conversion Rate</div><div class="h4 mb-0" id="opsConversion">--</div></div></div>
             <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Hot Leads</div><div class="h4 mb-0" id="opsHotLeadsCount">--</div></div></div>
+            <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Failed Payments (30d)</div><div class="h4 mb-0 text-danger" id="opsFailed">--</div></div></div>
+            <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Pending Payments (30d)</div><div class="h4 mb-0 text-warning" id="opsPending">--</div></div></div>
+            <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Incoming Msgs (24h)</div><div class="h4 mb-0" id="opsIncoming24h">--</div></div></div>
+            <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Fallback Queue</div><div class="h4 mb-0" id="opsFallbackQueue">--</div></div></div>
+            <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Wave 1 Replies</div><div class="h4 mb-0" id="opsCampaignReplies">--</div></div></div>
           </div>
           <div class="row g-3">
             <div class="col-12 col-lg-4">
@@ -430,6 +453,35 @@
               <div class="bg-dark rounded-3 p-3 h-100">
                 <h5 class="mb-2"><i class="fa-solid fa-timeline"></i> Progress Updates</h5>
                 <div id="opsProgress" class="small text-muted">Loading...</div>
+              </div>
+            </div>
+            <div class="col-12 col-lg-6">
+              <div class="bg-dark rounded-3 p-3 h-100">
+                <h5 class="mb-2"><i class="fa-solid fa-phone-volume"></i> Failed Payment Outreach</h5>
+                <div id="opsFailedOutreach" class="small text-muted">Loading...</div>
+              </div>
+            </div>
+            <div class="col-12 col-lg-6">
+              <div class="bg-dark rounded-3 p-3 h-100">
+                <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
+                  <h5 class="mb-0"><i class="fa-solid fa-bullhorn"></i> Campaign Snapshot</h5>
+                  <a href="/admin/campaign-tracker" class="btn btn-sm btn-outline-info">Open Tracker</a>
+                </div>
+                <div id="opsCampaignSnapshot" class="small text-muted">Loading...</div>
+              </div>
+            </div>
+          </div>
+          <div class="row g-3 mt-1">
+            <div class="col-12">
+              <div class="bg-dark rounded-3 p-3 h-100">
+                <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+                  <h5 class="mb-0"><i class="fa-solid fa-file-lines"></i> Regular Performance Reports</h5>
+                  <div class="d-flex gap-2">
+                    <button class="btn btn-sm btn-outline-info" id="dailyReportBtn">Daily Report</button>
+                    <button class="btn btn-sm btn-outline-primary" id="weeklyReportBtn">Weekly Report</button>
+                  </div>
+                </div>
+                <div id="reportSummary" class="small text-muted">Loading report...</div>
               </div>
             </div>
           </div>
@@ -486,6 +538,13 @@
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
     }
+    const CAMPAIGN_WAVE_1 = {
+      since: '2026-04-18T16:20:00Z',
+      phones: [
+        '254788594040','254723236276','254797997676','254705005555','254799040038','254762279184','254741866137'
+      ]
+    };
+
     function renderOpsOverview(ops) {
       if (!ops || !ops.kpis) return;
       const k = ops.kpis;
@@ -493,6 +552,7 @@
       document.getElementById('opsGeneratedAt')?.replaceChildren(document.createTextNode(`Updated: ${new Date(ops.generated_at || Date.now()).toLocaleString()}`));
       document.getElementById('opsRevenue')?.replaceChildren(document.createTextNode(`KES ${Number(k.total_revenue_kes_30d || 0).toLocaleString()}`));
       document.getElementById('opsAttempts')?.replaceChildren(document.createTextNode(String(k.payment_attempts_30d ?? '--')));
+      document.getElementById('opsSuccess')?.replaceChildren(document.createTextNode(String(k.successful_payments_30d ?? '--')));
       document.getElementById('opsConversion')?.replaceChildren(document.createTextNode(`${k.conversion_rate_pct_30d ?? 0}%`));
       document.getElementById('opsHotLeadsCount')?.replaceChildren(document.createTextNode(String(ops.operations?.hot_leads?.length ?? 0)));
       document.getElementById('opsFailed')?.replaceChildren(document.createTextNode(String(k.failed_payments_30d ?? '--')));
@@ -519,13 +579,44 @@
             <div class="small text-muted">${escapeHtml(item.phone || '')} - ${new Date(item.when || Date.now()).toLocaleString()}</div>
           </div>`).join('')}</div>`
         : '<div class="text-muted">No progress events yet.</div>';
+      const failedOutreachHtml = (ops.operations?.failed_payment_outreach || []).length
+        ? `<div class="list-group list-group-flush">${ops.operations.failed_payment_outreach.slice(0, 6).map(item => `
+          <div class="list-group-item bg-transparent text-light px-0 py-2 border-secondary">
+            <div class="fw-semibold">${escapeHtml(item.customer_name || 'Unknown User')} - ${escapeHtml(item.wa_phone || item.payment_phone || 'unknown')}</div>
+            <div class="small text-danger">KES ${Number(item.amount || 0).toLocaleString()} • ${escapeHtml(item.context_label || 'Checkout flow')}</div>
+            <div class="small text-warning">${escapeHtml(item.failure_reason || item.action_hint || 'Needs personal outreach')}</div>
+            <div class="small text-muted">Last inbound: ${item.last_customer_message ? escapeHtml(item.last_customer_message) : 'none recorded'}${item.last_customer_message_at ? ` • ${new Date(item.last_customer_message_at).toLocaleString()}` : ''}</div>
+          </div>`).join('')}</div>`
+        : '<div class="text-muted">No failed payment outreach cases currently.</div>';
 
       const strategiesEl = document.getElementById('opsStrategies');
       const leadsEl = document.getElementById('opsHotLeads');
       const progressEl = document.getElementById('opsProgress');
+      const failedOutreachEl = document.getElementById('opsFailedOutreach');
       if (strategiesEl) strategiesEl.innerHTML = strategiesHtml;
       if (leadsEl) leadsEl.innerHTML = hotLeadsHtml;
       if (progressEl) progressEl.innerHTML = progressHtml;
+      if (failedOutreachEl) failedOutreachEl.innerHTML = failedOutreachHtml;
+    }
+
+    function renderCampaignSnapshot(data) {
+      const countEl = document.getElementById('opsCampaignReplies');
+      const bodyEl = document.getElementById('opsCampaignSnapshot');
+      if (countEl) countEl.replaceChildren(document.createTextNode(data && data.ok ? `${data.replied}/${data.total}` : '--'));
+      if (!bodyEl) return;
+      if (!data || !data.ok) {
+        bodyEl.innerHTML = '<div class="text-muted">Campaign snapshot unavailable.</div>';
+        return;
+      }
+      const pendingRows = (data.rows || []).filter(row => !row.replied);
+      bodyEl.innerHTML = `
+        <div class="mb-2">Reply rate: <strong>${data.total ? Math.round((data.replied / data.total) * 100) : 0}%</strong> • Pending: <strong>${data.pending}</strong></div>
+        ${pendingRows.length ? `<div class="list-group list-group-flush">${pendingRows.slice(0, 7).map(row => `
+          <div class="list-group-item bg-transparent text-light px-0 py-2 border-secondary">
+            <div class="fw-semibold">${escapeHtml(row.phone)}</div>
+            <div class="small text-muted">No reply yet since ${new Date(data.since).toLocaleString()}</div>
+          </div>`).join('')}</div>` : '<div class="text-muted">All campaign contacts have replied.</div>'}
+      `;
     }
 
     function renderPerformanceReport(report) {
@@ -553,6 +644,13 @@
       return report;
     }
 
+    async function loadCampaignSnapshot() {
+      const path = `/admin/api/campaign/replies?since=${encodeURIComponent(CAMPAIGN_WAVE_1.since)}&phones=${encodeURIComponent(CAMPAIGN_WAVE_1.phones.join(','))}`;
+      const snapshot = await fetchJsonWithFallback([path], null);
+      renderCampaignSnapshot(snapshot);
+      return snapshot;
+    }
+
     async function updateDashboardCards() {
       try {
         const [tenants, llm, errors, health, ops] = await Promise.all([
@@ -567,6 +665,7 @@
         document.getElementById('errorCount')?.innerText = errors.count ?? '--';
         document.getElementById('healthStatus')?.innerText = health.status ?? '--';
         renderOpsOverview(ops);
+        await loadCampaignSnapshot();
         if (!ops || !ops.kpis) {
           showApiBanner('Operational data is unavailable. Confirm ADMIN key and redeploy latest backend.', 'danger');
         } else {

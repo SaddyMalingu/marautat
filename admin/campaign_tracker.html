@@ -188,14 +188,17 @@ async function loadKpis() {
   try {
     const r = await fetch(`${BASE}/admin/ops-overview?key=${encodeURIComponent(key)}`);
     const data = await r.json();
+    const k = data.kpis || {};
+    const hotLeadCount = data.operations?.hot_leads?.length || 0;
     document.getElementById('kpiDisplay').innerHTML = `
       <div class="kpi-row">
-        <div class="kpi"><div class="val">${(data.revenue_kes || 0).toLocaleString()}</div><div class="lbl">Revenue (KES)</div></div>
-        <div class="kpi"><div class="val">${data.incoming_24h || 0}</div><div class="lbl">Incoming 24h</div></div>
-        <div class="kpi"><div class="val">${data.hot_leads_count || 0}</div><div class="lbl">Hot Leads</div></div>
-        <div class="kpi"><div class="val">${data.conversion_rate_pct || 0}%</div><div class="lbl">Conversion</div></div>
-        <div class="kpi"><div class="val">${data.failed_count || 0}</div><div class="lbl">Failed Pmts</div></div>
-        <div class="kpi"><div class="val">${data.pending_count || 0}</div><div class="lbl">Pending Pmts</div></div>
+        <div class="kpi"><div class="val">${(k.total_revenue_kes_30d || 0).toLocaleString()}</div><div class="lbl">Revenue (KES)</div></div>
+        <div class="kpi"><div class="val">${k.incoming_messages_24h || 0}</div><div class="lbl">Incoming 24h</div></div>
+        <div class="kpi"><div class="val">${hotLeadCount}</div><div class="lbl">Hot Leads</div></div>
+        <div class="kpi"><div class="val">${k.conversion_rate_pct_30d || 0}%</div><div class="lbl">Conversion</div></div>
+        <div class="kpi"><div class="val">${k.successful_payments_30d || 0}</div><div class="lbl">Successful Pmts</div></div>
+        <div class="kpi"><div class="val">${k.failed_payments_30d || 0}</div><div class="lbl">Failed Pmts</div></div>
+        <div class="kpi"><div class="val">${k.pending_payments_30d || 0}</div><div class="lbl">Pending Pmts</div></div>
       </div>
       <p style="color:#555;font-size:0.78rem;margin-top:8px">Snapshot at ${new Date().toLocaleString()}</p>
     `;

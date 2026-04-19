@@ -3650,6 +3650,24 @@ function getLeadActionHint(sub) {
   return "Review customer context and follow up";
 }
 
+function getSubscriptionContextLabel(sub) {
+  const sku = String(sub?.product_sku || sub?.metadata?.sku || "").trim();
+  if (sku) return `Product checkout (${sku})`;
+  const planType = String(sub?.plan_type || "").trim();
+  if (!planType) return "Checkout flow";
+  return `${planType.toUpperCase()}${sub?.level ? ` L${sub.level}` : ""}`;
+}
+
+function getFailureReason(sub) {
+  const metadata = sub?.metadata && typeof sub.metadata === "object" ? sub.metadata : {};
+  return (
+    metadata?.callback?.Body?.stkCallback?.ResultDesc ||
+    metadata?.failure_reason ||
+    metadata?.error_message ||
+    null
+  );
+}
+
 function countRecentErrorsFromLog(hours = 24) {
   try {
     const logPath = path.join(process.cwd(), "logs", "bot.log");
@@ -3682,6 +3700,35 @@ function normalizeCampaignPhone(raw) {
 
 function sleepMs(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function normalizeCampaignAudience(raw) {
+  const value = String(raw || "").trim().toLowerCase();
+  if (!value) return "existing_db_users";
+  if (["existing", "existing_db_users", "db", "db_users", "current_users"].includes(value)) return "existing_db_users";
+  if (["new", "new_clients", "new_leads", "prospects"].includes(value)) return "new_clients";
+  return "existing_db_users";
+}
+
+function collectManualCampaignPhones(input, excludePhones = [], limit = 25) {
+  const blocked = new Set((excludePhones || []).map((x) => normalizeCampaignPhone(x)).filter(Boolean));
+  const source = Array.isArray(input)
+    ? input
+    : String(input || "")
+      .split(",")
+      .map((v) => v.trim())
+      .filter(Boolean);
+
+  const seen = new Set();
+  const leads = [];
+  for (const raw of source) {
+    const phone = normalizeCampaignPhone(raw);
+    if (!phone || blocked.has(phone) || seen.has(phone)) continue;
+    seen.add(phone);
+    leads.push({ phone, name: "New Prospect" });
+    if (leads.length >= Math.max(1, Number(limit || 25))) break;
+  }
+  return leads;
 }
 
 async function fetchAdminCampaignLeads({
@@ -3728,7 +3775,7 @@ async function fetchAdminCampaignLeads({
   return leads;
 }
 
-async function sendTemplateDirect(to, templateName = "afrika", languageCode = "en") {
+async function sendTemplateDirect(to, templateName = "alphadome", languageCode = "en") {
   const phoneNumberId = process.env.PHONE_NUMBER_ID;
   const token = process.env.WHATSAPP_TOKEN;
   if (!phoneNumberId || !token) {
@@ -3758,7 +3805,7 @@ async function sendTemplateDirect(to, templateName = "afrika", languageCode = "e
   return response.data || null;
 }
 
-async function fetchTemplateDefinition(templateName = "afrika") {
+async function fetchTemplateDefinition(templateName = "alphadome") {
   const phoneNumberId = process.env.PHONE_NUMBER_ID;
   const token = process.env.WHATSAPP_TOKEN;
   if (!phoneNumberId || !token) {
@@ -3953,6 +4000,63 @@ async function buildAdminOpsOverview() {
       action_hint: getLeadActionHint(s),
     }));
 
+  const outreachCandidates = subscriptions
+    .filter((s) => ["failed", "pending", "manual_pending_verification", "cod_pending_delivery"].includes(String(s.status || "").toLowerCase()))
+    .slice()
+    .sort((a, b) => parseIsoDate(b.updated_at || b.created_at) - parseIsoDate(a.updated_at || a.created_at))
+    .slice(0, 12);
+
+  const outreachUserIds = [...new Set(outreachCandidates.map((s) => s.user_id).filter(Boolean))];
+  let outreachUsers = [];
+  let outreachConversations = [];
+  if (outreachUserIds.length) {
+    const [{ data: userRows, error: userErr }, { data: convRows, error: convErr }] = await Promise.all([
+      supabase.from("users").select("id, phone, full_name").in("id", outreachUserIds),
+      supabase
+        .from("conversations")
+        .select("user_id, direction, message, created_at")
+        .in("user_id", outreachUserIds)
+        .gte("created_at", since30d)
+        .order("created_at", { ascending: false })
+        .limit(500),
+    ]);
+    if (userErr) throw userErr;
+    if (convErr) throw convErr;
+    outreachUsers = userRows || [];
+    outreachConversations = convRows || [];
+  }
+
+  const outreachUserMap = new Map((outreachUsers || []).map((u) => [u.id, u]));
+  const lastInboundByUser = new Map();
+  const lastConversationByUser = new Map();
+  for (const row of outreachConversations || []) {
+    if (!lastConversationByUser.has(row.user_id)) lastConversationByUser.set(row.user_id, row);
+    if (row.direction === "incoming" && !lastInboundByUser.has(row.user_id)) lastInboundByUser.set(row.user_id, row);
+  }
+
+  const failedPaymentOutreach = outreachCandidates
+    .filter((s) => String(s.status || "").toLowerCase() === "failed")
+    .map((s) => {
+      const user = outreachUserMap.get(s.user_id);
+      const lastInbound = lastInboundByUser.get(s.user_id);
+      const lastConversation = lastConversationByUser.get(s.user_id);
+      return {
+        subscription_id: s.id,
+        customer_name: user?.full_name || "Unknown User",
+        wa_phone: normalizeCampaignPhone(user?.phone) || extractWaTargetFromSubscription(s),
+        payment_phone: normalizeCampaignPhone(s.phone),
+        amount: Number(s.amount) || 0,
+        status: s.status,
+        context_label: getSubscriptionContextLabel(s),
+        action_hint: getLeadActionHint(s),
+        failure_reason: getFailureReason(s),
+        updated_at: s.updated_at || s.created_at,
+        last_customer_message: lastInbound?.message || null,
+        last_customer_message_at: lastInbound?.created_at || null,
+        last_activity_at: lastConversation?.created_at || null,
+      };
+    });
+
   const recentProgress = subscriptions
     .slice()
     .sort((a, b) => parseIsoDate(b.updated_at || b.created_at) - parseIsoDate(a.updated_at || a.created_at))
@@ -4012,6 +4116,7 @@ async function buildAdminOpsOverview() {
     },
     operations: {
       hot_leads: hotLeads,
+      failed_payment_outreach: failedPaymentOutreach,
       fallback_pipeline: {
         failed: failedCount,
         bank_pending_verification: manualPending.length,
@@ -4182,7 +4287,11 @@ app.get("/admin/api/db-tables", adminAuth, async (req, res) => {
 
 app.post("/admin/api/campaign/send-template", adminAuth, async (req, res) => {
   try {
-    const template = String(req.body?.template || "afrika").trim() || "afrika";
+    const audience = normalizeCampaignAudience(req.body?.audience);
+    const defaultExistingTemplate = process.env.CAMPAIGN_TEMPLATE_EXISTING || "alphadome";
+    const defaultNewClientTemplate = process.env.CAMPAIGN_TEMPLATE_NEW_CLIENT || "alphadome_new_client";
+    const templateDefault = audience === "new_clients" ? defaultNewClientTemplate : defaultExistingTemplate;
+    const template = String(req.body?.template || templateDefault).trim() || templateDefault;
     const language = String(req.body?.language || "en").trim() || "en";
     const windowHours = parseInt(req.body?.window_hours || "8760", 10);
     const limit = parseInt(req.body?.limit || "25", 10);
@@ -4195,17 +4304,29 @@ app.post("/admin/api/campaign/send-template", adminAuth, async (req, res) => {
       ? req.body.exclude_phones
       : ["254702245555", "254117604817", "254743780542"];
 
-    const leads = await fetchAdminCampaignLeads({
-      windowHours,
-      limit,
-      excludeKeywords,
-      excludePhones,
-    });
+    let leads = [];
+    if (audience === "new_clients") {
+      leads = collectManualCampaignPhones(req.body?.phones, excludePhones, limit);
+      if (!leads.length) {
+        return res.status(400).json({
+          error: "For new_clients audience, provide phones as an array or comma-separated string.",
+          audience,
+        });
+      }
+    } else {
+      leads = await fetchAdminCampaignLeads({
+        windowHours,
+        limit,
+        excludeKeywords,
+        excludePhones,
+      });
+    }
 
     if (dryRun) {
       return res.json({
         ok: true,
         dry_run: true,
+        audience,
         template,
         language,
         count: leads.length,
@@ -4234,9 +4355,10 @@ app.post("/admin/api/campaign/send-template", adminAuth, async (req, res) => {
       }
     }
 
-    log(`Admin template campaign: template=${template} sent=${success} failed=${failed} total=${leads.length}`, "SYSTEM");
+    log(`Admin template campaign: audience=${audience} template=${template} sent=${success} failed=${failed} total=${leads.length}`, "SYSTEM");
     return res.json({
       ok: true,
+      audience,
       template,
       language,
       total: leads.length,
@@ -4253,7 +4375,7 @@ app.post("/admin/api/campaign/send-template", adminAuth, async (req, res) => {
 
 app.get("/admin/api/campaign/template-preview", adminAuth, async (req, res) => {
   try {
-    const name = String(req.query.name || "afrika").trim() || "afrika";
+    const name = String(req.query.name || "alphadome").trim() || "alphadome";
     const result = await fetchTemplateDefinition(name);
     return res.json({ ok: true, template: name, ...result });
   } catch (err) {
