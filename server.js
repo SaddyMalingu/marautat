@@ -4014,7 +4014,7 @@ async function buildAdminOpsOverview() {
       supabase.from("users").select("id, phone, full_name").in("id", outreachUserIds),
       supabase
         .from("conversations")
-        .select("user_id, direction, message, created_at")
+        .select("user_id, direction, message_text, created_at")
         .in("user_id", outreachUserIds)
         .gte("created_at", since30d)
         .order("created_at", { ascending: false })
@@ -4051,7 +4051,7 @@ async function buildAdminOpsOverview() {
         action_hint: getLeadActionHint(s),
         failure_reason: getFailureReason(s),
         updated_at: s.updated_at || s.created_at,
-        last_customer_message: lastInbound?.message || null,
+        last_customer_message: lastInbound?.message_text || null,
         last_customer_message_at: lastInbound?.created_at || null,
         last_activity_at: lastConversation?.created_at || null,
       };
