@@ -1728,6 +1728,16 @@
                   <input class="form-control" id="wfKeywords" placeholder="Keywords (comma separated)" required />
                   <input class="form-control" id="wfIndustries" placeholder="Industries (comma separated)" />
                   <div class="row g-2">
+                    <div class="col-7">
+                      <select class="form-select" id="wfTargetingMode">
+                        <option value="auto_research" selected>Auto research prioritization</option>
+                        <option value="manual">Manual industries</option>
+                      </select>
+                    </div>
+                    <div class="col-5"><input type="number" min="1" max="12" class="form-control" id="wfMaxIndustries" value="6" /></div>
+                  </div>
+                  <input class="form-control" id="wfIndustryPool" placeholder="Industry pool for auto mode (comma separated)" />
+                  <div class="row g-2">
                     <div class="col-6"><input type="number" min="5" max="500" class="form-control" id="wfTargetCount" value="50" /></div>
                     <div class="col-6"><input type="number" min="40" max="100" class="form-control" id="wfQualityThreshold" value="70" /></div>
                   </div>
@@ -1741,6 +1751,10 @@
                     <option value="partnership">Partnership</option>
                     <option value="employment">Employment / Talent</option>
                   </select>
+                  <div class="d-flex gap-2">
+                    <button class="btn btn-outline-warning" id="wfGeneratePlanBtn" type="button"><i class="fa-solid fa-lightbulb"></i> Preview Research Plan</button>
+                  </div>
+                  <div id="wfResearchPlanHint" class="small text-muted"></div>
                   <button class="btn btn-info" type="submit"><i class="fa-solid fa-floppy-disk"></i> Create Campaign</button>
                 </form>
               </div>
@@ -1782,7 +1796,53 @@
 
       document.getElementById('wfCreateForm')?.addEventListener('submit', submitWfCampaignCreate);
       document.getElementById('wfRefreshBtn')?.addEventListener('click', refreshWfPage);
+      document.getElementById('wfGeneratePlanBtn')?.addEventListener('click', generateWfResearchPlan);
       refreshWfPage();
+    }
+
+    function getWfRuntimeControls() {
+      const keywords = (document.getElementById('wfKeywords')?.value || '').split(',').map(s => s.trim()).filter(Boolean);
+      const industries = (document.getElementById('wfIndustries')?.value || '').split(',').map(s => s.trim()).filter(Boolean);
+      const industryPool = (document.getElementById('wfIndustryPool')?.value || '').split(',').map(s => s.trim()).filter(Boolean);
+      const channels = [];
+      if (document.getElementById('wfChannelEmail')?.checked) channels.push('email');
+      if (document.getElementById('wfChannelWhatsapp')?.checked) channels.push('whatsapp');
+      if (!channels.length) channels.push('email');
+
+      return {
+        targeting_mode: document.getElementById('wfTargetingMode')?.value || 'auto_research',
+        keywords,
+        industries,
+        industry_pool: industryPool,
+        max_industries: Number(document.getElementById('wfMaxIndustries')?.value || 6),
+        outreach_types: [document.getElementById('wfOutreachType')?.value || 'pitch'],
+        channels,
+        target_count: Number(document.getElementById('wfTargetCount')?.value || 50),
+        quality_threshold: Number(document.getElementById('wfQualityThreshold')?.value || 70),
+      };
+    }
+
+    async function generateWfResearchPlan() {
+      const hintEl = document.getElementById('wfResearchPlanHint');
+      if (hintEl) hintEl.textContent = 'Generating industry priorities...';
+      try {
+        const payload = getWfRuntimeControls();
+        const data = await fetchJsonOrThrow('/admin/api/wf/research-plan', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const plan = data.plan || {};
+        const top = (plan.priorities || []).slice(0, 5);
+        const lines = top.map((p) => `${p.industry} (${p.score})`).join(' | ');
+        if (hintEl) {
+          hintEl.textContent = top.length
+            ? `Recommended: ${lines}`
+            : 'No research recommendations were returned.';
+        }
+      } catch (err) {
+        if (hintEl) hintEl.textContent = err.message || 'Failed to generate plan';
+      }
     }
 
     async function refreshWfPage() {
@@ -1884,11 +1944,13 @@
 
     async function runWfCampaign(campaignId) {
       try {
+        const payload = getWfRuntimeControls();
         await fetchJsonOrThrow(`/admin/api/wf/campaigns/${encodeURIComponent(campaignId)}/run`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
         });
-        showAlert('Writer\'s Flow', 'Campaign started. Processing in background.', 'success');
+        showAlert('Writer\'s Flow', `Campaign started (${payload.targeting_mode}). Processing in background.`, 'success');
         await refreshWfPage();
       } catch (err) {
         showAlert('Writer\'s Flow', err.message || 'Failed to start campaign', 'danger');

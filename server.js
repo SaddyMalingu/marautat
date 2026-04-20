@@ -7358,6 +7358,176 @@ Alphadome helps brands scale through automation, AI storytelling, and digital cr
 // ===== START SERVER =====
 // ===== WRITER'S FLOW ADMIN API =====
 
+const WF_INDUSTRY_CATALOG = [
+  { name: "finance", seeds: ["lending", "credit", "payments", "risk", "collections"], commerce_fit: 0.65, b2b_fit: 0.95 },
+  { name: "fintech", seeds: ["mobile money", "wallet", "merchant payments", "onboarding"], commerce_fit: 0.72, b2b_fit: 0.92 },
+  { name: "insurance", seeds: ["policy sales", "claims", "broker", "customer retention"], commerce_fit: 0.58, b2b_fit: 0.82 },
+  { name: "healthcare", seeds: ["appointments", "patient follow-up", "clinic operations", "billing"], commerce_fit: 0.74, b2b_fit: 0.66 },
+  { name: "education", seeds: ["admissions", "enrollment", "student follow-up", "fee reminders"], commerce_fit: 0.76, b2b_fit: 0.62 },
+  { name: "real_estate", seeds: ["property leads", "site visits", "brokers", "mortgage referrals"], commerce_fit: 0.68, b2b_fit: 0.86 },
+  { name: "logistics", seeds: ["fleet operations", "delivery updates", "shipment tracking", "B2B fulfillment"], commerce_fit: 0.79, b2b_fit: 0.84 },
+  { name: "retail", seeds: ["catalog sales", "promotions", "reorders", "cart recovery"], commerce_fit: 0.96, b2b_fit: 0.52 },
+  { name: "hospitality", seeds: ["reservations", "room bookings", "guest upsell", "event inquiries"], commerce_fit: 0.88, b2b_fit: 0.56 },
+  { name: "manufacturing", seeds: ["distributor outreach", "procurement", "after-sales", "B2B orders"], commerce_fit: 0.54, b2b_fit: 0.91 },
+  { name: "agriculture", seeds: ["input suppliers", "produce buyers", "cooperative outreach", "field logistics"], commerce_fit: 0.69, b2b_fit: 0.78 },
+  { name: "professional_services", seeds: ["consulting leads", "proposal follow-up", "retainer upsell", "client success"], commerce_fit: 0.63, b2b_fit: 0.88 },
+];
+
+function wfNormalizeList(value) {
+  if (Array.isArray(value)) return value.map((v) => String(v || "").trim()).filter(Boolean);
+  if (value == null) return [];
+  return String(value)
+    .split(",")
+    .map((v) => v.trim())
+    .filter(Boolean);
+}
+
+function wfCanonicalIndustryName(raw) {
+  const value = String(raw || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  if (!value) return "";
+  if (value === "banking") return "finance";
+  if (value === "financial_services") return "finance";
+  return value;
+}
+
+function wfFindIndustryProfile(raw) {
+  const canonical = wfCanonicalIndustryName(raw);
+  return WF_INDUSTRY_CATALOG.find((x) => x.name === canonical) || {
+    name: canonical || String(raw || "").toLowerCase(),
+    seeds: [],
+    commerce_fit: 0.6,
+    b2b_fit: 0.7,
+  };
+}
+
+async function buildWfIndustryResearchPlan({ keywords = [], industryPool = [], maxIndustries = 6 } = {}) {
+  const ops = await buildAdminOpsOverview();
+  const k = ops?.kpis || {};
+
+  const pool = wfNormalizeList(industryPool);
+  const workingPool = pool.length
+    ? pool.map(wfCanonicalIndustryName).filter(Boolean)
+    : WF_INDUSTRY_CATALOG.map((x) => x.name);
+
+  const keywordTokens = wfNormalizeList(keywords).map((k) => k.toLowerCase());
+
+  // Pull historical Writer's Flow outcomes and relevance by industry.
+  const histResp = await supabase
+    .from("wf_leads")
+    .select("industry, status, relevance_score")
+    .order("discovered_at", { ascending: false })
+    .limit(2500);
+
+  const histRows = histResp?.data || [];
+  const byIndustry = new Map();
+  for (const row of histRows) {
+    const key = wfCanonicalIndustryName(row.industry || "other");
+    const item = byIndustry.get(key) || { total: 0, contacted: 0, qualified: 0, relevance_sum: 0 };
+    item.total += 1;
+    if (String(row.status || "").toLowerCase() === "contacted") item.contacted += 1;
+    if (String(row.status || "").toLowerCase() === "qualified") item.qualified += 1;
+    item.relevance_sum += Number(row.relevance_score || 0);
+    byIndustry.set(key, item);
+  }
+
+  const attempts = Number(k.payment_attempts_30d || 0);
+  const failed = Number(k.failed_payments_30d || 0);
+  const success = Number(k.successful_payments_30d || 0);
+  const incoming24h = Number(k.incoming_messages_24h || 0);
+  const conversion = Number(k.conversion_rate_pct_30d || 0);
+
+  const priorities = workingPool.map((industryName) => {
+    const profile = wfFindIndustryProfile(industryName);
+    const hist = byIndustry.get(profile.name) || { total: 0, contacted: 0, qualified: 0, relevance_sum: 0 };
+
+    const reasons = [];
+    let score = 50;
+
+    // Historical signal.
+    const contactedRate = hist.total ? hist.contacted / hist.total : 0;
+    const qualifiedRate = hist.total ? hist.qualified / hist.total : 0;
+    const avgRelevance = hist.total ? hist.relevance_sum / hist.total : 0;
+    score += Math.round(contactedRate * 22);
+    score += Math.round(qualifiedRate * 12);
+    score += Math.round(avgRelevance * 0.12);
+    if (hist.total > 0) {
+      reasons.push(`historical wf signal: ${hist.total} leads, ${Math.round(contactedRate * 100)}% contacted`);
+    }
+
+    // Ops-driven signal.
+    if (incoming24h < 8) {
+      score += Math.round(profile.commerce_fit * 18);
+      reasons.push("low traffic: prioritizing high WhatsApp-commerce fit");
+    }
+    if (failed > success) {
+      score += Math.round(profile.b2b_fit * 16);
+      reasons.push("payment reliability pressure: prioritizing stronger B2B value cases");
+    }
+    if (attempts === 0 || conversion < 2) {
+      score += Math.round(profile.commerce_fit * 10);
+      reasons.push("low conversion: prioritizing sectors with short-cycle buying behavior");
+    }
+
+    // Keyword affinity.
+    const keywordHit = keywordTokens.some((kw) => profile.name.includes(kw) || kw.includes(profile.name));
+    if (keywordHit) {
+      score += 12;
+      reasons.push("keyword-industry direct match");
+    }
+
+    return {
+      industry: profile.name,
+      score,
+      seeds: profile.seeds,
+      reasons: reasons.slice(0, 3),
+      historical: {
+        total: hist.total,
+        contacted_rate_pct: Math.round(contactedRate * 100),
+        avg_relevance: Math.round(avgRelevance),
+      },
+    };
+  })
+    .sort((a, b) => b.score - a.score);
+
+  const top = priorities.slice(0, Math.max(1, Math.min(parseInt(maxIndustries, 10) || 6, 12)));
+  const recommendedIndustries = top.map((x) => x.industry);
+  const keywordSuggestions = [...new Set([
+    ...keywordTokens,
+    ...top.flatMap((x) => x.seeds || []),
+  ])].slice(0, 18);
+
+  return {
+    generated_at: new Date().toISOString(),
+    ops_snapshot: {
+      incoming_messages_24h: incoming24h,
+      payment_attempts_30d: attempts,
+      successful_payments_30d: success,
+      failed_payments_30d: failed,
+      conversion_rate_pct_30d: conversion,
+    },
+    priorities,
+    recommended_industries: recommendedIndustries,
+    keyword_suggestions: keywordSuggestions,
+  };
+}
+
+app.post("/admin/api/wf/research-plan", adminAuth, async (req, res) => {
+  try {
+    const body = req.body || {};
+    const plan = await buildWfIndustryResearchPlan({
+      keywords: wfNormalizeList(body.keywords),
+      industryPool: wfNormalizeList(body.industry_pool),
+      maxIndustries: parseInt(body.max_industries, 10) || 6,
+    });
+    res.json({ ok: true, plan });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 // List campaigns
 app.get("/admin/api/wf/campaigns", adminAuth, async (req, res) => {
   try {
@@ -7437,6 +7607,40 @@ app.post("/admin/api/wf/campaigns/:id/run", adminAuth, async (req, res) => {
     if (error || !campaign) return res.status(404).json({ ok: false, error: "Campaign not found" });
     if (campaign.status === "running") return res.status(409).json({ ok: false, error: "Campaign is already running" });
 
+    const runtime = req.body || {};
+    const targetingMode = String(runtime.targeting_mode || "manual").toLowerCase();
+    const resolvedKeywords = wfNormalizeList(runtime.keywords).length
+      ? wfNormalizeList(runtime.keywords)
+      : wfNormalizeList(campaign.keywords || []);
+
+    let resolvedIndustries = wfNormalizeList(runtime.industries).length
+      ? wfNormalizeList(runtime.industries)
+      : wfNormalizeList(campaign.industries || []);
+
+    let industryPlan = null;
+    if (targetingMode === "auto_research") {
+      const plan = await buildWfIndustryResearchPlan({
+        keywords: resolvedKeywords,
+        industryPool: wfNormalizeList(runtime.industry_pool).length
+          ? wfNormalizeList(runtime.industry_pool)
+          : resolvedIndustries,
+        maxIndustries: parseInt(runtime.max_industries, 10) || 6,
+      });
+      resolvedIndustries = plan.recommended_industries || resolvedIndustries;
+      industryPlan = plan.priorities || [];
+    }
+
+    const resolvedOutreachTypes = wfNormalizeList(runtime.outreach_types).length
+      ? wfNormalizeList(runtime.outreach_types)
+      : (Array.isArray(campaign.outreach_types) ? campaign.outreach_types : ["pitch"]);
+
+    const resolvedChannels = wfNormalizeList(runtime.channels).length
+      ? wfNormalizeList(runtime.channels)
+      : (Array.isArray(campaign.channels) ? campaign.channels : ["email"]);
+
+    const resolvedTargetCount = parseInt(runtime.target_count, 10) || parseInt(campaign.target_count, 10) || 20;
+    const resolvedQualityThreshold = parseInt(runtime.quality_threshold, 10) || parseInt(campaign.quality_threshold, 10) || 70;
+
     // Get SMTP config from env (or inject smtpConfig from request for tenant-specific)
     const smtpConfig = {
       smtp_host: process.env.SMTP_HOST,
@@ -7447,18 +7651,26 @@ app.post("/admin/api/wf/campaigns/:id/run", adminAuth, async (req, res) => {
     };
 
     // Respond immediately, run pipeline in background
-    res.json({ ok: true, message: "Campaign started", campaign_id: id });
+    res.json({
+      ok: true,
+      message: "Campaign started",
+      campaign_id: id,
+      targeting_mode: targetingMode,
+      resolved_industries: resolvedIndustries,
+      resolved_keywords: resolvedKeywords,
+    });
 
     import("./writers_flow/orchestrator.js").then(mod => {
       const runWritersFlow = mod.default;
       runWritersFlow({
         campaignId: id,
-        keywords: campaign.keywords || [],
-        industries: campaign.industries || [],
-        outreachTypes: campaign.outreach_types || ["pitch"],
-        channels: campaign.channels || ["email"],
-        targetCount: campaign.target_count || 20,
-        qualityThreshold: campaign.quality_threshold || 70,
+        keywords: resolvedKeywords,
+        industries: resolvedIndustries,
+        industryPlan,
+        outreachTypes: resolvedOutreachTypes,
+        channels: resolvedChannels,
+        targetCount: resolvedTargetCount,
+        qualityThreshold: resolvedQualityThreshold,
         smtpConfig,
         supabase,
         testMode: req.query.test === "1",

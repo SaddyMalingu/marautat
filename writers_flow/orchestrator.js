@@ -79,6 +79,7 @@ export default async function runWritersFlow({
   campaignId,
   keywords = [],
   industries = [],
+  industryPlan = [],
   outreachTypes = ['pitch'],
   channels = ['email'],
   targetCount = 20,
@@ -96,8 +97,20 @@ export default async function runWritersFlow({
   }
 
   try {
-    console.log(`[WF] Scraping: ${keywords.join(', ')} | target=${targetCount}`);
-    const rawLeads = await scrapeLeads({ keywords, industries, outreachTypes, targetCount, testMode });
+    const topIndustryPreview = (industryPlan || []).slice(0, 3).map((p) => p.industry || p.name).filter(Boolean).join(', ');
+    console.log(`[WF] Scraping: keywords=${keywords.join(', ')} | industries=${industries.join(', ')} | target=${targetCount}`);
+    if (topIndustryPreview) {
+      console.log(`[WF] Research-prioritized industries: ${topIndustryPreview}`);
+    }
+
+    const rawLeads = await scrapeLeads({
+      keywords,
+      industries,
+      industryPlan,
+      outreachTypes,
+      targetCount,
+      testMode,
+    });
     stats.leads_found = rawLeads.length;
     console.log(`[WF] Found ${rawLeads.length} raw leads`);
 

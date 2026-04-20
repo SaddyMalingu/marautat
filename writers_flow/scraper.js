@@ -115,7 +115,7 @@ async function tryFetchContactPage(baseUrl) {
 // Build search queries from keywords + industries
 // ──────────────────────────────────────────────
 
-function buildQueries(keywords = [], industries = [], outreachTypes = ['pitch']) {
+function buildQueries(keywords = [], industries = [], outreachTypes = ['pitch'], industryPlan = []) {
   const queries = [];
   const typeHints = {
     pitch: 'contact email site',
@@ -124,15 +124,38 @@ function buildQueries(keywords = [], industries = [], outreachTypes = ['pitch'])
     employment: 'hiring careers contact email',
   };
   const baseKeywords = keywords.slice(0, 3).join(' ');
-  for (const industry of (industries.length ? industries : [''])) {
+
+  const plannedIndustries = Array.isArray(industryPlan) && industryPlan.length
+    ? industryPlan
+        .map((p) => ({ industry: p.industry || '', priority: Number(p.score || p.priority || 0) }))
+        .filter((p) => p.industry)
+        .sort((a, b) => b.priority - a.priority)
+    : (industries.length ? industries : ['']).map((industry, idx) => ({ industry, priority: 100 - idx }));
+
+  for (const planned of plannedIndustries) {
+    const industry = planned.industry;
     for (const type of outreachTypes) {
       const hint = typeHints[type] || 'contact email';
       const parts = [baseKeywords, industry, hint].filter(Boolean);
-      queries.push(parts.join(' '));
+      queries.push({
+        query: parts.join(' '),
+        industry,
+        outreachType: type,
+        priority: planned.priority,
+      });
     }
   }
-  // Deduplicate
-  return [...new Set(queries)].slice(0, 6);
+
+  // Deduplicate query strings while preserving metadata
+  const seen = new Set();
+  const deduped = [];
+  for (const item of queries) {
+    if (!item.query || seen.has(item.query)) continue;
+    seen.add(item.query);
+    deduped.push(item);
+  }
+
+  return deduped.slice(0, 12);
 }
 
 // ──────────────────────────────────────────────
@@ -151,6 +174,7 @@ function buildQueries(keywords = [], industries = [], outreachTypes = ['pitch'])
 export default async function scrapeLeads({
   keywords = [],
   industries = [],
+  industryPlan = [],
   outreachTypes = ['pitch'],
   targetCount = 20,
   testMode = false,
@@ -170,17 +194,17 @@ export default async function scrapeLeads({
     ];
   }
 
-  const queries = buildQueries(keywords, industries, outreachTypes);
+  const queries = buildQueries(keywords, industries, outreachTypes, industryPlan);
   const seen = new Set();
   const leads = [];
 
-  for (const query of queries) {
+  for (const querySpec of queries) {
     if (leads.length >= targetCount) break;
     let results = [];
     try {
-      results = await runSearch(query, 10);
+      results = await runSearch(querySpec.query, 10);
     } catch (err) {
-      console.error(`[Scraper] Search failed for "${query}": ${err.message}`);
+      console.error(`[Scraper] Search failed for "${querySpec.query}": ${err.message}`);
       continue;
     }
 
@@ -210,9 +234,9 @@ export default async function scrapeLeads({
         snippet: r.snippet,
         email,
         phone,
-        sourceQuery: query,
-        industry: industries[0] || null,
-        outreachType: outreachTypes[0] || 'pitch',
+        sourceQuery: querySpec.query,
+        industry: querySpec.industry || industries[0] || null,
+        outreachType: querySpec.outreachType || outreachTypes[0] || 'pitch',
       });
     }
   }
