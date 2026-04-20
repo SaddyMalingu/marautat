@@ -142,6 +142,7 @@ const TENANT_SESSION_TTL_MS = parseInt(process.env.TENANT_SESSION_TTL_MS || "288
 const ADMIN_DASHBOARD_ENABLED = process.env.ADMIN_DASHBOARD_ENABLED !== "false";
 const ADMIN_UPLOAD_BUCKET = process.env.ADMIN_UPLOAD_BUCKET || "product-images";
 const ADMIN_UPLOAD_MAX_MB = parseInt(process.env.ADMIN_UPLOAD_MAX_MB || "10", 10);
+const CAMPAIGN_HISTORY_FILE = path.join(process.cwd(), "logs", "admin_campaign_runs.jsonl");
 const ADMIN_NUMBERS = process.env.ADMIN_NUMBERS
   ? process.env.ADMIN_NUMBERS.split(",").map((n) => n.trim())
   : [];
@@ -161,6 +162,79 @@ function adminAuth(req, res, next) {
     return res.status(401).json({ error: "Unauthorized" });
   }
   next();
+}
+
+async function appendCampaignHistory(record) {
+  try {
+    await fs.promises.mkdir(path.dirname(CAMPAIGN_HISTORY_FILE), { recursive: true });
+    await fs.promises.appendFile(CAMPAIGN_HISTORY_FILE, `${JSON.stringify(record)}\n`, "utf8");
+  } catch (err) {
+    log(`Campaign history append warning: ${err.message}`, "WARN");
+  }
+}
+
+async function readCampaignHistory(limit = 10) {
+  try {
+    const content = await fs.promises.readFile(CAMPAIGN_HISTORY_FILE, "utf8");
+    const parsed = content
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        try {
+          return JSON.parse(line);
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean)
+      .sort((a, b) => new Date(b.ran_at || 0).getTime() - new Date(a.ran_at || 0).getTime());
+    return parsed.slice(0, Math.max(1, limit));
+  } catch (err) {
+    if (err.code === "ENOENT") return [];
+    log(`Campaign history read warning: ${err.message}`, "WARN");
+    return [];
+  }
+}
+
+function buildSimplePdfBuffer(lines, title = "Alphadome Report") {
+  const sanitize = (value) => String(value ?? "")
+    .replace(/\\/g, "\\\\")
+    .replace(/\(/g, "\\(")
+    .replace(/\)/g, "\\)")
+    .replace(/\r?\n/g, " ");
+
+  const pdfLines = [title, "", ...lines].slice(0, 100);
+  const textCommands = ["BT", "/F1 11 Tf", "14 TL", "50 790 Td"];
+  pdfLines.forEach((line, index) => {
+    if (index > 0) textCommands.push("T*");
+    textCommands.push(`(${sanitize(line)}) Tj`);
+  });
+  textCommands.push("ET");
+
+  const stream = textCommands.join("\n");
+  const objects = [
+    "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n",
+    "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n",
+    "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>\nendobj\n",
+    "4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n",
+    `5 0 obj\n<< /Length ${Buffer.byteLength(stream, "utf8")} >>\nstream\n${stream}\nendstream\nendobj\n`,
+  ];
+
+  let pdf = "%PDF-1.4\n";
+  const offsets = [0];
+  for (const obj of objects) {
+    offsets.push(Buffer.byteLength(pdf, "utf8"));
+    pdf += obj;
+  }
+  const xrefStart = Buffer.byteLength(pdf, "utf8");
+  pdf += `xref\n0 ${objects.length + 1}\n`;
+  pdf += "0000000000 65535 f \n";
+  for (let i = 1; i <= objects.length; i += 1) {
+    pdf += `${String(offsets[i]).padStart(10, "0")} 00000 n \n`;
+  }
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF`;
+  return Buffer.from(pdf, "utf8");
 }
 
 const tenantSessions = new Map();
@@ -4203,6 +4277,65 @@ app.get("/admin/api/tenants/list", adminAuth, async (req, res) => {
   }
 });
 
+app.patch("/admin/api/tenants/:tenantId", adminAuth, async (req, res) => {
+  try {
+    const tenantId = String(req.params.tenantId || "").trim();
+    const updates = { updated_at: new Date().toISOString() };
+    const body = req.body || {};
+
+    if (!tenantId) {
+      return res.status(400).json({ error: "tenantId is required" });
+    }
+
+    if (typeof body.client_name === "string" && body.client_name.trim()) {
+      updates.client_name = body.client_name.trim();
+    }
+    if (typeof body.client_phone === "string" && body.client_phone.trim()) {
+      updates.client_phone = body.client_phone.trim();
+    }
+    if (typeof body.status === "string" && body.status.trim()) {
+      updates.status = body.status.trim().toLowerCase();
+      updates.is_active = updates.status !== "inactive";
+    }
+    if (typeof body.is_active === "boolean") {
+      updates.is_active = body.is_active;
+      if (!updates.status) {
+        updates.status = body.is_active ? "active" : "inactive";
+      }
+    }
+
+    if (Object.keys(updates).length === 1) {
+      return res.status(400).json({ error: "No editable fields provided" });
+    }
+
+    let updateResp = await supabase
+      .from("bot_tenants")
+      .update(updates)
+      .eq("id", tenantId)
+      .select("id, client_name, client_phone, status, is_active, updated_at")
+      .maybeSingle();
+
+    if (updateResp.error && isMissingColumnError(updateResp.error) && Object.prototype.hasOwnProperty.call(updates, "is_active")) {
+      const fallbackUpdates = { ...updates };
+      delete fallbackUpdates.is_active;
+      updateResp = await supabase
+        .from("bot_tenants")
+        .update(fallbackUpdates)
+        .eq("id", tenantId)
+        .select("id, client_name, client_phone, status, updated_at")
+        .maybeSingle();
+    }
+
+    if (updateResp.error) throw updateResp.error;
+    if (!updateResp.data) return res.status(404).json({ error: "Tenant not found" });
+
+    return res.json({ ok: true, tenant: updateResp.data });
+  } catch (err) {
+    log(`Admin tenant edit error: ${err.message}`, "ERROR");
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 app.get("/admin/api/llm/usage", adminAuth, async (req, res) => {
   try {
     const payload = await buildAdminOpsOverview();
@@ -4263,6 +4396,7 @@ app.get("/admin/api/performance-report", adminAuth, async (req, res) => {
 app.get("/admin/api/performance-report/export", adminAuth, async (req, res) => {
   try {
     const period = String(req.query.period || "daily").toLowerCase() === "weekly" ? "weekly" : "daily";
+    const format = String(req.query.format || "csv").toLowerCase() === "pdf" ? "pdf" : "csv";
     const ops = await buildAdminOpsOverview();
     const report = buildPerformanceReportFromOps(ops, period);
     const summary = report.summary || {};
@@ -4291,6 +4425,15 @@ app.get("/admin/api/performance-report/export", adminAuth, async (req, res) => {
       rows.push(["action_plan", String(index + 1), item]);
     });
 
+    if (format === "pdf") {
+      const lines = rows.slice(1).map((row) => `${row[0]} | ${row[1]} | ${row[2]}`);
+      const pdfBuffer = buildSimplePdfBuffer(lines, `Alphadome Performance Report (${period})`);
+      const fileName = `alphadome-performance-${period}-${new Date().toISOString().slice(0, 10)}.pdf`;
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename=${fileName}`);
+      return res.send(pdfBuffer);
+    }
+
     const csv = rows.map((row) => row.map(csvEscape).join(",")).join("\n");
     const fileName = `alphadome-performance-${period}-${new Date().toISOString().slice(0, 10)}.csv`;
 
@@ -4300,6 +4443,17 @@ app.get("/admin/api/performance-report/export", adminAuth, async (req, res) => {
   } catch (err) {
     log(`Admin performance report export error: ${err.message}`, "ERROR");
     return res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/admin/api/campaign/history", adminAuth, async (req, res) => {
+  try {
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit || "10", 10)));
+    const history = await readCampaignHistory(limit);
+    return res.json({ ok: true, last_run: history[0] || null, history });
+  } catch (err) {
+    log(`Admin campaign history error: ${err.message}`, "ERROR");
+    return res.status(500).json({ error: err.message, history: [], last_run: null });
   }
 });
 
@@ -4377,6 +4531,8 @@ app.post("/admin/api/campaign/send-template", adminAuth, async (req, res) => {
     const limit = parseInt(req.body?.limit || "25", 10);
     const delayMs = Math.max(0, parseInt(req.body?.delay_ms || "1200", 10));
     const dryRun = Boolean(req.body?.dry_run);
+    const runId = `run_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const ranAt = new Date().toISOString();
     const excludeKeywords = Array.isArray(req.body?.exclude_keywords)
       ? req.body.exclude_keywords
       : ["gideon", "kassangas"];
@@ -4403,8 +4559,24 @@ app.post("/admin/api/campaign/send-template", adminAuth, async (req, res) => {
     }
 
     if (dryRun) {
+      const dryRunResult = {
+        run_id: runId,
+        ran_at: ranAt,
+        status: "dry_run",
+        dry_run: true,
+        audience,
+        template,
+        language,
+        total: leads.length,
+        success: 0,
+        failed: 0,
+        errors: [],
+        sample: leads.slice(0, 10),
+      };
+      await appendCampaignHistory(dryRunResult);
       return res.json({
         ok: true,
+        run_id: runId,
         dry_run: true,
         audience,
         template,
@@ -4436,8 +4608,25 @@ app.post("/admin/api/campaign/send-template", adminAuth, async (req, res) => {
     }
 
     log(`Admin template campaign: audience=${audience} template=${template} sent=${success} failed=${failed} total=${leads.length}`, "SYSTEM");
+    const status = failed === 0 ? "completed" : success > 0 ? "partial" : "failed";
+    await appendCampaignHistory({
+      run_id: runId,
+      ran_at: ranAt,
+      status,
+      dry_run: false,
+      audience,
+      template,
+      language,
+      total: leads.length,
+      success,
+      failed,
+      errors: errors.slice(0, 20),
+      sample: leads.slice(0, 10),
+    });
     return res.json({
       ok: true,
+      run_id: runId,
+      status,
       audience,
       template,
       language,
@@ -4448,6 +4637,20 @@ app.post("/admin/api/campaign/send-template", adminAuth, async (req, res) => {
       sample: leads.slice(0, 10),
     });
   } catch (err) {
+    await appendCampaignHistory({
+      run_id: `run_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      ran_at: new Date().toISOString(),
+      status: "failed",
+      dry_run: Boolean(req.body?.dry_run),
+      audience: normalizeCampaignAudience(req.body?.audience),
+      template: String(req.body?.template || process.env.CAMPAIGN_TEMPLATE_EXISTING || "alphadome"),
+      language: String(req.body?.language || "en"),
+      total: 0,
+      success: 0,
+      failed: 0,
+      errors: [{ error: err.message }],
+      sample: [],
+    });
     log(`Admin campaign send-template error: ${err.message}`, "ERROR");
     return res.status(500).json({ error: err.message });
   }

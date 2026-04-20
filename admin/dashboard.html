@@ -125,8 +125,19 @@
     .tenant-card .meta { color: #aeb9d2; font-size: 0.88rem; margin-top: 4px; }
     .tenant-card .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
     .tenant-card .actions .btn { flex: 1 1 140px; }
+    .tenant-card .status-pill { display: inline-flex; align-items: center; border-radius: 999px; padding: 2px 8px; font-size: 0.75rem; font-weight: 700; margin-left: 8px; }
+    .tenant-card .status-pill.active { background: rgba(34,197,94,0.2); color: #86efac; }
+    .tenant-card .status-pill.inactive { background: rgba(248,113,113,0.2); color: #fca5a5; }
     .campaign-result { background: rgba(255,255,255,0.03); border: 1px solid rgba(120,144,196,0.18); border-radius: 14px; padding: 14px; color: #d7e0f3; }
     .campaign-result ul { margin-bottom: 0; }
+    .campaign-history-list { display: grid; gap: 10px; margin-top: 12px; }
+    .campaign-history-item { background: rgba(255,255,255,0.03); border: 1px solid rgba(120,144,196,0.2); border-radius: 12px; padding: 12px; }
+    .campaign-history-item .meta { color: #aeb9d2; font-size: 0.84rem; margin-top: 4px; }
+    .run-status { display: inline-flex; align-items: center; border-radius: 999px; padding: 2px 10px; font-size: 0.75rem; font-weight: 700; }
+    .run-status.completed { background: rgba(34,197,94,0.2); color: #86efac; }
+    .run-status.partial { background: rgba(250,204,21,0.2); color: #fde68a; }
+    .run-status.failed { background: rgba(248,113,113,0.2); color: #fca5a5; }
+    .run-status.dry_run { background: rgba(59,130,246,0.2); color: #93c5fd; }
     @media (max-width: 991px) {
       .ops-summary-grid { grid-template-columns: 1fr; }
       .ops-kpi-card .metric { font-size: 1.35rem; }
@@ -594,9 +605,13 @@
             <i class="fa-solid fa-paper-plane"></i>
             Bulk Campaign
           </a>
-          <a href="#" class="quick-action-btn" onclick="event.preventDefault(); exportReport();">
+          <a href="#" class="quick-action-btn" onclick="event.preventDefault(); exportReport('csv');">
             <i class="fa-solid fa-file-export"></i>
-            Export Report
+            Export CSV
+          </a>
+          <a href="#" class="quick-action-btn" onclick="event.preventDefault(); exportReport('pdf');">
+            <i class="fa-solid fa-file-pdf"></i>
+            Export PDF
           </a>
           <a href="#" class="quick-action-btn" onclick="event.preventDefault(); refreshDashboard();">
             <i class="fa-solid fa-arrows-rotate"></i>
@@ -606,6 +621,14 @@
             <i class="fa-solid fa-sliders"></i>
             Tenant Settings
           </a>
+        </div>
+        <div class="ops-panel mb-4">
+          <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+            <h5 class="mb-0"><i class="fa-solid fa-clock-rotate-left"></i> Campaign History & Last-Run Status</h5>
+            <button class="btn btn-sm btn-outline-info" onclick="refreshCampaignHistory()">Refresh History</button>
+          </div>
+          <div id="campaignLastRun" class="small text-muted">Loading campaign history...</div>
+          <div id="campaignHistoryList" class="campaign-history-list"></div>
         </div>
         <section class="card p-4 mt-4 border-warning shadow-sm" style="background:rgba(24,28,47,0.97);">
           <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
@@ -684,6 +707,8 @@
                   <div class="d-flex gap-2">
                     <button class="btn btn-sm btn-outline-info" id="dailyReportBtn">Daily Report</button>
                     <button class="btn btn-sm btn-outline-primary" id="weeklyReportBtn">Weekly Report</button>
+                    <button class="btn btn-sm btn-outline-success" id="exportCsvBtn">Export CSV</button>
+                    <button class="btn btn-sm btn-outline-danger" id="exportPdfBtn">Export PDF</button>
                   </div>
                 </div>
                 <div id="reportSummary" class="small text-muted">Loading report...</div>
@@ -707,7 +732,7 @@
                     <div class="col-md-6">
                       <label class="form-label">Audience</label>
                       <select class="form-select" id="campaignAudience" name="audience">
-                        <option value="existing_clients">Existing clients</option>
+                        <option value="existing_db_users">Existing clients</option>
                         <option value="new_clients">Manual phone list</option>
                       </select>
                     </div>
@@ -771,6 +796,40 @@
                   <div class="ops-empty">Loading tenants...</div>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal fade admin-modal" id="tenantEditModal" tabindex="-1" aria-hidden="true">
+          <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+              <form id="tenantEditForm">
+                <div class="modal-header">
+                  <h5 class="modal-title mb-0">Edit Tenant</h5>
+                  <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                  <input type="hidden" id="tenantEditId" />
+                  <div class="mb-3">
+                    <label class="form-label">Tenant Name</label>
+                    <input class="form-control" id="tenantEditName" required />
+                  </div>
+                  <div class="mb-3">
+                    <label class="form-label">Tenant Phone</label>
+                    <input class="form-control" id="tenantEditPhone" required />
+                  </div>
+                  <div class="mb-1">
+                    <label class="form-label">Status</label>
+                    <select class="form-select" id="tenantEditStatus">
+                      <option value="active">Active</option>
+                      <option value="inactive">Inactive</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="modal-footer">
+                  <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Cancel</button>
+                  <button type="submit" class="btn btn-info" id="tenantEditSubmitBtn">Save Changes</button>
+                </div>
+              </form>
             </div>
           </div>
         </div>
@@ -838,6 +897,7 @@
       snapshot: null,
       reportPeriod: 'daily',
       tenants: [],
+      campaignHistory: { last_run: null, history: [] },
     };
 
     function normalizePhone(phone) {
@@ -1039,14 +1099,73 @@
       return snapshot;
     }
 
+    function statusClassFromRun(status) {
+      const normalized = String(status || '').toLowerCase();
+      if (normalized === 'completed' || normalized === 'success') return 'completed';
+      if (normalized === 'partial') return 'partial';
+      if (normalized === 'dry_run') return 'dry_run';
+      return 'failed';
+    }
+
+    function renderCampaignHistory(payload) {
+      const container = document.getElementById('campaignHistoryList');
+      const summary = document.getElementById('campaignLastRun');
+      if (!container || !summary) return;
+
+      const history = Array.isArray(payload?.history) ? payload.history : [];
+      const lastRun = payload?.last_run || history[0] || null;
+      dashboardOpsState.campaignHistory = { history, last_run: lastRun };
+
+      if (!lastRun) {
+        summary.innerHTML = '<span class="text-muted">No campaign runs recorded yet. Use Bulk Campaign to start tracking run status.</span>';
+      } else {
+        const runClass = statusClassFromRun(lastRun.status);
+        summary.innerHTML = `
+          <div class="d-flex flex-wrap gap-2 align-items-center">
+            <span class="run-status ${runClass}">${escapeHtml(lastRun.status || 'unknown')}</span>
+            <span>Last run: <strong>${new Date(lastRun.ran_at || Date.now()).toLocaleString()}</strong></span>
+            <span>Template: <strong>${escapeHtml(lastRun.template || 'n/a')}</strong></span>
+            <span>Audience: <strong>${escapeHtml(lastRun.audience || 'n/a')}</strong></span>
+            <span>Success/Failed: <strong>${Number(lastRun.success || 0)}/${Number(lastRun.failed || 0)}</strong></span>
+          </div>
+        `;
+      }
+
+      if (!history.length) {
+        container.innerHTML = '<div class="ops-empty">No campaign history available yet.</div>';
+        return;
+      }
+
+      container.innerHTML = history.slice(0, 8).map((run) => {
+        const runClass = statusClassFromRun(run.status);
+        return `
+          <div class="campaign-history-item">
+            <div class="d-flex flex-wrap align-items-center gap-2">
+              <span class="run-status ${runClass}">${escapeHtml(run.status || 'unknown')}</span>
+              <strong>${escapeHtml(run.template || 'template')}</strong>
+              <span class="small text-secondary">${escapeHtml(run.audience || 'audience')}</span>
+            </div>
+            <div class="meta">${new Date(run.ran_at || Date.now()).toLocaleString()} • Total: ${Number(run.total || 0)} • Success: ${Number(run.success || 0)} • Failed: ${Number(run.failed || 0)}</div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    async function loadCampaignHistory() {
+      const payload = await fetchJsonWithFallback(['/admin/api/campaign/history?limit=10'], { last_run: null, history: [] });
+      renderCampaignHistory(payload || { last_run: null, history: [] });
+      return payload;
+    }
+
     async function updateDashboardCards() {
       try {
-        const [tenants, llm, errors, health, ops] = await Promise.all([
+        const [tenants, llm, errors, health, ops, campaignHistory] = await Promise.all([
           fetchJsonWithFallback(['/admin/api/tenants/active', '/admin/tenants/active'], {count: '--'}),
           fetchJsonWithFallback(['/admin/api/llm/usage', '/admin/llm/usage'], {count: '--'}),
           fetchJsonWithFallback(['/admin/api/errors/count', '/admin/errors/count'], {count: '--'}),
           fetchJsonWithFallback(['/admin/api/health', '/admin/health'], {status: '--'}),
           fetchJsonWithFallback(['/admin/api/ops-overview', '/admin/ops-overview'], null),
+          fetchJsonWithFallback(['/admin/api/campaign/history?limit=10'], { last_run: null, history: [] }),
         ]);
         const tenantCountEl = document.getElementById('tenantCount');
         if (tenantCountEl) tenantCountEl.innerText = tenants.count ?? '--';
@@ -1058,6 +1177,7 @@
         if (healthStatusEl) healthStatusEl.innerText = health.status ?? '--';
         renderSystemStatus(health, errors, ops);
         renderOpsOverview(ops);
+        renderCampaignHistory(campaignHistory);
         await loadCampaignSnapshot();
         if (!ops || !ops.kpis) {
           showApiBanner('Operational data is unavailable. Confirm ADMIN key and redeploy latest backend.', 'danger');
@@ -1093,6 +1213,9 @@
       const campaignForm = document.getElementById('campaignForm');
       const audienceSelect = document.getElementById('campaignAudience');
       const tenantSearchInput = document.getElementById('tenantSearchInput');
+      const exportCsvBtn = document.getElementById('exportCsvBtn');
+      const exportPdfBtn = document.getElementById('exportPdfBtn');
+      const tenantEditForm = document.getElementById('tenantEditForm');
       if (dailyButton && !dailyButton.dataset.bound) {
         dailyButton.dataset.bound = 'true';
         dailyButton.addEventListener('click', () => loadPerformanceReport('daily'));
@@ -1112,6 +1235,18 @@
       if (tenantSearchInput && !tenantSearchInput.dataset.bound) {
         tenantSearchInput.dataset.bound = 'true';
         tenantSearchInput.addEventListener('input', () => renderTenantList(tenantSearchInput.value));
+      }
+      if (exportCsvBtn && !exportCsvBtn.dataset.bound) {
+        exportCsvBtn.dataset.bound = 'true';
+        exportCsvBtn.addEventListener('click', () => exportReport('csv'));
+      }
+      if (exportPdfBtn && !exportPdfBtn.dataset.bound) {
+        exportPdfBtn.dataset.bound = 'true';
+        exportPdfBtn.addEventListener('click', () => exportReport('pdf'));
+      }
+      if (tenantEditForm && !tenantEditForm.dataset.bound) {
+        tenantEditForm.dataset.bound = 'true';
+        tenantEditForm.addEventListener('submit', submitTenantEditForm);
       }
       toggleCampaignAudienceFields();
     }
@@ -1190,11 +1325,12 @@
       getModalInstance('campaignModal')?.show();
     }
     
-    function exportReport() {
+    function exportReport(format = 'csv') {
       const period = dashboardOpsState.reportPeriod || 'daily';
-      const url = buildAdminToolUrl('/admin/api/performance-report/export', { period, format: 'csv' });
+      const normalizedFormat = String(format || 'csv').toLowerCase() === 'pdf' ? 'pdf' : 'csv';
+      const url = buildAdminToolUrl('/admin/api/performance-report/export', { period, format: normalizedFormat });
       window.open(url, '_blank', 'noopener');
-      showAlert('Export Report', `Downloading ${period} performance report as CSV.`, 'success');
+      showAlert('Export Report', `Downloading ${period} performance report as ${normalizedFormat.toUpperCase()}.`, 'success');
     }
     
     function refreshDashboard() {
@@ -1208,8 +1344,12 @@
       loadTenantList();
     }
 
+    function refreshCampaignHistory() {
+      loadCampaignHistory();
+    }
+
     function toggleCampaignAudienceFields() {
-      const audience = document.getElementById('campaignAudience')?.value || 'existing_clients';
+      const audience = document.getElementById('campaignAudience')?.value || 'existing_db_users';
       const phonesWrap = document.getElementById('campaignPhonesWrap');
       const limit = document.getElementById('campaignLimit');
       if (phonesWrap) {
@@ -1228,6 +1368,7 @@
       result.classList.remove('d-none');
       result.innerHTML = `
         <div class="fw-semibold mb-2">${data.dry_run ? 'Dry Run Ready' : 'Campaign Completed'}</div>
+        <div class="small mb-2">Run ID: <strong>${escapeHtml(data.run_id || 'n/a')}</strong>${data.status ? ` • Status: <strong>${escapeHtml(data.status)}</strong>` : ''}</div>
         <div class="small mb-2">Audience: <strong>${escapeHtml(data.audience || 'n/a')}</strong> • Template: <strong>${escapeHtml(data.template || 'n/a')}</strong> • Total: <strong>${Number(data.total || data.count || 0)}</strong></div>
         <div class="small mb-2">Success: <strong>${Number(data.success || 0)}</strong> • Failed: <strong>${Number(data.failed || 0)}</strong></div>
         ${sample.length ? `<div class="small mb-2"><strong>Sample:</strong><ul>${sample.map((item) => `<li>${escapeHtml(item.phone || item.client_phone || JSON.stringify(item))}</li>`).join('')}</ul></div>` : ''}
@@ -1238,7 +1379,7 @@
     async function submitCampaignForm(event) {
       event.preventDefault();
       const submitButton = document.getElementById('campaignSubmitBtn');
-      const audience = document.getElementById('campaignAudience')?.value || 'existing_clients';
+      const audience = document.getElementById('campaignAudience')?.value || 'existing_db_users';
       const payload = {
         audience,
         template: document.getElementById('campaignTemplate')?.value || 'alphadome',
@@ -1268,6 +1409,7 @@
         });
         renderCampaignResult(data);
         showAlert('Bulk Campaign', payload.dry_run ? 'Dry run generated successfully.' : 'Campaign job completed successfully.', 'success');
+        loadCampaignHistory();
         if (!payload.dry_run) {
           updateDashboardCards();
         }
@@ -1310,15 +1452,17 @@
         const tenantName = escapeHtml(tenant.client_name || 'Unknown tenant');
         const tenantPhone = escapeHtml(tenant.client_phone || '');
         const status = escapeHtml(tenant.status || 'active');
+        const statusClass = String(tenant.status || 'active').toLowerCase() === 'inactive' ? 'inactive' : 'active';
         const updatedAt = tenant.updated_at ? new Date(tenant.updated_at).toLocaleString() : 'Unknown';
         const catalogUrl = buildAdminToolUrl('/admin/catalog', { tenant_phone: tenant.client_phone, tenant_name: tenant.client_name });
         const simpleUrl = buildAdminToolUrl('/admin/simple', { tenant_phone: tenant.client_phone, tenant_name: tenant.client_name });
         const whatsappUrl = buildWaLink(tenant.client_phone);
         return `
           <div class="tenant-card">
-            <div class="fw-semibold">${tenantName}</div>
-            <div class="meta">${tenantPhone || 'No phone'} • Status: ${status} • Updated: ${updatedAt}</div>
+            <div class="fw-semibold">${tenantName}<span class="status-pill ${statusClass}">${status}</span></div>
+            <div class="meta">${tenantPhone || 'No phone'} • Updated: ${updatedAt}</div>
             <div class="actions">
+              <button class="btn btn-sm btn-outline-primary" type="button" onclick="openTenantEditModal('${escapeHtml(String(tenant.id || ''))}')">Edit Tenant</button>
               <a class="btn btn-sm btn-outline-info" href="${catalogUrl}" target="_blank" rel="noreferrer">Open Catalog</a>
               <a class="btn btn-sm btn-outline-success" href="${simpleUrl}" target="_blank" rel="noreferrer">Simple Upload</a>
               <a class="btn btn-sm btn-outline-light" href="${whatsappUrl}" target="_blank" rel="noreferrer">Open WhatsApp</a>
@@ -1335,6 +1479,68 @@
         showAlert('Tenant Phone Copied', `Copied ${phone} to clipboard.`, 'success');
       } catch (error) {
         showAlert('Copy Failed', 'Clipboard access is not available in this browser session.', 'warning');
+      }
+    }
+
+    function openTenantEditModal(tenantId) {
+      const tenant = (dashboardOpsState.tenants || []).find((item) => String(item.id) === String(tenantId));
+      if (!tenant) {
+        showAlert('Tenant Edit', 'Tenant record could not be loaded.', 'warning');
+        return;
+      }
+      const idEl = document.getElementById('tenantEditId');
+      const nameEl = document.getElementById('tenantEditName');
+      const phoneEl = document.getElementById('tenantEditPhone');
+      const statusEl = document.getElementById('tenantEditStatus');
+      if (idEl) idEl.value = tenant.id || '';
+      if (nameEl) nameEl.value = tenant.client_name || '';
+      if (phoneEl) phoneEl.value = tenant.client_phone || '';
+      if (statusEl) statusEl.value = String(tenant.status || 'active').toLowerCase() === 'inactive' ? 'inactive' : 'active';
+      getModalInstance('tenantEditModal')?.show();
+    }
+
+    async function submitTenantEditForm(event) {
+      event.preventDefault();
+      const submitButton = document.getElementById('tenantEditSubmitBtn');
+      const tenantId = document.getElementById('tenantEditId')?.value || '';
+      const payload = {
+        client_name: document.getElementById('tenantEditName')?.value || '',
+        client_phone: document.getElementById('tenantEditPhone')?.value || '',
+        status: document.getElementById('tenantEditStatus')?.value || 'active',
+      };
+      try {
+        if (submitButton) {
+          submitButton.disabled = true;
+          submitButton.textContent = 'Saving...';
+        }
+        const response = await fetchJsonOrThrow(`/admin/api/tenants/${encodeURIComponent(tenantId)}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const updated = response.tenant || {};
+        dashboardOpsState.tenants = (dashboardOpsState.tenants || []).map((tenant) => (
+          String(tenant.id) === String(tenantId)
+            ? {
+                ...tenant,
+                client_name: updated.client_name ?? payload.client_name,
+                client_phone: updated.client_phone ?? payload.client_phone,
+                status: updated.status ?? payload.status,
+                is_active: updated.is_active ?? (payload.status !== 'inactive'),
+                updated_at: updated.updated_at ?? new Date().toISOString(),
+              }
+            : tenant
+        ));
+        renderTenantList(document.getElementById('tenantSearchInput')?.value || '');
+        getModalInstance('tenantEditModal')?.hide();
+        showAlert('Tenant Updated', `${payload.client_name || 'Tenant'} saved successfully.`, 'success');
+      } catch (error) {
+        showAlert('Tenant Update Failed', error.message || 'Unable to save tenant changes.', 'danger');
+      } finally {
+        if (submitButton) {
+          submitButton.disabled = false;
+          submitButton.textContent = 'Save Changes';
+        }
       }
     }
     
