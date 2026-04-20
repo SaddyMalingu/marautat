@@ -14,6 +14,8 @@
       --panel-border: rgba(120, 144, 196, 0.18);
       --panel-soft: rgba(56, 189, 248, 0.08);
       --text-dim: #9ca8c7;
+      --text-secondary: #b7bfd4;
+      --text-primary: #f8fafc;
       --success-soft: rgba(34, 197, 94, 0.14);
       --warn-soft: rgba(250, 204, 21, 0.14);
       --danger-soft: rgba(239, 68, 68, 0.14);
@@ -31,6 +33,14 @@
     .dashboard-card h3 { color: #38bdf8; font-size: 1.18rem; margin-bottom: 12px; letter-spacing: 0.5px; }
     .dashboard-card .value { font-size: 2.3rem; font-weight: 700; color: #a5eaff; margin-bottom: 4px; }
     .dashboard-card .desc { color: #b7bfd4; font-size: 1.04rem; margin-bottom: 0; }
+    /* Section Headers - IMPROVED VISIBILITY */
+    h2 { color: #e6e8ee; font-weight: 700; font-size: 1.8rem; margin-bottom: 16px; margin-top: 32px; letter-spacing: 0.3px; }
+    h3 { color: #f8fafc; font-weight: 700; font-size: 1.25rem; }
+    h4 { color: #dbe4ff; font-weight: 600; font-size: 1.1rem; }
+    h5 { color: #e6e8ee; font-weight: 600; font-size: 1rem; }
+    /* Section Container Improvements */
+    section { background: rgba(24,28,47,0.97); border: 1px solid rgba(120,144,196,0.2); border-radius: 20px; padding: 24px; margin-bottom: 24px; box-shadow: 0 8px 32px rgba(0,0,0,0.2); }
+    section h3 { color: #e6e8ee; font-size: 1.35rem; margin-bottom: 20px; }
     .main-content { margin-left: 0; padding: 32px 5vw 32px 5vw; max-width: 1200px; width: 100%; transition: margin-left 0.2s; }
     @media (min-width: 1200px) { .main-content { max-width: 1400px; } }
     @media (min-width: 992px) { .main-content { margin-left: 260px; } .sidebar { width: 260px; position: fixed; left: 0; top: 0; z-index: 10; } }
@@ -41,10 +51,28 @@
       .main-content { margin-left: 0; padding: 24px 2vw 24px 2vw; }
       .dashboard-cards { gap: 12px; }
       .dashboard-card { min-width: 140px; max-width: 100vw; padding: 20px 10px 16px 10px; }
+      h2 { font-size: 1.5rem; }
+      h3 { font-size: 1.1rem; }
     }
     .nav-link[aria-current="page"] { color: #fff !important; background: #232a4d !important; border-left: 4px solid #4f46e5 !important; }
     /* Extra polish for mobile sidebar overlay */
     #sidebarOverlay { transition: background 0.2s; }
+    /* ALERT BANNER - High visibility */
+    .alert-banner { background: linear-gradient(135deg, rgba(239,68,68,0.15) 0%, rgba(239,68,68,0.08) 100%); border: 1px solid rgba(239,68,68,0.4); border-left: 4px solid #ef4444; border-radius: 12px; padding: 14px 16px; margin-bottom: 20px; color: #fca5a5; font-weight: 500; }
+    .alert-banner.success { background: linear-gradient(135deg, rgba(34,197,94,0.15) 0%, rgba(34,197,94,0.08) 100%); border-color: rgba(34,197,94,0.4); border-left-color: #22c55e; color: #86efac; }
+    .alert-banner.warning { background: linear-gradient(135deg, rgba(250,204,21,0.15) 0%, rgba(250,204,21,0.08) 100%); border-color: rgba(250,204,21,0.4); border-left-color: #facc15; color: #fde68a; }
+    /* SYSTEM STATUS WIDGET */
+    .system-status-widget { background: linear-gradient(145deg, rgba(16,51,35,0.5) 0%, rgba(24,28,47,0.97) 100%); border: 1px solid rgba(34,197,94,0.3); border-radius: 18px; padding: 20px; margin-bottom: 20px; }
+    .system-status-widget .status-badge { display: inline-block; padding: 8px 16px; border-radius: 999px; font-weight: 600; font-size: 0.9rem; }
+    .system-status-widget .status-badge.online { background: rgba(34,197,94,0.2); color: #86efac; }
+    .system-status-widget .status-badge.idle { background: rgba(250,204,21,0.2); color: #fde68a; }
+    .system-status-widget .status-badge.offline { background: rgba(239,68,68,0.2); color: #fca5a5; }
+    /* QUICK ACTIONS SECTION */
+    .quick-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 20px 0; }
+    .quick-action-btn { background: linear-gradient(145deg, #232a4d 0%, #1e2747 100%); border: 1px solid rgba(120,144,196,0.3); border-radius: 14px; padding: 14px 12px; text-align: center; cursor: pointer; transition: all 0.2s; text-decoration: none; color: #dbe4ff; font-weight: 500; font-size: 0.95rem; }
+    .quick-action-btn:hover { background: linear-gradient(145deg, #2a3452 0%, #242d50 100%); border-color: rgba(120,144,196,0.5); box-shadow: 0 4px 12px rgba(79,70,229,0.15); transform: translateY(-2px); color: #fff; }
+    .quick-action-btn i { display: block; font-size: 1.5rem; margin-bottom: 8px; color: #38bdf8; }
+    /* OPS SUMMARY GRID */
     .ops-summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-bottom: 18px; }
     .ops-summary-card { background: linear-gradient(160deg, rgba(24,28,47,0.96) 0%, rgba(17,22,39,0.98) 100%); border: 1px solid var(--panel-border); border-radius: 18px; padding: 18px 20px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.03); }
     .ops-summary-card .eyebrow { color: var(--text-dim); font-size: 0.75rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 8px; }
@@ -53,16 +81,19 @@
     .ops-summary-card.status-danger { border-color: rgba(239,68,68,0.35); background: linear-gradient(160deg, rgba(63,21,30,0.94) 0%, rgba(17,22,39,0.98) 100%); }
     .ops-summary-card.status-warning { border-color: rgba(250,204,21,0.35); background: linear-gradient(160deg, rgba(60,47,17,0.94) 0%, rgba(17,22,39,0.98) 100%); }
     .ops-summary-card.status-success { border-color: rgba(34,197,94,0.35); background: linear-gradient(160deg, rgba(16,51,35,0.94) 0%, rgba(17,22,39,0.98) 100%); }
+    /* OPS KPI CARDS - IMPROVED VISIBILITY */
     .ops-kpi-card { background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 16px; padding: 16px; height: 100%; box-shadow: 0 10px 30px rgba(8,12,25,0.18); }
-    .ops-kpi-card .label { color: var(--text-dim); font-size: 0.82rem; margin-bottom: 6px; }
-    .ops-kpi-card .metric { font-size: 1.6rem; font-weight: 700; color: #f8fafc; }
+    .ops-kpi-card .label { color: #a0afc7; font-size: 0.85rem; margin-bottom: 8px; font-weight: 500; letter-spacing: 0.3px; }
+    .ops-kpi-card .metric { font-size: 1.6rem; font-weight: 700; color: #dbe4ff; }
+    /* OPS PANELS - IMPROVED */
     .ops-panel { background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 18px; padding: 18px; height: 100%; box-shadow: 0 12px 34px rgba(8,12,25,0.18); }
-    .ops-panel-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
-    .ops-panel-title h5 { margin: 0; }
+    .ops-panel-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+    .ops-panel-title h5 { margin: 0; color: #e6e8ee; }
     .ops-tag { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 5px 10px; font-size: 0.75rem; font-weight: 700; }
     .ops-tag-danger { background: var(--danger-soft); color: #fca5a5; }
     .ops-tag-warning { background: var(--warn-soft); color: #fde68a; }
     .ops-tag-success { background: var(--success-soft); color: #86efac; }
+    /* OPS LISTS */
     .ops-list { display: grid; gap: 10px; }
     .ops-list-item { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); border-radius: 14px; padding: 12px 14px; }
     .ops-list-item strong { color: #f8fafc; }
@@ -172,6 +203,44 @@
             <div class="mt-2 small text-muted">Track all admin actions for security and compliance.</div>
           </div>
         </div>
+
+        <!-- Alert Banner -->
+        <div class="alert-banner mb-4" id="alertBanner" style="display:none;">
+          <div class="d-flex align-items-center gap-3">
+            <i class="fa-solid fa-exclamation-circle" id="alertIcon"></i>
+            <div class="flex-grow-1">
+              <div id="alertTitle" style="font-weight:600; color:#f8fafc; margin-bottom:4px;"></div>
+              <div id="alertMessage" style="color:#d0d8e8; font-size:0.9rem;"></div>
+            </div>
+            <button class="btn-close" onclick="this.parentElement.parentElement.style.display='none'" style="background:rgba(255,255,255,0.2); border:none; color:#f8fafc; width:24px; height:24px; padding:4px; cursor:pointer;"></button>
+          </div>
+        </div>
+
+        <!-- System Status Widget -->
+        <div class="system-status-widget mb-4" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; padding:16px; background:rgba(37,44,66,0.6); border:1px solid rgba(165,234,255,0.15); border-radius:6px;">
+          <div>
+            <h5 style="margin-bottom:8px; color:#e6e8ee;"><i class="fa-solid fa-database"></i> System Status</h5>
+            <span class="badge" id="statusBadge" style="background:#10b981; color:#fff; padding:6px 12px; border-radius:12px;"><i class="fa-solid fa-circle-check"></i> All Systems Operational</span>
+          </div>
+          <small id="statusTime" style="color:var(--text-dim);">Last checked moments ago</small>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="quick-actions mb-4" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(140px, 1fr)); gap:12px;">
+          <a href="#" class="quick-action-btn" onclick="event.preventDefault(); bulkCampaign();" style="display:flex; align-items:center; justify-content:center; gap:8px; padding:12px 16px; background:rgba(59,130,246,0.15); border:1px solid rgba(59,130,246,0.3); border-radius:6px; color:#3b82f6; text-decoration:none; transition:all 0.2s; cursor:pointer;">
+            <i class="fa-solid fa-paper-plane"></i> <span>Bulk Campaign</span>
+          </a>
+          <a href="#" class="quick-action-btn" onclick="event.preventDefault(); exportReport();" style="display:flex; align-items:center; justify-content:center; gap:8px; padding:12px 16px; background:rgba(168,85,247,0.15); border:1px solid rgba(168,85,247,0.3); border-radius:6px; color:#a855f7; text-decoration:none; transition:all 0.2s; cursor:pointer;">
+            <i class="fa-solid fa-download"></i> <span>Export Report</span>
+          </a>
+          <a href="#" class="quick-action-btn" onclick="event.preventDefault(); refreshDashboard();" style="display:flex; align-items:center; justify-content:center; gap:8px; padding:12px 16px; background:rgba(34,197,94,0.15); border:1px solid rgba(34,197,94,0.3); border-radius:6px; color:#22c55e; text-decoration:none; transition:all 0.2s; cursor:pointer;">
+            <i class="fa-solid fa-arrows-rotate"></i> <span>Refresh Data</span>
+          </a>
+          <a href="#" class="quick-action-btn" onclick="event.preventDefault(); tenantSettings();" style="display:flex; align-items:center; justify-content:center; gap:8px; padding:12px 16px; background:rgba(248,113,113,0.15); border:1px solid rgba(248,113,113,0.3); border-radius:6px; color:#f87171; text-decoration:none; transition:all 0.2s; cursor:pointer;">
+            <i class="fa-solid fa-sliders"></i> <span>Tenant Settings</span>
+          </a>
+        </div>
+
         <section class="card p-4 mb-4 border-warning shadow-sm" style="background:rgba(24,28,47,0.97);">
           <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
             <h3 class="mb-0"><i class="fa-solid fa-satellite-dish"></i> Operations Intelligence</h3>
@@ -870,6 +939,58 @@
         loadPerformanceReport('daily');
       }
     }, 60000);
+    
+    // Quick action handlers
+    function bulkCampaign() {
+      showAlert('Bulk Campaign', 'Select tenants and message template to send bulk WhatsApp campaign', 'coming-soon');
+    }
+    
+    function exportReport() {
+      showAlert('Export Report', 'Generating report... CSV export feature coming soon', 'info');
+    }
+    
+    function refreshDashboard() {
+      showAlert('Refresh', 'Refreshing all dashboard data...', 'success');
+      updateDashboardCards();
+      loadPerformanceReport('daily');
+    }
+    
+    function tenantSettings() {
+      showAlert('Tenant Settings', 'Tenant management and configuration panel coming soon', 'coming-soon');
+    }
+    
+    function showAlert(title, message, type = 'info') {
+      const banner = document.getElementById('alertBanner');
+      const titleEl = document.getElementById('alertTitle');
+      const messageEl = document.getElementById('alertMessage');
+      const icon = document.getElementById('alertIcon');
+      
+      if (!banner) return;
+      
+      titleEl.textContent = title;
+      messageEl.textContent = message;
+      
+      // Set colors based on type
+      let colors = { bg: 'rgba(59,130,246,0.1)', border: 'rgba(59,130,246,0.3)', text: '#3b82f6', icon: 'fa-info-circle' };
+      if (type === 'success') colors = { bg: 'rgba(34,197,94,0.1)', border: 'rgba(34,197,94,0.3)', text: '#22c55e', icon: 'fa-check-circle' };
+      if (type === 'danger') colors = { bg: 'rgba(248,113,113,0.1)', border: 'rgba(248,113,113,0.3)', text: '#f87171', icon: 'fa-exclamation-circle' };
+      if (type === 'warning') colors = { bg: 'rgba(251,146,60,0.1)', border: 'rgba(251,146,60,0.3)', text: '#fb923c', icon: 'fa-triangle-exclamation' };
+      if (type === 'coming-soon') colors = { bg: 'rgba(168,85,247,0.1)', border: 'rgba(168,85,247,0.3)', text: '#a855f7', icon: 'fa-clock' };
+      
+      banner.style.background = colors.bg;
+      banner.style.borderColor = colors.border;
+      titleEl.style.color = colors.text;
+      messageEl.style.color = colors.text;
+      icon.className = `fa-solid ${colors.icon}`;
+      icon.style.color = colors.text;
+      
+      banner.style.display = 'block';
+      
+      // Auto-hide after 4 seconds (except for coming-soon)
+      if (type !== 'coming-soon') {
+        setTimeout(() => { banner.style.display = 'none'; }, 4000);
+      }
+    }
   </script>
 </body>
 </html>
