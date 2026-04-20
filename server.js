@@ -70,9 +70,14 @@ app.get('/agent-demo-modal.html', (req, res) => {
   res.sendFile(path.join(publicDir, 'agent-demo-modal.html'));
 });
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+
+// Only instantiate OpenAI if the API key is present
+let openai = null;
+if (process.env.OPENAI_API_KEY) {
+  openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+  });
+}
 
 const supabase = createClient(
   process.env.SB_URL,
