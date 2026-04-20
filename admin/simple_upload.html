@@ -117,6 +117,17 @@
     const simpleForm = document.getElementById('simpleForm');
     const responseEl = document.getElementById('response');
 
+    function applyQueryDefaults() {
+      const params = new URLSearchParams(window.location.search);
+      const adminKey = params.get('key') || '';
+      const tenantPhone = params.get('tenant_phone') || '';
+      const tenantName = params.get('tenant_name') || '';
+
+      if (adminKey) simpleForm.admin_key.value = adminKey;
+      if (tenantPhone) simpleForm.tenant_phone.value = tenantPhone;
+      if (tenantName) simpleForm.tenant_name.value = tenantName;
+    }
+
     simpleForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       responseEl.textContent = 'Uploading (simple)...';
@@ -152,6 +163,8 @@
       const data = await res.json().catch(() => ({ error: 'Invalid response' }));
       responseEl.textContent = JSON.stringify(data, null, 2);
     });
+
+    applyQueryDefaults();
   </script>
 </body>
 </html>

@@ -4166,6 +4166,43 @@ app.get("/admin/tenants/active", adminAuth, async (req, res) => {
   }
 });
 
+app.get("/admin/api/tenants/list", adminAuth, async (req, res) => {
+  try {
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit || "25", 10)));
+    let resp = await supabase
+      .from("bot_tenants")
+      .select("id, client_name, client_phone, status, is_active, updated_at")
+      .order("updated_at", { ascending: false })
+      .limit(limit);
+
+    if (resp.error && isMissingColumnError(resp.error)) {
+      resp = await supabase
+        .from("bot_tenants")
+        .select("id, client_name, client_phone, status, updated_at")
+        .order("updated_at", { ascending: false })
+        .limit(limit);
+    }
+
+    if (resp.error) {
+      throw resp.error;
+    }
+
+    const tenants = (resp.data || []).map((tenant) => ({
+      id: tenant.id,
+      client_name: tenant.client_name || "Unknown tenant",
+      client_phone: tenant.client_phone || "",
+      status: tenant.status || (tenant.is_active === false ? "inactive" : "active"),
+      is_active: tenant.is_active !== false,
+      updated_at: tenant.updated_at || null,
+    }));
+
+    return res.json({ ok: true, count: tenants.length, tenants });
+  } catch (err) {
+    log(`Admin tenants list error: ${err.message}`, "ERROR");
+    return res.status(500).json({ error: err.message, ok: false, tenants: [] });
+  }
+});
+
 app.get("/admin/api/llm/usage", adminAuth, async (req, res) => {
   try {
     const payload = await buildAdminOpsOverview();
@@ -4219,6 +4256,49 @@ app.get("/admin/api/performance-report", adminAuth, async (req, res) => {
     return res.json(report);
   } catch (err) {
     log(`Admin performance report error: ${err.message}`, "ERROR");
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/admin/api/performance-report/export", adminAuth, async (req, res) => {
+  try {
+    const period = String(req.query.period || "daily").toLowerCase() === "weekly" ? "weekly" : "daily";
+    const ops = await buildAdminOpsOverview();
+    const report = buildPerformanceReportFromOps(ops, period);
+    const summary = report.summary || {};
+    const actionPlan = Array.isArray(report.action_plan) ? report.action_plan : [];
+    const kpis = ops?.kpis || {};
+
+    const csvEscape = (value) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+    const rows = [
+      ["section", "metric", "value"],
+      ["summary", "generated_at", summary.generated_at || new Date().toISOString()],
+      ["summary", "period", summary.period || period],
+      ["summary", "performance_band", report.performance_band || "n/a"],
+      ["summary", "revenue_kes", summary.revenue_kes || 0],
+      ["summary", "conversion_rate_pct", summary.conversion_rate_pct || 0],
+      ["summary", "hot_leads_count", summary.hot_leads_count || 0],
+      ["kpi", "active_tenants", kpis.active_tenants || 0],
+      ["kpi", "payment_attempts_30d", kpis.payment_attempts_30d || 0],
+      ["kpi", "successful_payments_30d", kpis.successful_payments_30d || 0],
+      ["kpi", "failed_payments_30d", kpis.failed_payments_30d || 0],
+      ["kpi", "pending_payments_30d", kpis.pending_payments_30d || 0],
+      ["kpi", "incoming_messages_24h", kpis.incoming_messages_24h || 0],
+      ["kpi", "llm_usage_24h", kpis.llm_usage_24h || 0],
+    ];
+
+    actionPlan.forEach((item, index) => {
+      rows.push(["action_plan", String(index + 1), item]);
+    });
+
+    const csv = rows.map((row) => row.map(csvEscape).join(",")).join("\n");
+    const fileName = `alphadome-performance-${period}-${new Date().toISOString().slice(0, 10)}.csv`;
+
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename=${fileName}`);
+    return res.send(csv);
+  } catch (err) {
+    log(`Admin performance report export error: ${err.message}`, "ERROR");
     return res.status(500).json({ error: err.message });
   }
 });

@@ -110,6 +110,23 @@
     #opsProgress,
     #opsFailedOutreach,
     #opsCampaignSnapshot { color: #d7e0f3 !important; }
+    .admin-modal .modal-content { background: #121830; color: #e6e8ee; border: 1px solid #263056; }
+    .admin-modal .modal-header,
+    .admin-modal .modal-footer { border-color: #263056; }
+    .admin-modal .form-label,
+    .admin-modal .form-check-label { color: #d7e0f3; }
+    .admin-modal .form-control,
+    .admin-modal .form-select { background: #0f1428; color: #fff; border-color: #263056; }
+    .admin-modal .form-control:focus,
+    .admin-modal .form-select:focus { background: #0f1428; color: #fff; border-color: #4f46e5; box-shadow: 0 0 0 0.2rem rgba(79, 70, 229, 0.2); }
+    .admin-modal .btn-close { filter: invert(1); }
+    .tenant-results { display: grid; gap: 12px; max-height: 420px; overflow: auto; }
+    .tenant-card { background: rgba(255,255,255,0.03); border: 1px solid rgba(120,144,196,0.2); border-radius: 14px; padding: 14px; }
+    .tenant-card .meta { color: #aeb9d2; font-size: 0.88rem; margin-top: 4px; }
+    .tenant-card .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .tenant-card .actions .btn { flex: 1 1 140px; }
+    .campaign-result { background: rgba(255,255,255,0.03); border: 1px solid rgba(120,144,196,0.18); border-radius: 14px; padding: 14px; color: #d7e0f3; }
+    .campaign-result ul { margin-bottom: 0; }
     @media (max-width: 991px) {
       .ops-summary-grid { grid-template-columns: 1fr; }
       .ops-kpi-card .metric { font-size: 1.35rem; }
@@ -674,6 +691,89 @@
             </div>
           </div>
         </section>
+        <div class="modal fade admin-modal" id="campaignModal" tabindex="-1" aria-hidden="true">
+          <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+              <div class="modal-header">
+                <div>
+                  <h5 class="modal-title mb-1">Bulk Campaign Launcher</h5>
+                  <div class="small text-secondary">Use the existing admin campaign route to preview or send a WhatsApp template batch.</div>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+              </div>
+              <form id="campaignForm">
+                <div class="modal-body">
+                  <div class="row g-3">
+                    <div class="col-md-6">
+                      <label class="form-label">Audience</label>
+                      <select class="form-select" id="campaignAudience" name="audience">
+                        <option value="existing_clients">Existing clients</option>
+                        <option value="new_clients">Manual phone list</option>
+                      </select>
+                    </div>
+                    <div class="col-md-6">
+                      <label class="form-label">Template</label>
+                      <input class="form-control" id="campaignTemplate" name="template" value="alphadome" />
+                    </div>
+                    <div class="col-md-4">
+                      <label class="form-label">Language</label>
+                      <input class="form-control" id="campaignLanguage" name="language" value="en" />
+                    </div>
+                    <div class="col-md-4">
+                      <label class="form-label">Lead Limit</label>
+                      <input class="form-control" id="campaignLimit" name="limit" type="number" min="1" max="100" value="25" />
+                    </div>
+                    <div class="col-md-4">
+                      <label class="form-label">Window Hours</label>
+                      <input class="form-control" id="campaignWindowHours" name="window_hours" type="number" min="1" value="8760" />
+                    </div>
+                    <div class="col-md-6">
+                      <label class="form-label">Delay Between Sends (ms)</label>
+                      <input class="form-control" id="campaignDelayMs" name="delay_ms" type="number" min="0" step="100" value="1200" />
+                    </div>
+                    <div class="col-md-6 d-flex align-items-end">
+                      <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" id="campaignDryRun" checked />
+                        <label class="form-check-label" for="campaignDryRun">Dry run only</label>
+                      </div>
+                    </div>
+                    <div class="col-12 d-none" id="campaignPhonesWrap">
+                      <label class="form-label">Manual Phone List</label>
+                      <textarea class="form-control" id="campaignPhones" rows="4" placeholder="254700000001,254700000002"></textarea>
+                    </div>
+                  </div>
+                  <div class="campaign-result mt-3 d-none" id="campaignResult"></div>
+                </div>
+                <div class="modal-footer">
+                  <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Close</button>
+                  <button type="submit" class="btn btn-info" id="campaignSubmitBtn">Run Campaign</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+        <div class="modal fade admin-modal" id="tenantModal" tabindex="-1" aria-hidden="true">
+          <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content">
+              <div class="modal-header">
+                <div>
+                  <h5 class="modal-title mb-1">Tenant Operations</h5>
+                  <div class="small text-secondary">Pick a tenant and jump into the related admin workflow with the tenant context prefilled.</div>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+              </div>
+              <div class="modal-body">
+                <div class="mb-3">
+                  <label class="form-label">Search Tenants</label>
+                  <input class="form-control" id="tenantSearchInput" placeholder="Search by tenant name or phone" />
+                </div>
+                <div class="tenant-results" id="tenantResults">
+                  <div class="ops-empty">Loading tenants...</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
         `;
         bindDashboardActions();
       } else if (hash === '#logs') {
@@ -736,6 +836,8 @@
     const dashboardOpsState = {
       ops: null,
       snapshot: null,
+      reportPeriod: 'daily',
+      tenants: [],
     };
 
     function normalizePhone(phone) {
@@ -921,6 +1023,7 @@
     }
 
     async function loadPerformanceReport(period = 'daily') {
+      dashboardOpsState.reportPeriod = period;
       const report = await fetchJsonWithFallback(
         [`/admin/api/performance-report?period=${encodeURIComponent(period)}`, `/admin/performance-report?period=${encodeURIComponent(period)}`],
         null
@@ -987,6 +1090,9 @@
     function bindDashboardActions() {
       const dailyButton = document.getElementById('dailyReportBtn');
       const weeklyButton = document.getElementById('weeklyReportBtn');
+      const campaignForm = document.getElementById('campaignForm');
+      const audienceSelect = document.getElementById('campaignAudience');
+      const tenantSearchInput = document.getElementById('tenantSearchInput');
       if (dailyButton && !dailyButton.dataset.bound) {
         dailyButton.dataset.bound = 'true';
         dailyButton.addEventListener('click', () => loadPerformanceReport('daily'));
@@ -995,6 +1101,51 @@
         weeklyButton.dataset.bound = 'true';
         weeklyButton.addEventListener('click', () => loadPerformanceReport('weekly'));
       }
+      if (campaignForm && !campaignForm.dataset.bound) {
+        campaignForm.dataset.bound = 'true';
+        campaignForm.addEventListener('submit', submitCampaignForm);
+      }
+      if (audienceSelect && !audienceSelect.dataset.bound) {
+        audienceSelect.dataset.bound = 'true';
+        audienceSelect.addEventListener('change', toggleCampaignAudienceFields);
+      }
+      if (tenantSearchInput && !tenantSearchInput.dataset.bound) {
+        tenantSearchInput.dataset.bound = 'true';
+        tenantSearchInput.addEventListener('input', () => renderTenantList(tenantSearchInput.value));
+      }
+      toggleCampaignAudienceFields();
+    }
+
+    function getModalInstance(id) {
+      const element = document.getElementById(id);
+      if (!element || !window.bootstrap?.Modal) return null;
+      return window.bootstrap.Modal.getOrCreateInstance(element);
+    }
+
+    async function fetchJsonOrThrow(path, options = {}) {
+      const response = await fetch(buildAdminApiUrl(path), options);
+      const contentType = response.headers.get('content-type') || '';
+      const payload = contentType.includes('application/json')
+        ? await response.json().catch(() => ({}))
+        : { error: await response.text() };
+      if (!response.ok) {
+        throw new Error(payload.error || `Request failed with status ${response.status}`);
+      }
+      return payload;
+    }
+
+    function buildAdminToolUrl(path, params = {}) {
+      const url = new URL(path, window.location.origin);
+      const adminKey = getAdminKeyFromUrl();
+      if (adminKey) {
+        url.searchParams.set('key', adminKey);
+      }
+      Object.entries(params).forEach(([key, value]) => {
+        if (value) {
+          url.searchParams.set(key, value);
+        }
+      });
+      return url.toString();
     }
 
     function dismissAlertBanner() {
@@ -1031,11 +1182,19 @@
     
     // Quick action handlers
     function bulkCampaign() {
-      showAlert('Bulk Campaign', 'Select tenants and message template to send bulk WhatsApp campaign', 'coming-soon');
+      const result = document.getElementById('campaignResult');
+      if (result) {
+        result.classList.add('d-none');
+        result.innerHTML = '';
+      }
+      getModalInstance('campaignModal')?.show();
     }
     
     function exportReport() {
-      showAlert('Export Report', 'Generating report... CSV export feature coming soon', 'info');
+      const period = dashboardOpsState.reportPeriod || 'daily';
+      const url = buildAdminToolUrl('/admin/api/performance-report/export', { period, format: 'csv' });
+      window.open(url, '_blank', 'noopener');
+      showAlert('Export Report', `Downloading ${period} performance report as CSV.`, 'success');
     }
     
     function refreshDashboard() {
@@ -1045,7 +1204,138 @@
     }
     
     function tenantSettings() {
-      showAlert('Tenant Settings', 'Tenant management and configuration panel coming soon', 'coming-soon');
+      getModalInstance('tenantModal')?.show();
+      loadTenantList();
+    }
+
+    function toggleCampaignAudienceFields() {
+      const audience = document.getElementById('campaignAudience')?.value || 'existing_clients';
+      const phonesWrap = document.getElementById('campaignPhonesWrap');
+      const limit = document.getElementById('campaignLimit');
+      if (phonesWrap) {
+        phonesWrap.classList.toggle('d-none', audience !== 'new_clients');
+      }
+      if (limit) {
+        limit.disabled = audience === 'new_clients';
+      }
+    }
+
+    function renderCampaignResult(data) {
+      const result = document.getElementById('campaignResult');
+      if (!result) return;
+      const sample = Array.isArray(data.sample) ? data.sample.slice(0, 5) : [];
+      const errors = Array.isArray(data.errors) ? data.errors.slice(0, 5) : [];
+      result.classList.remove('d-none');
+      result.innerHTML = `
+        <div class="fw-semibold mb-2">${data.dry_run ? 'Dry Run Ready' : 'Campaign Completed'}</div>
+        <div class="small mb-2">Audience: <strong>${escapeHtml(data.audience || 'n/a')}</strong> • Template: <strong>${escapeHtml(data.template || 'n/a')}</strong> • Total: <strong>${Number(data.total || data.count || 0)}</strong></div>
+        <div class="small mb-2">Success: <strong>${Number(data.success || 0)}</strong> • Failed: <strong>${Number(data.failed || 0)}</strong></div>
+        ${sample.length ? `<div class="small mb-2"><strong>Sample:</strong><ul>${sample.map((item) => `<li>${escapeHtml(item.phone || item.client_phone || JSON.stringify(item))}</li>`).join('')}</ul></div>` : ''}
+        ${errors.length ? `<div class="small text-warning"><strong>Errors:</strong><ul>${errors.map((item) => `<li>${escapeHtml(item.phone || 'unknown')}: ${escapeHtml(typeof item.error === 'string' ? item.error : JSON.stringify(item.error))}</li>`).join('')}</ul></div>` : ''}
+      `;
+    }
+
+    async function submitCampaignForm(event) {
+      event.preventDefault();
+      const submitButton = document.getElementById('campaignSubmitBtn');
+      const audience = document.getElementById('campaignAudience')?.value || 'existing_clients';
+      const payload = {
+        audience,
+        template: document.getElementById('campaignTemplate')?.value || 'alphadome',
+        language: document.getElementById('campaignLanguage')?.value || 'en',
+        limit: Number(document.getElementById('campaignLimit')?.value || 25),
+        window_hours: Number(document.getElementById('campaignWindowHours')?.value || 8760),
+        delay_ms: Number(document.getElementById('campaignDelayMs')?.value || 1200),
+        dry_run: Boolean(document.getElementById('campaignDryRun')?.checked),
+      };
+
+      if (audience === 'new_clients') {
+        payload.phones = (document.getElementById('campaignPhones')?.value || '')
+          .split(/[\s,]+/)
+          .map((value) => value.trim())
+          .filter(Boolean);
+      }
+
+      try {
+        if (submitButton) {
+          submitButton.disabled = true;
+          submitButton.textContent = payload.dry_run ? 'Previewing...' : 'Sending...';
+        }
+        const data = await fetchJsonOrThrow('/admin/api/campaign/send-template', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        renderCampaignResult(data);
+        showAlert('Bulk Campaign', payload.dry_run ? 'Dry run generated successfully.' : 'Campaign job completed successfully.', 'success');
+        if (!payload.dry_run) {
+          updateDashboardCards();
+        }
+      } catch (error) {
+        showAlert('Bulk Campaign', error.message || 'Campaign request failed.', 'danger');
+      } finally {
+        if (submitButton) {
+          submitButton.disabled = false;
+          submitButton.textContent = 'Run Campaign';
+        }
+      }
+    }
+
+    async function loadTenantList() {
+      const container = document.getElementById('tenantResults');
+      if (!container) return;
+      container.innerHTML = '<div class="ops-empty">Loading tenants...</div>';
+      try {
+        const data = await fetchJsonOrThrow('/admin/api/tenants/list?limit=50');
+        dashboardOpsState.tenants = Array.isArray(data.tenants) ? data.tenants : [];
+        renderTenantList(document.getElementById('tenantSearchInput')?.value || '');
+      } catch (error) {
+        container.innerHTML = `<div class="ops-empty text-danger">${escapeHtml(error.message || 'Failed to load tenants.')}</div>`;
+      }
+    }
+
+    function renderTenantList(query = '') {
+      const container = document.getElementById('tenantResults');
+      if (!container) return;
+      const normalizedQuery = String(query || '').toLowerCase().trim();
+      const tenants = (dashboardOpsState.tenants || []).filter((tenant) => {
+        const haystack = `${tenant.client_name || ''} ${tenant.client_phone || ''}`.toLowerCase();
+        return !normalizedQuery || haystack.includes(normalizedQuery);
+      });
+      if (!tenants.length) {
+        container.innerHTML = '<div class="ops-empty">No tenants match the current filter.</div>';
+        return;
+      }
+      container.innerHTML = tenants.map((tenant) => {
+        const tenantName = escapeHtml(tenant.client_name || 'Unknown tenant');
+        const tenantPhone = escapeHtml(tenant.client_phone || '');
+        const status = escapeHtml(tenant.status || 'active');
+        const updatedAt = tenant.updated_at ? new Date(tenant.updated_at).toLocaleString() : 'Unknown';
+        const catalogUrl = buildAdminToolUrl('/admin/catalog', { tenant_phone: tenant.client_phone, tenant_name: tenant.client_name });
+        const simpleUrl = buildAdminToolUrl('/admin/simple', { tenant_phone: tenant.client_phone, tenant_name: tenant.client_name });
+        const whatsappUrl = buildWaLink(tenant.client_phone);
+        return `
+          <div class="tenant-card">
+            <div class="fw-semibold">${tenantName}</div>
+            <div class="meta">${tenantPhone || 'No phone'} • Status: ${status} • Updated: ${updatedAt}</div>
+            <div class="actions">
+              <a class="btn btn-sm btn-outline-info" href="${catalogUrl}" target="_blank" rel="noreferrer">Open Catalog</a>
+              <a class="btn btn-sm btn-outline-success" href="${simpleUrl}" target="_blank" rel="noreferrer">Simple Upload</a>
+              <a class="btn btn-sm btn-outline-light" href="${whatsappUrl}" target="_blank" rel="noreferrer">Open WhatsApp</a>
+              <button class="btn btn-sm btn-outline-warning" type="button" onclick="copyTenantPhone('${escapeHtml(String(tenant.client_phone || ''))}')">Copy Phone</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    async function copyTenantPhone(phone) {
+      try {
+        await navigator.clipboard.writeText(phone);
+        showAlert('Tenant Phone Copied', `Copied ${phone} to clipboard.`, 'success');
+      } catch (error) {
+        showAlert('Copy Failed', 'Clipboard access is not available in this browser session.', 'warning');
+      }
     }
     
     function showAlert(title, message, type = 'info') {

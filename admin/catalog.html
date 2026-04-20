@@ -67,6 +67,23 @@
     const form = document.getElementById('searchForm');
     const tbody = document.querySelector('#results tbody');
 
+    function applyQueryDefaults() {
+      const params = new URLSearchParams(window.location.search);
+      const adminKey = params.get('key') || '';
+      const tenantPhone = params.get('tenant_phone') || '';
+      const tenantName = params.get('tenant_name') || '';
+      const query = params.get('q') || '';
+
+      if (adminKey) form.admin_key.value = adminKey;
+      if (tenantPhone) form.tenant_phone.value = tenantPhone;
+      if (tenantName) form.tenant_name.value = tenantName;
+      if (query) form.q.value = query;
+
+      if ((tenantPhone || tenantName) && adminKey) {
+        queueMicrotask(() => form.requestSubmit());
+      }
+    }
+
     function renderRows(items) {
       tbody.innerHTML = '';
       items.forEach(item => {
@@ -109,6 +126,8 @@
       }
       renderRows(data.items || []);
     });
+
+    applyQueryDefaults();
   </script>
   <!-- Floating WhatsApp Button -->
   <a href="https://wa.me/254786817637" target="_blank" id="floating-whatsapp" title="Chat on WhatsApp">
