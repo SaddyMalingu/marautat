@@ -831,10 +831,14 @@
           fetchJsonWithFallback(['/admin/api/health', '/admin/health'], {status: '--'}),
           fetchJsonWithFallback(['/admin/api/ops-overview', '/admin/ops-overview'], null),
         ]);
-        document.getElementById('tenantCount')?.innerText = tenants.count ?? '--';
-        document.getElementById('llmUsage')?.innerText = llm.count ?? '--';
-        document.getElementById('errorCount')?.innerText = errors.count ?? '--';
-        document.getElementById('healthStatus')?.innerText = health.status ?? '--';
+        const tenantCountEl = document.getElementById('tenantCount');
+        if (tenantCountEl) tenantCountEl.innerText = tenants.count ?? '--';
+        const llmUsageEl = document.getElementById('llmUsage');
+        if (llmUsageEl) llmUsageEl.innerText = llm.count ?? '--';
+        const errorCountEl = document.getElementById('errorCount');
+        if (errorCountEl) errorCountEl.innerText = errors.count ?? '--';
+        const healthStatusEl = document.getElementById('healthStatus');
+        if (healthStatusEl) healthStatusEl.innerText = health.status ?? '--';
         renderOpsOverview(ops);
         await loadCampaignSnapshot();
         if (!ops || !ops.kpis) {
