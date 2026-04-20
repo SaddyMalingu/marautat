@@ -1083,7 +1083,9 @@
   </div>
   <script>
         // Onboarding wizard logic
-        document.getElementById('onboard_submit').onclick = async function(e) {
+        const onboardSubmitBtn = document.getElementById('onboard_submit');
+        if (onboardSubmitBtn) {
+          onboardSubmitBtn.onclick = async function(e) {
           e.preventDefault();
           const status = document.getElementById('onboard_status');
           status.textContent = 'Submitting...';
@@ -1133,7 +1135,8 @@
             status.textContent = 'Network or server error.';
           }
         };
-    // ...existing code for form handling...
+        }
+      // ...existing code for form handling...
     const form = document.getElementById('uploadForm');
     const responseEl = document.getElementById('response');
     form.addEventListener('submit', async (e) => {
