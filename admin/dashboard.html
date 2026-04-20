@@ -212,7 +212,7 @@
               <div id="alertTitle" style="font-weight:600; color:#f8fafc; margin-bottom:4px;"></div>
               <div id="alertMessage" style="color:#d0d8e8; font-size:0.9rem;"></div>
             </div>
-            <button class="btn-close" onclick="this.parentElement.parentElement.style.display='none'" style="background:rgba(255,255,255,0.2); border:none; color:#f8fafc; width:24px; height:24px; padding:4px; cursor:pointer;"></button>
+            <button id="alertClose" class="btn-close" style="background:rgba(255,255,255,0.2); border:none; color:#f8fafc; width:24px; height:24px; padding:4px; cursor:pointer;"></button>
           </div>
         </div>
 
@@ -939,6 +939,15 @@
         loadPerformanceReport('daily');
       }
     }, 60000);
+    
+    // Alert banner close handler
+    const alertClose = document.getElementById('alertClose');
+    if (alertClose) {
+      alertClose.addEventListener('click', () => {
+        const banner = document.getElementById('alertBanner');
+        if (banner) banner.style.display = 'none';
+      });
+    }
     
     // Quick action handlers
     function bulkCampaign() {
