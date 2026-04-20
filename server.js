@@ -173,10 +173,56 @@ async function appendCampaignHistory(record) {
   }
 }
 
-async function readCampaignHistory(limit = 10) {
+function parseDateFilter(value, endOfDay = false) {
+  if (!value) return null;
+  const raw = String(value).trim();
+  if (!raw) return null;
+  const isDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(raw);
+  const parsed = isDateOnly
+    ? new Date(`${raw}${endOfDay ? "T23:59:59.999Z" : "T00:00:00.000Z"}`)
+    : new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function parseCampaignHistoryFilters(query = {}) {
+  const limit = Math.min(500, Math.max(1, parseInt(query.limit || "25", 10)));
+  return {
+    limit,
+    from: parseDateFilter(query.from, false),
+    to: parseDateFilter(query.to, true),
+    audience: String(query.audience || "").trim().toLowerCase(),
+    template: String(query.template || "").trim().toLowerCase(),
+    status: String(query.status || "").trim().toLowerCase(),
+  };
+}
+
+function filterCampaignHistoryRecords(records, filters) {
+  const fromMs = filters.from ? filters.from.getTime() : null;
+  const toMs = filters.to ? filters.to.getTime() : null;
+  return records.filter((item) => {
+    const ranAtMs = parseIsoDate(item.ran_at || item.created_at || item.updated_at || 0);
+    if (fromMs !== null && ranAtMs < fromMs) return false;
+    if (toMs !== null && ranAtMs > toMs) return false;
+    if (filters.audience && String(item.audience || "").toLowerCase() !== filters.audience) return false;
+    if (filters.status && String(item.status || "").toLowerCase() !== filters.status) return false;
+    if (filters.template && !String(item.template || "").toLowerCase().includes(filters.template)) return false;
+    return true;
+  });
+}
+
+async function readCampaignHistory(options = {}) {
+  const resolved = typeof options === "number" ? { limit: options } : (options || {});
+  const filters = {
+    limit: Math.min(500, Math.max(1, parseInt(resolved.limit || "25", 10))),
+    from: resolved.from || null,
+    to: resolved.to || null,
+    audience: String(resolved.audience || "").trim().toLowerCase(),
+    template: String(resolved.template || "").trim().toLowerCase(),
+    status: String(resolved.status || "").trim().toLowerCase(),
+  };
   try {
     const content = await fs.promises.readFile(CAMPAIGN_HISTORY_FILE, "utf8");
-    const parsed = content
+    const all = content
       .split(/\r?\n/)
       .map((line) => line.trim())
       .filter(Boolean)
@@ -189,36 +235,119 @@ async function readCampaignHistory(limit = 10) {
       })
       .filter(Boolean)
       .sort((a, b) => new Date(b.ran_at || 0).getTime() - new Date(a.ran_at || 0).getTime());
-    return parsed.slice(0, Math.max(1, limit));
+    const filtered = filterCampaignHistoryRecords(all, filters);
+    return {
+      all_count: all.length,
+      filtered_count: filtered.length,
+      items: filtered.slice(0, filters.limit),
+    };
   } catch (err) {
-    if (err.code === "ENOENT") return [];
+    if (err.code === "ENOENT") {
+      return { all_count: 0, filtered_count: 0, items: [] };
+    }
     log(`Campaign history read warning: ${err.message}`, "WARN");
-    return [];
+    return { all_count: 0, filtered_count: 0, items: [] };
   }
 }
 
-function buildSimplePdfBuffer(lines, title = "Alphadome Report") {
+function buildCsvFromRows(rows) {
+  const csvEscape = (value) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+  return (rows || []).map((row) => row.map(csvEscape).join(",")).join("\n");
+}
+
+function normalizeTenantAdminPhone(rawPhone) {
+  const digits = String(rawPhone || "").replace(/\D/g, "");
+  if (!digits) return "";
+  if (digits.startsWith("254") && digits.length === 12) return digits;
+  if (digits.startsWith("0") && digits.length === 10) return `254${digits.slice(1)}`;
+  if (digits.startsWith("7") && digits.length === 9) return `254${digits}`;
+  if (digits.length >= 10 && digits.length <= 15) return digits;
+  return "";
+}
+
+function buildSimplePdfBuffer(tableRows, meta = {}) {
   const sanitize = (value) => String(value ?? "")
     .replace(/\\/g, "\\\\")
     .replace(/\(/g, "\\(")
     .replace(/\)/g, "\\)")
     .replace(/\r?\n/g, " ");
 
-  const pdfLines = [title, "", ...lines].slice(0, 100);
-  const textCommands = ["BT", "/F1 11 Tf", "14 TL", "50 790 Td"];
-  pdfLines.forEach((line, index) => {
-    if (index > 0) textCommands.push("T*");
-    textCommands.push(`(${sanitize(line)}) Tj`);
-  });
-  textCommands.push("ET");
+  const title = sanitize(meta.title || "Alphadome Performance Report");
+  const subtitle = sanitize(meta.subtitle || "Operational snapshot");
+  const generatedAt = sanitize(meta.generated_at || new Date().toISOString());
+  const columns = ["Section", "Metric", "Value"];
+  const rows = Array.isArray(tableRows) ? tableRows.slice(0, 24) : [];
 
-  const stream = textCommands.join("\n");
+  const streamCommands = [];
+  const pushFillRect = (x, y, w, h, r, g, b) => {
+    streamCommands.push(`${r} ${g} ${b} rg`);
+    streamCommands.push(`${x} ${y} ${w} ${h} re`);
+    streamCommands.push("f");
+  };
+  const pushLine = (x1, y1, x2, y2, width = 1, r = 0.8, g = 0.84, b = 0.9) => {
+    streamCommands.push(`${r} ${g} ${b} RG`);
+    streamCommands.push(`${width} w`);
+    streamCommands.push(`${x1} ${y1} m`);
+    streamCommands.push(`${x2} ${y2} l`);
+    streamCommands.push("S");
+  };
+  const pushText = (text, x, y, size = 10, bold = false, r = 0.08, g = 0.12, b = 0.2) => {
+    streamCommands.push("BT");
+    streamCommands.push(`/${bold ? "F2" : "F1"} ${size} Tf`);
+    streamCommands.push(`${r} ${g} ${b} rg`);
+    streamCommands.push(`1 0 0 1 ${x} ${y} Tm`);
+    streamCommands.push(`(${sanitize(text)}) Tj`);
+    streamCommands.push("ET");
+  };
+
+  pushFillRect(0, 730, 612, 62, 0.09, 0.2, 0.36);
+  pushText(title, 42, 760, 18, true, 1, 1, 1);
+  pushText(subtitle, 42, 742, 10, false, 0.86, 0.92, 1);
+  pushText("ALPHADOME", 486, 760, 11, true, 0.98, 0.99, 1);
+  pushText(`Generated: ${generatedAt}`, 42, 718, 9, false, 0.42, 0.49, 0.6);
+
+  const colX = [42, 168, 346, 570];
+  const rowHeight = 22;
+  const tableTop = 686;
+  const headerY = tableTop - rowHeight;
+
+  pushFillRect(colX[0], headerY, colX[3] - colX[0], rowHeight, 0.16, 0.3, 0.5);
+  pushText(columns[0], colX[0] + 8, headerY + 7, 10, true, 1, 1, 1);
+  pushText(columns[1], colX[1] + 8, headerY + 7, 10, true, 1, 1, 1);
+  pushText(columns[2], colX[2] + 8, headerY + 7, 10, true, 1, 1, 1);
+
+  rows.forEach((row, index) => {
+    const y = headerY - ((index + 1) * rowHeight);
+    if (index % 2 === 0) {
+      pushFillRect(colX[0], y, colX[3] - colX[0], rowHeight, 0.96, 0.97, 0.99);
+    }
+    pushText(String(row?.[0] || ""), colX[0] + 8, y + 7, 9.5, false, 0.14, 0.17, 0.26);
+    pushText(String(row?.[1] || ""), colX[1] + 8, y + 7, 9.5, false, 0.14, 0.17, 0.26);
+    pushText(String(row?.[2] || ""), colX[2] + 8, y + 7, 9.5, false, 0.14, 0.17, 0.26);
+    pushLine(colX[0], y, colX[3], y, 0.8, 0.84, 0.88, 0.94);
+  });
+
+  const tableBottom = headerY - ((rows.length + 1) * rowHeight);
+  pushLine(colX[0], headerY + rowHeight, colX[3], headerY + rowHeight, 1.1, 0.34, 0.45, 0.6);
+  pushLine(colX[0], tableBottom, colX[3], tableBottom, 1, 0.34, 0.45, 0.6);
+  colX.forEach((x, idx) => {
+    const width = idx === 0 || idx === colX.length - 1 ? 1 : 0.8;
+    pushLine(x, tableBottom, x, headerY + rowHeight, width, 0.34, 0.45, 0.6);
+  });
+
+  pushText("Generated by Alphadome Admin Portal", 42, 40, 9, false, 0.45, 0.5, 0.6);
+  if ((Array.isArray(tableRows) ? tableRows.length : 0) > rows.length) {
+    pushText("Note: Report truncated for single-page export.", 42, 26, 9, false, 0.63, 0.36, 0.09);
+  }
+
+  const stream = streamCommands.join("\n");
   const objects = [
     "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n",
     "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n",
-    "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>\nendobj\n",
+    "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >>\nendobj\n",
     "4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n",
-    `5 0 obj\n<< /Length ${Buffer.byteLength(stream, "utf8")} >>\nstream\n${stream}\nendstream\nendobj\n`,
+    "5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>\nendobj\n",
+    `6 0 obj\n<< /Length ${Buffer.byteLength(stream, "utf8")} >>\nstream\n${stream}\nendstream\nendobj\n`,
   ];
 
   let pdf = "%PDF-1.4\n";
@@ -4282,22 +4411,47 @@ app.patch("/admin/api/tenants/:tenantId", adminAuth, async (req, res) => {
     const tenantId = String(req.params.tenantId || "").trim();
     const updates = { updated_at: new Date().toISOString() };
     const body = req.body || {};
+    const allowedStatuses = new Set(["active", "inactive"]);
 
     if (!tenantId) {
       return res.status(400).json({ error: "tenantId is required" });
     }
 
+    const existingResp = await supabase
+      .from("bot_tenants")
+      .select("id, client_name, client_phone, status, is_active, updated_at")
+      .eq("id", tenantId)
+      .maybeSingle();
+
+    if (existingResp.error) {
+      throw existingResp.error;
+    }
+    if (!existingResp.data) {
+      return res.status(404).json({ error: "Tenant not found" });
+    }
+
     if (typeof body.client_name === "string" && body.client_name.trim()) {
-      updates.client_name = body.client_name.trim();
+      updates.client_name = body.client_name.trim().replace(/\s+/g, " ");
     }
     if (typeof body.client_phone === "string" && body.client_phone.trim()) {
-      updates.client_phone = body.client_phone.trim();
+      const normalizedPhone = normalizeTenantAdminPhone(body.client_phone);
+      if (!normalizedPhone) {
+        return res.status(400).json({ error: "Invalid client_phone format. Use an international number like 2547XXXXXXXX." });
+      }
+      updates.client_phone = normalizedPhone;
     }
     if (typeof body.status === "string" && body.status.trim()) {
-      updates.status = body.status.trim().toLowerCase();
-      updates.is_active = updates.status !== "inactive";
+      const normalizedStatus = body.status.trim().toLowerCase();
+      if (!allowedStatuses.has(normalizedStatus)) {
+        return res.status(400).json({ error: "Invalid status. Allowed values: active, inactive." });
+      }
+      updates.status = normalizedStatus;
+      updates.is_active = normalizedStatus === "active";
     }
     if (typeof body.is_active === "boolean") {
+      if (updates.status && body.is_active !== (updates.status === "active")) {
+        return res.status(400).json({ error: "status and is_active values are inconsistent." });
+      }
       updates.is_active = body.is_active;
       if (!updates.status) {
         updates.status = body.is_active ? "active" : "inactive";
@@ -4306,6 +4460,33 @@ app.patch("/admin/api/tenants/:tenantId", adminAuth, async (req, res) => {
 
     if (Object.keys(updates).length === 1) {
       return res.status(400).json({ error: "No editable fields provided" });
+    }
+
+    if (updates.client_phone) {
+      const phoneCandidates = buildPhoneCandidates(updates.client_phone);
+      if (!phoneCandidates.length) {
+        return res.status(400).json({ error: "Unable to normalize tenant phone for duplicate validation." });
+      }
+      const duplicateResp = await supabase
+        .from("bot_tenants")
+        .select("id, client_name, client_phone")
+        .in("client_phone", phoneCandidates)
+        .neq("id", tenantId)
+        .limit(1);
+      if (duplicateResp.error) {
+        throw duplicateResp.error;
+      }
+      if (Array.isArray(duplicateResp.data) && duplicateResp.data.length) {
+        const duplicate = duplicateResp.data[0];
+        return res.status(409).json({
+          error: "Another tenant already uses this phone number.",
+          duplicate: {
+            id: duplicate.id,
+            client_name: duplicate.client_name,
+            client_phone: duplicate.client_phone,
+          },
+        });
+      }
     }
 
     let updateResp = await supabase
@@ -4403,7 +4584,6 @@ app.get("/admin/api/performance-report/export", adminAuth, async (req, res) => {
     const actionPlan = Array.isArray(report.action_plan) ? report.action_plan : [];
     const kpis = ops?.kpis || {};
 
-    const csvEscape = (value) => `"${String(value ?? "").replace(/"/g, '""')}"`;
     const rows = [
       ["section", "metric", "value"],
       ["summary", "generated_at", summary.generated_at || new Date().toISOString()],
@@ -4426,15 +4606,18 @@ app.get("/admin/api/performance-report/export", adminAuth, async (req, res) => {
     });
 
     if (format === "pdf") {
-      const lines = rows.slice(1).map((row) => `${row[0]} | ${row[1]} | ${row[2]}`);
-      const pdfBuffer = buildSimplePdfBuffer(lines, `Alphadome Performance Report (${period})`);
+      const pdfBuffer = buildSimplePdfBuffer(rows.slice(1), {
+        title: `Alphadome Performance Report (${period.toUpperCase()})`,
+        subtitle: `Revenue, conversion, tenant health, and action priorities`,
+        generated_at: summary.generated_at || new Date().toISOString(),
+      });
       const fileName = `alphadome-performance-${period}-${new Date().toISOString().slice(0, 10)}.pdf`;
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename=${fileName}`);
       return res.send(pdfBuffer);
     }
 
-    const csv = rows.map((row) => row.map(csvEscape).join(",")).join("\n");
+    const csv = buildCsvFromRows(rows);
     const fileName = `alphadome-performance-${period}-${new Date().toISOString().slice(0, 10)}.csv`;
 
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
@@ -4448,12 +4631,49 @@ app.get("/admin/api/performance-report/export", adminAuth, async (req, res) => {
 
 app.get("/admin/api/campaign/history", adminAuth, async (req, res) => {
   try {
-    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit || "10", 10)));
-    const history = await readCampaignHistory(limit);
-    return res.json({ ok: true, last_run: history[0] || null, history });
+    const filters = parseCampaignHistoryFilters(req.query || {});
+    const exportAsCsv = String(req.query.export || "").toLowerCase() === "csv";
+    const result = await readCampaignHistory(filters);
+
+    if (exportAsCsv) {
+      const rows = [
+        ["run_id", "ran_at", "status", "dry_run", "audience", "template", "language", "total", "success", "failed"],
+        ...result.items.map((item) => [
+          item.run_id || "",
+          item.ran_at || "",
+          item.status || "",
+          item.dry_run ? "true" : "false",
+          item.audience || "",
+          item.template || "",
+          item.language || "",
+          Number(item.total || 0),
+          Number(item.success || 0),
+          Number(item.failed || 0),
+        ]),
+      ];
+      const fileName = `alphadome-campaign-history-${new Date().toISOString().slice(0, 10)}.csv`;
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename=${fileName}`);
+      return res.send(buildCsvFromRows(rows));
+    }
+
+    return res.json({
+      ok: true,
+      total_count: result.all_count,
+      filtered_count: result.filtered_count,
+      last_run: result.items[0] || null,
+      history: result.items,
+      applied_filters: {
+        from: filters.from ? filters.from.toISOString() : "",
+        to: filters.to ? filters.to.toISOString() : "",
+        audience: filters.audience,
+        template: filters.template,
+        status: filters.status,
+      },
+    });
   } catch (err) {
     log(`Admin campaign history error: ${err.message}`, "ERROR");
-    return res.status(500).json({ error: err.message, history: [], last_run: null });
+    return res.status(500).json({ error: err.message, history: [], last_run: null, filtered_count: 0, total_count: 0 });
   }
 });
 

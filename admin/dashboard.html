@@ -625,7 +625,43 @@
         <div class="ops-panel mb-4">
           <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
             <h5 class="mb-0"><i class="fa-solid fa-clock-rotate-left"></i> Campaign History & Last-Run Status</h5>
-            <button class="btn btn-sm btn-outline-info" onclick="refreshCampaignHistory()">Refresh History</button>
+            <div class="d-flex gap-2 flex-wrap">
+              <button class="btn btn-sm btn-outline-info" id="campaignFilterApply" type="button">Apply Filters</button>
+              <button class="btn btn-sm btn-outline-secondary" id="campaignFilterClear" type="button">Clear</button>
+              <button class="btn btn-sm btn-outline-success" id="campaignHistoryExportBtn" type="button">Export History CSV</button>
+            </div>
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-12 col-md-3">
+              <label class="form-label small mb-1">From</label>
+              <input class="form-control form-control-sm" type="date" id="campaignFilterFrom" />
+            </div>
+            <div class="col-12 col-md-3">
+              <label class="form-label small mb-1">To</label>
+              <input class="form-control form-control-sm" type="date" id="campaignFilterTo" />
+            </div>
+            <div class="col-12 col-md-2">
+              <label class="form-label small mb-1">Audience</label>
+              <select class="form-select form-select-sm" id="campaignFilterAudience">
+                <option value="">All</option>
+                <option value="existing_db_users">Existing</option>
+                <option value="new_clients">New Clients</option>
+              </select>
+            </div>
+            <div class="col-12 col-md-2">
+              <label class="form-label small mb-1">Status</label>
+              <select class="form-select form-select-sm" id="campaignFilterStatus">
+                <option value="">All</option>
+                <option value="dry_run">Dry Run</option>
+                <option value="completed">Completed</option>
+                <option value="partial">Partial</option>
+                <option value="failed">Failed</option>
+              </select>
+            </div>
+            <div class="col-12 col-md-2">
+              <label class="form-label small mb-1">Template</label>
+              <input class="form-control form-control-sm" id="campaignFilterTemplate" placeholder="alphadome" />
+            </div>
           </div>
           <div id="campaignLastRun" class="small text-muted">Loading campaign history...</div>
           <div id="campaignHistoryList" class="campaign-history-list"></div>
@@ -898,6 +934,7 @@
       reportPeriod: 'daily',
       tenants: [],
       campaignHistory: { last_run: null, history: [] },
+      campaignFilters: { from: '', to: '', audience: '', template: '', status: '' },
     };
 
     function normalizePhone(phone) {
@@ -1114,12 +1151,17 @@
 
       const history = Array.isArray(payload?.history) ? payload.history : [];
       const lastRun = payload?.last_run || history[0] || null;
+      const totalCount = Number(payload?.total_count || history.length || 0);
+      const filteredCount = Number(payload?.filtered_count || history.length || 0);
       dashboardOpsState.campaignHistory = { history, last_run: lastRun };
 
       if (!lastRun) {
         summary.innerHTML = '<span class="text-muted">No campaign runs recorded yet. Use Bulk Campaign to start tracking run status.</span>';
       } else {
         const runClass = statusClassFromRun(lastRun.status);
+        const filterHint = filteredCount !== totalCount
+          ? `<span class="text-secondary">Showing <strong>${filteredCount}</strong> of <strong>${totalCount}</strong> runs.</span>`
+          : `<span class="text-secondary">Showing <strong>${filteredCount}</strong> run(s).</span>`;
         summary.innerHTML = `
           <div class="d-flex flex-wrap gap-2 align-items-center">
             <span class="run-status ${runClass}">${escapeHtml(lastRun.status || 'unknown')}</span>
@@ -1127,6 +1169,7 @@
             <span>Template: <strong>${escapeHtml(lastRun.template || 'n/a')}</strong></span>
             <span>Audience: <strong>${escapeHtml(lastRun.audience || 'n/a')}</strong></span>
             <span>Success/Failed: <strong>${Number(lastRun.success || 0)}/${Number(lastRun.failed || 0)}</strong></span>
+            ${filterHint}
           </div>
         `;
       }
@@ -1136,7 +1179,7 @@
         return;
       }
 
-      container.innerHTML = history.slice(0, 8).map((run) => {
+      container.innerHTML = history.slice(0, 20).map((run) => {
         const runClass = statusClassFromRun(run.status);
         return `
           <div class="campaign-history-item">
@@ -1152,20 +1195,24 @@
     }
 
     async function loadCampaignHistory() {
-      const payload = await fetchJsonWithFallback(['/admin/api/campaign/history?limit=10'], { last_run: null, history: [] });
+      const query = buildCampaignHistoryQuery({ ...dashboardOpsState.campaignFilters, limit: 25 });
+      const payload = await fetchJsonWithFallback([
+        `/admin/api/campaign/history${query}`,
+      ], { last_run: null, history: [], total_count: 0, filtered_count: 0 });
       renderCampaignHistory(payload || { last_run: null, history: [] });
       return payload;
     }
 
     async function updateDashboardCards() {
       try {
+        const historyQuery = buildCampaignHistoryQuery({ ...dashboardOpsState.campaignFilters, limit: 25 });
         const [tenants, llm, errors, health, ops, campaignHistory] = await Promise.all([
           fetchJsonWithFallback(['/admin/api/tenants/active', '/admin/tenants/active'], {count: '--'}),
           fetchJsonWithFallback(['/admin/api/llm/usage', '/admin/llm/usage'], {count: '--'}),
           fetchJsonWithFallback(['/admin/api/errors/count', '/admin/errors/count'], {count: '--'}),
           fetchJsonWithFallback(['/admin/api/health', '/admin/health'], {status: '--'}),
           fetchJsonWithFallback(['/admin/api/ops-overview', '/admin/ops-overview'], null),
-          fetchJsonWithFallback(['/admin/api/campaign/history?limit=10'], { last_run: null, history: [] }),
+          fetchJsonWithFallback([`/admin/api/campaign/history${historyQuery}`], { last_run: null, history: [], total_count: 0, filtered_count: 0 }),
         ]);
         const tenantCountEl = document.getElementById('tenantCount');
         if (tenantCountEl) tenantCountEl.innerText = tenants.count ?? '--';
@@ -1216,6 +1263,10 @@
       const exportCsvBtn = document.getElementById('exportCsvBtn');
       const exportPdfBtn = document.getElementById('exportPdfBtn');
       const tenantEditForm = document.getElementById('tenantEditForm');
+      const campaignFilterApply = document.getElementById('campaignFilterApply');
+      const campaignFilterClear = document.getElementById('campaignFilterClear');
+      const campaignHistoryExportBtn = document.getElementById('campaignHistoryExportBtn');
+      const campaignFilterTemplate = document.getElementById('campaignFilterTemplate');
       if (dailyButton && !dailyButton.dataset.bound) {
         dailyButton.dataset.bound = 'true';
         dailyButton.addEventListener('click', () => loadPerformanceReport('daily'));
@@ -1248,6 +1299,28 @@
         tenantEditForm.dataset.bound = 'true';
         tenantEditForm.addEventListener('submit', submitTenantEditForm);
       }
+      if (campaignFilterApply && !campaignFilterApply.dataset.bound) {
+        campaignFilterApply.dataset.bound = 'true';
+        campaignFilterApply.addEventListener('click', applyCampaignHistoryFilters);
+      }
+      if (campaignFilterClear && !campaignFilterClear.dataset.bound) {
+        campaignFilterClear.dataset.bound = 'true';
+        campaignFilterClear.addEventListener('click', clearCampaignHistoryFilters);
+      }
+      if (campaignHistoryExportBtn && !campaignHistoryExportBtn.dataset.bound) {
+        campaignHistoryExportBtn.dataset.bound = 'true';
+        campaignHistoryExportBtn.addEventListener('click', exportCampaignHistoryCsv);
+      }
+      if (campaignFilterTemplate && !campaignFilterTemplate.dataset.bound) {
+        campaignFilterTemplate.dataset.bound = 'true';
+        campaignFilterTemplate.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            applyCampaignHistoryFilters();
+          }
+        });
+      }
+      setCampaignHistoryFilterInputs(dashboardOpsState.campaignFilters);
       toggleCampaignAudienceFields();
     }
 
@@ -1281,6 +1354,54 @@
         }
       });
       return url.toString();
+    }
+
+    function buildCampaignHistoryQuery(filters = {}, extra = {}) {
+      const params = new URLSearchParams();
+      const normalized = {
+        limit: Number(filters.limit || 25),
+        from: String(filters.from || '').trim(),
+        to: String(filters.to || '').trim(),
+        audience: String(filters.audience || '').trim(),
+        template: String(filters.template || '').trim(),
+        status: String(filters.status || '').trim(),
+      };
+      if (normalized.limit > 0) params.set('limit', String(normalized.limit));
+      if (normalized.from) params.set('from', normalized.from);
+      if (normalized.to) params.set('to', normalized.to);
+      if (normalized.audience) params.set('audience', normalized.audience);
+      if (normalized.template) params.set('template', normalized.template);
+      if (normalized.status) params.set('status', normalized.status);
+      Object.entries(extra || {}).forEach(([key, value]) => {
+        if (value !== null && value !== undefined && String(value).trim() !== '') {
+          params.set(key, String(value));
+        }
+      });
+      const query = params.toString();
+      return query ? `?${query}` : '';
+    }
+
+    function getCampaignHistoryFiltersFromUi() {
+      return {
+        from: document.getElementById('campaignFilterFrom')?.value || '',
+        to: document.getElementById('campaignFilterTo')?.value || '',
+        audience: document.getElementById('campaignFilterAudience')?.value || '',
+        template: document.getElementById('campaignFilterTemplate')?.value || '',
+        status: document.getElementById('campaignFilterStatus')?.value || '',
+      };
+    }
+
+    function setCampaignHistoryFilterInputs(filters = {}) {
+      const fromEl = document.getElementById('campaignFilterFrom');
+      const toEl = document.getElementById('campaignFilterTo');
+      const audienceEl = document.getElementById('campaignFilterAudience');
+      const templateEl = document.getElementById('campaignFilterTemplate');
+      const statusEl = document.getElementById('campaignFilterStatus');
+      if (fromEl) fromEl.value = filters.from || '';
+      if (toEl) toEl.value = filters.to || '';
+      if (audienceEl) audienceEl.value = filters.audience || '';
+      if (templateEl) templateEl.value = filters.template || '';
+      if (statusEl) statusEl.value = filters.status || '';
     }
 
     function dismissAlertBanner() {
@@ -1346,6 +1467,30 @@
 
     function refreshCampaignHistory() {
       loadCampaignHistory();
+    }
+
+    function applyCampaignHistoryFilters() {
+      dashboardOpsState.campaignFilters = getCampaignHistoryFiltersFromUi();
+      loadCampaignHistory();
+      showAlert('Campaign History', 'Filters applied successfully.', 'success');
+    }
+
+    function clearCampaignHistoryFilters() {
+      dashboardOpsState.campaignFilters = { from: '', to: '', audience: '', template: '', status: '' };
+      setCampaignHistoryFilterInputs(dashboardOpsState.campaignFilters);
+      loadCampaignHistory();
+      showAlert('Campaign History', 'Filters cleared.', 'info');
+    }
+
+    function exportCampaignHistoryCsv() {
+      const filters = dashboardOpsState.campaignFilters || {};
+      const url = buildAdminToolUrl('/admin/api/campaign/history', {
+        ...filters,
+        export: 'csv',
+        limit: 500,
+      });
+      window.open(url, '_blank', 'noopener');
+      showAlert('Campaign History', 'Downloading filtered campaign history CSV.', 'success');
     }
 
     function toggleCampaignAudienceFields() {
