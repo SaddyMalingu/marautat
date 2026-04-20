@@ -9,6 +9,15 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
   <style>
+    :root {
+      --panel-bg: rgba(12, 18, 38, 0.82);
+      --panel-border: rgba(120, 144, 196, 0.18);
+      --panel-soft: rgba(56, 189, 248, 0.08);
+      --text-dim: #9ca8c7;
+      --success-soft: rgba(34, 197, 94, 0.14);
+      --warn-soft: rgba(250, 204, 21, 0.14);
+      --danger-soft: rgba(239, 68, 68, 0.14);
+    }
     body { font-family: 'Inter', system-ui, Arial, sans-serif; background: linear-gradient(120deg, #181c2f 0%, #232a4d 100%); color: #e6e8ee; min-height: 100vh; }
     .sidebar { background: #15182b; min-height: 100vh; border-right: 1px solid #232a4d; transition: width 0.2s, left 0.2s; box-shadow: 2px 0 12px 0 rgba(30,39,71,0.08); }
     .sidebar .logo { font-size: 2rem; font-weight: 700; color: #a5eaff; margin: 32px 0 32px 0; letter-spacing: 1px; display: flex; align-items: center; gap: 10px; }
@@ -36,6 +45,35 @@
     .nav-link[aria-current="page"] { color: #fff !important; background: #232a4d !important; border-left: 4px solid #4f46e5 !important; }
     /* Extra polish for mobile sidebar overlay */
     #sidebarOverlay { transition: background 0.2s; }
+    .ops-summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-bottom: 18px; }
+    .ops-summary-card { background: linear-gradient(160deg, rgba(24,28,47,0.96) 0%, rgba(17,22,39,0.98) 100%); border: 1px solid var(--panel-border); border-radius: 18px; padding: 18px 20px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.03); }
+    .ops-summary-card .eyebrow { color: var(--text-dim); font-size: 0.75rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 8px; }
+    .ops-summary-card .headline { font-size: 1.05rem; font-weight: 700; color: #f8fafc; margin-bottom: 6px; }
+    .ops-summary-card .subtext { color: #c5cee4; font-size: 0.92rem; line-height: 1.45; }
+    .ops-summary-card.status-danger { border-color: rgba(239,68,68,0.35); background: linear-gradient(160deg, rgba(63,21,30,0.94) 0%, rgba(17,22,39,0.98) 100%); }
+    .ops-summary-card.status-warning { border-color: rgba(250,204,21,0.35); background: linear-gradient(160deg, rgba(60,47,17,0.94) 0%, rgba(17,22,39,0.98) 100%); }
+    .ops-summary-card.status-success { border-color: rgba(34,197,94,0.35); background: linear-gradient(160deg, rgba(16,51,35,0.94) 0%, rgba(17,22,39,0.98) 100%); }
+    .ops-kpi-card { background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 16px; padding: 16px; height: 100%; box-shadow: 0 10px 30px rgba(8,12,25,0.18); }
+    .ops-kpi-card .label { color: var(--text-dim); font-size: 0.82rem; margin-bottom: 6px; }
+    .ops-kpi-card .metric { font-size: 1.6rem; font-weight: 700; color: #f8fafc; }
+    .ops-panel { background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 18px; padding: 18px; height: 100%; box-shadow: 0 12px 34px rgba(8,12,25,0.18); }
+    .ops-panel-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+    .ops-panel-title h5 { margin: 0; }
+    .ops-tag { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 5px 10px; font-size: 0.75rem; font-weight: 700; }
+    .ops-tag-danger { background: var(--danger-soft); color: #fca5a5; }
+    .ops-tag-warning { background: var(--warn-soft); color: #fde68a; }
+    .ops-tag-success { background: var(--success-soft); color: #86efac; }
+    .ops-list { display: grid; gap: 10px; }
+    .ops-list-item { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); border-radius: 14px; padding: 12px 14px; }
+    .ops-list-item strong { color: #f8fafc; }
+    .ops-list-item .meta { color: var(--text-dim); font-size: 0.84rem; margin-top: 4px; }
+    .ops-list-item .note { color: #dbe4ff; font-size: 0.9rem; margin-top: 4px; }
+    .ops-list-item .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    .ops-empty { color: var(--text-dim); padding: 14px; border: 1px dashed rgba(255,255,255,0.08); border-radius: 14px; }
+    @media (max-width: 991px) {
+      .ops-summary-grid { grid-template-columns: 1fr; }
+      .ops-kpi-card .metric { font-size: 1.35rem; }
+    }
   </style>
 </head>
 <body>
@@ -139,48 +177,65 @@
             <h3 class="mb-0"><i class="fa-solid fa-satellite-dish"></i> Operations Intelligence</h3>
             <small class="text-muted" id="opsGeneratedAt">Waiting for live data...</small>
           </div>
+          <div class="ops-summary-grid">
+            <div class="ops-summary-card" id="opsHealthSignal">
+              <div class="eyebrow">Revenue Signal</div>
+              <div class="headline">Loading live health state...</div>
+              <div class="subtext">Checking payment attempts, conversions, and current revenue.</div>
+            </div>
+            <div class="ops-summary-card" id="opsNextAction">
+              <div class="eyebrow">Priority Action</div>
+              <div class="headline">Loading next move...</div>
+              <div class="subtext">The dashboard will suggest the highest-value action from current live data.</div>
+            </div>
+            <div class="ops-summary-card" id="opsReplyGap">
+              <div class="eyebrow">Campaign Gap</div>
+              <div class="headline">Loading outreach gap...</div>
+              <div class="subtext">Review pending replies and follow-up pressure on Wave 1.</div>
+            </div>
+          </div>
           <div class="row g-3 mb-3" id="opsKpiRow">
-            <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Revenue (30d)</div><div class="h4 mb-0" id="opsRevenue">--</div></div></div>
-            <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Payment Attempts</div><div class="h4 mb-0" id="opsAttempts">--</div></div></div>
-            <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Successful Payments (30d)</div><div class="h4 mb-0 text-success" id="opsSuccess">--</div></div></div>
-            <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Conversion Rate</div><div class="h4 mb-0" id="opsConversion">--</div></div></div>
-            <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Hot Leads</div><div class="h4 mb-0" id="opsHotLeadsCount">--</div></div></div>
-            <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Failed Payments (30d)</div><div class="h4 mb-0 text-danger" id="opsFailed">--</div></div></div>
-            <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Pending Payments (30d)</div><div class="h4 mb-0 text-warning" id="opsPending">--</div></div></div>
-            <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Incoming Msgs (24h)</div><div class="h4 mb-0" id="opsIncoming24h">--</div></div></div>
-            <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Fallback Queue</div><div class="h4 mb-0" id="opsFallbackQueue">--</div></div></div>
-            <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Wave 1 Replies</div><div class="h4 mb-0" id="opsCampaignReplies">--</div></div></div>
+            <div class="col-6 col-lg-3"><div class="ops-kpi-card"><div class="label">Revenue (30d)</div><div class="metric" id="opsRevenue">--</div></div></div>
+            <div class="col-6 col-lg-3"><div class="ops-kpi-card"><div class="label">Payment Attempts</div><div class="metric" id="opsAttempts">--</div></div></div>
+            <div class="col-6 col-lg-3"><div class="ops-kpi-card"><div class="label">Successful Payments (30d)</div><div class="metric text-success" id="opsSuccess">--</div></div></div>
+            <div class="col-6 col-lg-3"><div class="ops-kpi-card"><div class="label">Conversion Rate</div><div class="metric" id="opsConversion">--</div></div></div>
+            <div class="col-6 col-lg-3"><div class="ops-kpi-card"><div class="label">Hot Leads</div><div class="metric" id="opsHotLeadsCount">--</div></div></div>
+            <div class="col-6 col-lg-3"><div class="ops-kpi-card"><div class="label">Failed Payments (30d)</div><div class="metric text-danger" id="opsFailed">--</div></div></div>
+            <div class="col-6 col-lg-3"><div class="ops-kpi-card"><div class="label">Pending Payments (30d)</div><div class="metric text-warning" id="opsPending">--</div></div></div>
+            <div class="col-6 col-lg-3"><div class="ops-kpi-card"><div class="label">Incoming Msgs (24h)</div><div class="metric" id="opsIncoming24h">--</div></div></div>
+            <div class="col-6 col-lg-3"><div class="ops-kpi-card"><div class="label">Fallback Queue</div><div class="metric" id="opsFallbackQueue">--</div></div></div>
+            <div class="col-6 col-lg-3"><div class="ops-kpi-card"><div class="label">Wave 1 Replies</div><div class="metric" id="opsCampaignReplies">--</div></div></div>
           </div>
           <div class="row g-3">
             <div class="col-12 col-lg-4">
-              <div class="bg-dark rounded-3 p-3 h-100">
-                <h5 class="mb-2"><i class="fa-solid fa-lightbulb"></i> Strategy Recommendations</h5>
+              <div class="ops-panel">
+                <div class="ops-panel-title"><h5><i class="fa-solid fa-lightbulb"></i> Strategy Recommendations</h5><span class="ops-tag ops-tag-warning">Action queue</span></div>
                 <ul class="mb-0 small" id="opsStrategies"><li class="text-muted">Loading...</li></ul>
               </div>
             </div>
             <div class="col-12 col-lg-4">
-              <div class="bg-dark rounded-3 p-3 h-100">
-                <h5 class="mb-2"><i class="fa-solid fa-fire"></i> Hot Lead Queue</h5>
+              <div class="ops-panel">
+                <div class="ops-panel-title"><h5><i class="fa-solid fa-fire"></i> Hot Lead Queue</h5><span class="ops-tag ops-tag-success">Revenue-ready</span></div>
                 <div id="opsHotLeads" class="small text-muted">Loading...</div>
               </div>
             </div>
             <div class="col-12 col-lg-4">
-              <div class="bg-dark rounded-3 p-3 h-100">
-                <h5 class="mb-2"><i class="fa-solid fa-timeline"></i> Progress Updates</h5>
+              <div class="ops-panel">
+                <div class="ops-panel-title"><h5><i class="fa-solid fa-timeline"></i> Progress Updates</h5><span class="ops-tag ops-tag-success">Live feed</span></div>
                 <div id="opsProgress" class="small text-muted">Loading...</div>
               </div>
             </div>
             <div class="col-12 col-lg-6">
-              <div class="bg-dark rounded-3 p-3 h-100">
-                <h5 class="mb-2"><i class="fa-solid fa-phone-volume"></i> Failed Payment Outreach</h5>
+              <div class="ops-panel">
+                <div class="ops-panel-title"><h5><i class="fa-solid fa-phone-volume"></i> Failed Payment Outreach</h5><span class="ops-tag ops-tag-danger">Needs personal follow-up</span></div>
                 <div id="opsFailedOutreach" class="small text-muted">Loading...</div>
               </div>
             </div>
             <div class="col-12 col-lg-6">
-              <div class="bg-dark rounded-3 p-3 h-100">
-                <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
+              <div class="ops-panel">
+                <div class="ops-panel-title">
                   <h5 class="mb-0"><i class="fa-solid fa-bullhorn"></i> Campaign Snapshot</h5>
-                  <a href="/admin/campaign-tracker" class="btn btn-sm btn-outline-info">Open Tracker</a>
+                  <div class="d-flex align-items-center gap-2"><span class="ops-tag ops-tag-warning">Reply watch</span><a href="/admin/campaign-tracker" class="btn btn-sm btn-outline-info">Open Tracker</a></div>
                 </div>
                 <div id="opsCampaignSnapshot" class="small text-muted">Loading...</div>
               </div>
@@ -188,7 +243,7 @@
           </div>
           <div class="row g-3 mt-1">
             <div class="col-12">
-              <div class="bg-dark rounded-3 p-3 h-100">
+              <div class="ops-panel">
                 <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
                   <h5 class="mb-0"><i class="fa-solid fa-file-lines"></i> Regular Performance Reports</h5>
                   <div class="d-flex gap-2">
@@ -424,48 +479,65 @@
             <h3 class="mb-0"><i class="fa-solid fa-satellite-dish"></i> Operations Intelligence</h3>
             <small class="text-muted" id="opsGeneratedAt">Waiting for live data...</small>
           </div>
+          <div class="ops-summary-grid">
+            <div class="ops-summary-card" id="opsHealthSignal">
+              <div class="eyebrow">Revenue Signal</div>
+              <div class="headline">Loading live health state...</div>
+              <div class="subtext">Checking payment attempts, conversions, and current revenue.</div>
+            </div>
+            <div class="ops-summary-card" id="opsNextAction">
+              <div class="eyebrow">Priority Action</div>
+              <div class="headline">Loading next move...</div>
+              <div class="subtext">The dashboard will suggest the highest-value action from current live data.</div>
+            </div>
+            <div class="ops-summary-card" id="opsReplyGap">
+              <div class="eyebrow">Campaign Gap</div>
+              <div class="headline">Loading outreach gap...</div>
+              <div class="subtext">Review pending replies and follow-up pressure on Wave 1.</div>
+            </div>
+          </div>
           <div class="row g-3 mb-3" id="opsKpiRow">
-            <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Revenue (30d)</div><div class="h4 mb-0" id="opsRevenue">--</div></div></div>
-            <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Payment Attempts</div><div class="h4 mb-0" id="opsAttempts">--</div></div></div>
-            <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Successful Payments (30d)</div><div class="h4 mb-0 text-success" id="opsSuccess">--</div></div></div>
-            <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Conversion Rate</div><div class="h4 mb-0" id="opsConversion">--</div></div></div>
-            <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Hot Leads</div><div class="h4 mb-0" id="opsHotLeadsCount">--</div></div></div>
-            <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Failed Payments (30d)</div><div class="h4 mb-0 text-danger" id="opsFailed">--</div></div></div>
-            <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Pending Payments (30d)</div><div class="h4 mb-0 text-warning" id="opsPending">--</div></div></div>
-            <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Incoming Msgs (24h)</div><div class="h4 mb-0" id="opsIncoming24h">--</div></div></div>
-            <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Fallback Queue</div><div class="h4 mb-0" id="opsFallbackQueue">--</div></div></div>
-            <div class="col-6 col-lg-3"><div class="bg-dark rounded-3 p-3 h-100"><div class="small text-muted">Wave 1 Replies</div><div class="h4 mb-0" id="opsCampaignReplies">--</div></div></div>
+            <div class="col-6 col-lg-3"><div class="ops-kpi-card"><div class="label">Revenue (30d)</div><div class="metric" id="opsRevenue">--</div></div></div>
+            <div class="col-6 col-lg-3"><div class="ops-kpi-card"><div class="label">Payment Attempts</div><div class="metric" id="opsAttempts">--</div></div></div>
+            <div class="col-6 col-lg-3"><div class="ops-kpi-card"><div class="label">Successful Payments (30d)</div><div class="metric text-success" id="opsSuccess">--</div></div></div>
+            <div class="col-6 col-lg-3"><div class="ops-kpi-card"><div class="label">Conversion Rate</div><div class="metric" id="opsConversion">--</div></div></div>
+            <div class="col-6 col-lg-3"><div class="ops-kpi-card"><div class="label">Hot Leads</div><div class="metric" id="opsHotLeadsCount">--</div></div></div>
+            <div class="col-6 col-lg-3"><div class="ops-kpi-card"><div class="label">Failed Payments (30d)</div><div class="metric text-danger" id="opsFailed">--</div></div></div>
+            <div class="col-6 col-lg-3"><div class="ops-kpi-card"><div class="label">Pending Payments (30d)</div><div class="metric text-warning" id="opsPending">--</div></div></div>
+            <div class="col-6 col-lg-3"><div class="ops-kpi-card"><div class="label">Incoming Msgs (24h)</div><div class="metric" id="opsIncoming24h">--</div></div></div>
+            <div class="col-6 col-lg-3"><div class="ops-kpi-card"><div class="label">Fallback Queue</div><div class="metric" id="opsFallbackQueue">--</div></div></div>
+            <div class="col-6 col-lg-3"><div class="ops-kpi-card"><div class="label">Wave 1 Replies</div><div class="metric" id="opsCampaignReplies">--</div></div></div>
           </div>
           <div class="row g-3">
             <div class="col-12 col-lg-4">
-              <div class="bg-dark rounded-3 p-3 h-100">
-                <h5 class="mb-2"><i class="fa-solid fa-lightbulb"></i> Strategy Recommendations</h5>
+              <div class="ops-panel">
+                <div class="ops-panel-title"><h5><i class="fa-solid fa-lightbulb"></i> Strategy Recommendations</h5><span class="ops-tag ops-tag-warning">Action queue</span></div>
                 <ul class="mb-0 small" id="opsStrategies"><li class="text-muted">Loading...</li></ul>
               </div>
             </div>
             <div class="col-12 col-lg-4">
-              <div class="bg-dark rounded-3 p-3 h-100">
-                <h5 class="mb-2"><i class="fa-solid fa-fire"></i> Hot Lead Queue</h5>
+              <div class="ops-panel">
+                <div class="ops-panel-title"><h5><i class="fa-solid fa-fire"></i> Hot Lead Queue</h5><span class="ops-tag ops-tag-success">Revenue-ready</span></div>
                 <div id="opsHotLeads" class="small text-muted">Loading...</div>
               </div>
             </div>
             <div class="col-12 col-lg-4">
-              <div class="bg-dark rounded-3 p-3 h-100">
-                <h5 class="mb-2"><i class="fa-solid fa-timeline"></i> Progress Updates</h5>
+              <div class="ops-panel">
+                <div class="ops-panel-title"><h5><i class="fa-solid fa-timeline"></i> Progress Updates</h5><span class="ops-tag ops-tag-success">Live feed</span></div>
                 <div id="opsProgress" class="small text-muted">Loading...</div>
               </div>
             </div>
             <div class="col-12 col-lg-6">
-              <div class="bg-dark rounded-3 p-3 h-100">
-                <h5 class="mb-2"><i class="fa-solid fa-phone-volume"></i> Failed Payment Outreach</h5>
+              <div class="ops-panel">
+                <div class="ops-panel-title"><h5><i class="fa-solid fa-phone-volume"></i> Failed Payment Outreach</h5><span class="ops-tag ops-tag-danger">Needs personal follow-up</span></div>
                 <div id="opsFailedOutreach" class="small text-muted">Loading...</div>
               </div>
             </div>
             <div class="col-12 col-lg-6">
-              <div class="bg-dark rounded-3 p-3 h-100">
-                <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
+              <div class="ops-panel">
+                <div class="ops-panel-title">
                   <h5 class="mb-0"><i class="fa-solid fa-bullhorn"></i> Campaign Snapshot</h5>
-                  <a href="/admin/campaign-tracker" class="btn btn-sm btn-outline-info">Open Tracker</a>
+                  <div class="d-flex align-items-center gap-2"><span class="ops-tag ops-tag-warning">Reply watch</span><a href="/admin/campaign-tracker" class="btn btn-sm btn-outline-info">Open Tracker</a></div>
                 </div>
                 <div id="opsCampaignSnapshot" class="small text-muted">Loading...</div>
               </div>
@@ -473,7 +545,7 @@
           </div>
           <div class="row g-3 mt-1">
             <div class="col-12">
-              <div class="bg-dark rounded-3 p-3 h-100">
+              <div class="ops-panel">
                 <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
                   <h5 class="mb-0"><i class="fa-solid fa-file-lines"></i> Regular Performance Reports</h5>
                   <div class="d-flex gap-2">
@@ -544,9 +616,87 @@
         '254788594040','254723236276','254797997676','254705005555','254799040038','254762279184','254741866137'
       ]
     };
+    const dashboardOpsState = {
+      ops: null,
+      snapshot: null,
+    };
+
+    function normalizePhone(phone) {
+      return String(phone || '').replace(/\D/g, '');
+    }
+
+    function buildWaLink(phone, text = '') {
+      const normalized = normalizePhone(phone);
+      if (!normalized) return '#';
+      const query = text ? `?text=${encodeURIComponent(text)}` : '';
+      return `https://wa.me/${normalized}${query}`;
+    }
+
+    function setSummaryCard(id, status, eyebrow, headline, subtext) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.className = `ops-summary-card status-${status}`;
+      el.innerHTML = `
+        <div class="eyebrow">${escapeHtml(eyebrow)}</div>
+        <div class="headline">${escapeHtml(headline)}</div>
+        <div class="subtext">${escapeHtml(subtext)}</div>
+      `;
+    }
+
+    function renderOpsSummary() {
+      const ops = dashboardOpsState.ops;
+      const snapshot = dashboardOpsState.snapshot;
+      if (!ops || !ops.kpis) {
+        setSummaryCard('opsHealthSignal', 'warning', 'Revenue Signal', 'Awaiting operational payload', 'The dashboard has not received enough live data to assess performance.');
+        setSummaryCard('opsNextAction', 'warning', 'Priority Action', 'Confirm live APIs and key', 'Operational follow-up recommendations will appear once the payload loads.');
+        setSummaryCard('opsReplyGap', 'warning', 'Campaign Gap', 'Waiting for campaign snapshot', 'Wave 1 pending and reply rate will appear here.');
+        return;
+      }
+
+      const attempts = Number(ops.kpis.payment_attempts_30d || 0);
+      const revenue = Number(ops.kpis.total_revenue_kes_30d || 0);
+      const failed = Number(ops.kpis.failed_payments_30d || 0);
+      const success = Number(ops.kpis.successful_payments_30d || 0);
+      const failedOutreach = ops.operations?.failed_payment_outreach || [];
+      const hotLeads = ops.operations?.hot_leads || [];
+
+      if (revenue <= 0 && attempts > 0) {
+        setSummaryCard('opsHealthSignal', 'danger', 'Revenue Signal', 'No captured revenue from live attempts', `${attempts} payment attempt(s) logged but KES 0 captured. Recovery depends on direct follow-up.`);
+      } else if (success > 0 || revenue > 0) {
+        setSummaryCard('opsHealthSignal', 'success', 'Revenue Signal', 'Payments are converting', `KES ${revenue.toLocaleString()} captured across ${success} successful payment(s) in the last 30 days.`);
+      } else {
+        setSummaryCard('opsHealthSignal', 'warning', 'Revenue Signal', 'Pipeline active, conversions not proven', 'Traffic is arriving, but there is no confirmed payment signal yet.');
+      }
+
+      if (failedOutreach.length) {
+        const firstCase = failedOutreach[0];
+        setSummaryCard('opsNextAction', 'danger', 'Priority Action', `Call or message ${firstCase.customer_name || firstCase.wa_phone || 'failed payer'}`, `Recover KES ${Number(firstCase.amount || 0).toLocaleString()} by offering ${firstCase.action_hint || 'the fallback payment option'} first.`);
+      } else if (hotLeads.length) {
+        const lead = hotLeads[0];
+        setSummaryCard('opsNextAction', 'warning', 'Priority Action', `Follow up hottest lead ${lead.wa_phone || ''}`.trim(), `Lead is sitting at KES ${Number(lead.amount || 0).toLocaleString()} with status ${lead.status || 'open'} and needs conversion support.`);
+      } else {
+        setSummaryCard('opsNextAction', 'success', 'Priority Action', 'No urgent personal outreach blockers', 'Focus on campaign execution and monitoring new inbound messages.');
+      }
+
+      if (!snapshot || !snapshot.ok) {
+        setSummaryCard('opsReplyGap', 'warning', 'Campaign Gap', 'Campaign snapshot unavailable', 'Reply-rate monitoring has not loaded yet for Wave 1.');
+      } else if (snapshot.pending > 0) {
+        setSummaryCard('opsReplyGap', 'warning', 'Campaign Gap', `${snapshot.pending} contact(s) still silent`, `${snapshot.replied}/${snapshot.total} have replied so far. Queue a manual follow-up to unblock responses.`);
+      } else {
+        setSummaryCard('opsReplyGap', 'success', 'Campaign Gap', 'All contacted numbers replied', `${snapshot.replied}/${snapshot.total} campaign targets have responded since Wave 1.`);
+      }
+
+      if (failed > 0 && !failedOutreach.length) {
+        setSummaryCard('opsNextAction', 'warning', 'Priority Action', 'Failed payment detected without outreach context', 'Review subscription records and message history to recover the missed transaction.');
+      }
+    }
 
     function renderOpsOverview(ops) {
-      if (!ops || !ops.kpis) return;
+      dashboardOpsState.ops = ops;
+      if (!ops || !ops.kpis) {
+        renderOpsSummary();
+        return;
+      }
       const k = ops.kpis;
 
       document.getElementById('opsGeneratedAt')?.replaceChildren(document.createTextNode(`Updated: ${new Date(ops.generated_at || Date.now()).toLocaleString()}`));
@@ -565,29 +715,36 @@
         ? ops.strategies.map(s => `<li>${escapeHtml(s)}</li>`).join('')
         : '<li class="text-muted">No strategy recommendations yet.</li>';
       const hotLeadsHtml = (ops.operations?.hot_leads || []).length
-        ? `<div class="list-group list-group-flush">${ops.operations.hot_leads.slice(0, 6).map(lead => `
-          <div class="list-group-item bg-transparent text-light px-0 py-2 border-secondary">
-            <div class="fw-semibold">${escapeHtml(lead.wa_phone)} - KES ${Number(lead.amount || 0).toLocaleString()}</div>
-            <div class="small text-warning">${escapeHtml(lead.status || '')}</div>
-            <div class="small text-muted">${escapeHtml(lead.action_hint || '')}</div>
+        ? `<div class="ops-list">${ops.operations.hot_leads.slice(0, 6).map(lead => `
+          <div class="ops-list-item">
+            <strong>${escapeHtml(lead.wa_phone)} - KES ${Number(lead.amount || 0).toLocaleString()}</strong>
+            <div class="meta">${escapeHtml(lead.status || 'Lead active')}</div>
+            <div class="note">${escapeHtml(lead.action_hint || 'Needs conversion follow-up')}</div>
+            <div class="actions">
+              <a class="btn btn-sm btn-outline-success" href="${buildWaLink(lead.wa_phone)}" target="_blank" rel="noreferrer">Open WhatsApp</a>
+            </div>
           </div>`).join('')}</div>`
-        : '<div class="text-muted">No hot leads currently.</div>';
+        : '<div class="ops-empty">No hot leads currently.</div>';
       const progressHtml = (ops.progress || []).length
-        ? `<div class="list-group list-group-flush">${ops.progress.slice(0, 6).map(item => `
-          <div class="list-group-item bg-transparent text-light px-0 py-2 border-secondary">
-            <div class="fw-semibold">${escapeHtml(item.note || '')}</div>
-            <div class="small text-muted">${escapeHtml(item.phone || '')} - ${new Date(item.when || Date.now()).toLocaleString()}</div>
+        ? `<div class="ops-list">${ops.progress.slice(0, 6).map(item => `
+          <div class="ops-list-item">
+            <strong>${escapeHtml(item.note || '')}</strong>
+            <div class="meta">${escapeHtml(item.phone || 'System')} - ${new Date(item.when || Date.now()).toLocaleString()}</div>
           </div>`).join('')}</div>`
-        : '<div class="text-muted">No progress events yet.</div>';
+        : '<div class="ops-empty">No progress events yet.</div>';
       const failedOutreachHtml = (ops.operations?.failed_payment_outreach || []).length
-        ? `<div class="list-group list-group-flush">${ops.operations.failed_payment_outreach.slice(0, 6).map(item => `
-          <div class="list-group-item bg-transparent text-light px-0 py-2 border-secondary">
-            <div class="fw-semibold">${escapeHtml(item.customer_name || 'Unknown User')} - ${escapeHtml(item.wa_phone || item.payment_phone || 'unknown')}</div>
-            <div class="small text-danger">KES ${Number(item.amount || 0).toLocaleString()} • ${escapeHtml(item.context_label || 'Checkout flow')}</div>
-            <div class="small text-warning">${escapeHtml(item.failure_reason || item.action_hint || 'Needs personal outreach')}</div>
-            <div class="small text-muted">Last inbound: ${item.last_customer_message ? escapeHtml(item.last_customer_message) : 'none recorded'}${item.last_customer_message_at ? ` • ${new Date(item.last_customer_message_at).toLocaleString()}` : ''}</div>
+        ? `<div class="ops-list">${ops.operations.failed_payment_outreach.slice(0, 6).map(item => `
+          <div class="ops-list-item">
+            <strong>${escapeHtml(item.customer_name || 'Unknown User')} - ${escapeHtml(item.wa_phone || item.payment_phone || 'unknown')}</strong>
+            <div class="meta">KES ${Number(item.amount || 0).toLocaleString()} • ${escapeHtml(item.context_label || 'Checkout flow')}</div>
+            <div class="note">${escapeHtml(item.failure_reason || item.action_hint || 'Needs personal outreach')}</div>
+            <div class="meta">Last inbound: ${item.last_customer_message ? escapeHtml(item.last_customer_message) : 'none recorded'}${item.last_customer_message_at ? ` • ${new Date(item.last_customer_message_at).toLocaleString()}` : ''}</div>
+            <div class="actions">
+              <a class="btn btn-sm btn-outline-danger" href="${buildWaLink(item.wa_phone || item.payment_phone, 'Hi, I noticed your payment did not go through. I can help you complete it using bank transfer or an alternative option.') }" target="_blank" rel="noreferrer">Start outreach</a>
+              <a class="btn btn-sm btn-outline-light" href="${buildWaLink(item.wa_phone || item.payment_phone)}" target="_blank" rel="noreferrer">Open chat</a>
+            </div>
           </div>`).join('')}</div>`
-        : '<div class="text-muted">No failed payment outreach cases currently.</div>';
+        : '<div class="ops-empty">No failed payment outreach cases currently.</div>';
 
       const strategiesEl = document.getElementById('opsStrategies');
       const leadsEl = document.getElementById('opsHotLeads');
@@ -597,26 +754,37 @@
       if (leadsEl) leadsEl.innerHTML = hotLeadsHtml;
       if (progressEl) progressEl.innerHTML = progressHtml;
       if (failedOutreachEl) failedOutreachEl.innerHTML = failedOutreachHtml;
+      renderOpsSummary();
     }
 
     function renderCampaignSnapshot(data) {
+      dashboardOpsState.snapshot = data;
       const countEl = document.getElementById('opsCampaignReplies');
       const bodyEl = document.getElementById('opsCampaignSnapshot');
       if (countEl) countEl.replaceChildren(document.createTextNode(data && data.ok ? `${data.replied}/${data.total}` : '--'));
       if (!bodyEl) return;
       if (!data || !data.ok) {
         bodyEl.innerHTML = '<div class="text-muted">Campaign snapshot unavailable.</div>';
+        renderOpsSummary();
         return;
       }
       const pendingRows = (data.rows || []).filter(row => !row.replied);
       bodyEl.innerHTML = `
-        <div class="mb-2">Reply rate: <strong>${data.total ? Math.round((data.replied / data.total) * 100) : 0}%</strong> • Pending: <strong>${data.pending}</strong></div>
-        ${pendingRows.length ? `<div class="list-group list-group-flush">${pendingRows.slice(0, 7).map(row => `
-          <div class="list-group-item bg-transparent text-light px-0 py-2 border-secondary">
-            <div class="fw-semibold">${escapeHtml(row.phone)}</div>
-            <div class="small text-muted">No reply yet since ${new Date(data.since).toLocaleString()}</div>
-          </div>`).join('')}</div>` : '<div class="text-muted">All campaign contacts have replied.</div>'}
+        <div class="ops-list-item mb-3">
+          <strong>Reply rate ${data.total ? Math.round((data.replied / data.total) * 100) : 0}%</strong>
+          <div class="meta">${data.replied}/${data.total} replied • ${data.pending} still pending</div>
+          <div class="note">Use this list for manual follow-up before launching another broad campaign wave.</div>
+        </div>
+        ${pendingRows.length ? `<div class="ops-list">${pendingRows.slice(0, 7).map(row => `
+          <div class="ops-list-item">
+            <strong>${escapeHtml(row.phone)}</strong>
+            <div class="meta">No reply yet since ${new Date(data.since).toLocaleString()}</div>
+            <div class="actions">
+              <a class="btn btn-sm btn-outline-warning" href="${buildWaLink(row.phone, 'Hi, just following up on my earlier WhatsApp message. Let me know if you want help automating your workflow or customer conversations.') }" target="_blank" rel="noreferrer">Follow up</a>
+            </div>
+          </div>`).join('')}</div>` : '<div class="ops-empty">All campaign contacts have replied.</div>'}
       `;
+      renderOpsSummary();
     }
 
     function renderPerformanceReport(report) {
