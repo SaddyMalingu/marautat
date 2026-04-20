@@ -101,6 +101,15 @@
     .ops-list-item .note { color: #dbe4ff; font-size: 0.9rem; margin-top: 4px; }
     .ops-list-item .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
     .ops-empty { color: var(--text-dim); padding: 14px; border: 1px dashed rgba(255,255,255,0.08); border-radius: 14px; }
+    .ops-panel ul,
+    .ops-panel li,
+    .ops-panel .small,
+    .ops-panel .text-muted,
+    #reportSummary,
+    #opsHotLeads,
+    #opsProgress,
+    #opsFailedOutreach,
+    #opsCampaignSnapshot { color: #d7e0f3 !important; }
     @media (max-width: 991px) {
       .ops-summary-grid { grid-template-columns: 1fr; }
       .ops-kpi-card .metric { font-size: 1.35rem; }
@@ -546,6 +555,41 @@
           <h2>Welcome to the Alphadome Admin Portal</h2>
           <p class="text-muted">Use the sidebar to manage tenants, upload catalogs, view logs, and monitor LLM usage. All features are optimized for desktop and mobile.</p>
         </div>
+        <div class="alert-banner mb-4" id="alertBanner" style="display:none;">
+          <div class="d-flex align-items-center gap-3">
+            <i class="fa-solid fa-exclamation-circle" id="alertIcon"></i>
+            <div class="flex-grow-1">
+              <div id="alertTitle" style="font-weight:600; color:#f8fafc; margin-bottom:4px;"></div>
+              <div id="alertMessage" style="color:#d0d8e8; font-size:0.9rem;"></div>
+            </div>
+            <button class="btn-close" onclick="dismissAlertBanner(); return false;" style="background:rgba(255,255,255,0.2); border:none; color:#f8fafc; width:24px; height:24px; padding:4px; cursor:pointer;"></button>
+          </div>
+        </div>
+        <div class="system-status-widget mb-4 d-flex align-items-center justify-content-between flex-wrap gap-3">
+          <div>
+            <h5 class="mb-2"><i class="fa-solid fa-database"></i> System Status</h5>
+            <span class="status-badge online" id="statusBadge"><i class="fa-solid fa-circle-check"></i> All Systems Operational</span>
+          </div>
+          <small id="statusTime" style="color:var(--text-dim);">Awaiting first health check...</small>
+        </div>
+        <div class="quick-actions mb-4">
+          <a href="#" class="quick-action-btn" onclick="event.preventDefault(); bulkCampaign();">
+            <i class="fa-solid fa-paper-plane"></i>
+            Bulk Campaign
+          </a>
+          <a href="#" class="quick-action-btn" onclick="event.preventDefault(); exportReport();">
+            <i class="fa-solid fa-file-export"></i>
+            Export Report
+          </a>
+          <a href="#" class="quick-action-btn" onclick="event.preventDefault(); refreshDashboard();">
+            <i class="fa-solid fa-arrows-rotate"></i>
+            Refresh Data
+          </a>
+          <a href="#" class="quick-action-btn" onclick="event.preventDefault(); tenantSettings();">
+            <i class="fa-solid fa-sliders"></i>
+            Tenant Settings
+          </a>
+        </div>
         <section class="card p-4 mt-4 border-warning shadow-sm" style="background:rgba(24,28,47,0.97);">
           <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
             <h3 class="mb-0"><i class="fa-solid fa-satellite-dish"></i> Operations Intelligence</h3>
@@ -631,6 +675,7 @@
           </div>
         </section>
         `;
+        bindDashboardActions();
       } else if (hash === '#logs') {
         // For logs, open in new tab for now
         window.open('/logs/live', '_blank');
@@ -908,6 +953,7 @@
         if (errorCountEl) errorCountEl.innerText = errors.count ?? '--';
         const healthStatusEl = document.getElementById('healthStatus');
         if (healthStatusEl) healthStatusEl.innerText = health.status ?? '--';
+        renderSystemStatus(health, errors, ops);
         renderOpsOverview(ops);
         await loadCampaignSnapshot();
         if (!ops || !ops.kpis) {
@@ -931,22 +977,56 @@
         setTimeout(() => loadPerformanceReport('daily'), 250);
       }
     });
-    document.getElementById('dailyReportBtn')?.addEventListener('click', () => loadPerformanceReport('daily'));
-    document.getElementById('weeklyReportBtn')?.addEventListener('click', () => loadPerformanceReport('weekly'));
     setInterval(() => {
       if (window.location.hash === '' || window.location.hash === '#' || window.location.hash === '#dashboard') {
         updateDashboardCards();
         loadPerformanceReport('daily');
       }
     }, 60000);
-    
-    // Alert banner close handler
-    const alertClose = document.getElementById('alertClose');
-    if (alertClose) {
-      alertClose.addEventListener('click', () => {
-        const banner = document.getElementById('alertBanner');
-        if (banner) banner.style.display = 'none';
-      });
+
+    function bindDashboardActions() {
+      const dailyButton = document.getElementById('dailyReportBtn');
+      const weeklyButton = document.getElementById('weeklyReportBtn');
+      if (dailyButton && !dailyButton.dataset.bound) {
+        dailyButton.dataset.bound = 'true';
+        dailyButton.addEventListener('click', () => loadPerformanceReport('daily'));
+      }
+      if (weeklyButton && !weeklyButton.dataset.bound) {
+        weeklyButton.dataset.bound = 'true';
+        weeklyButton.addEventListener('click', () => loadPerformanceReport('weekly'));
+      }
+    }
+
+    function dismissAlertBanner() {
+      const banner = document.getElementById('alertBanner');
+      if (banner) banner.style.display = 'none';
+    }
+
+    function renderSystemStatus(health, errors, ops) {
+      const badge = document.getElementById('statusBadge');
+      const time = document.getElementById('statusTime');
+      if (!badge || !time) return;
+
+      const systemHealth = String(health?.status || '').toLowerCase();
+      const failedPayments = Number(ops?.kpis?.failed_payments_30d || 0);
+      const errorCount = Number(errors?.count || 0);
+      let statusClass = 'online';
+      let statusText = 'All Systems Operational';
+      let statusIcon = 'fa-circle-check';
+
+      if (systemHealth && systemHealth !== 'healthy') {
+        statusClass = 'offline';
+        statusText = `System ${health.status}`;
+        statusIcon = 'fa-triangle-exclamation';
+      } else if (failedPayments > 0 || errorCount > 0) {
+        statusClass = 'idle';
+        statusText = 'Operational Attention Needed';
+        statusIcon = 'fa-bell';
+      }
+
+      badge.className = `status-badge ${statusClass}`;
+      badge.innerHTML = `<i class="fa-solid ${statusIcon}"></i> ${statusText}`;
+      time.textContent = `Last checked ${new Date().toLocaleTimeString()}`;
     }
     
     // Quick action handlers
@@ -974,7 +1054,7 @@
       const messageEl = document.getElementById('alertMessage');
       const icon = document.getElementById('alertIcon');
       
-      if (!banner) return;
+      if (!banner || !titleEl || !messageEl || !icon) return;
       
       titleEl.textContent = title;
       messageEl.textContent = message;
