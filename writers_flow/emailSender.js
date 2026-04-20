@@ -1,42 +1,45 @@
 // Email sender module using nodemailer with validation and logging
+/**
+ * Writer's Flow — Email Sender
+ * Supports dynamic SMTP config passed at runtime (per-campaign or from env).
+ */
 import nodemailer from 'nodemailer';
 
-function validateEmailConfig() {
-  const required = ['SMTP_HOST', 'SMTP_PORT', 'SMTP_USER', 'SMTP_PASS'];
-  for (const key of required) {
-    if (!process.env[key]) {
-      throw new Error(`Missing required email config: ${key}`);
-    }
-  }
-}
+function buildTransporter(config = {}) {
+  const host = config.smtp_host || process.env.SMTP_HOST;
+  const port = parseInt(config.smtp_port || process.env.SMTP_PORT || '587', 10);
+  const user = config.smtp_user || process.env.SMTP_USER;
+  const pass = config.smtp_pass || process.env.SMTP_PASS;
 
-let transporter;
-try {
-  validateEmailConfig();
-  transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: parseInt(process.env.SMTP_PORT, 10),
-    secure: true,
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
-    },
+  if (!host || !user || !pass) {
+    throw new Error('SMTP config incomplete. Set SMTP_HOST, SMTP_USER, SMTP_PASS or pass smtp config.');
+  }
+
+  return nodemailer.createTransport({
+    host,
+    port,
+    secure: port === 465,
+    auth: { user, pass },
   });
-} catch (err) {
-  console.error('[EmailSender] Transporter setup failed:', err);
 }
 
-export default async function sendEmail({ from, to, subject, text, html }) {
-  if (!transporter) throw new Error('Email transporter not configured');
-  if (!from || !to || !subject || !text) {
-    throw new Error('Missing required email fields');
-  }
-  try {
-    const info = await transporter.sendMail({ from, to, subject, text, html });
-    console.log(`[EmailSender] Email sent: ${info.messageId} to ${to}`);
-    return info;
-  } catch (err) {
-    console.error(`[EmailSender] Failed to send email to ${to}:`, err);
-    throw err;
-  }
+/**
+ * @param {object} params
+ * @param {string} params.to
+ * @param {string} params.subject
+ * @param {string} params.text
+ * @param {string} [params.html]
+ * @param {object} [params.smtpConfig] - optional {smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from_name}
+ */
+export default async function sendEmail({ to, subject, text, html, smtpConfig = {} }) {
+  if (!to || !subject || !text) throw new Error('to, subject, and text are required');
+
+  const transporter = buildTransporter(smtpConfig);
+  const fromName = smtpConfig.smtp_from_name || process.env.SMTP_FROM_NAME || 'Alphadome';
+  const fromAddr = smtpConfig.smtp_user || process.env.SMTP_USER;
+  const from = `"${fromName}" <${fromAddr}>`;
+
+  const info = await transporter.sendMail({ from, to, subject, text, html: html || text });
+  console.log(`[EmailSender] Sent to ${to}: ${info.messageId}`);
+  return info;
 }

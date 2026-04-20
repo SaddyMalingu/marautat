@@ -7356,6 +7356,224 @@ Alphadome helps brands scale through automation, AI storytelling, and digital cr
 
 
 // ===== START SERVER =====
+// ===== WRITER'S FLOW ADMIN API =====
+
+// List campaigns
+app.get("/admin/api/wf/campaigns", adminAuth, async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from("wf_campaigns")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(50);
+    if (error) throw error;
+    res.json({ ok: true, campaigns: data });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Create campaign
+app.post("/admin/api/wf/campaigns", adminAuth, async (req, res) => {
+  try {
+    const {
+      name, keywords = [], industries = [], outreach_types = ["pitch"],
+      channels = ["email"], target_count = 20, quality_threshold = 70, notes,
+    } = req.body || {};
+    if (!name || !keywords.length) {
+      return res.status(400).json({ ok: false, error: "name and keywords required" });
+    }
+    const { data, error } = await supabase.from("wf_campaigns").insert([{
+      name: String(name).trim(),
+      keywords: Array.isArray(keywords) ? keywords : [keywords],
+      industries: Array.isArray(industries) ? industries : [],
+      outreach_types: Array.isArray(outreach_types) ? outreach_types : ["pitch"],
+      channels: Array.isArray(channels) ? channels : ["email"],
+      target_count: parseInt(target_count, 10) || 20,
+      quality_threshold: parseInt(quality_threshold, 10) || 70,
+      notes: notes || null,
+      status: "draft",
+    }]).select().single();
+    if (error) throw error;
+    res.json({ ok: true, campaign: data });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Update campaign
+app.patch("/admin/api/wf/campaigns/:id", adminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const allowed = ["name","keywords","industries","outreach_types","channels","target_count","quality_threshold","notes","status"];
+    const updates = {};
+    for (const f of allowed) {
+      if (req.body[f] !== undefined) updates[f] = req.body[f];
+    }
+    const { data, error } = await supabase.from("wf_campaigns").update(updates).eq("id", id).select().single();
+    if (error) throw error;
+    res.json({ ok: true, campaign: data });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Delete campaign
+app.delete("/admin/api/wf/campaigns/:id", adminAuth, async (req, res) => {
+  try {
+    const { error } = await supabase.from("wf_campaigns").delete().eq("id", req.params.id);
+    if (error) throw error;
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Run a campaign (async — returns immediately, runs in background)
+app.post("/admin/api/wf/campaigns/:id/run", adminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { data: campaign, error } = await supabase.from("wf_campaigns").select("*").eq("id", id).single();
+    if (error || !campaign) return res.status(404).json({ ok: false, error: "Campaign not found" });
+    if (campaign.status === "running") return res.status(409).json({ ok: false, error: "Campaign is already running" });
+
+    // Get SMTP config from env (or inject smtpConfig from request for tenant-specific)
+    const smtpConfig = {
+      smtp_host: process.env.SMTP_HOST,
+      smtp_port: process.env.SMTP_PORT,
+      smtp_user: process.env.SMTP_USER,
+      smtp_pass: process.env.SMTP_PASS,
+      smtp_from_name: process.env.SMTP_FROM_NAME || "Alphadome",
+    };
+
+    // Respond immediately, run pipeline in background
+    res.json({ ok: true, message: "Campaign started", campaign_id: id });
+
+    import("./writers_flow/orchestrator.js").then(mod => {
+      const runWritersFlow = mod.default;
+      runWritersFlow({
+        campaignId: id,
+        keywords: campaign.keywords || [],
+        industries: campaign.industries || [],
+        outreachTypes: campaign.outreach_types || ["pitch"],
+        channels: campaign.channels || ["email"],
+        targetCount: campaign.target_count || 20,
+        qualityThreshold: campaign.quality_threshold || 70,
+        smtpConfig,
+        supabase,
+        testMode: req.query.test === "1",
+      }).catch(err => {
+        log(`[WF] Campaign ${id} failed: ${err.message}`, "ERROR");
+      });
+    }).catch(err => {
+      log(`[WF] Failed to import orchestrator: ${err.message}`, "ERROR");
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Get leads for a campaign
+app.get("/admin/api/wf/campaigns/:id/leads", adminAuth, async (req, res) => {
+  try {
+    const { status, limit = 50, offset = 0 } = req.query;
+    let query = supabase.from("wf_leads").select("*").eq("campaign_id", req.params.id)
+      .order("discovered_at", { ascending: false })
+      .range(parseInt(offset), parseInt(offset) + parseInt(limit) - 1);
+    if (status) query = query.eq("status", status);
+    const { data, error } = await query;
+    if (error) throw error;
+    res.json({ ok: true, leads: data });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Get outreach for a campaign
+app.get("/admin/api/wf/campaigns/:id/outreach", adminAuth, async (req, res) => {
+  try {
+    const { status, channel, limit = 50, offset = 0 } = req.query;
+    let query = supabase.from("wf_outreach").select("*, wf_leads(organization, email, url)")
+      .eq("campaign_id", req.params.id)
+      .order("created_at", { ascending: false })
+      .range(parseInt(offset), parseInt(offset) + parseInt(limit) - 1);
+    if (status) query = query.eq("status", status);
+    if (channel) query = query.eq("channel", channel);
+    const { data, error } = await query;
+    if (error) throw error;
+    res.json({ ok: true, outreach: data });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Manually send a queued/draft outreach item
+app.post("/admin/api/wf/outreach/:id/send", adminAuth, async (req, res) => {
+  try {
+    const { data: item, error } = await supabase.from("wf_outreach")
+      .select("*, wf_leads(email, phone)").eq("id", req.params.id).single();
+    if (error || !item) return res.status(404).json({ ok: false, error: "Outreach item not found" });
+    if (item.status === "sent") return res.status(409).json({ ok: false, error: "Already sent" });
+
+    if (item.channel === "email") {
+      const toEmail = item.wf_leads?.email;
+      if (!toEmail) return res.status(400).json({ ok: false, error: "No email on lead" });
+      const smtpConfig = { smtp_host: process.env.SMTP_HOST, smtp_port: process.env.SMTP_PORT,
+        smtp_user: process.env.SMTP_USER, smtp_pass: process.env.SMTP_PASS };
+      const { default: sendEmailFn } = await import("./writers_flow/emailSender.js");
+      await sendEmailFn({ to: toEmail, subject: item.subject || "Hello from Alphadome", text: item.body, smtpConfig });
+    }
+    // WhatsApp channel: update status to 'queued' for Meta-compliant dispatch
+    const newStatus = item.channel === "whatsapp" ? "queued" : "sent";
+    await supabase.from("wf_outreach").update({ status: newStatus, sent_at: new Date().toISOString() }).eq("id", req.params.id);
+    if (item.lead_id) {
+      await supabase.from("wf_leads").update({ status: "contacted", contacted_at: new Date().toISOString() }).eq("id", item.lead_id);
+    }
+    res.json({ ok: true, status: newStatus });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Writer's Flow stats overview
+app.get("/admin/api/wf/stats", adminAuth, async (req, res) => {
+  try {
+    const [campaigns, leads, outreach] = await Promise.all([
+      supabase.from("wf_campaigns").select("status"),
+      supabase.from("wf_leads").select("status"),
+      supabase.from("wf_outreach").select("status, channel"),
+    ]);
+    const countBy = (arr, key, val) => (arr || []).filter(r => r[key] === val).length;
+    res.json({
+      ok: true,
+      stats: {
+        campaigns: {
+          total: (campaigns.data || []).length,
+          running: countBy(campaigns.data, "status", "running"),
+          completed: countBy(campaigns.data, "status", "completed"),
+          draft: countBy(campaigns.data, "status", "draft"),
+        },
+        leads: {
+          total: (leads.data || []).length,
+          qualified: countBy(leads.data, "status", "qualified"),
+          contacted: countBy(leads.data, "status", "contacted"),
+          skipped: countBy(leads.data, "status", "skipped"),
+        },
+        outreach: {
+          sent: countBy(outreach.data, "status", "sent"),
+          draft: countBy(outreach.data, "status", "draft"),
+          failed: countBy(outreach.data, "status", "failed"),
+          queued: countBy(outreach.data, "status", "queued"),
+          email: (outreach.data || []).filter(r => r.channel === "email").length,
+          whatsapp: (outreach.data || []).filter(r => r.channel === "whatsapp").length,
+        },
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 app.listen(process.env.PORT, () => {
   log(`Server running on port ${process.env.PORT}`, "SYSTEM");
   console.log(`🚀 Server running on port ${process.env.PORT}`);

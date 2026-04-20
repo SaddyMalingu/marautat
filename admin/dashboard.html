@@ -161,11 +161,11 @@
         <li class="nav-item"><a class="nav-link" href="#simple"><i class="fa-solid fa-plus"></i> Simple Upload</a></li>
         <li class="nav-item"><a class="nav-link" href="#catalog"><i class="fa-solid fa-table-list"></i> Catalog Viewer</a></li>
         <li class="nav-item"><a class="nav-link" href="#logs"><i class="fa-solid fa-wave-square"></i> Live Logs</a></li>
+        <li class="nav-item"><a class="nav-link" href="#writers-flow"><i class="fa-solid fa-rocket"></i> Writer's Flow</a></li>
       </ul>
     </nav>
     <main class="main-content flex-grow-1">
       <div id="spa-content">
-        <!-- Hero Welcome Section -->
         <section class="mb-4 p-4 rounded-4 bg-gradient" style="background:linear-gradient(90deg,#232a4d 0%,#38bdf8 100%);color:#fff;">
           <div class="d-flex flex-column flex-md-row align-items-center justify-content-between gap-3">
             <div>
@@ -466,6 +466,7 @@
         <li class="nav-item"><a class="nav-link" href="#simple"><i class="fa-solid fa-plus"></i> Simple Upload</a></li>
         <li class="nav-item"><a class="nav-link" href="#catalog"><i class="fa-solid fa-table-list"></i> Catalog Viewer</a></li>
         <li class="nav-item"><a class="nav-link" href="#logs"><i class="fa-solid fa-wave-square"></i> Live Logs</a></li>
+        <li class="nav-item"><a class="nav-link" href="#writers-flow"><i class="fa-solid fa-rocket"></i> Writer's Flow</a></li>
       </ul>
     </nav>
   </div>
@@ -542,6 +543,7 @@
       else if (hash === '#upload') url = 'dashboard.html#upload';
       else if (hash === '#logs') url = '/logs/live';
       else if (hash === '#dashboard' || hash === '' || hash === '#') url = '';
+      else if (hash === '#writers-flow') { renderWritersFlowPage(); return; }
       else url = '';
       if (url.endsWith('.html')) {
         try {
@@ -1689,6 +1691,302 @@
       }
     }
     
+    const writersFlowState = {
+      campaigns: [],
+      selectedCampaignId: null,
+      stats: null,
+      leads: [],
+      outreach: [],
+    };
+
+    function renderWritersFlowPage() {
+      const spaContent = document.getElementById('spa-content');
+      if (!spaContent) return;
+      spaContent.innerHTML = `
+        <div class="mb-4 d-flex flex-wrap align-items-center justify-content-between gap-3">
+          <div>
+            <h2 class="mb-1"><i class="fa-solid fa-rocket"></i> Writer's Flow</h2>
+            <div class="text-muted">Automated lead discovery and outreach engine</div>
+          </div>
+          <button class="btn btn-outline-info" id="wfRefreshBtn"><i class="fa-solid fa-arrows-rotate"></i> Refresh</button>
+        </div>
+
+        <div class="dashboard-cards mb-4">
+          <div class="dashboard-card"><h3>Campaigns</h3><div class="value" id="wfCampaignsCount">--</div><div class="desc">Total</div></div>
+          <div class="dashboard-card"><h3>Leads</h3><div class="value" id="wfLeadsCount">--</div><div class="desc">Qualified + discovered</div></div>
+          <div class="dashboard-card"><h3>Outreach Sent</h3><div class="value" id="wfSentCount">--</div><div class="desc">Emails delivered</div></div>
+          <div class="dashboard-card"><h3>Queued WA</h3><div class="value" id="wfQueuedCount">--</div><div class="desc">Awaiting manual dispatch</div></div>
+        </div>
+
+        <div class="row g-4">
+          <div class="col-lg-5">
+            <div class="card border-info bg-dark text-light">
+              <div class="card-body">
+                <h5 class="card-title mb-3"><i class="fa-solid fa-plus-circle"></i> New Campaign</h5>
+                <form id="wfCreateForm" class="d-grid gap-2">
+                  <input class="form-control" id="wfName" placeholder="Campaign name (e.g. Global Logistics Partnerships)" required />
+                  <input class="form-control" id="wfKeywords" placeholder="Keywords (comma separated)" required />
+                  <input class="form-control" id="wfIndustries" placeholder="Industries (comma separated)" />
+                  <div class="row g-2">
+                    <div class="col-6"><input type="number" min="5" max="500" class="form-control" id="wfTargetCount" value="50" /></div>
+                    <div class="col-6"><input type="number" min="40" max="100" class="form-control" id="wfQualityThreshold" value="70" /></div>
+                  </div>
+                  <div class="d-flex gap-2 flex-wrap">
+                    <label class="form-check"><input class="form-check-input" type="checkbox" id="wfChannelEmail" checked /> <span class="form-check-label">Email</span></label>
+                    <label class="form-check"><input class="form-check-input" type="checkbox" id="wfChannelWhatsapp" /> <span class="form-check-label">WhatsApp (queue)</span></label>
+                  </div>
+                  <select class="form-select" id="wfOutreachType">
+                    <option value="pitch">Pitch</option>
+                    <option value="proposal">Proposal</option>
+                    <option value="partnership">Partnership</option>
+                    <option value="employment">Employment / Talent</option>
+                  </select>
+                  <button class="btn btn-info" type="submit"><i class="fa-solid fa-floppy-disk"></i> Create Campaign</button>
+                </form>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-lg-7">
+            <div class="card border-info bg-dark text-light mb-3">
+              <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <h5 class="card-title mb-0"><i class="fa-solid fa-bullhorn"></i> Campaign Queue</h5>
+                  <small class="text-muted">Select and run outreach</small>
+                </div>
+                <div id="wfCampaignList" class="ops-empty">Loading campaigns...</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="row g-4 mt-1">
+          <div class="col-lg-6">
+            <div class="card border-info bg-dark text-light">
+              <div class="card-body">
+                <h5 class="card-title"><i class="fa-solid fa-user-group"></i> Leads</h5>
+                <div id="wfLeadsList" class="ops-empty">Select a campaign to view leads.</div>
+              </div>
+            </div>
+          </div>
+          <div class="col-lg-6">
+            <div class="card border-info bg-dark text-light">
+              <div class="card-body">
+                <h5 class="card-title"><i class="fa-solid fa-envelope"></i> Outreach</h5>
+                <div id="wfOutreachList" class="ops-empty">Select a campaign to view outreach messages.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+
+      document.getElementById('wfCreateForm')?.addEventListener('submit', submitWfCampaignCreate);
+      document.getElementById('wfRefreshBtn')?.addEventListener('click', refreshWfPage);
+      refreshWfPage();
+    }
+
+    async function refreshWfPage() {
+      await Promise.all([loadWfStats(), loadWfCampaigns()]);
+      if (writersFlowState.selectedCampaignId) {
+        await Promise.all([
+          loadWfLeads(writersFlowState.selectedCampaignId),
+          loadWfOutreach(writersFlowState.selectedCampaignId),
+        ]);
+      }
+    }
+
+    async function loadWfStats() {
+      try {
+        const data = await fetchJsonOrThrow('/admin/api/wf/stats');
+        const stats = data.stats || {};
+        writersFlowState.stats = stats;
+        const campaignsTotal = stats.campaigns?.total ?? 0;
+        const leadsTotal = stats.leads?.total ?? 0;
+        const sent = stats.outreach?.sent ?? 0;
+        const queued = stats.outreach?.queued ?? 0;
+        const setVal = (id, value) => { const el = document.getElementById(id); if (el) el.textContent = String(value); };
+        setVal('wfCampaignsCount', campaignsTotal);
+        setVal('wfLeadsCount', leadsTotal);
+        setVal('wfSentCount', sent);
+        setVal('wfQueuedCount', queued);
+      } catch (err) {
+        showAlert('Writer\'s Flow', err.message || 'Failed to load stats', 'danger');
+      }
+    }
+
+    async function loadWfCampaigns() {
+      const container = document.getElementById('wfCampaignList');
+      if (!container) return;
+      container.innerHTML = '<div class="ops-empty">Loading campaigns...</div>';
+      try {
+        const data = await fetchJsonOrThrow('/admin/api/wf/campaigns');
+        const campaigns = Array.isArray(data.campaigns) ? data.campaigns : [];
+        writersFlowState.campaigns = campaigns;
+        if (!campaigns.length) {
+          container.innerHTML = '<div class="ops-empty">No campaigns yet. Create your first campaign.</div>';
+          return;
+        }
+        container.innerHTML = campaigns.map((c) => {
+          const selected = writersFlowState.selectedCampaignId === c.id ? 'border border-info' : '';
+          return `
+            <div class="tenant-card ${selected}">
+              <div class="fw-semibold">${escapeHtml(c.name || 'Untitled')} <span class="status-pill ${String(c.status || 'draft') === 'running' ? 'active' : 'inactive'}">${escapeHtml(c.status || 'draft')}</span></div>
+              <div class="meta">Keywords: ${(Array.isArray(c.keywords) ? c.keywords : []).map(escapeHtml).join(', ') || 'n/a'}</div>
+              <div class="meta">Target: ${Number(c.target_count || 0)} • Threshold: ${Number(c.quality_threshold || 0)}</div>
+              <div class="actions">
+                <button class="btn btn-sm btn-outline-info" onclick="selectWfCampaign('${escapeHtml(String(c.id))}')">Open</button>
+                <button class="btn btn-sm btn-outline-success" onclick="runWfCampaign('${escapeHtml(String(c.id))}')">Run</button>
+                <button class="btn btn-sm btn-outline-danger" onclick="deleteWfCampaign('${escapeHtml(String(c.id))}')">Delete</button>
+              </div>
+            </div>
+          `;
+        }).join('');
+      } catch (err) {
+        container.innerHTML = `<div class="ops-empty text-danger">${escapeHtml(err.message || 'Failed to load campaigns')}</div>`;
+      }
+    }
+
+    async function submitWfCampaignCreate(event) {
+      event.preventDefault();
+      const keywords = (document.getElementById('wfKeywords')?.value || '').split(',').map(s => s.trim()).filter(Boolean);
+      const industries = (document.getElementById('wfIndustries')?.value || '').split(',').map(s => s.trim()).filter(Boolean);
+      const channels = [];
+      if (document.getElementById('wfChannelEmail')?.checked) channels.push('email');
+      if (document.getElementById('wfChannelWhatsapp')?.checked) channels.push('whatsapp');
+      if (!channels.length) channels.push('email');
+
+      const payload = {
+        name: document.getElementById('wfName')?.value?.trim(),
+        keywords,
+        industries,
+        outreach_types: [document.getElementById('wfOutreachType')?.value || 'pitch'],
+        channels,
+        target_count: Number(document.getElementById('wfTargetCount')?.value || 50),
+        quality_threshold: Number(document.getElementById('wfQualityThreshold')?.value || 70),
+      };
+
+      try {
+        await fetchJsonOrThrow('/admin/api/wf/campaigns', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        showAlert('Writer\'s Flow', 'Campaign created successfully.', 'success');
+        document.getElementById('wfCreateForm')?.reset();
+        document.getElementById('wfTargetCount').value = '50';
+        document.getElementById('wfQualityThreshold').value = '70';
+        document.getElementById('wfChannelEmail').checked = true;
+        await refreshWfPage();
+      } catch (err) {
+        showAlert('Writer\'s Flow', err.message || 'Failed to create campaign', 'danger');
+      }
+    }
+
+    async function runWfCampaign(campaignId) {
+      try {
+        await fetchJsonOrThrow(`/admin/api/wf/campaigns/${encodeURIComponent(campaignId)}/run`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        showAlert('Writer\'s Flow', 'Campaign started. Processing in background.', 'success');
+        await refreshWfPage();
+      } catch (err) {
+        showAlert('Writer\'s Flow', err.message || 'Failed to start campaign', 'danger');
+      }
+    }
+
+    async function deleteWfCampaign(campaignId) {
+      if (!confirm('Delete this campaign and all related leads/outreach?')) return;
+      try {
+        await fetchJsonOrThrow(`/admin/api/wf/campaigns/${encodeURIComponent(campaignId)}`, { method: 'DELETE' });
+        if (writersFlowState.selectedCampaignId === campaignId) writersFlowState.selectedCampaignId = null;
+        showAlert('Writer\'s Flow', 'Campaign deleted.', 'success');
+        await refreshWfPage();
+      } catch (err) {
+        showAlert('Writer\'s Flow', err.message || 'Delete failed', 'danger');
+      }
+    }
+
+    async function selectWfCampaign(campaignId) {
+      writersFlowState.selectedCampaignId = campaignId;
+      await Promise.all([loadWfCampaigns(), loadWfLeads(campaignId), loadWfOutreach(campaignId)]);
+    }
+
+    async function loadWfLeads(campaignId) {
+      const container = document.getElementById('wfLeadsList');
+      if (!container) return;
+      container.innerHTML = '<div class="ops-empty">Loading leads...</div>';
+      try {
+        const data = await fetchJsonOrThrow(`/admin/api/wf/campaigns/${encodeURIComponent(campaignId)}/leads?limit=30`);
+        const leads = Array.isArray(data.leads) ? data.leads : [];
+        writersFlowState.leads = leads;
+        if (!leads.length) {
+          container.innerHTML = '<div class="ops-empty">No leads yet for this campaign.</div>';
+          return;
+        }
+        container.innerHTML = leads.map((lead) => `
+          <div class="tenant-card">
+            <div class="fw-semibold">${escapeHtml(lead.organization || lead.name || 'Unnamed lead')}</div>
+            <div class="meta">Score: ${Number(lead.relevance_score || 0)} • ${escapeHtml(lead.status || 'discovered')}</div>
+            <div class="meta">${escapeHtml(lead.email || lead.phone || lead.url || 'No contact')}</div>
+          </div>
+        `).join('');
+      } catch (err) {
+        container.innerHTML = `<div class="ops-empty text-danger">${escapeHtml(err.message || 'Failed to load leads')}</div>`;
+      }
+    }
+
+    async function loadWfOutreach(campaignId) {
+      const container = document.getElementById('wfOutreachList');
+      if (!container) return;
+      container.innerHTML = '<div class="ops-empty">Loading outreach...</div>';
+      try {
+        const data = await fetchJsonOrThrow(`/admin/api/wf/campaigns/${encodeURIComponent(campaignId)}/outreach?limit=30`);
+        const items = Array.isArray(data.outreach) ? data.outreach : [];
+        writersFlowState.outreach = items;
+        if (!items.length) {
+          container.innerHTML = '<div class="ops-empty">No outreach messages yet for this campaign.</div>';
+          return;
+        }
+        container.innerHTML = items.map((item) => {
+          const leadEmail = item?.wf_leads?.email || '';
+          const org = item?.wf_leads?.organization || '';
+          return `
+            <div class="tenant-card">
+              <div class="fw-semibold">${escapeHtml(item.channel || 'email')} • ${escapeHtml(item.status || 'draft')}</div>
+              <div class="meta">${escapeHtml(org || leadEmail || 'Unknown lead')}</div>
+              <div class="meta">${escapeHtml(item.subject || '(no subject)')}</div>
+              <div class="actions">
+                ${item.status !== 'sent' ? `<button class="btn btn-sm btn-outline-success" onclick="sendWfOutreach('${escapeHtml(String(item.id))}')">Send Now</button>` : ''}
+              </div>
+            </div>
+          `;
+        }).join('');
+      } catch (err) {
+        container.innerHTML = `<div class="ops-empty text-danger">${escapeHtml(err.message || 'Failed to load outreach')}</div>`;
+      }
+    }
+
+    async function sendWfOutreach(outreachId) {
+      try {
+        await fetchJsonOrThrow(`/admin/api/wf/outreach/${encodeURIComponent(outreachId)}/send`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        showAlert('Writer\'s Flow', 'Outreach message sent/queued.', 'success');
+        if (writersFlowState.selectedCampaignId) {
+          await loadWfOutreach(writersFlowState.selectedCampaignId);
+        }
+      } catch (err) {
+        showAlert('Writer\'s Flow', err.message || 'Failed to send outreach', 'danger');
+      }
+    }
+
+    window.selectWfCampaign = selectWfCampaign;
+    window.runWfCampaign = runWfCampaign;
+    window.deleteWfCampaign = deleteWfCampaign;
+    window.sendWfOutreach = sendWfOutreach;
+
     function showAlert(title, message, type = 'info') {
       const banner = document.getElementById('alertBanner');
       const titleEl = document.getElementById('alertTitle');
