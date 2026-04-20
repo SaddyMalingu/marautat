@@ -382,12 +382,14 @@
       sidebarOverlay.classList.add('d-none');
       document.body.style.overflow = '';
     }
-    sidebarToggle.addEventListener('click', openMobileSidebar);
-    sidebarOverlay.addEventListener('click', closeMobileSidebar);
+    if (sidebarToggle) sidebarToggle.addEventListener('click', openMobileSidebar);
+    if (sidebarOverlay) sidebarOverlay.addEventListener('click', closeMobileSidebar);
     // Close sidebar on nav click (mobile)
-    mobileSidebar.querySelectorAll('.nav-link').forEach(link => {
-      link.addEventListener('click', closeMobileSidebar);
-    });
+    if (mobileSidebar) {
+      mobileSidebar.querySelectorAll('.nav-link').forEach(link => {
+        link.addEventListener('click', closeMobileSidebar);
+      });
+    }
     // SPA navigation (desktop and mobile) - event delegation for robust handling
     function setActiveNav(hash) {
       document.querySelectorAll('.sidebar .nav-link').forEach(l => {
@@ -412,8 +414,9 @@
       }
     }
     // Attach event listeners to both sidebars
-    document.getElementById('sidebarNav').addEventListener('click', handleNavClick);
-    document.getElementById('mobileSidebar').addEventListener('click', handleNavClick);
+    const sidebarNav = document.getElementById('sidebarNav');
+    if (sidebarNav) sidebarNav.addEventListener('click', handleNavClick);
+    if (mobileSidebar) mobileSidebar.addEventListener('click', handleNavClick);
     // On hashchange, update content and active nav
     function handleHashChange() {
       const hash = window.location.hash || '#dashboard';
