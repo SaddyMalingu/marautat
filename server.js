@@ -4886,9 +4886,14 @@ async function fetchTemplateDefinition(templateName = "alphadome") {
 
 function isMissingColumnError(error) {
   const msg = String(error?.message || "").toLowerCase();
+  const details = String(error?.details || "").toLowerCase();
+  const hint = String(error?.hint || "").toLowerCase();
+  const code = String(error?.code || "").toLowerCase();
+  const combined = `${msg} ${details} ${hint}`;
   return (
-    (msg.includes("column") && msg.includes("does not exist")) ||
-    msg.includes("schema cache")
+    code === "42703" ||
+    (combined.includes("column") && combined.includes("does not exist")) ||
+    combined.includes("schema cache")
   );
 }
 
@@ -5767,7 +5772,14 @@ app.get("/admin/api/templates/ops", adminAuth, async (req, res) => {
     return res.json({ ok: true, ...payload });
   } catch (err) {
     log(`Admin template ops error: ${err.message}`, "ERROR");
-    return res.status(500).json({ error: err.message, ok: false, templates: [] });
+    return res.json({
+      ok: true,
+      generated_at: new Date().toISOString(),
+      count: 0,
+      templates: [],
+      degraded: true,
+      degraded_reason: err.message,
+    });
   }
 });
 
