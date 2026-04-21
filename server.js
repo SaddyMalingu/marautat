@@ -755,7 +755,18 @@ async function fetchAllTemplateDefinitions() {
 }
 
 async function buildTemplateOpsCenter() {
-  const templates = await fetchAllTemplateDefinitions();
+  let templates = { waba_id: null, data: [], paging: null, degraded: false, degraded_reason: null };
+  try {
+    templates = await fetchAllTemplateDefinitions();
+  } catch (err) {
+    templates = {
+      waba_id: null,
+      data: [],
+      paging: null,
+      degraded: true,
+      degraded_reason: err.message || "template provider unavailable",
+    };
+  }
   const history = await readCampaignHistory({ limit: 200 });
   const usage = new Map();
   for (const row of history.items || []) {
@@ -776,6 +787,8 @@ async function buildTemplateOpsCenter() {
   return {
     generated_at: new Date().toISOString(),
     count: items.length,
+    degraded: Boolean(templates.degraded),
+    degraded_reason: templates.degraded_reason || null,
     templates: items,
   };
 }
@@ -4641,7 +4654,7 @@ async function buildTenantRiskWatchlist(limit = 30) {
   if (tenantResp.error && isMissingColumnError(tenantResp.error)) {
     tenantResp = await supabase
       .from("bot_tenants")
-      .select("id, client_name, client_phone, status, is_active, updated_at, created_at")
+      .select("id, client_name, client_phone, status, updated_at, created_at")
       .order("updated_at", { ascending: false })
       .limit(resolvedLimit);
   }
