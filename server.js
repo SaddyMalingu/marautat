@@ -800,6 +800,100 @@ async function buildExecutiveSnapshot() {
     buildTenantReadinessReport(50),
     readActiveIncident(),
   ]);
+
+  // Revenue today
+  const today = new Date();
+  const yyyy = today.getFullYear();
+  const mm = String(today.getMonth() + 1).padStart(2, '0');
+  const dd = String(today.getDate()).padStart(2, '0');
+  const todayIso = `${yyyy}-${mm}-${dd}`;
+  let revenueToday = 0;
+  try {
+    const paymentsToday = await supabase
+      .from("payments")
+      .select("amount, status, created_at")
+      .gte("created_at", `${todayIso}T00:00:00.000Z`)
+      .lte("created_at", `${todayIso}T23:59:59.999Z`)
+      .eq("status", "success");
+    if (paymentsToday.data && Array.isArray(paymentsToday.data)) {
+      revenueToday = paymentsToday.data.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+    }
+  } catch {}
+
+  // Estimate cost and margin (LLM + messaging cost, if available)
+  let costToday = 0;
+  let cost30d = 0;
+  let marginEstimate = null;
+  let burnRate = null;
+  try {
+    // If you have a cost table, use it; else fallback to 0
+    const costResp = await supabase
+      .from("platform_costs")
+      .select("amount, cost_type, created_at")
+      .gte("created_at", `${todayIso}T00:00:00.000Z`);
+    if (costResp.data && Array.isArray(costResp.data)) {
+      costToday = costResp.data.reduce((sum, c) => sum + (Number(c.amount) || 0), 0);
+    }
+    // 30d cost
+    const since30d = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const cost30dResp = await supabase
+      .from("platform_costs")
+      .select("amount, cost_type, created_at")
+      .gte("created_at", since30d);
+    if (cost30dResp.data && Array.isArray(cost30dResp.data)) {
+      cost30d = cost30dResp.data.reduce((sum, c) => sum + (Number(c.amount) || 0), 0);
+    }
+    marginEstimate = revenueToday - costToday;
+    burnRate = cost30d / 30;
+  } catch {}
+
+  // Cash at risk (pending payments)
+  let cashAtRisk = 0;
+  try {
+    const pending = await supabase
+      .from("payments")
+      .select("amount, status")
+      .eq("status", "pending");
+    if (pending.data && Array.isArray(pending.data)) {
+      cashAtRisk = pending.data.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+    }
+  } catch {}
+
+  // Deltas (change vs yesterday)
+  let deltaRevenue = null;
+  let deltaMargin = null;
+  try {
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const yyy = yesterday.getFullYear();
+    const ymm = String(yesterday.getMonth() + 1).padStart(2, '0');
+    const ydd = String(yesterday.getDate()).padStart(2, '0');
+    const yIso = `${yyy}-${ymm}-${ydd}`;
+    let revenueYesterday = 0;
+    let costYesterday = 0;
+    const paymentsY = await supabase
+      .from("payments")
+      .select("amount, status, created_at")
+      .gte("created_at", `${yIso}T00:00:00.000Z`)
+      .lte("created_at", `${yIso}T23:59:59.999Z`)
+      .eq("status", "success");
+    if (paymentsY.data && Array.isArray(paymentsY.data)) {
+      revenueYesterday = paymentsY.data.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+    }
+    const costY = await supabase
+      .from("platform_costs")
+      .select("amount, cost_type, created_at")
+      .gte("created_at", `${yIso}T00:00:00.000Z`)
+      .lte("created_at", `${yIso}T23:59:59.999Z`);
+    if (costY.data && Array.isArray(costY.data)) {
+      costYesterday = costY.data.reduce((sum, c) => sum + (Number(c.amount) || 0), 0);
+    }
+    deltaRevenue = revenueToday - revenueYesterday;
+    deltaMargin = (marginEstimate !== null && !isNaN(costYesterday)) ? (marginEstimate - (revenueYesterday - costYesterday)) : null;
+  } catch {}
+
+  // Auto-brief summary
+  const autoBrief = `Revenue today: KES ${revenueToday.toLocaleString()} | Margin: ${marginEstimate !== null ? `KES ${marginEstimate.toLocaleString()}` : 'N/A'} | Burn rate: ${burnRate !== null ? `KES ${Math.round(burnRate).toLocaleString()}/day` : 'N/A'} | Cash at risk: KES ${cashAtRisk.toLocaleString()} | ΔRevenue: ${deltaRevenue !== null ? (deltaRevenue >= 0 ? '+' : '') + deltaRevenue.toLocaleString() : 'N/A'}`;
+
   return {
     generated_at: new Date().toISOString(),
     headline: {
@@ -809,6 +903,13 @@ async function buildExecutiveSnapshot() {
       critical_tenants: Number(readiness.summary.critical || 0),
       health_status: ops.kpis.health_status || "unknown",
       active_incident: incident ? incident.title || incident.message || "incident" : null,
+      revenue_today: revenueToday,
+      margin_estimate: marginEstimate,
+      burn_rate: burnRate,
+      cash_at_risk: cashAtRisk,
+      delta_revenue: deltaRevenue,
+      delta_margin: deltaMargin,
+      auto_brief: autoBrief,
     },
     priorities: [
       ...(revenue.priorities || []).slice(0, 3),
