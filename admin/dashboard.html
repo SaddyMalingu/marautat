@@ -138,9 +138,47 @@
     .run-status.partial { background: rgba(250,204,21,0.2); color: #fde68a; }
     .run-status.failed { background: rgba(248,113,113,0.2); color: #fca5a5; }
     .run-status.dry_run { background: rgba(59,130,246,0.2); color: #93c5fd; }
+    .control-tower-grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 14px; }
+    .control-tower-card { background: rgba(255,255,255,0.03); border: 1px solid rgba(120,144,196,0.22); border-radius: 14px; padding: 14px; }
+    .control-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .diag-table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+    .diag-table th, .diag-table td { border-bottom: 1px solid rgba(120,144,196,0.16); padding: 8px 6px; text-align: left; }
+    .diag-badge { display: inline-flex; align-items: center; border-radius: 999px; padding: 2px 8px; font-size: 0.74rem; font-weight: 700; }
+    .diag-ok { background: rgba(34,197,94,0.2); color: #86efac; }
+    .diag-warn { background: rgba(250,204,21,0.2); color: #fde68a; }
+    .diag-bad { background: rgba(248,113,113,0.2); color: #fca5a5; }
+    .runbook-list { margin: 0; padding-left: 18px; font-size: 0.9rem; color: #d7e0f3; }
+    .runbook-list li { margin-bottom: 6px; }
+    .audit-feed { max-height: 280px; overflow: auto; display: grid; gap: 8px; }
+    .audit-item { background: rgba(255,255,255,0.03); border: 1px solid rgba(120,144,196,0.18); border-radius: 10px; padding: 10px; }
+    .audit-meta { font-size: 0.78rem; color: #aeb9d2; margin-bottom: 4px; }
+    .watchlist { display: grid; gap: 8px; max-height: 320px; overflow: auto; }
+    .watch-item { background: rgba(255,255,255,0.03); border: 1px solid rgba(120,144,196,0.18); border-radius: 10px; padding: 10px; }
+    .risk-pill { display: inline-flex; border-radius: 999px; padding: 2px 8px; font-size: 0.74rem; font-weight: 700; }
+    .risk-pill.high { background: rgba(248,113,113,0.2); color: #fca5a5; }
+    .risk-pill.medium { background: rgba(250,204,21,0.2); color: #fde68a; }
+    .risk-pill.low { background: rgba(34,197,94,0.2); color: #86efac; }
+    .policy-list { display: grid; gap: 8px; }
+    .policy-item { background: rgba(255,255,255,0.03); border: 1px solid rgba(120,144,196,0.18); border-radius: 10px; padding: 10px; }
+    .suite-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+    .suite-card { background: rgba(255,255,255,0.03); border: 1px solid rgba(120,144,196,0.18); border-radius: 14px; padding: 14px; }
+    .suite-card.full { grid-column: 1 / -1; }
+    .mini-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+    .mini-metric { background: rgba(255,255,255,0.03); border: 1px solid rgba(120,144,196,0.14); border-radius: 10px; padding: 10px; }
+    .mini-metric .label { font-size: 0.75rem; color: #aeb9d2; }
+    .mini-metric .value { font-size: 1.1rem; font-weight: 700; color: #f8fafc; }
+    .stack-list { display: grid; gap: 8px; max-height: 320px; overflow: auto; }
+    .stack-item { background: rgba(255,255,255,0.03); border: 1px solid rgba(120,144,196,0.18); border-radius: 10px; padding: 10px; }
+    .status-pill-inline { display: inline-flex; border-radius: 999px; padding: 2px 8px; font-size: 0.72rem; font-weight: 700; }
+    .status-pill-inline.active { background: rgba(34,197,94,0.2); color: #86efac; }
+    .status-pill-inline.warning { background: rgba(250,204,21,0.2); color: #fde68a; }
+    .status-pill-inline.danger { background: rgba(248,113,113,0.2); color: #fca5a5; }
     @media (max-width: 991px) {
       .ops-summary-grid { grid-template-columns: 1fr; }
       .ops-kpi-card .metric { font-size: 1.35rem; }
+      .control-tower-grid { grid-template-columns: 1fr; }
+      .suite-grid { grid-template-columns: 1fr; }
+      .mini-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
   </style>
 </head>
@@ -624,6 +662,252 @@
             Tenant Settings
           </a>
         </div>
+        <section class="card p-4 mb-4 border-info shadow-sm" style="background:rgba(24,28,47,0.97);">
+          <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+            <h3 class="mb-0"><i class="fa-solid fa-tower-broadcast"></i> Control Tower</h3>
+            <small class="text-muted" id="controlTowerUpdatedAt">Awaiting first refresh...</small>
+          </div>
+          <div class="control-tower-grid">
+            <div class="control-tower-card">
+              <div class="control-row mb-2">
+                <span class="ops-tag ops-tag-success">Automation</span>
+                <button class="btn btn-sm btn-outline-success" id="toggleAutoRefreshBtn">Enable Auto Refresh</button>
+                <select class="form-select form-select-sm" id="autoRefreshInterval" style="max-width:170px;">
+                  <option value="30">Every 30 sec</option>
+                  <option value="60" selected>Every 1 min</option>
+                  <option value="120">Every 2 min</option>
+                  <option value="300">Every 5 min</option>
+                </select>
+              </div>
+              <div class="small text-muted mb-3" id="autoRefreshStatus">Auto-refresh is off. Manual refresh is active.</div>
+              <div class="control-row mb-2">
+                <span class="ops-tag ops-tag-warning">Diagnostics</span>
+                <button class="btn btn-sm btn-outline-info" id="runDiagnosticsBtn">Run Endpoint Diagnostics</button>
+                <button class="btn btn-sm btn-outline-light" id="copyAdminContextBtn">Copy Admin Context</button>
+              </div>
+              <div class="small text-muted" id="diagnosticsLastRun">Diagnostics not run yet.</div>
+            </div>
+            <div class="control-tower-card">
+              <div class="d-flex align-items-center justify-content-between mb-2">
+                <h5 class="mb-0"><i class="fa-solid fa-list-check"></i> Runbook</h5>
+                <span class="ops-tag ops-tag-danger" id="runbookUrgency">Assessing...</span>
+              </div>
+              <ol class="runbook-list" id="runbookList">
+                <li>Loading operational guidance...</li>
+              </ol>
+            </div>
+          </div>
+          <div class="control-tower-card mt-3">
+            <h5 class="mb-2"><i class="fa-solid fa-heart-pulse"></i> Endpoint Status Matrix</h5>
+            <div class="table-responsive">
+              <table class="diag-table">
+                <thead>
+                  <tr>
+                    <th>Endpoint</th>
+                    <th>Status</th>
+                    <th>Latency</th>
+                    <th>Details</th>
+                  </tr>
+                </thead>
+                <tbody id="diagnosticsTableBody">
+                  <tr><td colspan="4" class="text-muted">Diagnostics pending...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+        <section class="card p-4 mb-4 border-info shadow-sm" style="background:rgba(24,28,47,0.97);">
+          <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+            <h3 class="mb-0"><i class="fa-solid fa-user-shield"></i> Governance & Watchlist</h3>
+            <small class="text-muted" id="governanceUpdatedAt">Waiting for governance data...</small>
+          </div>
+          <div class="row g-3">
+            <div class="col-12 col-lg-6">
+              <div class="control-tower-card">
+                <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+                  <h5 class="mb-0"><i class="fa-solid fa-scroll"></i> Audit Feed</h5>
+                  <div class="control-row">
+                    <select class="form-select form-select-sm" id="auditSeverityFilter" style="max-width:130px;">
+                      <option value="all">All Severity</option>
+                      <option value="critical">Critical</option>
+                      <option value="warning">Warning</option>
+                      <option value="info">Info</option>
+                    </select>
+                    <button class="btn btn-sm btn-outline-info" id="refreshAuditFeedBtn">Refresh</button>
+                  </div>
+                </div>
+                <div class="small text-muted mb-2" id="auditFeedSummary">No audit data yet.</div>
+                <div class="audit-feed" id="auditFeedList">
+                  <div class="ops-empty">Audit feed loading...</div>
+                </div>
+              </div>
+            </div>
+            <div class="col-12 col-lg-6">
+              <div class="control-tower-card">
+                <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+                  <h5 class="mb-0"><i class="fa-solid fa-triangle-exclamation"></i> Tenant Risk Watchlist</h5>
+                  <div class="control-row">
+                    <select class="form-select form-select-sm" id="tenantRiskLevelFilter" style="max-width:130px;">
+                      <option value="all">All Levels</option>
+                      <option value="medium">Medium + High</option>
+                      <option value="high">High only</option>
+                    </select>
+                    <button class="btn btn-sm btn-outline-warning" id="refreshTenantRiskBtn">Refresh</button>
+                  </div>
+                </div>
+                <div class="small text-muted mb-2" id="tenantRiskSummary">No watchlist data yet.</div>
+                <div class="watchlist" id="tenantRiskWatchlist">
+                  <div class="ops-empty">Tenant risk data loading...</div>
+                </div>
+              </div>
+            </div>
+            <div class="col-12 col-lg-6">
+              <div class="control-tower-card">
+                <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+                  <h5 class="mb-0"><i class="fa-solid fa-clipboard-check"></i> Active Governance Policies</h5>
+                  <button class="btn btn-sm btn-outline-light" id="refreshPoliciesBtn">Refresh</button>
+                </div>
+                <div class="policy-list" id="policyList">
+                  <div class="ops-empty">Loading policies...</div>
+                </div>
+              </div>
+            </div>
+            <div class="col-12 col-lg-6">
+              <div class="control-tower-card">
+                <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+                  <h5 class="mb-0"><i class="fa-solid fa-fingerprint"></i> Admin Action Trail</h5>
+                  <div class="control-row">
+                    <select class="form-select form-select-sm" id="actionStatusFilter" style="max-width:130px;">
+                      <option value="all">All Status</option>
+                      <option value="success">Success</option>
+                      <option value="failed">Failed</option>
+                      <option value="blocked">Blocked</option>
+                      <option value="dry_run">Dry Run</option>
+                    </select>
+                    <button class="btn btn-sm btn-outline-info" id="refreshActionTrailBtn">Refresh</button>
+                  </div>
+                </div>
+                <div class="small text-muted mb-2" id="actionTrailSummary">No action history loaded.</div>
+                <div class="audit-feed" id="actionTrailList">
+                  <div class="ops-empty">Action trail loading...</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+        <section class="card p-4 mb-4 border-info shadow-sm" style="background:rgba(24,28,47,0.97);">
+          <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+            <h3 class="mb-0"><i class="fa-solid fa-screwdriver-wrench"></i> Operations Suite</h3>
+            <small class="text-muted" id="operationsSuiteUpdatedAt">Waiting for suite data...</small>
+          </div>
+          <div class="suite-grid">
+            <div class="suite-card full">
+              <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+                <h5 class="mb-0"><i class="fa-solid fa-eye"></i> Executive Snapshot</h5>
+                <div class="small text-muted">Role: <span id="adminRoleBadge">super_admin</span> • Actor: <span id="adminActorBadge">admin</span></div>
+              </div>
+              <div class="mini-metrics" id="executiveMetrics">
+                <div class="mini-metric"><div class="label">Revenue</div><div class="value">--</div></div>
+                <div class="mini-metric"><div class="label">Blocked Cases</div><div class="value">--</div></div>
+                <div class="mini-metric"><div class="label">Critical Tenants</div><div class="value">--</div></div>
+                <div class="mini-metric"><div class="label">Health</div><div class="value">--</div></div>
+              </div>
+              <div class="stack-list" id="executivePriorityList"><div class="ops-empty">Loading executive priorities...</div></div>
+            </div>
+            <div class="suite-card">
+              <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+                <h5 class="mb-0"><i class="fa-solid fa-hourglass-half"></i> SLA Recovery Board</h5>
+                <button class="btn btn-sm btn-outline-warning" id="refreshSlaBoardBtn">Refresh</button>
+              </div>
+              <div class="small text-muted mb-2" id="slaBoardSummary">Loading SLA board...</div>
+              <div class="stack-list" id="slaBoardList"><div class="ops-empty">Loading recovery cases...</div></div>
+            </div>
+            <div class="suite-card">
+              <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+                <h5 class="mb-0"><i class="fa-solid fa-chart-column"></i> Revenue Command Center</h5>
+                <button class="btn btn-sm btn-outline-success" id="refreshRevenueCenterBtn">Refresh</button>
+              </div>
+              <div class="mini-metrics" id="revenueCenterMetrics">
+                <div class="mini-metric"><div class="label">Revenue 30d</div><div class="value">--</div></div>
+                <div class="mini-metric"><div class="label">Conversion</div><div class="value">--</div></div>
+                <div class="mini-metric"><div class="label">Blocked Value</div><div class="value">--</div></div>
+                <div class="mini-metric"><div class="label">Attempts</div><div class="value">--</div></div>
+              </div>
+              <div class="stack-list" id="revenuePriorityList"><div class="ops-empty">Loading revenue priorities...</div></div>
+            </div>
+            <div class="suite-card">
+              <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+                <h5 class="mb-0"><i class="fa-solid fa-clipboard-list"></i> Tenant Readiness</h5>
+                <button class="btn btn-sm btn-outline-info" id="refreshTenantReadinessBtn">Refresh</button>
+              </div>
+              <div class="small text-muted mb-2" id="tenantReadinessSummary">Loading readiness...</div>
+              <div class="stack-list" id="tenantReadinessList"><div class="ops-empty">Loading tenants...</div></div>
+            </div>
+            <div class="suite-card">
+              <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+                <h5 class="mb-0"><i class="fa-solid fa-headset"></i> Support Inbox</h5>
+                <button class="btn btn-sm btn-outline-light" id="refreshSupportInboxBtn">Refresh</button>
+              </div>
+              <div class="small text-muted mb-2" id="supportInboxSummary">Loading support inbox...</div>
+              <div class="stack-list" id="supportInboxList"><div class="ops-empty">Loading unresolved messages...</div></div>
+            </div>
+            <div class="suite-card">
+              <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+                <h5 class="mb-0"><i class="fa-solid fa-money-check-dollar"></i> Finance Reconciliation</h5>
+                <button class="btn btn-sm btn-outline-success" id="refreshFinanceBtn">Refresh</button>
+              </div>
+              <div class="small text-muted mb-2" id="financeSummary">Loading finance data...</div>
+              <div class="stack-list" id="financeList"><div class="ops-empty">Loading unresolved finance cases...</div></div>
+            </div>
+            <div class="suite-card">
+              <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+                <h5 class="mb-0"><i class="fa-solid fa-envelope-open-text"></i> Template Operations</h5>
+                <button class="btn btn-sm btn-outline-primary" id="refreshTemplateOpsBtn">Refresh</button>
+              </div>
+              <div class="small text-muted mb-2" id="templateOpsSummary">Loading template operations...</div>
+              <div class="stack-list" id="templateOpsList"><div class="ops-empty">Loading templates...</div></div>
+            </div>
+            <div class="suite-card">
+              <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+                <h5 class="mb-0"><i class="fa-solid fa-bell"></i> Incident Response</h5>
+                <button class="btn btn-sm btn-outline-danger" id="resolveIncidentBtn">Resolve Incident</button>
+              </div>
+              <div class="small text-muted mb-2" id="incidentSummary">No incident loaded.</div>
+              <form id="incidentForm" class="d-grid gap-2">
+                <input class="form-control form-control-sm" id="incidentTitle" placeholder="Incident title" />
+                <input class="form-control form-control-sm" id="incidentMessage" placeholder="Incident message" />
+                <select class="form-select form-select-sm" id="incidentSeverity">
+                  <option value="warning">Warning</option>
+                  <option value="critical">Critical</option>
+                  <option value="info">Info</option>
+                </select>
+                <button class="btn btn-sm btn-outline-danger" type="submit">Declare Incident</button>
+              </form>
+            </div>
+            <div class="suite-card">
+              <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+                <h5 class="mb-0"><i class="fa-solid fa-layer-group"></i> Bulk Tenant Operations</h5>
+              </div>
+              <form id="bulkTenantOpsForm" class="d-grid gap-2">
+                <select class="form-select form-select-sm" id="bulkTenantAction">
+                  <option value="activate">Activate tenants</option>
+                  <option value="deactivate">Deactivate tenants</option>
+                </select>
+                <textarea class="form-control form-control-sm" id="bulkTenantIds" rows="4" placeholder="Tenant IDs separated by commas or spaces"></textarea>
+                <label class="form-check"><input class="form-check-input" type="checkbox" id="bulkTenantDryRun" checked /> <span class="form-check-label">Dry run</span></label>
+                <button class="btn btn-sm btn-outline-warning" type="submit">Run Bulk Operation</button>
+              </form>
+              <div class="small text-muted mt-2" id="bulkTenantResult">No bulk operation run yet.</div>
+            </div>
+            <div class="suite-card full">
+              <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+                <h5 class="mb-0"><i class="fa-solid fa-stamp"></i> Approval Workflow</h5>
+                <button class="btn btn-sm btn-outline-info" id="refreshApprovalsBtn">Refresh</button>
+              </div>
+              <div class="stack-list" id="approvalList"><div class="ops-empty">Loading approvals...</div></div>
+            </div>
+          </div>
+        </section>
         <div class="ops-panel mb-4">
           <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
             <h5 class="mb-0"><i class="fa-solid fa-clock-rotate-left"></i> Campaign History & Last-Run Status</h5>
@@ -886,6 +1170,21 @@
       const url = new URL(window.location.href);
       return url.searchParams.get('key') || '';
     }
+    function getAdminRoleFromUrl() {
+      const url = new URL(window.location.href);
+      return url.searchParams.get('role') || 'super_admin';
+    }
+    function getAdminActorFromUrl() {
+      const url = new URL(window.location.href);
+      return url.searchParams.get('actor') || 'admin';
+    }
+    function buildAdminHeaders(extraHeaders = {}) {
+      return {
+        'x-admin-role': getAdminRoleFromUrl(),
+        'x-admin-actor': getAdminActorFromUrl(),
+        ...extraHeaders,
+      };
+    }
     function buildAdminApiUrl(path) {
       const key = getAdminKeyFromUrl();
       if (!key) return path;
@@ -907,7 +1206,7 @@
     async function fetchJsonWithFallback(paths, fallbackValue) {
       for (const path of paths) {
         try {
-          const res = await fetch(buildAdminApiUrl(path));
+          const res = await fetch(buildAdminApiUrl(path), { headers: buildAdminHeaders() });
           if (!res.ok) continue;
           return await res.json();
         } catch (e) {
@@ -937,6 +1236,31 @@
       tenants: [],
       campaignHistory: { last_run: null, history: [] },
       campaignFilters: { from: '', to: '', audience: '', template: '', status: '' },
+      lastHealth: null,
+      lastErrors: null,
+      lastUpdateAt: null,
+      diagnostics: [],
+      diagnosticsLastRunAt: null,
+      auditFeed: [],
+      tenantRisk: null,
+      policies: null,
+      adminActions: [],
+      slaBoard: null,
+      readiness: null,
+      revenueCenter: null,
+      supportInbox: null,
+      finance: null,
+      templateOps: null,
+      incident: null,
+      approvals: [],
+      executiveSnapshot: null,
+    };
+
+    const REFRESH_PREF_KEY = 'admin_dashboard_refresh_pref_v1';
+    const autoRefreshState = {
+      enabled: false,
+      seconds: 60,
+      timerId: null,
     };
 
     function normalizePhone(phone) {
@@ -1196,6 +1520,749 @@
       }).join('');
     }
 
+    function getDiagnosticsTargets() {
+      return [
+        { key: 'ops', label: 'Ops Overview', paths: ['/admin/api/ops-overview', '/admin/ops-overview'] },
+        { key: 'health', label: 'System Health', paths: ['/admin/api/health', '/admin/health'] },
+        { key: 'tenants', label: 'Tenant Active Count', paths: ['/admin/api/tenants/active', '/admin/tenants/active'] },
+        { key: 'history', label: 'Campaign History', paths: ['/admin/api/campaign/history?limit=5'] },
+      ];
+    }
+
+    function formatMs(ms) {
+      if (!Number.isFinite(ms)) return '--';
+      return `${Math.max(0, Math.round(ms))} ms`;
+    }
+
+    function diagnosticsBadge(status) {
+      if (status === 'ok') return '<span class="diag-badge diag-ok">OK</span>';
+      if (status === 'warn') return '<span class="diag-badge diag-warn">WARN</span>';
+      return '<span class="diag-badge diag-bad">FAIL</span>';
+    }
+
+    function renderDiagnosticsTable() {
+      const body = document.getElementById('diagnosticsTableBody');
+      if (!body) return;
+      const rows = dashboardOpsState.diagnostics || [];
+      if (!rows.length) {
+        body.innerHTML = '<tr><td colspan="4" class="text-muted">Diagnostics pending...</td></tr>';
+        return;
+      }
+      body.innerHTML = rows.map((row) => `
+        <tr>
+          <td>${escapeHtml(row.label)}</td>
+          <td>${diagnosticsBadge(row.status)}</td>
+          <td>${escapeHtml(formatMs(row.latencyMs))}</td>
+          <td>${escapeHtml(row.detail || 'n/a')}</td>
+        </tr>
+      `).join('');
+      const stamp = document.getElementById('diagnosticsLastRun');
+      if (stamp) {
+        stamp.textContent = dashboardOpsState.diagnosticsLastRunAt
+          ? `Diagnostics last run: ${new Date(dashboardOpsState.diagnosticsLastRunAt).toLocaleString()}`
+          : 'Diagnostics not run yet.';
+      }
+    }
+
+    function renderAuditFeed(payload) {
+      const summary = document.getElementById('auditFeedSummary');
+      const list = document.getElementById('auditFeedList');
+      if (!summary || !list) return;
+      const counts = payload?.counts || {};
+      const items = Array.isArray(payload?.items) ? payload.items : [];
+      summary.textContent = `Events: ${Number(payload?.filtered_count || items.length)} | Critical ${Number(counts.critical || 0)} | Warning ${Number(counts.warning || 0)} | Info ${Number(counts.info || 0)}`;
+      if (!items.length) {
+        list.innerHTML = '<div class="ops-empty">No audit events for selected filter.</div>';
+        return;
+      }
+      list.innerHTML = items.slice(0, 80).map((item) => {
+        const ts = item.ts ? new Date(item.ts).toLocaleString() : 'unknown time';
+        const sevClass = item.severity === 'critical' ? 'diag-bad' : item.severity === 'warning' ? 'diag-warn' : 'diag-ok';
+        return `
+          <div class="audit-item">
+            <div class="audit-meta"><span class="diag-badge ${sevClass}">${escapeHtml(item.severity || 'info')}</span> • ${escapeHtml(item.source || 'source')} • ${escapeHtml(item.category || 'general')} • ${escapeHtml(ts)}</div>
+            <div class="small">${escapeHtml(item.message || '')}</div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderTenantRisk(payload) {
+      const summary = document.getElementById('tenantRiskSummary');
+      const list = document.getElementById('tenantRiskWatchlist');
+      if (!summary || !list) return;
+      const s = payload?.summary || {};
+      const watchlist = Array.isArray(payload?.watchlist) ? payload.watchlist : [];
+      summary.textContent = `Total ${Number(s.total || 0)} tenants | High ${Number(s.high || 0)} | Medium ${Number(s.medium || 0)} | Watchlist ${Number(payload?.watchlist_count || watchlist.length)}`;
+      if (!watchlist.length) {
+        list.innerHTML = '<div class="ops-empty">No risky tenants under current filter.</div>';
+        return;
+      }
+      list.innerHTML = watchlist.slice(0, 50).map((tenant) => `
+        <div class="watch-item">
+          <div class="d-flex align-items-center justify-content-between gap-2">
+            <strong>${escapeHtml(tenant.client_name || 'Unknown tenant')}</strong>
+            <span class="risk-pill ${escapeHtml(tenant.risk_level || 'low')}">${escapeHtml(tenant.risk_level || 'low')} (${Number(tenant.risk_score || 0)})</span>
+          </div>
+          <div class="audit-meta">${escapeHtml(tenant.client_phone || 'No phone')} • stale ${Number(tenant.stale_days || 0)} day(s) • status ${escapeHtml(tenant.status || 'unknown')}</div>
+          <div class="small mb-2">${escapeHtml(tenant.next_action || 'Review tenant configuration')}</div>
+          <div class="small text-muted">${Array.isArray(tenant.reasons) ? tenant.reasons.map((r) => `- ${r}`).join(' | ') : ''}</div>
+        </div>
+      `).join('');
+    }
+
+    function renderPolicies(payload) {
+      const list = document.getElementById('policyList');
+      if (!list) return;
+      const policies = payload?.policies || {};
+      const rows = [
+        { key: 'require_live_confirm', label: 'Require explicit live confirmation before send' },
+        { key: 'require_dry_run_first', label: 'Require dry run before live campaign send' },
+      ];
+      list.innerHTML = rows.map((row) => {
+        const enabled = Boolean(policies[row.key]);
+        return `
+          <div class="policy-item">
+            <div class="d-flex align-items-center justify-content-between gap-2">
+              <strong>${escapeHtml(row.label)}</strong>
+              <span class="diag-badge ${enabled ? 'diag-ok' : 'diag-warn'}">${enabled ? 'ENABLED' : 'DISABLED'}</span>
+            </div>
+            <div class="small text-muted mt-1">${escapeHtml(row.key)}</div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderAdminActionTrail(payload) {
+      const summary = document.getElementById('actionTrailSummary');
+      const list = document.getElementById('actionTrailList');
+      if (!summary || !list) return;
+      const rows = Array.isArray(payload?.actions) ? payload.actions : [];
+      summary.textContent = `Showing ${Number(payload?.filtered_count || rows.length)} of ${Number(payload?.total_count || rows.length)} actions.`;
+      if (!rows.length) {
+        list.innerHTML = '<div class="ops-empty">No actions for selected filter.</div>';
+        return;
+      }
+      list.innerHTML = rows.slice(0, 100).map((item) => {
+        const status = String(item.status || 'info').toLowerCase();
+        const badgeClass = status === 'failed' || status === 'blocked' ? 'diag-bad' : status === 'success' ? 'diag-ok' : 'diag-warn';
+        const when = item.when ? new Date(item.when).toLocaleString() : 'unknown time';
+        return `
+          <div class="audit-item">
+            <div class="audit-meta"><span class="diag-badge ${badgeClass}">${escapeHtml(status)}</span> • ${escapeHtml(item.action || 'action')} • ${escapeHtml(item.actor || 'admin')} • ${escapeHtml(when)}</div>
+            <div class="small">${escapeHtml(item.note || '')}</div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    async function loadAuditFeed() {
+      const severity = document.getElementById('auditSeverityFilter')?.value || 'all';
+      const payload = await fetchJsonWithFallback([
+        `/admin/api/audit/feed?limit=120&severity=${encodeURIComponent(severity)}`,
+      ], { counts: { critical: 0, warning: 0, info: 0 }, items: [], filtered_count: 0 });
+      dashboardOpsState.auditFeed = payload?.items || [];
+      renderAuditFeed(payload);
+      return payload;
+    }
+
+    async function loadTenantRisk() {
+      const level = document.getElementById('tenantRiskLevelFilter')?.value || 'all';
+      const payload = await fetchJsonWithFallback([
+        `/admin/api/tenants/risk?limit=40&min_level=${encodeURIComponent(level)}`,
+      ], { summary: { total: 0, high: 0, medium: 0 }, watchlist: [], watchlist_count: 0 });
+      dashboardOpsState.tenantRisk = payload;
+      renderTenantRisk(payload);
+      return payload;
+    }
+
+    async function loadPolicies() {
+      const payload = await fetchJsonWithFallback([
+        '/admin/api/policies',
+      ], { policies: {} });
+      dashboardOpsState.policies = payload;
+      renderPolicies(payload);
+      return payload;
+    }
+
+    async function loadAdminActionTrail() {
+      const status = document.getElementById('actionStatusFilter')?.value || 'all';
+      const payload = await fetchJsonWithFallback([
+        `/admin/api/audit/actions?limit=120&status=${encodeURIComponent(status)}`,
+      ], { actions: [], filtered_count: 0, total_count: 0 });
+      dashboardOpsState.adminActions = payload.actions || [];
+      renderAdminActionTrail(payload);
+      return payload;
+    }
+
+    function renderAdminIdentity() {
+      const roleBadge = document.getElementById('adminRoleBadge');
+      const actorBadge = document.getElementById('adminActorBadge');
+      if (roleBadge) roleBadge.textContent = getAdminRoleFromUrl();
+      if (actorBadge) actorBadge.textContent = getAdminActorFromUrl();
+    }
+
+    function formatAgo(minutes) {
+      const value = Number(minutes || 0);
+      if (value < 60) return `${value}m ago`;
+      if (value < 1440) return `${Math.round(value / 60)}h ago`;
+      return `${Math.round(value / 1440)}d ago`;
+    }
+
+    function metricMarkup(label, value) {
+      return `<div class="mini-metric"><div class="label">${escapeHtml(label)}</div><div class="value">${escapeHtml(value)}</div></div>`;
+    }
+
+    function renderExecutiveSnapshot(payload) {
+      const metrics = document.getElementById('executiveMetrics');
+      const list = document.getElementById('executivePriorityList');
+      if (!metrics || !list) return;
+      const headline = payload?.headline || {};
+      const priorities = Array.isArray(payload?.priorities) ? payload.priorities : [];
+      metrics.innerHTML = [
+        metricMarkup('Revenue', `KES ${Number(headline.revenue_kes_30d || 0).toLocaleString()}`),
+        metricMarkup('Blocked Cases', String(Number(headline.blocked_cases || 0))),
+        metricMarkup('Critical Tenants', String(Number(headline.critical_tenants || 0))),
+        metricMarkup('Health', String(headline.health_status || 'unknown').toUpperCase()),
+      ].join('');
+      list.innerHTML = priorities.length
+        ? priorities.map((item) => `<div class="stack-item">${escapeHtml(item)}</div>`).join('')
+        : '<div class="ops-empty">No executive priorities generated.</div>';
+    }
+
+    function renderSlaBoard(payload) {
+      const summary = document.getElementById('slaBoardSummary');
+      const list = document.getElementById('slaBoardList');
+      if (!summary || !list) return;
+      const data = payload?.summary || {};
+      const items = Array.isArray(payload?.items) ? payload.items : [];
+      summary.textContent = `Overdue ${Number(data.overdue || 0)} of ${Number(data.total || 0)} | Failed ${Number(data.failed || 0)} | Pending ${Number(data.pending || 0)}`;
+      if (!items.length) {
+        list.innerHTML = '<div class="ops-empty">No recovery cases found.</div>';
+        return;
+      }
+      list.innerHTML = items.slice(0, 20).map((item) => {
+        const overdue = Number(item.overdue_minutes || 0);
+        const actionButtons = [
+          ['retry_prompt', 'Retry'],
+          ['fallback_options', 'Fallback'],
+          ['assign_manual_followup', 'Assign'],
+        ];
+        if (String(item.status || '').toLowerCase() === 'manual_pending_verification') {
+          actionButtons.push(['mark_bank_verified', 'Verify Bank']);
+        }
+        if (String(item.status || '').toLowerCase() === 'cod_pending_delivery') {
+          actionButtons.push(['mark_cod_dispatched', 'COD Dispatch']);
+        }
+        return `
+          <div class="stack-item">
+            <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+              <strong>${escapeHtml(item.customer_name || 'Unknown User')}</strong>
+              <span class="status-pill-inline ${overdue > 0 ? 'bg-danger-subtle text-danger' : 'bg-warning-subtle text-warning'}">${escapeHtml(item.status || 'unknown')}</span>
+            </div>
+            <div class="small text-muted">${escapeHtml(item.wa_phone || 'No phone')} • KES ${Number(item.amount || 0).toLocaleString()} • ${escapeHtml(item.plan || 'Plan')}</div>
+            <div class="small mt-1">Age ${Number(item.age_minutes || 0)}m • SLA ${Number(item.sla_target_minutes || 0)}m • Overdue ${overdue}m</div>
+            <div class="small text-muted mt-1">${escapeHtml(item.next_action || 'No next action')}</div>
+            <div class="actions mt-2 d-flex flex-wrap gap-2">
+              <a class="btn btn-sm btn-outline-light" href="${buildWaLink(item.wa_phone)}" target="_blank" rel="noreferrer">Open Chat</a>
+              ${actionButtons.map(([action, label]) => `<button class="btn btn-sm btn-outline-warning" type="button" onclick="runRecoveryAction('${action}','${escapeHtml(String(item.subscription_id || ''))}')">${escapeHtml(label)}</button>`).join('')}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderRevenueCenter(payload) {
+      const metrics = document.getElementById('revenueCenterMetrics');
+      const list = document.getElementById('revenuePriorityList');
+      if (!metrics || !list) return;
+      metrics.innerHTML = [
+        metricMarkup('Revenue 30d', `KES ${Number(payload?.revenue_kes_30d || 0).toLocaleString()}`),
+        metricMarkup('Conversion', `${Number(payload?.conversion_rate_pct_30d || 0)}%`),
+        metricMarkup('Blocked Value', `KES ${Number(payload?.blocked_value_kes || 0).toLocaleString()}`),
+        metricMarkup('Attempts', String(Number(payload?.funnel?.payment_attempts_30d || 0))),
+      ].join('');
+      const priorities = Array.isArray(payload?.priorities) ? payload.priorities : [];
+      list.innerHTML = priorities.length
+        ? priorities.map((item) => `<div class="stack-item">${escapeHtml(item)}</div>`).join('')
+        : '<div class="ops-empty">No revenue priorities available.</div>';
+    }
+
+    function renderTenantReadiness(payload) {
+      const summary = document.getElementById('tenantReadinessSummary');
+      const list = document.getElementById('tenantReadinessList');
+      if (!summary || !list) return;
+      const data = payload?.summary || {};
+      const tenants = Array.isArray(payload?.tenants) ? payload.tenants : [];
+      summary.textContent = `Ready ${Number(data.ready || 0)} | Needs attention ${Number(data.needs_attention || 0)} | Critical ${Number(data.critical || 0)}`;
+      if (!tenants.length) {
+        list.innerHTML = '<div class="ops-empty">No tenant readiness data available.</div>';
+        return;
+      }
+      list.innerHTML = tenants.slice(0, 20).map((tenant) => `
+          <div class="stack-item">
+            <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+              <strong>${escapeHtml(tenant.client_name || 'Unknown tenant')}</strong>
+              <span class="status-pill-inline ${tenant.readiness_level === 'ready' ? 'bg-success-subtle text-success' : tenant.readiness_level === 'needs_attention' ? 'bg-warning-subtle text-warning' : 'bg-danger-subtle text-danger'}">${escapeHtml(tenant.readiness_level || 'unknown')}</span>
+            </div>
+            <div class="small text-muted">${escapeHtml(tenant.client_phone || 'No phone')} • Score ${Number(tenant.readiness_score || 0)} • Products ${Number(tenant.product_count || 0)} • Training ${Number(tenant.training_count || 0)}</div>
+            <div class="small mt-1">${(tenant.checks || []).filter((check) => !check.ok).slice(0, 3).map((check) => escapeHtml(check.label)).join(' | ') || 'All core readiness checks passed.'}</div>
+          </div>
+        `).join('');
+    }
+
+    function renderSupportInbox(payload) {
+      const summary = document.getElementById('supportInboxSummary');
+      const list = document.getElementById('supportInboxList');
+      if (!summary || !list) return;
+      const data = payload?.summary || {};
+      const items = Array.isArray(payload?.items) ? payload.items : [];
+      summary.textContent = `Unresolved ${Number(data.unresolved || 0)} | >60m ${Number(data.over_60m || 0)} | >240m ${Number(data.over_240m || 0)}`;
+      if (!items.length) {
+        list.innerHTML = '<div class="ops-empty">No unresolved support threads.</div>';
+        return;
+      }
+      list.innerHTML = items.slice(0, 20).map((item) => `
+          <div class="stack-item">
+            <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+              <strong>${escapeHtml(item.customer_name || 'Unknown User')}</strong>
+              <span class="status-pill-inline bg-warning-subtle text-warning">${escapeHtml(formatAgo(item.age_minutes))}</span>
+            </div>
+            <div class="small text-muted">${escapeHtml(item.wa_phone || 'No phone')} • ${item.inbound_at ? new Date(item.inbound_at).toLocaleString() : 'Unknown time'}</div>
+            <div class="small mt-1">${escapeHtml(item.message_text || 'No message captured')}</div>
+            <div class="actions mt-2"><a class="btn btn-sm btn-outline-light" href="${buildWaLink(item.wa_phone)}" target="_blank" rel="noreferrer">Open WhatsApp</a></div>
+          </div>
+        `).join('');
+    }
+
+    function renderFinance(payload) {
+      const summary = document.getElementById('financeSummary');
+      const list = document.getElementById('financeList');
+      if (!summary || !list) return;
+      const data = payload?.summary || {};
+      const items = Array.isArray(payload?.items) ? payload.items : [];
+      summary.textContent = `Captured KES ${Number(data.revenue_captured || 0).toLocaleString()} | Unresolved ${Number(data.unresolved_count || 0)} | Manual verify ${Number(data.manual_pending_verification || 0)}`;
+      if (!items.length) {
+        list.innerHTML = '<div class="ops-empty">No unresolved finance cases.</div>';
+        return;
+      }
+      list.innerHTML = items.slice(0, 20).map((item) => `
+          <div class="stack-item">
+            <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+              <strong>${escapeHtml(item.id || 'Unknown subscription')}</strong>
+              <span class="status-pill-inline bg-warning-subtle text-warning">${escapeHtml(item.status || 'unknown')}</span>
+            </div>
+            <div class="small text-muted">${escapeHtml(item.phone || 'No phone')} • KES ${Number(item.amount || 0).toLocaleString()} • ${item.updated_at ? new Date(item.updated_at).toLocaleString() : 'Unknown update'}</div>
+            <div class="small mt-1">${escapeHtml(item.reason || 'No failure reason recorded')}</div>
+          </div>
+        `).join('');
+    }
+
+    function renderTemplateOps(payload) {
+      const summary = document.getElementById('templateOpsSummary');
+      const list = document.getElementById('templateOpsList');
+      if (!summary || !list) return;
+      const templates = Array.isArray(payload?.templates) ? payload.templates : [];
+      summary.textContent = `Templates ${Number(payload?.count || templates.length || 0)}`;
+      if (!templates.length) {
+        list.innerHTML = '<div class="ops-empty">No template metadata available.</div>';
+        return;
+      }
+      list.innerHTML = templates.slice(0, 20).map((tpl) => `
+          <div class="stack-item">
+            <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+              <strong>${escapeHtml(tpl.name || 'Unnamed template')}</strong>
+              <span class="status-pill-inline ${String(tpl.status || '').toUpperCase() === 'APPROVED' ? 'bg-success-subtle text-success' : 'bg-warning-subtle text-warning'}">${escapeHtml(tpl.status || 'unknown')}</span>
+            </div>
+            <div class="small text-muted">${escapeHtml(tpl.category || 'uncategorized')} • ${escapeHtml(tpl.language || 'n/a')}</div>
+            <div class="small mt-1">Sends ${Number(tpl.usage?.sends || 0)} • Success ${Number(tpl.usage?.success || 0)} • Failed ${Number(tpl.usage?.failed || 0)}</div>
+          </div>
+        `).join('');
+    }
+
+    function renderIncident(payload) {
+      const summary = document.getElementById('incidentSummary');
+      const resolveButton = document.getElementById('resolveIncidentBtn');
+      if (!summary || !resolveButton) return;
+      const incident = payload?.incident || null;
+      if (!incident) {
+        summary.textContent = 'No active incident.';
+        resolveButton.disabled = true;
+        return;
+      }
+      resolveButton.disabled = false;
+      summary.textContent = `${incident.title || 'Incident'} • ${incident.severity || 'warning'} • declared by ${incident.declared_by || 'admin'} at ${incident.started_at ? new Date(incident.started_at).toLocaleString() : 'unknown time'}`;
+    }
+
+    function renderApprovals(payload) {
+      const list = document.getElementById('approvalList');
+      if (!list) return;
+      const approvals = Array.isArray(payload?.approvals) ? payload.approvals : [];
+      if (!approvals.length) {
+        list.innerHTML = '<div class="ops-empty">No pending or historical approvals recorded.</div>';
+        return;
+      }
+      list.innerHTML = approvals.slice(0, 30).map((approval) => `
+          <div class="stack-item">
+            <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+              <strong>${escapeHtml(approval.action || 'approval')}</strong>
+              <span class="status-pill-inline ${approval.status === 'approved' ? 'bg-success-subtle text-success' : approval.status === 'rejected' ? 'bg-danger-subtle text-danger' : 'bg-warning-subtle text-warning'}">${escapeHtml(approval.status || 'pending')}</span>
+            </div>
+            <div class="small text-muted">${escapeHtml(approval.requested_by || 'admin')} • ${escapeHtml(approval.requested_role || 'unknown role')} • ${approval.requested_at ? new Date(approval.requested_at).toLocaleString() : 'unknown time'}</div>
+            <div class="small mt-1">${escapeHtml(approval.note || '')}</div>
+            <div class="small text-muted mt-1">${escapeHtml(JSON.stringify(approval.payload || {}))}</div>
+            ${approval.status === 'pending' ? `
+              <div class="actions mt-2 d-flex flex-wrap gap-2">
+                <button class="btn btn-sm btn-outline-success" type="button" onclick="resolveApproval('${escapeHtml(String(approval.id || ''))}','approved')">Approve</button>
+                <button class="btn btn-sm btn-outline-danger" type="button" onclick="resolveApproval('${escapeHtml(String(approval.id || ''))}','rejected')">Reject</button>
+              </div>
+            ` : ''}
+          </div>
+        `).join('');
+    }
+
+    async function loadExecutiveSnapshot() {
+      const payload = await fetchJsonWithFallback(['/admin/api/executive-snapshot'], { headline: {}, priorities: [] });
+      dashboardOpsState.executiveSnapshot = payload;
+      renderExecutiveSnapshot(payload);
+      return payload;
+    }
+
+    async function loadSlaBoard() {
+      const payload = await fetchJsonWithFallback(['/admin/api/sla/recovery-board?limit=20'], { summary: {}, items: [] });
+      dashboardOpsState.slaBoard = payload;
+      renderSlaBoard(payload);
+      return payload;
+    }
+
+    async function loadTenantReadiness() {
+      const payload = await fetchJsonWithFallback(['/admin/api/tenants/readiness?limit=20'], { summary: {}, tenants: [] });
+      dashboardOpsState.readiness = payload;
+      renderTenantReadiness(payload);
+      return payload;
+    }
+
+    async function loadRevenueCenter() {
+      const payload = await fetchJsonWithFallback(['/admin/api/revenue/command-center'], { funnel: {}, priorities: [] });
+      dashboardOpsState.revenueCenter = payload;
+      renderRevenueCenter(payload);
+      return payload;
+    }
+
+    async function loadSupportInbox() {
+      const payload = await fetchJsonWithFallback(['/admin/api/support/inbox?limit=20'], { summary: {}, items: [] });
+      dashboardOpsState.supportInbox = payload;
+      renderSupportInbox(payload);
+      return payload;
+    }
+
+    async function loadFinance() {
+      const payload = await fetchJsonWithFallback(['/admin/api/finance/reconciliation?limit=20'], { summary: {}, items: [] });
+      dashboardOpsState.finance = payload;
+      renderFinance(payload);
+      return payload;
+    }
+
+    async function loadTemplateOps() {
+      const payload = await fetchJsonWithFallback(['/admin/api/templates/ops'], { count: 0, templates: [] });
+      dashboardOpsState.templateOps = payload;
+      renderTemplateOps(payload);
+      return payload;
+    }
+
+    async function loadIncident() {
+      const payload = await fetchJsonWithFallback(['/admin/api/incidents/active'], { incident: null });
+      dashboardOpsState.incident = payload?.incident || null;
+      renderIncident(payload);
+      return payload;
+    }
+
+    async function loadApprovals() {
+      const payload = await fetchJsonWithFallback(['/admin/api/approvals'], { approvals: [] });
+      dashboardOpsState.approvals = payload?.approvals || [];
+      renderApprovals(payload);
+      return payload;
+    }
+
+    async function loadOperationsSuite() {
+      renderAdminIdentity();
+      const results = await Promise.all([
+        loadExecutiveSnapshot(),
+        loadSlaBoard(),
+        loadRevenueCenter(),
+        loadTenantReadiness(),
+        loadSupportInbox(),
+        loadFinance(),
+        loadTemplateOps(),
+        loadIncident(),
+        loadApprovals(),
+      ]);
+      const node = document.getElementById('operationsSuiteUpdatedAt');
+      if (node) {
+        node.textContent = `Suite refreshed ${new Date().toLocaleString()}`;
+      }
+      return results;
+    }
+
+    async function runRecoveryAction(action, subscriptionId) {
+      const needsConfirm = ['mark_bank_verified', 'mark_cod_dispatched'].includes(String(action || ''));
+      if (needsConfirm) {
+        const proceed = window.confirm(`Apply ${action} to subscription ${subscriptionId}?`);
+        if (!proceed) return;
+      }
+      try {
+        await fetchJsonOrThrow('/admin/api/recovery/action', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action, subscription_id: subscriptionId }),
+        });
+        showAlert('Recovery Action', `${action} completed for ${subscriptionId}.`, 'success');
+        await Promise.all([loadSlaBoard(), loadFinance(), loadAdminActionTrail(), loadRevenueCenter(), loadExecutiveSnapshot()]);
+      } catch (error) {
+        showAlert('Recovery Action', error.message || 'Recovery action failed.', 'danger');
+      }
+    }
+
+    async function submitIncidentForm(event) {
+      event.preventDefault();
+      const title = document.getElementById('incidentTitle')?.value?.trim() || 'Platform Incident';
+      const message = document.getElementById('incidentMessage')?.value?.trim() || '';
+      const severity = document.getElementById('incidentSeverity')?.value || 'warning';
+      try {
+        await fetchJsonOrThrow('/admin/api/incidents/active', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title, message, severity }),
+        });
+        showAlert('Incident Response', 'Incident declared successfully.', 'success');
+        event.target.reset();
+        await Promise.all([loadIncident(), loadApprovals(), loadAdminActionTrail(), loadExecutiveSnapshot()]);
+      } catch (error) {
+        showAlert('Incident Response', error.message || 'Failed to declare incident.', 'danger');
+      }
+    }
+
+    async function resolveIncident() {
+      const proceed = window.confirm('Resolve the active incident?');
+      if (!proceed) return;
+      try {
+        await fetchJsonOrThrow('/admin/api/incidents/active', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ resolve: true }),
+        });
+        showAlert('Incident Response', 'Incident resolved.', 'success');
+        await Promise.all([loadIncident(), loadAdminActionTrail(), loadExecutiveSnapshot()]);
+      } catch (error) {
+        showAlert('Incident Response', error.message || 'Failed to resolve incident.', 'danger');
+      }
+    }
+
+    async function submitBulkTenantOpsForm(event) {
+      event.preventDefault();
+      const result = document.getElementById('bulkTenantResult');
+      const action = document.getElementById('bulkTenantAction')?.value || 'activate';
+      const dryRun = Boolean(document.getElementById('bulkTenantDryRun')?.checked);
+      const tenantIds = (document.getElementById('bulkTenantIds')?.value || '')
+        .split(/[\s,]+/)
+        .map((item) => item.trim())
+        .filter(Boolean);
+      if (!tenantIds.length) {
+        showAlert('Bulk Tenant Operations', 'Enter at least one tenant ID.', 'warning');
+        return;
+      }
+      try {
+        const payload = await fetchJsonOrThrow('/admin/api/tenants/bulk', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action, tenant_ids: tenantIds, dry_run: dryRun }),
+        });
+        if (result) {
+          if (payload.approval_requested) {
+            result.textContent = `Approval requested: ${payload.approval?.id || 'pending'} for ${tenantIds.length} tenant(s).`;
+          } else if (payload.dry_run) {
+            result.textContent = `Dry run previewed ${Number(payload.count || 0)} tenant(s).`;
+          } else {
+            result.textContent = `Updated ${Number(payload.count || 0)} tenant(s).`;
+          }
+        }
+        showAlert('Bulk Tenant Operations', payload.approval_requested ? 'Approval request created.' : 'Bulk operation completed.', 'success');
+        await Promise.all([loadTenantList(), loadTenantReadiness(), loadApprovals(), loadAdminActionTrail(), loadExecutiveSnapshot(), loadTenantRisk()]);
+      } catch (error) {
+        if (result) result.textContent = error.message || 'Bulk operation failed.';
+        showAlert('Bulk Tenant Operations', error.message || 'Bulk operation failed.', 'danger');
+      }
+    }
+
+    async function resolveApproval(approvalId, status) {
+      const proceed = window.confirm(`${status === 'approved' ? 'Approve' : 'Reject'} approval ${approvalId}?`);
+      if (!proceed) return;
+      try {
+        await fetchJsonOrThrow(`/admin/api/approvals/${encodeURIComponent(approvalId)}/resolve`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status }),
+        });
+        showAlert('Approval Workflow', `Approval ${approvalId} marked ${status}.`, 'success');
+        await Promise.all([loadApprovals(), loadAdminActionTrail()]);
+      } catch (error) {
+        showAlert('Approval Workflow', error.message || 'Approval update failed.', 'danger');
+      }
+    }
+
+    async function probePaths(paths = []) {
+      for (const path of paths) {
+        const startedAt = performance.now();
+        try {
+          const response = await fetch(buildAdminApiUrl(path), { cache: 'no-store' });
+          const latencyMs = performance.now() - startedAt;
+          if (response.ok) {
+            return { ok: true, statusCode: response.status, latencyMs, detail: `HTTP ${response.status}` };
+          }
+          if (response.status === 401) {
+            return { ok: false, statusCode: response.status, latencyMs, detail: 'Unauthorized (key mismatch)' };
+          }
+          return { ok: false, statusCode: response.status, latencyMs, detail: `HTTP ${response.status}` };
+        } catch (error) {
+          const latencyMs = performance.now() - startedAt;
+          return { ok: false, statusCode: 0, latencyMs, detail: error?.message || 'Network error' };
+        }
+      }
+      return { ok: false, statusCode: 0, latencyMs: 0, detail: 'No route configured' };
+    }
+
+    async function runEndpointDiagnostics() {
+      const targets = getDiagnosticsTargets();
+      const rows = [];
+      for (const target of targets) {
+        const result = await probePaths(target.paths);
+        let status = 'ok';
+        if (!result.ok) status = result.statusCode === 401 ? 'warn' : 'fail';
+        rows.push({
+          key: target.key,
+          label: target.label,
+          status,
+          latencyMs: result.latencyMs,
+          detail: result.detail,
+        });
+      }
+      dashboardOpsState.diagnostics = rows;
+      dashboardOpsState.diagnosticsLastRunAt = new Date().toISOString();
+      renderDiagnosticsTable();
+      const failed = rows.filter((row) => row.status === 'fail').length;
+      if (failed > 0) {
+        showAlert('Diagnostics', `${failed} endpoint(s) failed checks. Review the status matrix.`, 'warning');
+      }
+    }
+
+    function saveRefreshPreference() {
+      try {
+        const payload = {
+          enabled: autoRefreshState.enabled,
+          seconds: autoRefreshState.seconds,
+        };
+        window.localStorage.setItem(REFRESH_PREF_KEY, JSON.stringify(payload));
+      } catch (error) {
+        // ignore storage issues
+      }
+    }
+
+    function loadRefreshPreference() {
+      try {
+        const raw = window.localStorage.getItem(REFRESH_PREF_KEY);
+        if (!raw) return;
+        const parsed = JSON.parse(raw);
+        if (typeof parsed.enabled === 'boolean') autoRefreshState.enabled = parsed.enabled;
+        const seconds = Number(parsed.seconds || 60);
+        if (seconds >= 30) autoRefreshState.seconds = seconds;
+      } catch (error) {
+        // ignore malformed storage
+      }
+    }
+
+    function updateAutoRefreshUi() {
+      const status = document.getElementById('autoRefreshStatus');
+      const toggleBtn = document.getElementById('toggleAutoRefreshBtn');
+      const intervalSelect = document.getElementById('autoRefreshInterval');
+      if (intervalSelect) intervalSelect.value = String(autoRefreshState.seconds);
+      if (toggleBtn) {
+        toggleBtn.textContent = autoRefreshState.enabled ? 'Pause Auto Refresh' : 'Enable Auto Refresh';
+        toggleBtn.className = autoRefreshState.enabled ? 'btn btn-sm btn-outline-warning' : 'btn btn-sm btn-outline-success';
+      }
+      if (status) {
+        status.textContent = autoRefreshState.enabled
+          ? `Auto-refresh is ON (${autoRefreshState.seconds}s interval).`
+          : 'Auto-refresh is off. Manual refresh is active.';
+      }
+    }
+
+    function stopAutoRefreshTimer() {
+      if (autoRefreshState.timerId) {
+        clearInterval(autoRefreshState.timerId);
+        autoRefreshState.timerId = null;
+      }
+    }
+
+    function startAutoRefreshTimer() {
+      stopAutoRefreshTimer();
+      if (!autoRefreshState.enabled) return;
+      autoRefreshState.timerId = setInterval(async () => {
+        if (window.location.hash && window.location.hash !== '#dashboard') return;
+        await updateDashboardCards();
+        await loadPerformanceReport(dashboardOpsState.reportPeriod || 'daily');
+      }, autoRefreshState.seconds * 1000);
+    }
+
+    function updateRunbook(ops, snapshot, health, errors) {
+      const list = document.getElementById('runbookList');
+      const urgency = document.getElementById('runbookUrgency');
+      if (!list || !urgency) return;
+
+      const steps = [];
+      const failedPayments = Number(ops?.kpis?.failed_payments_30d || 0);
+      const pendingPayments = Number(ops?.kpis?.pending_payments_30d || 0);
+      const hotLeads = Number(ops?.operations?.hot_leads?.length || 0);
+      const errorCount = Number(errors?.count || 0);
+      const healthStatus = String(health?.status || 'unknown').toLowerCase();
+      const pendingReplies = Number(snapshot?.pending || 0);
+
+      if (healthStatus && healthStatus !== 'healthy') {
+        steps.push('Stabilize system health first: review /admin/health and blocking backend errors before campaign actions.');
+      }
+      if (errorCount > 0) {
+        steps.push(`Review ${errorCount} recent error(s) and confirm none are payment or messaging regressions.`);
+      }
+      if (failedPayments > 0) {
+        steps.push(`Run personal recovery outreach for failed payments (${failedPayments}) before launching new broad campaigns.`);
+      }
+      if (pendingPayments > 0) {
+        steps.push(`Resolve ${pendingPayments} pending payment(s): verify callback delivery and trigger fallback options where needed.`);
+      }
+      if (pendingReplies > 0) {
+        steps.push(`Follow up with ${pendingReplies} non-responsive campaign contacts to improve reply conversion.`);
+      }
+      if (hotLeads > 0) {
+        steps.push(`Prioritize WhatsApp follow-up for ${hotLeads} hot lead(s) in the queue.`);
+      }
+      if (!steps.length) {
+        steps.push('No critical blockers detected. Continue with regular campaign cadence and monitor diagnostics every 30-60 minutes.');
+      }
+
+      let urgencyClass = 'ops-tag-success';
+      let urgencyText = 'Stable';
+      if (healthStatus !== 'healthy' || failedPayments > 0) {
+        urgencyClass = 'ops-tag-danger';
+        urgencyText = 'High Priority';
+      } else if (errorCount > 0 || pendingPayments > 0 || pendingReplies > 0) {
+        urgencyClass = 'ops-tag-warning';
+        urgencyText = 'Watch Closely';
+      }
+
+      urgency.className = `ops-tag ${urgencyClass}`;
+      urgency.textContent = urgencyText;
+      list.innerHTML = steps.map((step) => `<li>${escapeHtml(step)}</li>`).join('');
+    }
+
     async function loadCampaignHistory() {
       const query = buildCampaignHistoryQuery({ ...dashboardOpsState.campaignFilters, limit: 25 });
       const payload = await fetchJsonWithFallback([
@@ -1207,6 +2274,7 @@
 
     async function updateDashboardCards() {
       try {
+        renderAdminIdentity();
         const historyQuery = buildCampaignHistoryQuery({ ...dashboardOpsState.campaignFilters, limit: 25 });
         const [tenants, llm, errors, health, ops, campaignHistory] = await Promise.all([
           fetchJsonWithFallback(['/admin/api/tenants/active', '/admin/tenants/active'], {count: '--'}),
@@ -1224,10 +2292,24 @@
         if (errorCountEl) errorCountEl.innerText = errors.count ?? '--';
         const healthStatusEl = document.getElementById('healthStatus');
         if (healthStatusEl) healthStatusEl.innerText = health.status ?? '--';
+        dashboardOpsState.lastHealth = health;
+        dashboardOpsState.lastErrors = errors;
+        dashboardOpsState.lastUpdateAt = new Date().toISOString();
         renderSystemStatus(health, errors, ops);
         renderOpsOverview(ops);
         renderCampaignHistory(campaignHistory);
-        await loadCampaignSnapshot();
+        const snapshot = await loadCampaignSnapshot();
+        updateRunbook(ops, snapshot, health, errors);
+        await Promise.all([loadAuditFeed(), loadTenantRisk(), loadPolicies(), loadAdminActionTrail(), loadOperationsSuite()]);
+        renderDiagnosticsTable();
+        const updatedNode = document.getElementById('controlTowerUpdatedAt');
+        if (updatedNode) {
+          updatedNode.textContent = `Dashboard updated ${new Date(dashboardOpsState.lastUpdateAt).toLocaleString()}`;
+        }
+        const govNode = document.getElementById('governanceUpdatedAt');
+        if (govNode) {
+          govNode.textContent = `Governance refreshed ${new Date(dashboardOpsState.lastUpdateAt).toLocaleString()}`;
+        }
         if (!ops || !ops.kpis) {
           showApiBanner('Operational data is unavailable. Confirm ADMIN key and redeploy latest backend.', 'danger');
         } else {
@@ -1249,13 +2331,6 @@
         setTimeout(() => loadPerformanceReport('daily'), 250);
       }
     });
-    setInterval(() => {
-      if (window.location.hash === '' || window.location.hash === '#' || window.location.hash === '#dashboard') {
-        updateDashboardCards();
-        loadPerformanceReport('daily');
-      }
-    }, 60000);
-
     function bindDashboardActions() {
       const dailyButton = document.getElementById('dailyReportBtn');
       const weeklyButton = document.getElementById('weeklyReportBtn');
@@ -1269,6 +2344,27 @@
       const campaignFilterClear = document.getElementById('campaignFilterClear');
       const campaignHistoryExportBtn = document.getElementById('campaignHistoryExportBtn');
       const campaignFilterTemplate = document.getElementById('campaignFilterTemplate');
+      const toggleAutoRefreshBtn = document.getElementById('toggleAutoRefreshBtn');
+      const autoRefreshInterval = document.getElementById('autoRefreshInterval');
+      const runDiagnosticsBtn = document.getElementById('runDiagnosticsBtn');
+      const copyAdminContextBtn = document.getElementById('copyAdminContextBtn');
+      const refreshAuditFeedBtn = document.getElementById('refreshAuditFeedBtn');
+      const refreshTenantRiskBtn = document.getElementById('refreshTenantRiskBtn');
+      const auditSeverityFilter = document.getElementById('auditSeverityFilter');
+      const tenantRiskLevelFilter = document.getElementById('tenantRiskLevelFilter');
+      const refreshPoliciesBtn = document.getElementById('refreshPoliciesBtn');
+      const refreshActionTrailBtn = document.getElementById('refreshActionTrailBtn');
+      const actionStatusFilter = document.getElementById('actionStatusFilter');
+      const refreshSlaBoardBtn = document.getElementById('refreshSlaBoardBtn');
+      const refreshRevenueCenterBtn = document.getElementById('refreshRevenueCenterBtn');
+      const refreshTenantReadinessBtn = document.getElementById('refreshTenantReadinessBtn');
+      const refreshSupportInboxBtn = document.getElementById('refreshSupportInboxBtn');
+      const refreshFinanceBtn = document.getElementById('refreshFinanceBtn');
+      const refreshTemplateOpsBtn = document.getElementById('refreshTemplateOpsBtn');
+      const resolveIncidentBtn = document.getElementById('resolveIncidentBtn');
+      const incidentForm = document.getElementById('incidentForm');
+      const bulkTenantOpsForm = document.getElementById('bulkTenantOpsForm');
+      const refreshApprovalsBtn = document.getElementById('refreshApprovalsBtn');
       if (dailyButton && !dailyButton.dataset.bound) {
         dailyButton.dataset.bound = 'true';
         dailyButton.addEventListener('click', () => loadPerformanceReport('daily'));
@@ -1322,8 +2418,123 @@
           }
         });
       }
+      if (toggleAutoRefreshBtn && !toggleAutoRefreshBtn.dataset.bound) {
+        toggleAutoRefreshBtn.dataset.bound = 'true';
+        toggleAutoRefreshBtn.addEventListener('click', () => {
+          autoRefreshState.enabled = !autoRefreshState.enabled;
+          saveRefreshPreference();
+          updateAutoRefreshUi();
+          startAutoRefreshTimer();
+        });
+      }
+      if (autoRefreshInterval && !autoRefreshInterval.dataset.bound) {
+        autoRefreshInterval.dataset.bound = 'true';
+        autoRefreshInterval.addEventListener('change', () => {
+          const seconds = Number(autoRefreshInterval.value || 60);
+          autoRefreshState.seconds = seconds >= 30 ? seconds : 60;
+          saveRefreshPreference();
+          updateAutoRefreshUi();
+          startAutoRefreshTimer();
+        });
+      }
+      if (runDiagnosticsBtn && !runDiagnosticsBtn.dataset.bound) {
+        runDiagnosticsBtn.dataset.bound = 'true';
+        runDiagnosticsBtn.addEventListener('click', runEndpointDiagnostics);
+      }
+      if (copyAdminContextBtn && !copyAdminContextBtn.dataset.bound) {
+        copyAdminContextBtn.dataset.bound = 'true';
+        copyAdminContextBtn.addEventListener('click', async () => {
+          const lines = [
+            `time=${new Date().toISOString()}`,
+            `health=${dashboardOpsState.lastHealth?.status || 'unknown'}`,
+            `errors24h=${dashboardOpsState.lastErrors?.count ?? 'unknown'}`,
+            `revenue30d=${dashboardOpsState.ops?.kpis?.total_revenue_kes_30d ?? 'unknown'}`,
+            `failedPayments30d=${dashboardOpsState.ops?.kpis?.failed_payments_30d ?? 'unknown'}`,
+            `pendingPayments30d=${dashboardOpsState.ops?.kpis?.pending_payments_30d ?? 'unknown'}`,
+            `campaignReplies=${dashboardOpsState.snapshot?.replied ?? 'unknown'}/${dashboardOpsState.snapshot?.total ?? 'unknown'}`,
+          ];
+          try {
+            await navigator.clipboard.writeText(lines.join('\n'));
+            showAlert('Control Tower', 'Admin context copied to clipboard.', 'success');
+          } catch (error) {
+            showAlert('Control Tower', 'Clipboard unavailable in this browser session.', 'warning');
+          }
+        });
+      }
+      if (refreshAuditFeedBtn && !refreshAuditFeedBtn.dataset.bound) {
+        refreshAuditFeedBtn.dataset.bound = 'true';
+        refreshAuditFeedBtn.addEventListener('click', loadAuditFeed);
+      }
+      if (refreshTenantRiskBtn && !refreshTenantRiskBtn.dataset.bound) {
+        refreshTenantRiskBtn.dataset.bound = 'true';
+        refreshTenantRiskBtn.addEventListener('click', loadTenantRisk);
+      }
+      if (auditSeverityFilter && !auditSeverityFilter.dataset.bound) {
+        auditSeverityFilter.dataset.bound = 'true';
+        auditSeverityFilter.addEventListener('change', loadAuditFeed);
+      }
+      if (tenantRiskLevelFilter && !tenantRiskLevelFilter.dataset.bound) {
+        tenantRiskLevelFilter.dataset.bound = 'true';
+        tenantRiskLevelFilter.addEventListener('change', loadTenantRisk);
+      }
+      if (refreshPoliciesBtn && !refreshPoliciesBtn.dataset.bound) {
+        refreshPoliciesBtn.dataset.bound = 'true';
+        refreshPoliciesBtn.addEventListener('click', loadPolicies);
+      }
+      if (refreshActionTrailBtn && !refreshActionTrailBtn.dataset.bound) {
+        refreshActionTrailBtn.dataset.bound = 'true';
+        refreshActionTrailBtn.addEventListener('click', loadAdminActionTrail);
+      }
+      if (actionStatusFilter && !actionStatusFilter.dataset.bound) {
+        actionStatusFilter.dataset.bound = 'true';
+        actionStatusFilter.addEventListener('change', loadAdminActionTrail);
+      }
+      if (refreshSlaBoardBtn && !refreshSlaBoardBtn.dataset.bound) {
+        refreshSlaBoardBtn.dataset.bound = 'true';
+        refreshSlaBoardBtn.addEventListener('click', loadSlaBoard);
+      }
+      if (refreshRevenueCenterBtn && !refreshRevenueCenterBtn.dataset.bound) {
+        refreshRevenueCenterBtn.dataset.bound = 'true';
+        refreshRevenueCenterBtn.addEventListener('click', loadRevenueCenter);
+      }
+      if (refreshTenantReadinessBtn && !refreshTenantReadinessBtn.dataset.bound) {
+        refreshTenantReadinessBtn.dataset.bound = 'true';
+        refreshTenantReadinessBtn.addEventListener('click', loadTenantReadiness);
+      }
+      if (refreshSupportInboxBtn && !refreshSupportInboxBtn.dataset.bound) {
+        refreshSupportInboxBtn.dataset.bound = 'true';
+        refreshSupportInboxBtn.addEventListener('click', loadSupportInbox);
+      }
+      if (refreshFinanceBtn && !refreshFinanceBtn.dataset.bound) {
+        refreshFinanceBtn.dataset.bound = 'true';
+        refreshFinanceBtn.addEventListener('click', loadFinance);
+      }
+      if (refreshTemplateOpsBtn && !refreshTemplateOpsBtn.dataset.bound) {
+        refreshTemplateOpsBtn.dataset.bound = 'true';
+        refreshTemplateOpsBtn.addEventListener('click', loadTemplateOps);
+      }
+      if (resolveIncidentBtn && !resolveIncidentBtn.dataset.bound) {
+        resolveIncidentBtn.dataset.bound = 'true';
+        resolveIncidentBtn.addEventListener('click', resolveIncident);
+      }
+      if (incidentForm && !incidentForm.dataset.bound) {
+        incidentForm.dataset.bound = 'true';
+        incidentForm.addEventListener('submit', submitIncidentForm);
+      }
+      if (bulkTenantOpsForm && !bulkTenantOpsForm.dataset.bound) {
+        bulkTenantOpsForm.dataset.bound = 'true';
+        bulkTenantOpsForm.addEventListener('submit', submitBulkTenantOpsForm);
+      }
+      if (refreshApprovalsBtn && !refreshApprovalsBtn.dataset.bound) {
+        refreshApprovalsBtn.dataset.bound = 'true';
+        refreshApprovalsBtn.addEventListener('click', loadApprovals);
+      }
       setCampaignHistoryFilterInputs(dashboardOpsState.campaignFilters);
+      loadRefreshPreference();
+      updateAutoRefreshUi();
+      startAutoRefreshTimer();
       toggleCampaignAudienceFields();
+      runEndpointDiagnostics();
     }
 
     function getModalInstance(id) {
@@ -1333,7 +2544,10 @@
     }
 
     async function fetchJsonOrThrow(path, options = {}) {
-      const response = await fetch(buildAdminApiUrl(path), options);
+      const response = await fetch(buildAdminApiUrl(path), {
+        ...options,
+        headers: buildAdminHeaders(options.headers || {}),
+      });
       const contentType = response.headers.get('content-type') || '';
       const payload = contentType.includes('application/json')
         ? await response.json().catch(() => ({}))
@@ -1347,8 +2561,16 @@
     function buildAdminToolUrl(path, params = {}) {
       const url = new URL(path, window.location.origin);
       const adminKey = getAdminKeyFromUrl();
+      const adminRole = getAdminRoleFromUrl();
+      const adminActor = getAdminActorFromUrl();
       if (adminKey) {
         url.searchParams.set('key', adminKey);
+      }
+      if (adminRole) {
+        url.searchParams.set('role', adminRole);
+      }
+      if (adminActor) {
+        url.searchParams.set('actor', adminActor);
       }
       Object.entries(params).forEach(([key, value]) => {
         if (value) {
@@ -1544,6 +2766,15 @@
           .filter(Boolean);
       }
 
+      if (!payload.dry_run) {
+        const proceed = window.confirm('You are about to send a LIVE campaign. Continue?');
+        if (!proceed) {
+          showAlert('Bulk Campaign', 'Live campaign was cancelled by admin.', 'warning');
+          return;
+        }
+        payload.confirm_live = true;
+      }
+
       try {
         if (submitButton) {
           submitButton.disabled = true;
@@ -1557,6 +2788,7 @@
         renderCampaignResult(data);
         showAlert('Bulk Campaign', payload.dry_run ? 'Dry run generated successfully.' : 'Campaign job completed successfully.', 'success');
         loadCampaignHistory();
+        loadAdminActionTrail();
         if (!payload.dry_run) {
           updateDashboardCards();
         }
@@ -1655,6 +2887,14 @@
         client_phone: document.getElementById('tenantEditPhone')?.value || '',
         status: document.getElementById('tenantEditStatus')?.value || 'active',
       };
+      const existing = (dashboardOpsState.tenants || []).find((tenant) => String(tenant.id) === String(tenantId));
+      if (existing && String(existing.status || '').toLowerCase() !== 'inactive' && payload.status === 'inactive') {
+        const confirmDeactivate = window.confirm('Set this tenant to inactive? This may interrupt tenant operations.');
+        if (!confirmDeactivate) {
+          showAlert('Tenant Update', 'Deactivate action cancelled.', 'warning');
+          return;
+        }
+      }
       try {
         if (submitButton) {
           submitButton.disabled = true;
@@ -1681,6 +2921,7 @@
         renderTenantList(document.getElementById('tenantSearchInput')?.value || '');
         getModalInstance('tenantEditModal')?.hide();
         showAlert('Tenant Updated', `${payload.client_name || 'Tenant'} saved successfully.`, 'success');
+        loadAdminActionTrail();
       } catch (error) {
         showAlert('Tenant Update Failed', error.message || 'Unable to save tenant changes.', 'danger');
       } finally {

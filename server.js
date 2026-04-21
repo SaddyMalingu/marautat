@@ -148,6 +148,12 @@ const ADMIN_DASHBOARD_ENABLED = process.env.ADMIN_DASHBOARD_ENABLED !== "false";
 const ADMIN_UPLOAD_BUCKET = process.env.ADMIN_UPLOAD_BUCKET || "product-images";
 const ADMIN_UPLOAD_MAX_MB = parseInt(process.env.ADMIN_UPLOAD_MAX_MB || "10", 10);
 const CAMPAIGN_HISTORY_FILE = path.join(process.cwd(), "logs", "admin_campaign_runs.jsonl");
+const ADMIN_ACTION_HISTORY_FILE = path.join(process.cwd(), "logs", "admin_action_history.jsonl");
+const ADMIN_APPROVALS_FILE = path.join(process.cwd(), "logs", "admin_approvals.json");
+const ADMIN_INCIDENT_FILE = path.join(process.cwd(), "logs", "admin_incident.json");
+const ADMIN_POLICY_REQUIRE_LIVE_CONFIRM = process.env.ADMIN_POLICY_REQUIRE_LIVE_CONFIRM === "true";
+const ADMIN_POLICY_REQUIRE_DRY_RUN_FIRST = process.env.ADMIN_POLICY_REQUIRE_DRY_RUN_FIRST === "true";
+const ADMIN_DEFAULT_ROLE = process.env.ADMIN_DEFAULT_ROLE || "super_admin";
 const ADMIN_NUMBERS = process.env.ADMIN_NUMBERS
   ? process.env.ADMIN_NUMBERS.split(",").map((n) => n.trim())
   : [];
@@ -176,6 +182,626 @@ async function appendCampaignHistory(record) {
   } catch (err) {
     log(`Campaign history append warning: ${err.message}`, "WARN");
   }
+}
+
+async function appendAdminAction(record) {
+  try {
+    await fs.promises.mkdir(path.dirname(ADMIN_ACTION_HISTORY_FILE), { recursive: true });
+    await fs.promises.appendFile(ADMIN_ACTION_HISTORY_FILE, `${JSON.stringify(record)}\n`, "utf8");
+  } catch (err) {
+    log(`Admin action append warning: ${err.message}`, "WARN");
+  }
+}
+
+function parseAdminActionFilters(query = {}) {
+  const statusRaw = String(query.status || "").trim().toLowerCase();
+  const limit = Math.min(500, Math.max(1, parseInt(query.limit || "100", 10)));
+  return {
+    limit,
+    from: parseDateFilter(query.from, false),
+    to: parseDateFilter(query.to, true),
+    action: String(query.action || "").trim().toLowerCase(),
+    status: statusRaw === "all" ? "" : statusRaw,
+    actor: String(query.actor || "").trim().toLowerCase(),
+  };
+}
+
+function filterAdminActionRecords(records, filters) {
+  const fromMs = filters.from ? filters.from.getTime() : null;
+  const toMs = filters.to ? filters.to.getTime() : null;
+  return records.filter((item) => {
+    const ts = parseIsoDate(item.when || item.ran_at || item.created_at || 0);
+    if (fromMs !== null && ts < fromMs) return false;
+    if (toMs !== null && ts > toMs) return false;
+    if (filters.action && !String(item.action || "").toLowerCase().includes(filters.action)) return false;
+    if (filters.status && String(item.status || "").toLowerCase() !== filters.status) return false;
+    if (filters.actor && !String(item.actor || "").toLowerCase().includes(filters.actor)) return false;
+    return true;
+  });
+}
+
+async function readAdminActions(options = {}) {
+  const resolved = typeof options === "number" ? { limit: options } : (options || {});
+  const filters = {
+    limit: Math.min(500, Math.max(1, parseInt(resolved.limit || "100", 10))),
+    from: resolved.from || null,
+    to: resolved.to || null,
+    action: String(resolved.action || "").trim().toLowerCase(),
+    status: String(resolved.status || "").trim().toLowerCase(),
+    actor: String(resolved.actor || "").trim().toLowerCase(),
+  };
+  try {
+    const content = await fs.promises.readFile(ADMIN_ACTION_HISTORY_FILE, "utf8");
+    const all = content
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        try {
+          return JSON.parse(line);
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean)
+      .sort((a, b) => parseIsoDate(b.when || 0) - parseIsoDate(a.when || 0));
+    const filtered = filterAdminActionRecords(all, filters);
+    return {
+      all_count: all.length,
+      filtered_count: filtered.length,
+      items: filtered.slice(0, filters.limit),
+    };
+  } catch (err) {
+    if (err.code === "ENOENT") {
+      return { all_count: 0, filtered_count: 0, items: [] };
+    }
+    log(`Admin action read warning: ${err.message}`, "WARN");
+    return { all_count: 0, filtered_count: 0, items: [] };
+  }
+}
+
+function normalizeAdminRole(rawRole) {
+  const role = String(rawRole || "").trim().toLowerCase();
+  if (["super_admin", "operations", "finance", "campaign_manager", "support"].includes(role)) {
+    return role;
+  }
+  return ADMIN_DEFAULT_ROLE;
+}
+
+function getAdminRole(req) {
+  return normalizeAdminRole(req.headers["x-admin-role"] || req.query.role || ADMIN_DEFAULT_ROLE);
+}
+
+function getAdminActor(req) {
+  return String(req.headers["x-admin-actor"] || req.query.actor || "admin").trim() || "admin";
+}
+
+function ensureAdminRole(req, allowedRoles = []) {
+  const role = getAdminRole(req);
+  return allowedRoles.includes(role) ? role : null;
+}
+
+async function readJsonFileSafe(filePath, fallbackValue) {
+  try {
+    const raw = await fs.promises.readFile(filePath, "utf8");
+    return JSON.parse(raw);
+  } catch (err) {
+    if (err.code === "ENOENT") return fallbackValue;
+    log(`JSON read warning (${path.basename(filePath)}): ${err.message}`, "WARN");
+    return fallbackValue;
+  }
+}
+
+async function writeJsonFileSafe(filePath, value) {
+  await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.promises.writeFile(filePath, JSON.stringify(value, null, 2), "utf8");
+}
+
+async function readApprovalRequests() {
+  const rows = await readJsonFileSafe(ADMIN_APPROVALS_FILE, []);
+  return Array.isArray(rows) ? rows : [];
+}
+
+async function saveApprovalRequests(rows) {
+  await writeJsonFileSafe(ADMIN_APPROVALS_FILE, rows);
+}
+
+async function createApprovalRequest({ action, requested_by, requested_role, payload, note, source_ip }) {
+  const approvals = await readApprovalRequests();
+  const record = {
+    id: `apr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    action,
+    requested_by,
+    requested_role,
+    status: "pending",
+    payload: payload || {},
+    note: note || "",
+    source_ip: source_ip || "",
+    requested_at: new Date().toISOString(),
+    reviewed_at: null,
+    reviewed_by: null,
+  };
+  approvals.unshift(record);
+  await saveApprovalRequests(approvals);
+  return record;
+}
+
+async function resolveApprovalRequest(approvalId, { reviewer, status, note }) {
+  const approvals = await readApprovalRequests();
+  const updated = approvals.map((item) => {
+    if (item.id !== approvalId) return item;
+    return {
+      ...item,
+      status,
+      review_note: note || item.review_note || "",
+      reviewed_by: reviewer,
+      reviewed_at: new Date().toISOString(),
+    };
+  });
+  await saveApprovalRequests(updated);
+  return updated.find((item) => item.id === approvalId) || null;
+}
+
+async function readActiveIncident() {
+  return readJsonFileSafe(ADMIN_INCIDENT_FILE, null);
+}
+
+async function writeActiveIncident(payload) {
+  if (!payload) {
+    try {
+      await fs.promises.unlink(ADMIN_INCIDENT_FILE);
+    } catch (err) {
+      if (err.code !== "ENOENT") throw err;
+    }
+    return;
+  }
+  await writeJsonFileSafe(ADMIN_INCIDENT_FILE, payload);
+}
+
+function getSlaTargetMinutes(status) {
+  const value = String(status || "").toLowerCase();
+  if (value === "failed") return 30;
+  if (value === "pending") return 20;
+  if (value === "manual_pending_verification") return 60;
+  if (value === "cod_pending_delivery") return 180;
+  return 60;
+}
+
+async function buildSlaRecoveryBoard(limit = 30) {
+  const since30d = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  let { data: subs, error: subsErr } = await supabase
+    .from("subscriptions")
+    .select("id, user_id, phone, amount, plan_type, level, status, product_sku, metadata, created_at, updated_at")
+    .gte("created_at", since30d)
+    .in("status", ["failed", "pending", "manual_pending_verification", "cod_pending_delivery"]);
+  if (subsErr && isMissingColumnError(subsErr)) {
+    ({ data: subs, error: subsErr } = await supabase
+      .from("subscriptions")
+      .select("id, user_id, phone, amount, plan_type, level, status, metadata, created_at, updated_at")
+      .gte("created_at", since30d)
+      .in("status", ["failed", "pending", "manual_pending_verification", "cod_pending_delivery"]));
+  }
+  if (subsErr) throw subsErr;
+
+  const items = subs || [];
+  const userIds = [...new Set(items.map((item) => item.user_id).filter(Boolean))];
+  let users = [];
+  let conversations = [];
+  if (userIds.length) {
+    const [{ data: userRows, error: userErr }, { data: convRows, error: convErr }] = await Promise.all([
+      supabase.from("users").select("id, phone, full_name").in("id", userIds),
+      supabase.from("conversations").select("user_id, direction, message_text, created_at").in("user_id", userIds).order("created_at", { ascending: false }).limit(800),
+    ]);
+    if (userErr) throw userErr;
+    if (convErr) throw convErr;
+    users = userRows || [];
+    conversations = convRows || [];
+  }
+
+  const userMap = new Map(users.map((item) => [item.id, item]));
+  const lastInbound = new Map();
+  const lastOutbound = new Map();
+  for (const row of conversations) {
+    if (row.direction === "incoming" && !lastInbound.has(row.user_id)) lastInbound.set(row.user_id, row);
+    if (row.direction === "outgoing" && !lastOutbound.has(row.user_id)) lastOutbound.set(row.user_id, row);
+  }
+
+  const rows = items
+    .map((item) => {
+      const user = userMap.get(item.user_id);
+      const updatedMs = parseIsoDate(item.updated_at || item.created_at || 0);
+      const ageMinutes = updatedMs ? Math.max(0, Math.round((Date.now() - updatedMs) / 60000)) : 0;
+      const slaTargetMinutes = getSlaTargetMinutes(item.status);
+      const overdueMinutes = Math.max(0, ageMinutes - slaTargetMinutes);
+      return {
+        subscription_id: item.id,
+        status: item.status,
+        amount: Number(item.amount) || 0,
+        plan: `${String(item.plan_type || "checkout").toUpperCase()}${item.level ? ` L${item.level}` : ""}`,
+        product_sku: item.product_sku || item.metadata?.sku || null,
+        customer_name: user?.full_name || "Unknown User",
+        wa_phone: normalizeCampaignPhone(user?.phone) || extractWaTargetFromSubscription(item),
+        age_minutes: ageMinutes,
+        sla_target_minutes: slaTargetMinutes,
+        overdue_minutes: overdueMinutes,
+        next_action: getLeadActionHint(item),
+        last_inbound_at: lastInbound.get(item.user_id)?.created_at || null,
+        last_inbound_message: lastInbound.get(item.user_id)?.message_text || null,
+        last_outbound_at: lastOutbound.get(item.user_id)?.created_at || null,
+        updated_at: item.updated_at || item.created_at || null,
+      };
+    })
+    .sort((a, b) => b.overdue_minutes - a.overdue_minutes || b.age_minutes - a.age_minutes)
+    .slice(0, Math.min(100, Math.max(5, Number(limit || 30))));
+
+  return {
+    generated_at: new Date().toISOString(),
+    summary: {
+      total: rows.length,
+      overdue: rows.filter((item) => item.overdue_minutes > 0).length,
+      failed: rows.filter((item) => String(item.status).toLowerCase() === "failed").length,
+      pending: rows.filter((item) => String(item.status).toLowerCase() === "pending").length,
+      manual_pending_verification: rows.filter((item) => String(item.status).toLowerCase() === "manual_pending_verification").length,
+      cod_pending_delivery: rows.filter((item) => String(item.status).toLowerCase() === "cod_pending_delivery").length,
+    },
+    items: rows,
+  };
+}
+
+async function loadSubscriptionForAdminAction(subscriptionId) {
+  let { data, error } = await supabase
+    .from("subscriptions")
+    .select("id, user_id, phone, amount, plan_type, level, status, product_sku, metadata, created_at, updated_at")
+    .eq("id", subscriptionId)
+    .maybeSingle();
+  if (error && isMissingColumnError(error)) {
+    ({ data, error } = await supabase
+      .from("subscriptions")
+      .select("id, user_id, phone, amount, plan_type, level, status, metadata, created_at, updated_at")
+      .eq("id", subscriptionId)
+      .maybeSingle());
+  }
+  if (error) throw error;
+  return data || null;
+}
+
+async function performAdminRecoveryAction({ action, subscriptionId, actor, sourceIp }) {
+  const subscription = await loadSubscriptionForAdminAction(subscriptionId);
+  if (!subscription) throw new Error("Subscription not found");
+  const waPhone = normalizeCampaignPhone(subscription.metadata?.customer_wa) || normalizeCampaignPhone(subscription.phone);
+  if (!waPhone) throw new Error("Unable to resolve customer phone");
+
+  if (action === "retry_prompt") {
+    await sendMessage(waPhone, `Hi, your Alphadome payment is still incomplete. Reply with *RETRY PAYMENT* if you want us to restart the checkout immediately.`);
+  } else if (action === "fallback_options") {
+    await sendFallbackPaymentOptions(
+      waPhone,
+      subscription.plan_type || "checkout",
+      subscription.level || null,
+      Number(subscription.amount) || 0,
+      subscription.id,
+      Boolean(subscription.product_sku || subscription.metadata?.sku)
+    );
+  } else if (action === "mark_bank_verified") {
+    const metadata = subscription.metadata && typeof subscription.metadata === "object" ? subscription.metadata : {};
+    const { error } = await supabase
+      .from("subscriptions")
+      .update({
+        status: "active",
+        updated_at: new Date().toISOString(),
+        metadata: {
+          ...metadata,
+          admin_bank_verified_at: new Date().toISOString(),
+          admin_bank_verified_by: actor,
+        },
+      })
+      .eq("id", subscriptionId);
+    if (error) throw error;
+  } else if (action === "mark_cod_dispatched") {
+    const metadata = subscription.metadata && typeof subscription.metadata === "object" ? subscription.metadata : {};
+    const { error } = await supabase
+      .from("subscriptions")
+      .update({
+        updated_at: new Date().toISOString(),
+        metadata: {
+          ...metadata,
+          admin_cod_dispatched_at: new Date().toISOString(),
+          admin_cod_dispatched_by: actor,
+        },
+      })
+      .eq("id", subscriptionId);
+    if (error) throw error;
+  } else if (action === "assign_manual_followup") {
+    const metadata = subscription.metadata && typeof subscription.metadata === "object" ? subscription.metadata : {};
+    const { error } = await supabase
+      .from("subscriptions")
+      .update({
+        updated_at: new Date().toISOString(),
+        metadata: {
+          ...metadata,
+          admin_manual_followup_at: new Date().toISOString(),
+          admin_manual_followup_by: actor,
+        },
+      })
+      .eq("id", subscriptionId);
+    if (error) throw error;
+  } else {
+    throw new Error("Unsupported recovery action");
+  }
+
+  await appendAdminAction({
+    when: new Date().toISOString(),
+    action: `recovery.${action}`,
+    status: "success",
+    actor,
+    source_ip: sourceIp,
+    note: `Recovery action ${action} applied to ${subscriptionId}`,
+    metadata: { subscription_id: subscriptionId, wa_phone: waPhone },
+  });
+
+  return { ok: true, subscription_id: subscriptionId, action, wa_phone: waPhone };
+}
+
+async function buildTenantReadinessReport(limit = 50) {
+  const tenantResp = await supabase
+    .from("bot_tenants")
+    .select("id, client_name, client_phone, status, is_active, whatsapp_phone_number_id, whatsapp_access_token, updated_at, created_at")
+    .limit(Math.min(200, Math.max(1, Number(limit || 50))));
+  if (tenantResp.error && !isMissingColumnError(tenantResp.error)) throw tenantResp.error;
+  const tenants = tenantResp.data || [];
+
+  let productRows = [];
+  const productsResp = await supabase.from("bot_products").select("bot_tenant_id, is_active");
+  if (!productsResp.error) productRows = productsResp.data || [];
+
+  let trainingRows = [];
+  const trainingResp = await supabase.from("bot_training_data").select("bot_tenant_id, is_active");
+  if (!trainingResp.error && !isMissingTableInSchemaCache(trainingResp.error)) trainingRows = trainingResp.data || [];
+
+  const productCountByTenant = new Map();
+  for (const row of productRows) {
+    const count = productCountByTenant.get(row.bot_tenant_id) || 0;
+    productCountByTenant.set(row.bot_tenant_id, count + (row.is_active === false ? 0 : 1));
+  }
+  const trainingCountByTenant = new Map();
+  for (const row of trainingRows) {
+    const count = trainingCountByTenant.get(row.bot_tenant_id) || 0;
+    trainingCountByTenant.set(row.bot_tenant_id, count + (row.is_active === false ? 0 : 1));
+  }
+
+  const now = Date.now();
+  const scored = tenants.map((tenant) => {
+    const productCount = productCountByTenant.get(tenant.id) || 0;
+    const trainingCount = trainingCountByTenant.get(tenant.id) || 0;
+    const updatedMs = parseIsoDate(tenant.updated_at || tenant.created_at || 0);
+    const recent = updatedMs && (now - updatedMs) <= (30 * 24 * 60 * 60 * 1000);
+    let score = 0;
+    const checks = [];
+    const pushCheck = (label, ok, weight) => {
+      checks.push({ label, ok });
+      if (ok) score += weight;
+    };
+    pushCheck("Tenant active", isTenantRecordActive(tenant), 20);
+    pushCheck("Valid tenant phone", Boolean(normalizeCampaignPhone(tenant.client_phone)), 10);
+    pushCheck("WhatsApp phone ID", Boolean(tenant.whatsapp_phone_number_id), 15);
+    pushCheck("WhatsApp access token", Boolean(tenant.whatsapp_access_token), 15);
+    pushCheck("Active catalog products", productCount > 0, 20);
+    pushCheck("Training data present", trainingCount > 0, 10);
+    pushCheck("Recently maintained", Boolean(recent), 10);
+    const level = score >= 80 ? "ready" : score >= 50 ? "needs_attention" : "critical";
+    return {
+      id: tenant.id,
+      client_name: tenant.client_name || "Unknown tenant",
+      client_phone: tenant.client_phone || "",
+      status: tenant.status || (isTenantRecordActive(tenant) ? "active" : "inactive"),
+      readiness_score: score,
+      readiness_level: level,
+      product_count: productCount,
+      training_count: trainingCount,
+      updated_at: tenant.updated_at || tenant.created_at || null,
+      checks,
+    };
+  }).sort((a, b) => a.readiness_score - b.readiness_score);
+
+  return {
+    generated_at: new Date().toISOString(),
+    summary: {
+      total: scored.length,
+      ready: scored.filter((item) => item.readiness_level === "ready").length,
+      needs_attention: scored.filter((item) => item.readiness_level === "needs_attention").length,
+      critical: scored.filter((item) => item.readiness_level === "critical").length,
+    },
+    tenants: scored,
+  };
+}
+
+async function buildSupportInbox(limit = 40) {
+  const since7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const { data: convRows, error: convErr } = await supabase
+    .from("conversations")
+    .select("user_id, direction, message_text, created_at")
+    .gte("created_at", since7d)
+    .order("created_at", { ascending: false })
+    .limit(1200);
+  if (convErr) throw convErr;
+  const userIds = [...new Set((convRows || []).map((row) => row.user_id).filter(Boolean))];
+  const { data: users, error: userErr } = userIds.length
+    ? await supabase.from("users").select("id, phone, full_name").in("id", userIds)
+    : { data: [], error: null };
+  if (userErr) throw userErr;
+  const userMap = new Map((users || []).map((user) => [user.id, user]));
+
+  const latestInbound = new Map();
+  const latestOutbound = new Map();
+  for (const row of convRows || []) {
+    if (row.direction === "incoming" && !latestInbound.has(row.user_id)) latestInbound.set(row.user_id, row);
+    if (row.direction === "outgoing" && !latestOutbound.has(row.user_id)) latestOutbound.set(row.user_id, row);
+  }
+
+  const unresolved = [...latestInbound.entries()]
+    .map(([userId, inbound]) => {
+      const outbound = latestOutbound.get(userId);
+      const unresolved = !outbound || parseIsoDate(inbound.created_at) > parseIsoDate(outbound.created_at);
+      const ageMinutes = Math.max(0, Math.round((Date.now() - parseIsoDate(inbound.created_at)) / 60000));
+      return {
+        user_id: userId,
+        unresolved,
+        age_minutes: ageMinutes,
+        inbound_at: inbound.created_at,
+        message_text: inbound.message_text || "",
+        customer_name: userMap.get(userId)?.full_name || "Unknown User",
+        wa_phone: normalizeCampaignPhone(userMap.get(userId)?.phone) || "",
+      };
+    })
+    .filter((item) => item.unresolved)
+    .sort((a, b) => b.age_minutes - a.age_minutes)
+    .slice(0, Math.min(100, Math.max(1, Number(limit || 40))));
+
+  return {
+    generated_at: new Date().toISOString(),
+    summary: {
+      unresolved: unresolved.length,
+      over_60m: unresolved.filter((item) => item.age_minutes >= 60).length,
+      over_240m: unresolved.filter((item) => item.age_minutes >= 240).length,
+    },
+    items: unresolved,
+  };
+}
+
+async function buildFinanceReconciliation(limit = 50) {
+  const since30d = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const { data: subs, error } = await supabase
+    .from("subscriptions")
+    .select("id, phone, amount, status, metadata, created_at, updated_at")
+    .gte("created_at", since30d)
+    .order("created_at", { ascending: false })
+    .limit(500);
+  if (error) throw error;
+  const items = subs || [];
+  const unresolved = items.filter((item) => ["pending", "failed", "manual_pending_verification", "cod_pending_delivery"].includes(String(item.status || "").toLowerCase()));
+  const revenueCaptured = items
+    .filter((item) => ["active", "completed", "subscribed"].includes(String(item.status || "").toLowerCase()))
+    .reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+  return {
+    generated_at: new Date().toISOString(),
+    summary: {
+      revenue_captured: revenueCaptured,
+      unresolved_count: unresolved.length,
+      manual_pending_verification: unresolved.filter((item) => String(item.status || "").toLowerCase() === "manual_pending_verification").length,
+      cod_pending_delivery: unresolved.filter((item) => String(item.status || "").toLowerCase() === "cod_pending_delivery").length,
+    },
+    items: unresolved.slice(0, Math.min(100, Math.max(1, Number(limit || 50)))).map((item) => ({
+      id: item.id,
+      phone: normalizeCampaignPhone(item.phone) || item.phone || "",
+      amount: Number(item.amount) || 0,
+      status: item.status,
+      created_at: item.created_at,
+      updated_at: item.updated_at,
+      reason: getFailureReason(item) || item.metadata?.receipt_number || null,
+    })),
+  };
+}
+
+async function buildRevenueCommandCenter() {
+  const ops = await buildAdminOpsOverview();
+  const sla = await buildSlaRecoveryBoard(50);
+  const finance = await buildFinanceReconciliation(50);
+  const funnel = {
+    incoming_messages_24h: Number(ops.kpis.incoming_messages_24h || 0),
+    payment_attempts_30d: Number(ops.kpis.payment_attempts_30d || 0),
+    successful_payments_30d: Number(ops.kpis.successful_payments_30d || 0),
+    failed_payments_30d: Number(ops.kpis.failed_payments_30d || 0),
+    pending_payments_30d: Number(ops.kpis.pending_payments_30d || 0),
+  };
+  return {
+    generated_at: new Date().toISOString(),
+    funnel,
+    revenue_kes_30d: Number(ops.kpis.total_revenue_kes_30d || 0),
+    conversion_rate_pct_30d: Number(ops.kpis.conversion_rate_pct_30d || 0),
+    blocked_cases: sla.summary.overdue,
+    blocked_value_kes: finance.items.reduce((sum, item) => sum + (Number(item.amount) || 0), 0),
+    priorities: ops.strategies || [],
+  };
+}
+
+async function fetchAllTemplateDefinitions() {
+  const phoneNumberId = process.env.PHONE_NUMBER_ID;
+  const token = process.env.WHATSAPP_TOKEN;
+  if (!phoneNumberId || !token) {
+    throw new Error("Missing PHONE_NUMBER_ID or WHATSAPP_TOKEN");
+  }
+
+  const phoneRes = await axios.get(`https://graph.facebook.com/v21.0/${phoneNumberId}`, {
+    params: { fields: "whatsapp_business_account" },
+    headers: { Authorization: `Bearer ${token}` },
+    timeout: 20000,
+  });
+  const wabaId = phoneRes?.data?.whatsapp_business_account?.id;
+  if (!wabaId) throw new Error("Unable to resolve whatsapp_business_account id");
+
+  const tmplRes = await axios.get(`https://graph.facebook.com/v21.0/${wabaId}/message_templates`, {
+    params: {
+      fields: "name,status,category,language,components",
+      limit: 100,
+    },
+    headers: { Authorization: `Bearer ${token}` },
+    timeout: 20000,
+  });
+  return {
+    waba_id: wabaId,
+    data: tmplRes?.data?.data || [],
+    paging: tmplRes?.data?.paging || null,
+  };
+}
+
+async function buildTemplateOpsCenter() {
+  const templates = await fetchAllTemplateDefinitions();
+  const history = await readCampaignHistory({ limit: 200 });
+  const usage = new Map();
+  for (const row of history.items || []) {
+    const key = String(row.template || "unknown");
+    const prev = usage.get(key) || { sends: 0, success: 0, failed: 0 };
+    prev.sends += Number(row.total || 0);
+    prev.success += Number(row.success || 0);
+    prev.failed += Number(row.failed || 0);
+    usage.set(key, prev);
+  }
+  const items = (templates.data || []).map((tpl) => ({
+    name: tpl.name,
+    status: tpl.status,
+    category: tpl.category,
+    language: tpl.language,
+    usage: usage.get(tpl.name) || { sends: 0, success: 0, failed: 0 },
+  }));
+  return {
+    generated_at: new Date().toISOString(),
+    count: items.length,
+    templates: items,
+  };
+}
+
+async function buildExecutiveSnapshot() {
+  const [ops, revenue, readiness, incident] = await Promise.all([
+    buildAdminOpsOverview(),
+    buildRevenueCommandCenter(),
+    buildTenantReadinessReport(50),
+    readActiveIncident(),
+  ]);
+  return {
+    generated_at: new Date().toISOString(),
+    headline: {
+      revenue_kes_30d: Number(ops.kpis.total_revenue_kes_30d || 0),
+      active_tenants: Number(ops.kpis.active_tenants || 0),
+      blocked_cases: Number(revenue.blocked_cases || 0),
+      critical_tenants: Number(readiness.summary.critical || 0),
+      health_status: ops.kpis.health_status || "unknown",
+      active_incident: incident ? incident.title || incident.message || "incident" : null,
+    },
+    priorities: [
+      ...(revenue.priorities || []).slice(0, 3),
+      ...(incident ? [`Incident active: ${incident.title || incident.message}`] : []),
+    ].slice(0, 5),
+  };
 }
 
 function parseDateFilter(value, endOfDay = false) {
@@ -3906,6 +4532,198 @@ function normalizeCampaignPhone(raw) {
   return null;
 }
 
+function parseLogTs(line) {
+  const match = String(line || "").match(/^\[([^\]]+)\]/);
+  if (!match?.[1]) return 0;
+  const ts = new Date(match[1]).getTime();
+  return Number.isFinite(ts) ? ts : 0;
+}
+
+function readRecentLogLines(logPath, {
+  limit = 100,
+  includeRegex = null,
+} = {}) {
+  try {
+    if (!fs.existsSync(logPath)) return [];
+    const content = fs.readFileSync(logPath, "utf8");
+    const rows = content
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .filter((line) => includeRegex ? includeRegex.test(line) : true)
+      .slice(-Math.max(1, Number(limit || 100)));
+    return rows;
+  } catch (err) {
+    log(`Audit log read warning (${path.basename(logPath)}): ${err.message}`, "WARN");
+    return [];
+  }
+}
+
+function buildAdminAuditFeed({
+  requestLimit = 80,
+  systemLimit = 120,
+  historyLimit = 40,
+} = {}) {
+  const requestLogPath = path.join(process.cwd(), "request.log");
+  const botLogPath = path.join(process.cwd(), "logs", "bot.log");
+
+  const requestLines = readRecentLogLines(requestLogPath, { limit: requestLimit });
+  const systemLines = readRecentLogLines(botLogPath, {
+    limit: systemLimit,
+    includeRegex: /\[(ERROR|WARN|PAYMENT|SYSTEM|PAGE)\]/,
+  });
+
+  const requestEvents = requestLines.map((line) => {
+    const ts = parseLogTs(line);
+    const isError = /\s(4\d\d|5\d\d)\s-/.test(line);
+    return {
+      ts,
+      source: "request",
+      severity: isError ? "warning" : "info",
+      category: "http",
+      message: line,
+    };
+  });
+
+  const systemEvents = systemLines.map((line) => {
+    const ts = parseLogTs(line);
+    const sevMatch = line.match(/\[(ERROR|WARN|PAYMENT|SYSTEM|PAGE)\]/);
+    const sev = String(sevMatch?.[1] || "INFO").toUpperCase();
+    const severity = sev === "ERROR" ? "critical" : sev === "WARN" ? "warning" : "info";
+    return {
+      ts,
+      source: "system",
+      severity,
+      category: sev.toLowerCase(),
+      message: line,
+    };
+  });
+
+  return readCampaignHistory({ limit: historyLimit }).then((historyPayload) => {
+    const historyEvents = (historyPayload.items || []).map((item) => {
+      const ts = parseIsoDate(item.ran_at || item.created_at || item.updated_at);
+      const status = String(item.status || "unknown").toLowerCase();
+      const severity = status === "failed" ? "critical" : status === "partial" ? "warning" : "info";
+      return {
+        ts,
+        source: "campaign",
+        severity,
+        category: "campaign",
+        message: `Campaign ${item.template || "template"} (${item.audience || "audience"}) status=${status} success=${Number(item.success || 0)} failed=${Number(item.failed || 0)}`,
+      };
+    });
+
+    const items = [...requestEvents, ...systemEvents, ...historyEvents]
+      .filter((event) => event.ts > 0)
+      .sort((a, b) => b.ts - a.ts);
+
+    return {
+      generated_at: new Date().toISOString(),
+      counts: {
+        total: items.length,
+        critical: items.filter((x) => x.severity === "critical").length,
+        warning: items.filter((x) => x.severity === "warning").length,
+        info: items.filter((x) => x.severity === "info").length,
+      },
+      items,
+    };
+  });
+}
+
+async function buildTenantRiskWatchlist(limit = 30) {
+  const resolvedLimit = Math.min(100, Math.max(1, Number(limit || 30)));
+  let tenantResp = await supabase
+    .from("bot_tenants")
+    .select("id, client_name, client_phone, status, is_active, whatsapp_phone_number_id, whatsapp_access_token, updated_at, created_at")
+    .order("updated_at", { ascending: false })
+    .limit(resolvedLimit);
+
+  if (tenantResp.error && isMissingColumnError(tenantResp.error)) {
+    tenantResp = await supabase
+      .from("bot_tenants")
+      .select("id, client_name, client_phone, status, is_active, updated_at, created_at")
+      .order("updated_at", { ascending: false })
+      .limit(resolvedLimit);
+  }
+
+  if (tenantResp.error) throw tenantResp.error;
+
+  const tenants = tenantResp.data || [];
+  const nowMs = Date.now();
+
+  const scored = tenants.map((tenant) => {
+    let score = 0;
+    const reasons = [];
+    const active = isTenantRecordActive(tenant);
+    const tenantPhone = normalizeCampaignPhone(tenant.client_phone);
+    const updatedAtMs = parseIsoDate(tenant.updated_at || tenant.created_at || 0);
+    const staleDays = updatedAtMs > 0 ? Math.floor((nowMs - updatedAtMs) / (24 * 60 * 60 * 1000)) : 999;
+
+    if (!active) {
+      score += 50;
+      reasons.push("Tenant marked inactive");
+    }
+    if (!tenantPhone) {
+      score += 25;
+      reasons.push("Missing/invalid tenant phone");
+    }
+    if (staleDays >= 60) {
+      score += 25;
+      reasons.push(`No profile update for ${staleDays} days`);
+    } else if (staleDays >= 30) {
+      score += 15;
+      reasons.push(`No profile update for ${staleDays} days`);
+    }
+    if (Object.prototype.hasOwnProperty.call(tenant, "whatsapp_phone_number_id") && !tenant.whatsapp_phone_number_id) {
+      score += 15;
+      reasons.push("WhatsApp phone_number_id missing");
+    }
+    if (Object.prototype.hasOwnProperty.call(tenant, "whatsapp_access_token") && !tenant.whatsapp_access_token) {
+      score += 20;
+      reasons.push("WhatsApp access token missing");
+    }
+
+    const level = score >= 60 ? "high" : score >= 30 ? "medium" : "low";
+    const nextAction =
+      level === "high"
+        ? "Immediate owner review: validate status, phone, and WhatsApp credentials"
+        : level === "medium"
+          ? "Review tenant setup and recency within 24h"
+          : "Healthy baseline; monitor weekly";
+
+    return {
+      id: tenant.id,
+      client_name: tenant.client_name || "Unknown tenant",
+      client_phone: tenant.client_phone || "",
+      status: tenant.status || (active ? "active" : "inactive"),
+      is_active: active,
+      updated_at: tenant.updated_at || tenant.created_at || null,
+      stale_days: staleDays,
+      risk_score: score,
+      risk_level: level,
+      reasons,
+      next_action: nextAction,
+    };
+  });
+
+  const watchlist = scored
+    .filter((item) => item.risk_level !== "low")
+    .sort((a, b) => b.risk_score - a.risk_score || b.stale_days - a.stale_days);
+
+  return {
+    generated_at: new Date().toISOString(),
+    summary: {
+      total: scored.length,
+      high: scored.filter((x) => x.risk_level === "high").length,
+      medium: scored.filter((x) => x.risk_level === "medium").length,
+      low: scored.filter((x) => x.risk_level === "low").length,
+      watchlist_count: watchlist.length,
+    },
+    watchlist,
+    tenants: scored.sort((a, b) => b.risk_score - a.risk_score),
+  };
+}
+
 function sleepMs(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -4414,6 +5232,7 @@ app.get("/admin/api/tenants/list", adminAuth, async (req, res) => {
 app.patch("/admin/api/tenants/:tenantId", adminAuth, async (req, res) => {
   try {
     const tenantId = String(req.params.tenantId || "").trim();
+    const actor = String(req.headers["x-admin-actor"] || req.query.actor || "admin").trim();
     const updates = { updated_at: new Date().toISOString() };
     const body = req.body || {};
     const allowedStatuses = new Set(["active", "inactive"]);
@@ -4515,8 +5334,30 @@ app.patch("/admin/api/tenants/:tenantId", adminAuth, async (req, res) => {
     if (updateResp.error) throw updateResp.error;
     if (!updateResp.data) return res.status(404).json({ error: "Tenant not found" });
 
+    await appendAdminAction({
+      when: new Date().toISOString(),
+      action: "tenant.update",
+      status: "success",
+      actor,
+      source_ip: req.ip,
+      tenant_id: tenantId,
+      note: `Updated tenant ${tenantId}`,
+      metadata: {
+        fields: Object.keys(updates).filter((field) => field !== "updated_at"),
+      },
+    });
+
     return res.json({ ok: true, tenant: updateResp.data });
   } catch (err) {
+    await appendAdminAction({
+      when: new Date().toISOString(),
+      action: "tenant.update",
+      status: "failed",
+      actor: String(req.headers["x-admin-actor"] || req.query.actor || "admin").trim(),
+      source_ip: req.ip,
+      tenant_id: String(req.params.tenantId || "").trim(),
+      note: err.message,
+    });
     log(`Admin tenant edit error: ${err.message}`, "ERROR");
     return res.status(500).json({ error: err.message });
   }
@@ -4682,6 +5523,52 @@ app.get("/admin/api/campaign/history", adminAuth, async (req, res) => {
   }
 });
 
+app.get("/admin/api/policies", adminAuth, async (req, res) => {
+  return res.json({
+    ok: true,
+    policies: {
+      require_live_confirm: ADMIN_POLICY_REQUIRE_LIVE_CONFIRM,
+      require_dry_run_first: ADMIN_POLICY_REQUIRE_DRY_RUN_FIRST,
+    },
+  });
+});
+
+app.get("/admin/api/audit/actions", adminAuth, async (req, res) => {
+  try {
+    const filters = parseAdminActionFilters(req.query || {});
+    const exportAsCsv = String(req.query.export || "").toLowerCase() === "csv";
+    const result = await readAdminActions(filters);
+
+    if (exportAsCsv) {
+      const rows = [
+        ["when", "action", "status", "actor", "source_ip", "note"],
+        ...result.items.map((item) => [
+          item.when || "",
+          item.action || "",
+          item.status || "",
+          item.actor || "",
+          item.source_ip || "",
+          item.note || "",
+        ]),
+      ];
+      const fileName = `alphadome-admin-actions-${new Date().toISOString().slice(0, 10)}.csv`;
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename=${fileName}`);
+      return res.send(buildCsvFromRows(rows));
+    }
+
+    return res.json({
+      ok: true,
+      total_count: result.all_count,
+      filtered_count: result.filtered_count,
+      actions: result.items,
+    });
+  } catch (err) {
+    log(`Admin action audit error: ${err.message}`, "ERROR");
+    return res.status(500).json({ error: err.message, actions: [], filtered_count: 0, total_count: 0 });
+  }
+});
+
 // Campaign reply tracker — shows sent numbers vs who replied
 app.get("/admin/api/campaign/replies", adminAuth, async (req, res) => {
   try {
@@ -4744,8 +5631,354 @@ app.get("/admin/api/db-tables", adminAuth, async (req, res) => {
   return res.json({ ok: allOk, tables: results });
 });
 
+app.get("/admin/api/audit/feed", adminAuth, async (req, res) => {
+  try {
+    const limit = Math.min(500, Math.max(20, parseInt(req.query.limit || "120", 10)));
+    const source = String(req.query.source || "all").toLowerCase();
+    const severity = String(req.query.severity || "all").toLowerCase();
+
+    const payload = await buildAdminAuditFeed({
+      requestLimit: Math.max(60, limit),
+      systemLimit: Math.max(80, limit),
+      historyLimit: Math.max(30, Math.floor(limit / 2)),
+    });
+
+    let items = payload.items || [];
+    if (source !== "all") items = items.filter((item) => item.source === source);
+    if (severity !== "all") items = items.filter((item) => item.severity === severity);
+
+    return res.json({
+      ok: true,
+      generated_at: payload.generated_at,
+      counts: payload.counts,
+      filtered_count: items.length,
+      items: items.slice(0, limit),
+    });
+  } catch (err) {
+    log(`Admin audit feed error: ${err.message}`, "ERROR");
+    return res.status(500).json({ error: err.message, ok: false, items: [] });
+  }
+});
+
+app.get("/admin/api/tenants/risk", adminAuth, async (req, res) => {
+  try {
+    const limit = Math.min(100, Math.max(5, parseInt(req.query.limit || "30", 10)));
+    const minLevel = String(req.query.min_level || "all").toLowerCase();
+    const payload = await buildTenantRiskWatchlist(limit);
+
+    let watchlist = payload.watchlist || [];
+    if (minLevel === "high") watchlist = watchlist.filter((item) => item.risk_level === "high");
+    if (minLevel === "medium") watchlist = watchlist.filter((item) => ["high", "medium"].includes(item.risk_level));
+
+    return res.json({
+      ok: true,
+      generated_at: payload.generated_at,
+      summary: payload.summary,
+      watchlist_count: watchlist.length,
+      watchlist,
+      tenants: payload.tenants,
+    });
+  } catch (err) {
+    log(`Admin tenant risk error: ${err.message}`, "ERROR");
+    return res.status(500).json({ error: err.message, ok: false, watchlist: [], tenants: [] });
+  }
+});
+
+app.get("/admin/api/sla/recovery-board", adminAuth, async (req, res) => {
+  try {
+    const limit = Math.min(100, Math.max(5, parseInt(req.query.limit || "40", 10)));
+    const payload = await buildSlaRecoveryBoard(limit);
+    return res.json({ ok: true, ...payload });
+  } catch (err) {
+    log(`Admin SLA board error: ${err.message}`, "ERROR");
+    return res.status(500).json({ error: err.message, ok: false, items: [] });
+  }
+});
+
+app.post("/admin/api/recovery/action", adminAuth, async (req, res) => {
+  try {
+    const role = ensureAdminRole(req, ["super_admin", "operations", "finance", "support"]);
+    if (!role) {
+      return res.status(403).json({ error: "Role not allowed for recovery actions" });
+    }
+    const action = String(req.body?.action || "").trim();
+    const subscriptionId = String(req.body?.subscription_id || "").trim();
+    if (!action || !subscriptionId) {
+      return res.status(400).json({ error: "action and subscription_id are required" });
+    }
+    const result = await performAdminRecoveryAction({
+      action,
+      subscriptionId,
+      actor: getAdminActor(req),
+      sourceIp: req.ip,
+    });
+    return res.json(result);
+  } catch (err) {
+    await appendAdminAction({
+      when: new Date().toISOString(),
+      action: `recovery.${String(req.body?.action || "unknown")}`,
+      status: "failed",
+      actor: getAdminActor(req),
+      source_ip: req.ip,
+      note: err.message,
+      metadata: { subscription_id: String(req.body?.subscription_id || "") },
+    });
+    return res.status(500).json({ error: err.message, ok: false });
+  }
+});
+
+app.get("/admin/api/tenants/readiness", adminAuth, async (req, res) => {
+  try {
+    const limit = Math.min(200, Math.max(5, parseInt(req.query.limit || "60", 10)));
+    const payload = await buildTenantReadinessReport(limit);
+    return res.json({ ok: true, ...payload });
+  } catch (err) {
+    log(`Admin tenant readiness error: ${err.message}`, "ERROR");
+    return res.status(500).json({ error: err.message, ok: false, tenants: [] });
+  }
+});
+
+app.get("/admin/api/revenue/command-center", adminAuth, async (req, res) => {
+  try {
+    const payload = await buildRevenueCommandCenter();
+    return res.json({ ok: true, ...payload });
+  } catch (err) {
+    log(`Admin revenue center error: ${err.message}`, "ERROR");
+    return res.status(500).json({ error: err.message, ok: false });
+  }
+});
+
+app.get("/admin/api/templates/ops", adminAuth, async (req, res) => {
+  try {
+    const payload = await buildTemplateOpsCenter();
+    return res.json({ ok: true, ...payload });
+  } catch (err) {
+    log(`Admin template ops error: ${err.message}`, "ERROR");
+    return res.status(500).json({ error: err.message, ok: false, templates: [] });
+  }
+});
+
+app.get("/admin/api/support/inbox", adminAuth, async (req, res) => {
+  try {
+    const limit = Math.min(100, Math.max(5, parseInt(req.query.limit || "40", 10)));
+    const payload = await buildSupportInbox(limit);
+    return res.json({ ok: true, ...payload });
+  } catch (err) {
+    log(`Admin support inbox error: ${err.message}`, "ERROR");
+    return res.status(500).json({ error: err.message, ok: false, items: [] });
+  }
+});
+
+app.get("/admin/api/finance/reconciliation", adminAuth, async (req, res) => {
+  try {
+    const limit = Math.min(200, Math.max(5, parseInt(req.query.limit || "60", 10)));
+    const payload = await buildFinanceReconciliation(limit);
+    return res.json({ ok: true, ...payload });
+  } catch (err) {
+    log(`Admin finance reconciliation error: ${err.message}`, "ERROR");
+    return res.status(500).json({ error: err.message, ok: false, items: [] });
+  }
+});
+
+app.get("/admin/api/incidents/active", adminAuth, async (req, res) => {
+  const incident = await readActiveIncident();
+  return res.json({ ok: true, incident: incident || null });
+});
+
+app.post("/admin/api/incidents/active", adminAuth, async (req, res) => {
+  try {
+    const role = ensureAdminRole(req, ["super_admin", "operations"]);
+    if (!role) return res.status(403).json({ error: "Role not allowed to manage incidents" });
+    const resolve = Boolean(req.body?.resolve);
+    if (resolve) {
+      await writeActiveIncident(null);
+      await appendAdminAction({
+        when: new Date().toISOString(),
+        action: "incident.resolve",
+        status: "success",
+        actor: getAdminActor(req),
+        source_ip: req.ip,
+        note: "Active incident cleared",
+      });
+      return res.json({ ok: true, incident: null });
+    }
+    const payload = {
+      id: `inc_${Date.now()}`,
+      title: String(req.body?.title || "Platform Incident").trim(),
+      message: String(req.body?.message || "").trim(),
+      severity: String(req.body?.severity || "warning").trim().toLowerCase(),
+      status: String(req.body?.status || "active").trim().toLowerCase(),
+      declared_by: getAdminActor(req),
+      declared_role: role,
+      started_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    await writeActiveIncident(payload);
+    await appendAdminAction({
+      when: new Date().toISOString(),
+      action: "incident.declare",
+      status: "success",
+      actor: getAdminActor(req),
+      source_ip: req.ip,
+      note: payload.title,
+      metadata: { severity: payload.severity },
+    });
+    return res.json({ ok: true, incident: payload });
+  } catch (err) {
+    return res.status(500).json({ error: err.message, ok: false });
+  }
+});
+
+app.get("/admin/api/approvals", adminAuth, async (req, res) => {
+  try {
+    const rows = await readApprovalRequests();
+    return res.json({ ok: true, count: rows.length, approvals: rows.slice(0, 200) });
+  } catch (err) {
+    return res.status(500).json({ error: err.message, ok: false, approvals: [] });
+  }
+});
+
+app.post("/admin/api/approvals", adminAuth, async (req, res) => {
+  try {
+    const record = await createApprovalRequest({
+      action: String(req.body?.action || "manual_request").trim(),
+      requested_by: getAdminActor(req),
+      requested_role: getAdminRole(req),
+      payload: req.body?.payload || {},
+      note: String(req.body?.note || "").trim(),
+      source_ip: req.ip,
+    });
+    await appendAdminAction({
+      when: new Date().toISOString(),
+      action: "approval.create",
+      status: "success",
+      actor: getAdminActor(req),
+      source_ip: req.ip,
+      note: `${record.action} requested`,
+      metadata: { approval_id: record.id },
+    });
+    return res.status(201).json({ ok: true, approval: record });
+  } catch (err) {
+    return res.status(500).json({ error: err.message, ok: false });
+  }
+});
+
+app.post("/admin/api/approvals/:approvalId/resolve", adminAuth, async (req, res) => {
+  try {
+    const role = ensureAdminRole(req, ["super_admin"]);
+    if (!role) return res.status(403).json({ error: "Only super_admin can resolve approvals" });
+    const approval = await resolveApprovalRequest(String(req.params.approvalId || "").trim(), {
+      reviewer: getAdminActor(req),
+      status: String(req.body?.status || "approved").trim().toLowerCase(),
+      note: String(req.body?.note || "").trim(),
+    });
+    if (!approval) return res.status(404).json({ error: "Approval not found" });
+    await appendAdminAction({
+      when: new Date().toISOString(),
+      action: "approval.resolve",
+      status: "success",
+      actor: getAdminActor(req),
+      source_ip: req.ip,
+      note: `${approval.id} -> ${approval.status}`,
+      metadata: { approval_id: approval.id },
+    });
+    return res.json({ ok: true, approval });
+  } catch (err) {
+    return res.status(500).json({ error: err.message, ok: false });
+  }
+});
+
+app.post("/admin/api/tenants/bulk", adminAuth, async (req, res) => {
+  try {
+    const action = String(req.body?.action || "").trim().toLowerCase();
+    const tenantIds = Array.isArray(req.body?.tenant_ids) ? req.body.tenant_ids.map((id) => String(id).trim()).filter(Boolean) : [];
+    const dryRun = Boolean(req.body?.dry_run);
+    const role = getAdminRole(req);
+    const actor = getAdminActor(req);
+    if (!action || !tenantIds.length) {
+      return res.status(400).json({ error: "action and tenant_ids are required" });
+    }
+
+    let { data: tenants, error } = await supabase
+      .from("bot_tenants")
+      .select("id, client_name, client_phone, status, is_active")
+      .in("id", tenantIds);
+    if (error && isMissingColumnError(error)) {
+      ({ data: tenants, error } = await supabase
+        .from("bot_tenants")
+        .select("id, client_name, client_phone, status")
+        .in("id", tenantIds));
+    }
+    if (error) throw error;
+    const preview = (tenants || []).map((tenant) => ({
+      id: tenant.id,
+      client_name: tenant.client_name,
+      current_status: tenant.status || (tenant.is_active === false ? "inactive" : "active"),
+      next_status: action === "activate" ? "active" : action === "deactivate" ? "inactive" : tenant.status,
+    }));
+
+    if (dryRun) {
+      return res.json({ ok: true, dry_run: true, count: preview.length, preview });
+    }
+
+    if (action === "deactivate" && role !== "super_admin") {
+      const approval = await createApprovalRequest({
+        action: "tenant.bulk_deactivate",
+        requested_by: actor,
+        requested_role: role,
+        payload: { tenant_ids: tenantIds },
+        note: `Bulk deactivate requested for ${tenantIds.length} tenant(s)`,
+        source_ip: req.ip,
+      });
+      return res.status(202).json({ ok: true, approval_requested: true, approval });
+    }
+
+    if (!["activate", "deactivate"].includes(action)) {
+      return res.status(400).json({ error: "Unsupported bulk action" });
+    }
+
+    const updates = {
+      status: action === "activate" ? "active" : "inactive",
+      is_active: action === "activate",
+      updated_at: new Date().toISOString(),
+    };
+    let { error: updateErr } = await supabase.from("bot_tenants").update(updates).in("id", tenantIds);
+    if (updateErr && isMissingColumnError(updateErr)) {
+      const fallbackUpdates = {
+        status: updates.status,
+        updated_at: updates.updated_at,
+      };
+      ({ error: updateErr } = await supabase.from("bot_tenants").update(fallbackUpdates).in("id", tenantIds));
+    }
+    if (updateErr) throw updateErr;
+    await appendAdminAction({
+      when: new Date().toISOString(),
+      action: `tenant.bulk_${action}`,
+      status: "success",
+      actor,
+      source_ip: req.ip,
+      note: `${tenantIds.length} tenant(s) updated`,
+      metadata: { tenant_ids: tenantIds },
+    });
+    return res.json({ ok: true, count: tenantIds.length, preview });
+  } catch (err) {
+    return res.status(500).json({ error: err.message, ok: false });
+  }
+});
+
+app.get("/admin/api/executive-snapshot", adminAuth, async (req, res) => {
+  try {
+    const payload = await buildExecutiveSnapshot();
+    return res.json({ ok: true, ...payload });
+  } catch (err) {
+    return res.status(500).json({ error: err.message, ok: false });
+  }
+});
+
 app.post("/admin/api/campaign/send-template", adminAuth, async (req, res) => {
   try {
+    const actor = String(req.headers["x-admin-actor"] || req.query.actor || "admin").trim();
+    const role = getAdminRole(req);
     const audience = normalizeCampaignAudience(req.body?.audience);
     const defaultExistingTemplate = process.env.CAMPAIGN_TEMPLATE_EXISTING || "alphadome";
     const defaultNewClientTemplate = process.env.CAMPAIGN_TEMPLATE_NEW_CLIENT || "alphadome_new_client";
@@ -4756,6 +5989,7 @@ app.post("/admin/api/campaign/send-template", adminAuth, async (req, res) => {
     const limit = parseInt(req.body?.limit || "25", 10);
     const delayMs = Math.max(0, parseInt(req.body?.delay_ms || "1200", 10));
     const dryRun = Boolean(req.body?.dry_run);
+    const confirmLive = Boolean(req.body?.confirm_live);
     const runId = `run_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const ranAt = new Date().toISOString();
     const excludeKeywords = Array.isArray(req.body?.exclude_keywords)
@@ -4764,6 +5998,76 @@ app.post("/admin/api/campaign/send-template", adminAuth, async (req, res) => {
     const excludePhones = Array.isArray(req.body?.exclude_phones)
       ? req.body.exclude_phones
       : ["254702245555", "254117604817", "254743780542"];
+
+    if (!dryRun && ADMIN_POLICY_REQUIRE_LIVE_CONFIRM && !confirmLive) {
+      await appendAdminAction({
+        when: ranAt,
+        action: "campaign.send_template",
+        status: "blocked",
+        actor,
+        source_ip: req.ip,
+        run_id: runId,
+        note: "Blocked by policy: confirm_live required for live sends",
+      });
+      return res.status(400).json({
+        error: "Live send requires confirm_live=true (policy enforcement).",
+        policy: "require_live_confirm",
+      });
+    }
+
+    if (!dryRun && !["super_admin", "campaign_manager"].includes(role)) {
+      const approval = await createApprovalRequest({
+        action: "campaign.live_send",
+        requested_by: actor,
+        requested_role: role,
+        payload: {
+          audience,
+          template,
+          language,
+          limit,
+          window_hours: windowHours,
+          delay_ms: delayMs,
+        },
+        note: `Role ${role} requested a live campaign send`,
+        source_ip: req.ip,
+      });
+      await appendAdminAction({
+        when: ranAt,
+        action: "campaign.send_template",
+        status: "blocked",
+        actor,
+        source_ip: req.ip,
+        run_id: runId,
+        note: `Approval required for role ${role}`,
+        metadata: { approval_id: approval.id, role, audience, template },
+      });
+      return res.status(202).json({
+        ok: true,
+        approval_requested: true,
+        approval,
+        message: "Live campaign requires approval for this role.",
+      });
+    }
+
+    if (!dryRun && ADMIN_POLICY_REQUIRE_DRY_RUN_FIRST) {
+      const historyCheck = await readCampaignHistory({ limit: 200, template, audience, status: "dry_run" });
+      if (!historyCheck.filtered_count) {
+        await appendAdminAction({
+          when: ranAt,
+          action: "campaign.send_template",
+          status: "blocked",
+          actor,
+          source_ip: req.ip,
+          run_id: runId,
+          note: "Blocked by policy: dry run required before live send",
+          metadata: { template, audience },
+        });
+        return res.status(400).json({
+          error: "Run a dry run first for this audience/template before live send.",
+          policy: "require_dry_run_first",
+        });
+      }
+    }
 
     let leads = [];
     if (audience === "new_clients") {
@@ -4799,6 +6103,21 @@ app.post("/admin/api/campaign/send-template", adminAuth, async (req, res) => {
         sample: leads.slice(0, 10),
       };
       await appendCampaignHistory(dryRunResult);
+      await appendAdminAction({
+        when: ranAt,
+        action: "campaign.send_template",
+        status: "dry_run",
+        actor,
+        source_ip: req.ip,
+        run_id: runId,
+        note: `Dry run generated: template=${template} audience=${audience}`,
+        metadata: {
+          total: leads.length,
+          template,
+          audience,
+          language,
+        },
+      });
       return res.json({
         ok: true,
         run_id: runId,
@@ -4848,6 +6167,23 @@ app.post("/admin/api/campaign/send-template", adminAuth, async (req, res) => {
       errors: errors.slice(0, 20),
       sample: leads.slice(0, 10),
     });
+    await appendAdminAction({
+      when: new Date().toISOString(),
+      action: "campaign.send_template",
+      status,
+      actor,
+      source_ip: req.ip,
+      run_id: runId,
+      note: `Campaign ${status}: success=${success} failed=${failed}`,
+      metadata: {
+        audience,
+        template,
+        language,
+        total: leads.length,
+        success,
+        failed,
+      },
+    });
     return res.json({
       ok: true,
       run_id: runId,
@@ -4862,6 +6198,18 @@ app.post("/admin/api/campaign/send-template", adminAuth, async (req, res) => {
       sample: leads.slice(0, 10),
     });
   } catch (err) {
+    await appendAdminAction({
+      when: new Date().toISOString(),
+      action: "campaign.send_template",
+      status: "failed",
+      actor: String(req.headers["x-admin-actor"] || req.query.actor || "admin").trim(),
+      source_ip: req.ip,
+      note: err.message,
+      metadata: {
+        audience: normalizeCampaignAudience(req.body?.audience),
+        template: String(req.body?.template || process.env.CAMPAIGN_TEMPLATE_EXISTING || "alphadome"),
+      },
+    });
     await appendCampaignHistory({
       run_id: `run_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       ran_at: new Date().toISOString(),
