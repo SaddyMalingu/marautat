@@ -1,3 +1,49 @@
+.onboarding-step-number {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  font-size: 1.2rem;
+  min-width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--accent, #38bdf8);
+  color: #0f1117;
+  font-weight: 700;
+  margin-right: 18px;
+  margin-top: 2px;
+  box-shadow: 0 1px 4px rgba(56,189,248,0.10);
+  border: 2px solid #23284a;
+}
+.onboarding-card.step-card {
+  border-left: 7px solid var(--accent, #38bdf8);
+  position: relative;
+  transition: box-shadow 0.2s, border-left 0.2s;
+}
+.onboarding-card.step-card:hover {
+  box-shadow: 0 8px 32px rgba(56,189,248,0.13);
+  border-left: 7px solid #22d3a0;
+}
+.badge.bg-info.onboarding-guide-link {
+  background: #38bdf8 !important;
+  color: #0f1117 !important;
+  font-weight: 600;
+  border-radius: 10px;
+  padding: 2px 10px;
+  font-size: 0.85em;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+.onboarding-guide-link {
+  font-size: 0.92em;
+  color: #60a5fa;
+  margin-left: 6px;
+  text-decoration: none;
+}
+.onboarding-guide-link:hover {
+  text-decoration: underline;
+  color: var(--accent, #38bdf8);
+}
 .onboarding-cards-steps {
   gap: 28px;
 }
