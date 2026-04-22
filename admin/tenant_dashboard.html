@@ -158,16 +158,17 @@
     <div class="nav-item" data-sec="orders"><span class="nav-icon"><i class="fa-solid fa-cart-shopping"></i></span>Orders</div>
 
     <div class="sidebar-label">Bot</div>
-    <div class="nav-item" data-sec="training"><span class="nav-icon"><i class="fa-solid fa-robot"></i></span>Bot Training</div>
-    <div class="nav-item" data-sec="bot-config"><span class="nav-icon"><i class="fa-solid fa-sliders"></i></span>Bot Config</div>
-    <div class="nav-item" data-sec="broadcast"><span class="nav-icon"><i class="fa-solid fa-bullhorn"></i></span>Bulk Message</div>
-    <div class="nav-item" data-sec="abandoned"><span class="nav-icon"><i class="fa-solid fa-cart-shopping"></i></span>Cart Recovery</div>
-    <div class="nav-item" data-sec="insights"><span class="nav-icon"><i class="fa-solid fa-lightbulb"></i></span>Insights</div>
-    <div class="nav-item" data-sec="auto-responses"><span class="nav-icon"><i class="fa-solid fa-reply"></i></span>Auto-Responses</div>
-    <div class="nav-item" data-sec="scheduled"><span class="nav-icon"><i class="fa-solid fa-clock"></i></span>Scheduled Msgs</div>
-    <div class="nav-item" data-sec="workflows"><span class="nav-icon"><i class="fa-solid fa-diagram-project"></i></span>Workflows</div>
-    <div class="nav-item" data-sec="escalations"><span class="nav-icon"><i class="fa-solid fa-headset"></i></span>Escalation Queue</div>
-    <div class="nav-item" data-sec="agent-performance"><span class="nav-icon"><i class="fa-solid fa-user-gear"></i></span>Agent Performance</div>
+      <div class="nav-item" data-sec="training"><span class="nav-icon"><i class="fa-solid fa-robot"></i></span>Bot Training</div>
+      <div class="nav-item" data-sec="bot-config"><span class="nav-icon"><i class="fa-solid fa-sliders"></i></span>Bot Config</div>
+      <div class="nav-item" data-sec="broadcast"><span class="nav-icon"><i class="fa-solid fa-bullhorn"></i></span>Bulk Message</div>
+      <div class="nav-item" data-sec="abandoned"><span class="nav-icon"><i class="fa-solid fa-cart-shopping"></i></span>Cart Recovery</div>
+      <div class="nav-item" data-sec="insights"><span class="nav-icon"><i class="fa-solid fa-lightbulb"></i></span>Insights</div>
+      <div class="nav-item" data-sec="auto-responses"><span class="nav-icon"><i class="fa-solid fa-reply"></i></span>Auto-Responses</div>
+      <div class="nav-item" data-sec="scheduled"><span class="nav-icon"><i class="fa-solid fa-clock"></i></span>Scheduled Msgs</div>
+      <div class="nav-item" data-sec="workflows"><span class="nav-icon"><i class="fa-solid fa-diagram-project"></i></span>Workflows</div>
+      <div class="nav-item" data-sec="escalations"><span class="nav-icon"><i class="fa-solid fa-headset"></i></span>Escalation Queue</div>
+      <div class="nav-item" data-sec="agent-performance"><span class="nav-icon"><i class="fa-solid fa-user-gear"></i></span>Agent Performance</div>
+      <div class="nav-item" data-sec="onboarding"><span class="nav-icon"><i class="fa-solid fa-user-plus"></i></span>Onboarding</div>
 
     <div class="sidebar-label">Settings</div>
     <div class="nav-item" data-sec="profile"><span class="nav-icon"><i class="fa-solid fa-user"></i></span>Profile</div>
@@ -282,8 +283,25 @@ function go(sec) {
   document.getElementById('sidebar').classList.remove('open');
   const sp = document.getElementById('spa');
   sp.innerHTML = spinner();
-  const map = { home:renderHome, revenue:renderRevenue, analytics:renderAnalytics, customers:renderCustomers, search:renderSearch, preferences:renderPreferences, favorites:renderFavorites, referrals:renderReferrals, catalog:renderCatalog, performance:renderPerformance, suppliers:renderSuppliers, orders:renderOrders, training:renderTraining, 'bot-config':renderBotConfig, profile:renderProfile, smtp:renderSmtp, payments:renderPayments, 'add-agent':renderAddAgent, assignments:renderAssignments, reviews:renderReviews, broadcast:renderBroadcast, abandoned:renderAbandoned, insights:renderInsights, 'auto-responses':renderAutoResponses, scheduled:renderScheduled, workflows:renderWorkflows, escalations:renderEscalations, 'agent-performance':renderAgentPerformance, help:renderHelp };
+  const map = { home:renderHome, revenue:renderRevenue, analytics:renderAnalytics, customers:renderCustomers, search:renderSearch, preferences:renderPreferences, favorites:renderFavorites, referrals:renderReferrals, catalog:renderCatalog, performance:renderPerformance, suppliers:renderSuppliers, orders:renderOrders, training:renderTraining, 'bot-config':renderBotConfig, profile:renderProfile, smtp:renderSmtp, payments:renderPayments, 'add-agent':renderAddAgent, assignments:renderAssignments, reviews:renderReviews, broadcast:renderBroadcast, abandoned:renderAbandoned, insights:renderInsights, 'auto-responses':renderAutoResponses, scheduled:renderScheduled, workflows:renderWorkflows, escalations:renderEscalations, 'agent-performance':renderAgentPerformance, onboarding:renderOnboarding, help:renderHelp };
   (map[sec] || renderHome)();
+
+}
+
+// Onboarding SPA loader
+async function renderOnboarding() {
+  const sp = document.getElementById('spa');
+  sp.innerHTML = spinner('Loading onboarding...');
+  try {
+    const resp = await fetch('tenant_onboarding.html');
+    if (!resp.ok) throw new Error('Not found');
+    let html = await resp.text();
+    // Extract <body> content only
+    html = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i)?.[1] || html;
+    sp.innerHTML = html;
+  } catch (e) {
+    sp.innerHTML = `<div class='text-center p-5 text-danger'><h2>Failed to load onboarding page.</h2><div class='mt-2'>Please contact support.</div></div>`;
+  }
 }
 
 function showErr(msg) {

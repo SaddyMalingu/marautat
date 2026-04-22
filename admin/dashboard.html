@@ -1,3 +1,146 @@
+                              <div class="dashboard-card position-relative" id="governanceCard">
+                                <span class="position-absolute top-0 end-0 badge bg-dark text-light m-2" title="Governance, Security & Compliance"><i class="fa-solid fa-shield-halved"></i></span>
+                                <h3><i class="fa-solid fa-shield-halved"></i> Governance & Security</h3>
+                                <div class="value" id="governanceSummary">--</div>
+                                <div class="desc">RBAC, Audit, Policy, Session Security</div>
+                                <div class="mt-2" id="governancePolicies"></div>
+                                <ul class="small mt-2 mb-1" id="governanceAuditList" style="padding-left:18px;"></ul>
+                                <button class="btn btn-sm btn-outline-dark mt-2 w-100" id="refreshGovernanceBtn">Refresh</button>
+                              </div>
+                                  async function fetchGovernance() {
+                                    try {
+                                      // Policies
+                                      const polRes = await fetch('/admin/api/policies');
+                                      const polData = await polRes.ok ? await polRes.json() : { policies: {} };
+                                      const policies = polData.policies || {};
+                                      document.getElementById('governancePolicies').innerHTML = Object.entries(policies).length
+                                        ? `<strong>Policies:</strong> ` + Object.entries(policies).map(([k,v]) => `${k}: ${v}`).join(' | ')
+                                        : '<span class="text-muted">No policies found.</span>';
+                                      // Audit actions (top 3)
+                                      const auditRes = await fetch('/admin/api/audit/actions?limit=3');
+                                      const auditData = await auditRes.ok ? await auditRes.json() : { actions: [] };
+                                      const auditList = document.getElementById('governanceAuditList');
+                                      auditList.innerHTML = '';
+                                      (auditData.actions || []).forEach(a => {
+                                        const li = document.createElement('li');
+                                        li.innerHTML = `<strong>${a.action || 'Action'}</strong> <span class='text-secondary small ms-2'>${a.status || ''}</span> <span class='text-muted small ms-2'>${a.actor || ''}</span>`;
+                                        auditList.appendChild(li);
+                                      });
+                                      if (!auditData.actions || auditData.actions.length === 0) {
+                                        const li = document.createElement('li');
+                                        li.textContent = 'No recent admin actions.';
+                                        li.className = 'text-muted';
+                                        auditList.appendChild(li);
+                                      }
+                                      // Summary
+                                      document.getElementById('governanceSummary').textContent = `Policies: ${Object.keys(policies).length} | Audit: ${(auditData.actions||[]).length}`;
+                                    } catch (e) {
+                                      document.getElementById('governanceSummary').textContent = '--';
+                                      document.getElementById('governancePolicies').innerHTML = '';
+                                      document.getElementById('governanceAuditList').innerHTML = '<li class="text-danger">Unavailable</li>';
+                                    }
+                                  }
+                                  document.getElementById('refreshGovernanceBtn').onclick = fetchGovernance;
+                                  window.addEventListener('DOMContentLoaded', fetchGovernance);
+                    <div class="dashboard-card position-relative" id="revenueLabCard">
+                      <span class="position-absolute top-0 end-0 badge bg-success text-light m-2" title="Revenue Performance Lab"><i class="fa-solid fa-flask-vial"></i></span>
+                      <h3><i class="fa-solid fa-flask-vial"></i> Revenue Performance Lab</h3>
+                      <div class="value" id="revenueLabSummary">--</div>
+                      <div class="desc">Campaign Experiments, Funnel, Cohort</div>
+                      <div class="mt-2" id="revenueLabFunnel"></div>
+                      <div class="mt-2" id="revenueLabCohort"></div>
+                      <div class="mt-2" id="revenueLabRecovery"></div>
+                      <ul class="small mt-2 mb-1" id="revenueLabCampaigns" style="padding-left:18px;"></ul>
+                      <button class="btn btn-sm btn-outline-success mt-2 w-100" id="refreshRevenueLabBtn">Refresh</button>
+                    </div>
+                        async function fetchRevenueLab() {
+                          try {
+                            const res = await fetch('/admin/api/revenue-lab');
+                            if (!res.ok) throw new Error('Failed to load revenue lab');
+                            const data = await res.json();
+                            // Summary
+                            document.getElementById('revenueLabSummary').textContent = `Campaigns: ${(data.campaigns||[]).length} | Funnel: ${data.funnel.success}/${data.funnel.attempts} | Cohorts: ${Object.keys(data.cohort||{}).length}`;
+                            // Funnel
+                            const f = data.funnel || {};
+                            document.getElementById('revenueLabFunnel').innerHTML = `<strong>Funnel:</strong> Attempts: ${f.attempts}, Success: ${f.success}, Failed: ${f.failed}, Pending: ${f.pending}`;
+                            // Cohort
+                            const cohort = data.cohort || {};
+                            document.getElementById('revenueLabCohort').innerHTML = `<strong>Cohort:</strong> ` + Object.entries(cohort).map(([k,v]) => `${k}: ${v}`).join(' | ');
+                            // Recovery ladder
+                            const recovery = data.recovery || {};
+                            document.getElementById('revenueLabRecovery').innerHTML = `<strong>Recovery Ladder:</strong> ` + Object.entries(recovery).map(([k,v]) => `${k}: ${v}`).join(' | ');
+                            // Campaign experiments (top 3)
+                            const campaignsList = document.getElementById('revenueLabCampaigns');
+                            campaignsList.innerHTML = '';
+                            (data.campaigns || []).slice(0, 3).forEach(c => {
+                              const li = document.createElement('li');
+                              li.innerHTML = `<strong>${c.name || c.template || 'Campaign'}</strong> <span class='text-secondary small ms-2'>${c.status || ''}</span> <span class='text-success small ms-2'>${c.success || 0}/${c.total || 0}</span>`;
+                              campaignsList.appendChild(li);
+                            });
+                            if (!data.campaigns || data.campaigns.length === 0) {
+                              const li = document.createElement('li');
+                              li.textContent = 'No campaign experiments.';
+                              li.className = 'text-muted';
+                              campaignsList.appendChild(li);
+                            }
+                          } catch (e) {
+                            document.getElementById('revenueLabSummary').textContent = '--';
+                            document.getElementById('revenueLabFunnel').innerHTML = '';
+                            document.getElementById('revenueLabCohort').innerHTML = '';
+                            document.getElementById('revenueLabRecovery').innerHTML = '';
+                            document.getElementById('revenueLabCampaigns').innerHTML = '<li class="text-danger">Unavailable</li>';
+                          }
+                        }
+                        document.getElementById('refreshRevenueLabBtn').onclick = fetchRevenueLab;
+                        window.addEventListener('DOMContentLoaded', fetchRevenueLab);
+          <div class="dashboard-card position-relative" id="tenantSuccessCard">
+            <span class="position-absolute top-0 end-0 badge bg-warning text-dark m-2" title="Tenant Success & Churn"><i class="fa-solid fa-heart-pulse"></i></span>
+            <h3><i class="fa-solid fa-heart-pulse"></i> Tenant Success & Churn</h3>
+            <div class="value" id="tenantSuccessSummary">--</div>
+            <div class="desc">Health, Churn Risk, Onboarding</div>
+            <div class="mt-2" id="tenantChurnSpark"></div>
+            <ul class="small mt-2 mb-1" id="tenantAtRiskList" style="padding-left:18px;"></ul>
+            <button class="btn btn-sm btn-outline-warning mt-2 w-100" id="refreshTenantSuccessBtn">Refresh</button>
+          </div>
+              async function fetchTenantSuccess() {
+                try {
+                  const res = await fetch('/admin/api/tenant-success');
+                  if (!res.ok) throw new Error('Failed to load tenant success');
+                  const data = await res.json();
+                  // Summary
+                  document.getElementById('tenantSuccessSummary').textContent = `Healthy: ${data.summary.healthy} / ${data.summary.total} | At Risk: ${data.summary.at_risk} | Onboarding: ${data.summary.onboarding_stuck}`;
+                  // Churn sparkline (simple text sparkline)
+                  const spark = data.churn_spark || [];
+                  const sparkHtml = spark.length ? `<span style='font-family:monospace;font-size:1.2em;'>${spark.map(v => {
+                    if (v >= 0.7) return '█';
+                    if (v >= 0.4) return '▓';
+                    if (v >= 0.2) return '▒';
+                    return '░';
+                  }).join('')}</span> <span class='small ms-2'>Avg: ${data.summary.avg_churn_risk}</span>` : '';
+                  document.getElementById('tenantChurnSpark').innerHTML = sparkHtml;
+                  // At risk list (top 3)
+                  const atRiskList = document.getElementById('tenantAtRiskList');
+                  atRiskList.innerHTML = '';
+                  (data.at_risk || []).slice(0, 3).forEach(t => {
+                    const li = document.createElement('li');
+                    li.innerHTML = `<strong>${t.name || t.phone}</strong> <span class='text-warning small ms-2'>Risk: ${(t.churn_risk * 100).toFixed(0)}%</span> <span class='text-secondary small ms-2'>${t.onboarding !== 'completed' ? 'Onboarding: ' + t.onboarding : ''}</span>`;
+                    li.className = 'text-warning';
+                    atRiskList.appendChild(li);
+                  });
+                  if (!data.at_risk || data.at_risk.length === 0) {
+                    const li = document.createElement('li');
+                    li.textContent = 'No tenants at risk.';
+                    li.className = 'text-success';
+                    atRiskList.appendChild(li);
+                  }
+                } catch (e) {
+                  document.getElementById('tenantSuccessSummary').textContent = '--';
+                  document.getElementById('tenantChurnSpark').innerHTML = '';
+                  document.getElementById('tenantAtRiskList').innerHTML = '<li class="text-danger">Unavailable</li>';
+                }
+              }
+              document.getElementById('refreshTenantSuccessBtn').onclick = fetchTenantSuccess;
+              window.addEventListener('DOMContentLoaded', fetchTenantSuccess);
 
 <!DOCTYPE html>
 <html lang="en">
@@ -190,21 +333,44 @@
     </div>
     <div class="user"><i class="fa-solid fa-user-shield"></i> Admin</div>
   </div>
+  <!-- Owner Brief Strip -->
+  <div id="ownerBriefStrip" class="alert alert-info d-flex align-items-center justify-content-between" style="background:linear-gradient(90deg,#38bdf8 0%,#232a4d 100%);color:#1e293b;font-weight:600;font-size:1.08rem;letter-spacing:0.01em;box-shadow:0 2px 12px rgba(56,189,248,0.08);border-radius:0 0 18px 18px;border:none;">
+    <span id="ownerBriefText"><i class="fa-solid fa-rocket"></i> Loading owner brief...</span>
+    <button class="btn btn-sm btn-outline-dark ms-3" id="refreshOwnerBriefBtn" title="Refresh Owner Brief"><i class="fa-solid fa-arrows-rotate"></i></button>
+  </div>
   <div class="d-flex">
     <nav class="sidebar flex-column p-0 d-lg-flex d-none" id="sidebarNav">
       <div class="logo d-none d-lg-flex"><i class="fa-solid fa-cube"></i> Alphadome</div>
       <ul class="nav flex-column w-100">
-        <li class="nav-item"><a class="nav-link active" href="#dashboard"><i class="fa-solid fa-gauge"></i> Dashboard</a></li>
-        <li class="nav-item"><a class="nav-link" href="#upload"><i class="fa-solid fa-upload"></i> Upload</a></li>
-        <li class="nav-item"><a class="nav-link" href="#simple"><i class="fa-solid fa-plus"></i> Simple Upload</a></li>
-        <li class="nav-item"><a class="nav-link" href="#catalog"><i class="fa-solid fa-table-list"></i> Catalog Viewer</a></li>
-        <li class="nav-item"><a class="nav-link" href="#logs"><i class="fa-solid fa-wave-square"></i> Live Logs</a></li>
-        <li class="nav-item"><a class="nav-link" href="#writers-flow"><i class="fa-solid fa-rocket"></i> Writer's Flow</a></li>
+          <li class="nav-item"><a class="nav-link active" href="#dashboard"><i class="fa-solid fa-gauge"></i> Dashboard</a></li>
+          <li class="nav-item"><a class="nav-link" href="#upload"><i class="fa-solid fa-upload"></i> Upload</a></li>
+          <li class="nav-item"><a class="nav-link" href="#simple"><i class="fa-solid fa-plus"></i> Simple Upload</a></li>
+          <li class="nav-item"><a class="nav-link" href="#catalog"><i class="fa-solid fa-table-list"></i> Catalog Viewer</a></li>
+          <li class="nav-item"><a class="nav-link" href="#logs"><i class="fa-solid fa-wave-square"></i> Live Logs</a></li>
+          <li class="nav-item"><a class="nav-link" href="#onboarding"><i class="fa-solid fa-user-plus"></i> Tenant Onboarding</a></li>
+          <li class="nav-item"><a class="nav-link" href="#writers-flow"><i class="fa-solid fa-rocket"></i> Writer's Flow</a></li>
       </ul>
     </nav>
     <main class="main-content flex-grow-1">
       <div id="spa-content">
         <section class="mb-4 p-4 rounded-4 bg-gradient" style="background:linear-gradient(90deg,#232a4d 0%,#38bdf8 100%);color:#fff;">
+            <script>
+              async function fetchOwnerBrief() {
+                try {
+                  const res = await fetch('/admin/api/executive-snapshot');
+                  if (!res.ok) throw new Error('Failed to load executive snapshot');
+                  const data = await res.json();
+                  const h = data.headline || {};
+                  const brief = h.auto_brief ||
+                    `Revenue today: KES ${h.revenue_today?.toLocaleString?.() ?? '--'} | Margin: ${h.margin_estimate !== undefined && h.margin_estimate !== null ? `KES ${h.margin_estimate.toLocaleString()}` : 'N/A'} | Burn rate: ${h.burn_rate !== undefined && h.burn_rate !== null ? `KES ${Math.round(h.burn_rate).toLocaleString()}/day` : 'N/A'} | Cash at risk: KES ${h.cash_at_risk?.toLocaleString?.() ?? '--'} | ΔRevenue: ${h.delta_revenue !== undefined && h.delta_revenue !== null ? (h.delta_revenue >= 0 ? '+' : '') + h.delta_revenue.toLocaleString() : 'N/A'}`;
+                  document.getElementById('ownerBriefText').textContent = brief;
+                } catch (e) {
+                  document.getElementById('ownerBriefText').textContent = 'Owner Brief unavailable.';
+                }
+              }
+              document.getElementById('refreshOwnerBriefBtn').onclick = fetchOwnerBrief;
+              window.addEventListener('DOMContentLoaded', fetchOwnerBrief);
+            </script>
           <div class="d-flex flex-column flex-md-row align-items-center justify-content-between gap-3">
             <div>
               <h1 class="fw-bold mb-2" style="font-size:2.2rem;"><i class="fa-solid fa-shield-dog"></i> Welcome, Super Admin!</h1>
@@ -217,6 +383,149 @@
         </section>
         <div id="apiStatusBanner" class="alert alert-warning d-none" role="alert"></div>
         <div class="dashboard-cards mb-4">
+          <div class="dashboard-card position-relative" id="profitCostCard">
+                                <!-- Reliability & Resilience Control Card -->
+                                <div class="dashboard-card position-relative" id="sloBoardCard">
+                                  <span class="position-absolute top-0 end-0 badge bg-danger text-light m-2" title="Reliability & Resilience Control"><i class="fa-solid fa-shield-heart"></i></span>
+                                  <h3><i class="fa-solid fa-shield-heart"></i> Reliability & Resilience</h3>
+                                  <div class="value" id="errorBudgetValue">--</div>
+                                  <div class="desc">Error Budget & SLO Board</div>
+                                  <ul class="small mt-2 mb-1" id="incidentList" style="padding-left:18px;"></ul>
+                                  <div class="d-flex gap-2 mt-2">
+                                    <button class="btn btn-sm btn-outline-danger flex-grow-1" id="refreshSloBoardBtn">Refresh</button>
+                                    <button class="btn btn-sm btn-outline-secondary flex-grow-1" id="showIncidentTimelineBtn"><i class="fa-solid fa-clock-rotate-left"></i> Timeline</button>
+                                  </div>
+                                  <div class="mt-2 small text-muted" id="sloBoardSummary">Loading SLO board...</div>
+                                </div>
+
+                                <!-- Incident Timeline Modal -->
+                                <div class="modal fade" id="incidentTimelineModal" tabindex="-1" aria-labelledby="incidentTimelineModalLabel" aria-hidden="true">
+                                  <div class="modal-dialog modal-lg modal-dialog-centered">
+                                    <div class="modal-content" style="background:#181c2f;color:#e6e8ee;">
+                                      <div class="modal-header">
+                                        <h5 class="modal-title" id="incidentTimelineModalLabel"><i class="fa-solid fa-clock-rotate-left"></i> Incident Timeline</h5>
+                                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                      </div>
+                                      <div class="modal-body">
+                                        <ul class="list-group" id="incidentTimelineList" style="background:transparent;border:none;padding:0;"></ul>
+                                      </div>
+                                      <div class="modal-footer">
+                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                      <span class="position-absolute top-0 end-0 badge bg-warning text-dark m-2" title="Profit & Cost Intelligence"><i class="fa-solid fa-coins"></i></span>
+                      <h3><i class="fa-solid fa-coins"></i> Profit & Cost</h3>
+                      <div class="value" id="marginPercent">--</div>
+                      <div class="desc">Margin % & Profit/Tenant</div>
+                      <ul class="small mt-2 mb-1" id="guardrailList" style="padding-left:18px;"></ul>
+                      <button class="btn btn-sm btn-outline-warning mt-2 w-100" id="refreshProfitCostBtn">Refresh</button>
+                      <div class="mt-2 small text-muted" id="costBreakdown">Loading cost breakdown...</div>
+                    </div>
+
+              let cachedIncidents = [];
+              async function fetchSloBoard() {
+                try {
+                  const res = await fetch('/admin/api/slo-board');
+                  if (!res.ok) throw new Error('Failed to load SLO board');
+                  const data = await res.json();
+                  // Error budget
+                  document.getElementById('errorBudgetValue').textContent = data.error_budget_percent !== undefined && data.error_budget_percent !== null ? `${data.error_budget_percent}%` : '--';
+                  // SLO summary
+                  const slo = data.slo_board || {};
+                  const summary = slo.summary || {};
+                  document.getElementById('sloBoardSummary').textContent = `Overdue: ${summary.overdue ?? '--'} | Failed: ${summary.failed ?? '--'} | Pending: ${summary.pending ?? '--'} | Manual: ${summary.manual_pending_verification ?? '--'} | COD: ${summary.cod_pending_delivery ?? '--'}`;
+                  // Incidents
+                  const incidentList = document.getElementById('incidentList');
+                  incidentList.innerHTML = '';
+                  cachedIncidents = data.incidents || [];
+                  // Show only the most recent (active or last 1-2)
+                  (cachedIncidents.slice(0, 2)).forEach(inc => {
+                    const li = document.createElement('li');
+                    li.innerHTML = `<strong>${inc.title || inc.message || 'Incident'}</strong> <span class='text-secondary small ms-2'>${inc.created_at ? new Date(inc.created_at).toLocaleString() : ''}</span>`;
+                    li.className = inc.status === 'resolved' || inc.status === 'closed' ? 'text-success' : 'text-danger';
+                    incidentList.appendChild(li);
+                  });
+                  if (!cachedIncidents.length) {
+                    const li = document.createElement('li');
+                    li.textContent = 'No active incidents.';
+                    li.className = 'text-success';
+                    incidentList.appendChild(li);
+                  }
+                } catch (e) {
+                  document.getElementById('errorBudgetValue').textContent = '--';
+                  document.getElementById('sloBoardSummary').textContent = 'SLO board unavailable.';
+                  document.getElementById('incidentList').innerHTML = '<li class="text-danger">Unavailable</li>';
+                  cachedIncidents = [];
+                }
+              }
+              document.getElementById('refreshSloBoardBtn').onclick = fetchSloBoard;
+              window.addEventListener('DOMContentLoaded', fetchSloBoard);
+
+              // Incident Timeline Modal logic
+              document.getElementById('showIncidentTimelineBtn').onclick = function() {
+                const modal = new bootstrap.Modal(document.getElementById('incidentTimelineModal'));
+                const list = document.getElementById('incidentTimelineList');
+                list.innerHTML = '';
+                if (!cachedIncidents.length) {
+                  const li = document.createElement('li');
+                  li.textContent = 'No incidents recorded.';
+                  li.className = 'list-group-item text-success';
+                  list.appendChild(li);
+                } else {
+                  cachedIncidents.forEach(inc => {
+                    const li = document.createElement('li');
+                    li.className = 'list-group-item';
+                    li.innerHTML = `<div><strong>${inc.title || inc.message || 'Incident'}</strong> <span class='badge bg-${inc.status === 'resolved' || inc.status === 'closed' ? 'success' : 'danger'} ms-2'>${inc.status || 'active'}</span></div>` +
+                      `<div class='small text-secondary'>${inc.created_at ? new Date(inc.created_at).toLocaleString() : ''}</div>` +
+                      (inc.details ? `<div class='small mt-1'>${inc.details}</div>` : '') +
+                      (inc.resolved_at ? `<div class='small text-success mt-1'>Resolved: ${new Date(inc.resolved_at).toLocaleString()}</div>` : '');
+                    list.appendChild(li);
+                  });
+                }
+                modal.show();
+              };
+
+                try {
+                  const res = await fetch('/admin/api/executive-snapshot');
+                  if (!res.ok) throw new Error('Failed to load executive snapshot');
+                  const data = await res.json();
+                  const h = data.headline || {};
+                  // Margin %
+                  document.getElementById('marginPercent').textContent = h.margin_percent !== undefined && h.margin_percent !== null ? `${h.margin_percent}%` : '--';
+                  // Profit per tenant
+                  document.getElementById('profitCostCard').querySelector('.desc').textContent = `Margin: ${h.margin_percent !== undefined && h.margin_percent !== null ? h.margin_percent + '%' : '--'} | Profit/Tenant: ${h.profit_per_tenant !== undefined && h.profit_per_tenant !== null ? 'KES ' + h.profit_per_tenant.toLocaleString() : '--'}`;
+                  // Guardrails
+                  const guardrailList = document.getElementById('guardrailList');
+                  guardrailList.innerHTML = '';
+                  (h.guardrails || []).forEach(g => {
+                    const li = document.createElement('li');
+                    li.textContent = g;
+                    li.className = 'text-danger';
+                    guardrailList.appendChild(li);
+                  });
+                  if (!h.guardrails || h.guardrails.length === 0) {
+                    const li = document.createElement('li');
+                    li.textContent = 'No anomalies detected.';
+                    li.className = 'text-success';
+                    guardrailList.appendChild(li);
+                  }
+                  // Cost breakdown
+                  const cb = h.cost_breakdown || {};
+                  const cbText = Object.keys(cb).length
+                    ? 'Cost breakdown: ' + Object.entries(cb).map(([k, v]) => `${k}: KES ${v.toLocaleString()}`).join(', ')
+                    : 'No cost data.';
+                  document.getElementById('costBreakdown').textContent = cbText;
+                } catch (e) {
+                  document.getElementById('marginPercent').textContent = '--';
+                  document.getElementById('profitCostCard').querySelector('.desc').textContent = 'Margin % & Profit/Tenant';
+                  document.getElementById('guardrailList').innerHTML = '<li class="text-danger">Unavailable</li>';
+                  document.getElementById('costBreakdown').textContent = 'Cost breakdown unavailable.';
+                }
+              }
+              document.getElementById('refreshProfitCostBtn').onclick = fetchProfitCostIntelligence;
+              window.addEventListener('DOMContentLoaded', fetchProfitCostIntelligence);
           <div class="dashboard-card position-relative">
             <span class="position-absolute top-0 end-0 badge bg-info text-dark m-2" title="Live count of all active tenants"><i class="fa-solid fa-circle-info"></i></span>
             <h3><i class="fa-solid fa-users"></i> Tenants</h3>
@@ -499,12 +808,13 @@
     <nav class="sidebar flex-column p-0 d-lg-none d-none position-fixed top-0 start-0 w-75 h-100" id="mobileSidebar" style="z-index:1100;">
       <div class="logo"><i class="fa-solid fa-cube"></i> Alphadome</div>
       <ul class="nav flex-column w-100">
-        <li class="nav-item"><a class="nav-link active" href="#dashboard"><i class="fa-solid fa-gauge"></i> Dashboard</a></li>
-        <li class="nav-item"><a class="nav-link" href="#upload"><i class="fa-solid fa-upload"></i> Upload</a></li>
-        <li class="nav-item"><a class="nav-link" href="#simple"><i class="fa-solid fa-plus"></i> Simple Upload</a></li>
-        <li class="nav-item"><a class="nav-link" href="#catalog"><i class="fa-solid fa-table-list"></i> Catalog Viewer</a></li>
-        <li class="nav-item"><a class="nav-link" href="#logs"><i class="fa-solid fa-wave-square"></i> Live Logs</a></li>
-        <li class="nav-item"><a class="nav-link" href="#writers-flow"><i class="fa-solid fa-rocket"></i> Writer's Flow</a></li>
+          <li class="nav-item"><a class="nav-link active" href="#dashboard"><i class="fa-solid fa-gauge"></i> Dashboard</a></li>
+          <li class="nav-item"><a class="nav-link" href="#upload"><i class="fa-solid fa-upload"></i> Upload</a></li>
+          <li class="nav-item"><a class="nav-link" href="#simple"><i class="fa-solid fa-plus"></i> Simple Upload</a></li>
+          <li class="nav-item"><a class="nav-link" href="#catalog"><i class="fa-solid fa-table-list"></i> Catalog Viewer</a></li>
+          <li class="nav-item"><a class="nav-link" href="#logs"><i class="fa-solid fa-wave-square"></i> Live Logs</a></li>
+          <li class="nav-item"><a class="nav-link" href="#onboarding"><i class="fa-solid fa-user-plus"></i> Tenant Onboarding</a></li>
+          <li class="nav-item"><a class="nav-link" href="#writers-flow"><i class="fa-solid fa-rocket"></i> Writer's Flow</a></li>
       </ul>
     </nav>
   </div>
@@ -580,6 +890,7 @@
       else if (hash === '#simple') url = 'simple_upload.html';
       else if (hash === '#upload') url = 'dashboard.html#upload';
       else if (hash === '#logs') url = '/logs/live';
+      else if (hash === '#onboarding') url = 'tenant_onboarding.html';
       else if (hash === '#dashboard' || hash === '' || hash === '#') url = '';
       else if (hash === '#writers-flow') { renderWritersFlowPage(); return; }
       else url = '';
