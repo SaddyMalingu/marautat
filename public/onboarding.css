@@ -1,3 +1,49 @@
+.onboarding-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin: 18px 0 18px 0;
+}
+.onboarding-card {
+  display: flex;
+  align-items: flex-start;
+  background: #23284a;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(30,39,71,0.07);
+  padding: 18px 18px 14px 18px;
+  border-left: 5px solid var(--accent, #38bdf8);
+  margin-bottom: 0;
+}
+.onboarding-step-number {
+  min-width: 36px;
+  height: 36px;
+  background: var(--accent, #38bdf8);
+  color: #0f1117;
+  font-weight: 700;
+  font-size: 1.3rem;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 18px;
+  margin-top: 2px;
+  box-shadow: 0 1px 4px rgba(56,189,248,0.10);
+}
+.onboarding-credentials-list {
+  margin: 0.5em 0 0 1.2em;
+  padding: 0;
+  color: var(--text-light, #d4daf0);
+  font-size: 0.98rem;
+}
+.onboarding-checklist ul {
+  margin: 0.5em 0 0 1.2em;
+  padding: 0;
+}
+.onboarding-check {
+  color: var(--accent, #38bdf8);
+  margin-right: 7px;
+  font-size: 1.1em;
+}
 /* Onboarding page custom styles for tenant portal UI/UX */
 .onboarding-container {
   max-width: 720px;
