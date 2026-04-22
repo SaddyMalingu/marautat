@@ -1,3 +1,41 @@
+.onboarding-cards-steps {
+  gap: 28px;
+}
+.step-card {
+  background: var(--bg-card, #181c2f);
+  border: 1px solid var(--border, #1e2749);
+  border-radius: 18px;
+  box-shadow: 0 4px 24px rgba(30,39,71,0.10);
+  padding: 28px 24px 24px 24px;
+  display: flex;
+  align-items: flex-start;
+  gap: 18px;
+  margin-bottom: 0;
+  transition: box-shadow 0.2s;
+}
+.step-card:hover {
+  box-shadow: 0 8px 32px rgba(56,189,248,0.13);
+}
+.step-card h2 {
+  font-size: 1.18rem;
+  font-weight: 700;
+  color: var(--accent, #38bdf8);
+  margin-bottom: 8px;
+}
+.onboarding-api-steps {
+  margin: 0 0 0 1.2em;
+  padding: 0;
+  font-size: 0.99rem;
+  color: var(--text-light, #d4daf0);
+  line-height: 1.8;
+}
+.onboarding-api-steps li {
+  margin-bottom: 8px;
+}
+@media (max-width: 767px) {
+  .onboarding-cards-steps { gap: 18px; }
+  .step-card { padding: 18px 10px 16px 10px; gap: 10px; }
+}
 .panel {
   background: var(--bg-card, #181c2f);
   border: 1px solid var(--border, #1e2749);

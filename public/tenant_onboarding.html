@@ -14,64 +14,89 @@
 <body>
   <div class="onboarding-container">
     <div class="section-hdr"><i class="fa-solid fa-user-plus"></i> Tenant Onboarding</div>
-    <ol class="onboarding-steps">
-      <li>
-        <h2>Welcome & Introduction</h2>
-        <p>Welcome to the Alphadome Tenant Onboarding! This step-by-step guide will help you set up your business and WhatsApp bot. Estimated time: <strong>10-20 minutes</strong>.</p>
-      </li>
-      <li>
-        <h2>Business Information</h2>
-        <p>Provide your <strong>business name</strong>, <strong>contact details</strong>, and <strong>admin info</strong> in the portal. <br><span class="onboarding-note">Why? This helps us personalize your experience and support.</span></p>
-      </li>
-      <li>
-        <h2>WhatsApp Business API Setup</h2>
-        <div class="row g-3 align-items-stretch">
-          <div class="col-12 col-md-7">
-            <div class="onboarding-cards">
-              <div class="onboarding-card"><div class="onboarding-step-number">1</div><div><strong>Register a <a href="https://www.facebook.com/business/help/1126628984024934" target="_blank">WhatsApp Business Account (WABA)</a></strong><br>Start by creating your official WhatsApp Business Account.</div></div>
-              <div class="onboarding-card"><div class="onboarding-step-number">2</div><div><strong>Create a <a href="https://business.facebook.com/" target="_blank">Facebook Business Manager</a> account</strong> (if you don’t have one)<br>This is required to manage your WhatsApp Business assets.</div></div>
-              <div class="onboarding-card"><div class="onboarding-step-number">3</div><div><strong>Complete <a href="https://www.facebook.com/business/help/2058515294227817" target="_blank">Facebook Business Verification</a></strong><br>Verification is mandatory for WhatsApp API access.</div></div>
-              <div class="onboarding-card"><div class="onboarding-step-number">4</div><div><strong>Add your phone number & set up your WhatsApp profile</strong><br>Go to <a href="https://business.facebook.com/settings/whatsapp-business-accounts/" target="_blank">Business Settings &rarr; WhatsApp Accounts</a> and follow the prompts.</div></div>
-              <div class="onboarding-card"><div class="onboarding-step-number">5</div><div><strong>Generate your WhatsApp API credentials</strong><br><ul class="onboarding-credentials-list"><li><strong>App ID & App Secret:</strong> <a href="https://developers.facebook.com/apps/" target="_blank">Facebook Developers &rarr; My Apps</a> &rarr; Select your app &rarr; <strong>Settings &gt; Basic</strong></li><li><strong>Phone Number ID & WABA ID:</strong> <a href="https://business.facebook.com/settings/whatsapp-business-accounts/" target="_blank">Business Settings &rarr; WhatsApp Accounts</a> &rarr; Select your account &rarr; <strong>Settings</strong></li><li><strong>Access Token:</strong> <a href="https://developers.facebook.com/docs/whatsapp/cloud-api/get-started" target="_blank">Cloud API Get Started</a> &rarr; <strong>Generate Token</strong></li></ul></div></div>
-            </div>
+    <div class="onboarding-cards onboarding-cards-steps">
+      <div class="onboarding-card step-card">
+        <div class="onboarding-step-number">1</div>
+        <div>
+          <h2>Welcome & Introduction</h2>
+          <div>Welcome to the Alphadome Tenant Onboarding! This step-by-step guide will help you set up your business and WhatsApp bot.<br><span class="onboarding-note">Estimated time: <strong>10-20 minutes</strong>.</span></div>
+        </div>
+      </div>
+      <div class="onboarding-card step-card">
+        <div class="onboarding-step-number">2</div>
+        <div>
+          <h2>Business Information</h2>
+          <div>Provide your <strong>business name</strong>, <strong>contact details</strong>, and <strong>admin info</strong> in the portal.<br><span class="onboarding-note">Why? This helps us personalize your experience and support.</span></div>
+        </div>
+      </div>
+      <div class="onboarding-card step-card">
+        <div class="onboarding-step-number">3</div>
+        <div>
+          <h2>WhatsApp Business API Setup</h2>
+          <div>
+            <ol class="onboarding-api-steps">
+              <li><strong>Register a <a href="https://www.facebook.com/business/help/1126628984024934" target="_blank">WhatsApp Business Account (WABA)</a></strong><br>Start by creating your official WhatsApp Business Account.</li>
+              <li><strong>Create a <a href="https://business.facebook.com/" target="_blank">Facebook Business Manager</a> account</strong> (if you don’t have one)<br>This is required to manage your WhatsApp Business assets.</li>
+              <li><strong>Complete <a href="https://www.facebook.com/business/help/2058515294227817" target="_blank">Facebook Business Verification</a></strong><br>Verification is mandatory for WhatsApp API access.</li>
+              <li><strong>Add your phone number & set up your WhatsApp profile</strong><br>Go to <a href="https://business.facebook.com/settings/whatsapp-business-accounts/" target="_blank">Business Settings &rarr; WhatsApp Accounts</a> and follow the prompts.</li>
+              <li><strong>Generate your WhatsApp API credentials</strong><br>
+                <ul class="onboarding-credentials-list">
+                  <li><strong>App ID & App Secret:</strong> <a href="https://developers.facebook.com/apps/" target="_blank">Facebook Developers &rarr; My Apps</a> &rarr; Select your app &rarr; <strong>Settings &gt; Basic</strong></li>
+                  <li><strong>Phone Number ID & WABA ID:</strong> <a href="https://business.facebook.com/settings/whatsapp-business-accounts/" target="_blank">Business Settings &rarr; WhatsApp Accounts</a> &rarr; Select your account &rarr; <strong>Settings</strong></li>
+                  <li><strong>Access Token:</strong> <a href="https://developers.facebook.com/docs/whatsapp/cloud-api/get-started" target="_blank">Cloud API Get Started</a> &rarr; <strong>Generate Token</strong></li>
+                </ul>
+              </li>
+            </ol>
           </div>
-          <div class="col-12 col-md-5">
-            <div class="panel">
-              <div class="panel-title"><i class="fa-solid fa-key"></i> Credential Checklist</div>
-              <ul class="onboarding-checklist-list">
-                <li><span class="onboarding-check">&#x2610;</span> App ID</li>
-                <li><span class="onboarding-check">&#x2610;</span> App Secret</li>
-                <li><span class="onboarding-check">&#x2610;</span> Phone Number ID</li>
-                <li><span class="onboarding-check">&#x2610;</span> WABA ID</li>
-                <li><span class="onboarding-check">&#x2610;</span> Access Token</li>
-              </ul>
-              <div class="onboarding-note mt-2"><strong>Need help?</strong> <a href="https://developers.facebook.com/docs/whatsapp/cloud-api/get-started" target="_blank">WhatsApp Cloud API guide</a> or <a href="mailto:support@yourcompany.com">contact support</a>.</div>
-            </div>
+          <div class="panel mt-3">
+            <div class="panel-title"><i class="fa-solid fa-key"></i> Credential Checklist</div>
+            <ul class="onboarding-checklist-list">
+              <li><span class="onboarding-check">&#x2610;</span> App ID</li>
+              <li><span class="onboarding-check">&#x2610;</span> App Secret</li>
+              <li><span class="onboarding-check">&#x2610;</span> Phone Number ID</li>
+              <li><span class="onboarding-check">&#x2610;</span> WABA ID</li>
+              <li><span class="onboarding-check">&#x2610;</span> Access Token</li>
+            </ul>
+            <div class="onboarding-note mt-2"><strong>Need help?</strong> <a href="https://developers.facebook.com/docs/whatsapp/cloud-api/get-started" target="_blank">WhatsApp Cloud API guide</a> or <a href="mailto:support@yourcompany.com">contact support</a>.</div>
           </div>
         </div>
-      </li>
-      <li>
-        <h2>Bot Configuration</h2>
-        <p>Enter your WhatsApp API credentials in the <strong>Bot Config</strong> section of the portal. Use the <span class="onboarding-btn">Test Connection</span> button to verify integration. If you see a green check, you’re ready!</p>
-      </li>
-      <li>
-        <h2>Feature Enablement</h2>
-        <p>Choose which features to enable for your business: <strong>Catalog</strong>, <strong>Campaigns</strong>, <strong>Dashboard</strong>, and more. You can enable/disable features anytime in the portal.</p>
-      </li>
-      <li>
-        <h2>Media & Catalog Upload</h2>
-        <p>Upload your product catalog and media files. <a href="/admin/catalog_template.csv" download class="btn btn-outline-acc btn-sm ms-2">Download CSV Template</a> for easy import. Follow the instructions in the portal for supported formats.</p>
-      </li>
-      <li>
-        <h2>Testing & Go-Live</h2>
-        <p>Review your setup, send a test message, and confirm you’re ready to go live. Use the <span class="btn btn-outline-acc btn-sm ms-2">Test Message</span> button in the portal to verify everything works as expected.</p>
-      </li>
-      <li>
-        <h2>Support & Resources</h2>
-        <p>Need help? <a href="mailto:support@yourcompany.com">Contact Support</a> or <a href="/SETUP_GUIDE.md" target="_blank">view the Setup Guide</a>.<br>
-        More resources: <a href="https://developers.facebook.com/docs/whatsapp/cloud-api/get-started" target="_blank">WhatsApp Cloud API Docs</a>, <a href="https://www.facebook.com/business/help/1126628984024934" target="_blank">WABA Getting Started</a></p>
-      </li>
-    </ol>
+      </div>
+      <div class="onboarding-card step-card">
+        <div class="onboarding-step-number">4</div>
+        <div>
+          <h2>Bot Configuration</h2>
+          <div>Enter your WhatsApp API credentials in the <strong>Bot Config</strong> section of the portal. Use the <span class="btn btn-outline-acc btn-sm ms-2">Test Connection</span> button to verify integration. If you see a green check, you’re ready!</div>
+        </div>
+      </div>
+      <div class="onboarding-card step-card">
+        <div class="onboarding-step-number">5</div>
+        <div>
+          <h2>Feature Enablement</h2>
+          <div>Choose which features to enable for your business: <strong>Catalog</strong>, <strong>Campaigns</strong>, <strong>Dashboard</strong>, and more. You can enable/disable features anytime in the portal.</div>
+        </div>
+      </div>
+      <div class="onboarding-card step-card">
+        <div class="onboarding-step-number">6</div>
+        <div>
+          <h2>Media & Catalog Upload</h2>
+          <div>Upload your product catalog and media files. <a href="/admin/catalog_template.csv" download class="btn btn-outline-acc btn-sm ms-2">Download CSV Template</a> for easy import. Follow the instructions in the portal for supported formats.</div>
+        </div>
+      </div>
+      <div class="onboarding-card step-card">
+        <div class="onboarding-step-number">7</div>
+        <div>
+          <h2>Testing & Go-Live</h2>
+          <div>Review your setup, send a test message, and confirm you’re ready to go live. Use the <span class="btn btn-outline-acc btn-sm ms-2">Test Message</span> button in the portal to verify everything works as expected.</div>
+        </div>
+      </div>
+      <div class="onboarding-card step-card">
+        <div class="onboarding-step-number">8</div>
+        <div>
+          <h2>Support & Resources</h2>
+          <div>Need help? <a href="mailto:support@yourcompany.com">Contact Support</a> or <a href="/SETUP_GUIDE.md" target="_blank">view the Setup Guide</a>.<br>More resources: <a href="https://developers.facebook.com/docs/whatsapp/cloud-api/get-started" target="_blank">WhatsApp Cloud API Docs</a>, <a href="https://www.facebook.com/business/help/1126628984024934" target="_blank">WABA Getting Started</a></div>
+        </div>
+      </div>
+    </div>
   </div>
 </body>
 </html>
