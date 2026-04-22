@@ -293,7 +293,12 @@ async function renderOnboarding() {
   const sp = document.getElementById('spa');
   sp.innerHTML = spinner('Loading onboarding...');
   try {
-    const resp = await fetch('/tenant_onboarding.html');
+    // Try public/ first for static hosting compatibility
+    let resp = await fetch('/public/tenant_onboarding.html');
+    if (!resp.ok) {
+      // fallback to root if not found
+      resp = await fetch('/tenant_onboarding.html');
+    }
     if (!resp.ok) throw new Error('Not found');
     let html = await resp.text();
     // Extract <body> content only
