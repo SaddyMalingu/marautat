@@ -13,45 +13,65 @@
 </head>
 <body>
   <div class="onboarding-container">
-    <h1>Welcome to Tenant Onboarding</h1>
+    <h1><i class="fa-solid fa-user-plus"></i> Tenant Onboarding</h1>
     <ol class="onboarding-steps">
       <li>
         <h2>Welcome & Introduction</h2>
-        <p>Get started with a guided onboarding process. Estimated time: 10-20 minutes.</p>
+        <p>Welcome to the Alphadome Tenant Onboarding! This step-by-step guide will help you set up your business and WhatsApp bot. Estimated time: <strong>10-20 minutes</strong>.</p>
       </li>
       <li>
         <h2>Business Information</h2>
-        <p>Provide your business name, contact details, and admin info. <br><em>Why? This helps us personalize your experience and support.</em></p>
+        <p>Provide your <strong>business name</strong>, <strong>contact details</strong>, and <strong>admin info</strong> in the portal. <br><span class="onboarding-note">Why? This helps us personalize your experience and support.</span></p>
       </li>
       <li>
         <h2>WhatsApp Business API Setup</h2>
         <ul>
-          <li>Register a <a href="https://www.facebook.com/business/help/1126628984024934" target="_blank">WhatsApp Business Account</a>.</li>
-          <li>Create a <a href="https://business.facebook.com/" target="_blank">Facebook Business Manager</a> account.</li>
-          <li>Complete <a href="https://www.facebook.com/business/help/2058515294227817" target="_blank">business verification</a>.</li>
-          <li>Generate WhatsApp API credentials (App ID, Secret, Phone Number ID, etc.).</li>
+          <li>Register a <a href="https://www.facebook.com/business/help/1126628984024934" target="_blank">WhatsApp Business Account (WABA)</a>.</li>
+          <li>Create a <a href="https://business.facebook.com/" target="_blank">Facebook Business Manager</a> account (if you don’t have one).</li>
+          <li>Complete <a href="https://www.facebook.com/business/help/2058515294227817" target="_blank">Facebook Business Verification</a> (required for WhatsApp API access).</li>
+          <li>Go to <a href="https://business.facebook.com/settings/whatsapp-business-accounts/" target="_blank">Business Settings &rarr; WhatsApp Accounts</a> to add your phone number and set up your WhatsApp profile.</li>
+          <li>Generate your WhatsApp API credentials:
+            <ul>
+              <li><strong>App ID & App Secret:</strong> <a href="https://developers.facebook.com/apps/" target="_blank">Facebook Developers &rarr; My Apps</a> &rarr; Select your app &rarr; <strong>Settings &gt; Basic</strong>.</li>
+              <li><strong>Phone Number ID & WABA ID:</strong> <a href="https://business.facebook.com/settings/whatsapp-business-accounts/" target="_blank">Business Settings &rarr; WhatsApp Accounts</a> &rarr; Select your account &rarr; <strong>Settings</strong>.</li>
+              <li><strong>Access Token:</strong> <a href="https://developers.facebook.com/docs/whatsapp/cloud-api/get-started" target="_blank">Cloud API Get Started</a> &rarr; <strong>Generate Token</strong>.</li>
+            </ul>
+          </li>
         </ul>
-        <p><strong>Checklist:</strong> App ID, App Secret, Phone Number ID, WABA ID, Access Token.</p>
+        <div class="onboarding-checklist">
+          <strong>Checklist:</strong>
+          <ul>
+            <li>App ID</li>
+            <li>App Secret</li>
+            <li>Phone Number ID</li>
+            <li>WABA ID</li>
+            <li>Access Token</li>
+          </ul>
+        </div>
+        <div class="onboarding-note">
+          <strong>Need help?</strong> See the <a href="https://developers.facebook.com/docs/whatsapp/cloud-api/get-started" target="_blank">official WhatsApp Cloud API guide</a> or <a href="mailto:support@yourcompany.com">contact support</a> for step-by-step assistance.
+        </div>
       </li>
       <li>
         <h2>Bot Configuration</h2>
-        <p>Enter your WhatsApp API credentials in the portal. <br>Use the <strong>Test Connection</strong> button to verify integration.</p>
+        <p>Enter your WhatsApp API credentials in the <strong>Bot Config</strong> section of the portal. Use the <span class="onboarding-btn">Test Connection</span> button to verify integration. If you see a green check, you’re ready!</p>
       </li>
       <li>
         <h2>Feature Enablement</h2>
-        <p>Choose which features to enable: Catalog, Campaigns, Dashboard, etc.</p>
+        <p>Choose which features to enable for your business: <strong>Catalog</strong>, <strong>Campaigns</strong>, <strong>Dashboard</strong>, and more. You can enable/disable features anytime in the portal.</p>
       </li>
       <li>
         <h2>Media & Catalog Upload</h2>
-        <p>Upload your product catalog and media. <a href="/admin/catalog_template.csv" download>Download CSV Template</a>.</p>
+        <p>Upload your product catalog and media files. <a href="/admin/catalog_template.csv" download class="onboarding-btn">Download CSV Template</a> for easy import. Follow the instructions in the portal for supported formats.</p>
       </li>
       <li>
         <h2>Testing & Go-Live</h2>
-        <p>Review your setup, send a test message, and confirm you’re ready to go live.</p>
+        <p>Review your setup, send a test message, and confirm you’re ready to go live. Use the <span class="onboarding-btn">Test Message</span> button in the portal to verify everything works as expected.</p>
       </li>
       <li>
         <h2>Support & Resources</h2>
-        <p>Need help? <a href="mailto:support@yourcompany.com">Contact Support</a> or <a href="/SETUP_GUIDE.md" target="_blank">view the Setup Guide</a>.</p>
+        <p>Need help? <a href="mailto:support@yourcompany.com">Contact Support</a> or <a href="/SETUP_GUIDE.md" target="_blank">view the Setup Guide</a>.<br>
+        More resources: <a href="https://developers.facebook.com/docs/whatsapp/cloud-api/get-started" target="_blank">WhatsApp Cloud API Docs</a>, <a href="https://www.facebook.com/business/help/1126628984024934" target="_blank">WABA Getting Started</a></p>
       </li>
     </ol>
   </div>
