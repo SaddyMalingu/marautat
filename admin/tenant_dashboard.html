@@ -283,9 +283,14 @@ function go(sec) {
   document.getElementById('sidebar').classList.remove('open');
   const sp = document.getElementById('spa');
   sp.innerHTML = spinner();
+  // Scroll to top of main content area for instant visibility
+  setTimeout(() => {
+    const main = document.querySelector('.main-area');
+    if (main) main.scrollTo({ top: 0, behavior: 'smooth' });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, 0);
   const map = { home:renderHome, revenue:renderRevenue, analytics:renderAnalytics, customers:renderCustomers, search:renderSearch, preferences:renderPreferences, favorites:renderFavorites, referrals:renderReferrals, catalog:renderCatalog, performance:renderPerformance, suppliers:renderSuppliers, orders:renderOrders, training:renderTraining, 'bot-config':renderBotConfig, profile:renderProfile, smtp:renderSmtp, payments:renderPayments, 'add-agent':renderAddAgent, assignments:renderAssignments, reviews:renderReviews, broadcast:renderBroadcast, abandoned:renderAbandoned, insights:renderInsights, 'auto-responses':renderAutoResponses, scheduled:renderScheduled, workflows:renderWorkflows, escalations:renderEscalations, 'agent-performance':renderAgentPerformance, onboarding:renderOnboarding, help:renderHelp };
   (map[sec] || renderHome)();
-
 }
 
 // Onboarding SPA loader

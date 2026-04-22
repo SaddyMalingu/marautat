@@ -1,3 +1,37 @@
+.panel {
+  background: var(--bg-card, #181c2f);
+  border: 1px solid var(--border, #1e2749);
+  border-radius: 14px;
+  padding: 22px;
+  margin-bottom: 18px;
+}
+.panel-title {
+  font-size: 0.93rem;
+  font-weight: 600;
+  color: var(--text-light, #d4daf0);
+  margin-bottom: 16px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border, #1e2749);
+}
+.onboarding-checklist-list {
+  margin: 0.5em 0 0 1.2em;
+  padding: 0;
+  color: var(--text-light, #d4daf0);
+  font-size: 0.98rem;
+}
+.section-hdr {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--text-light, #d4daf0);
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.section-hdr i { color: var(--accent, #38bdf8); }
+@media (max-width: 767px) {
+  .panel { padding: 14px; }
+}
 .onboarding-cards {
   display: flex;
   flex-direction: column;
