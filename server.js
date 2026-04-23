@@ -24,6 +24,7 @@ app.post('/tenant/api/send-message', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+// (Moved below app initialization)
 
 import express from "express";
 import axios from "axios";
