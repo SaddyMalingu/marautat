@@ -789,6 +789,23 @@ async function renderBotConfig() {
     activateBtn = `<button id="activateBotBtn" class="btn btn-success mt-2"><i class="fa-solid fa-bolt me-2"></i>Activate Bot</button>`;
   }
   document.getElementById('spa').innerHTML = `
+    <div class="alert alert-warning mb-4" style="font-size:1.02rem;">
+      <b>WhatsApp Business API Disclaimer & FAQ</b><br/>
+      <ul style="margin-top:0.5em;">
+        <li>Once you connect your WhatsApp number to the API, <b>all incoming and outgoing messages</b> are handled by the bot and automation system.</li>
+        <li><b>You cannot use the same number in the WhatsApp Business app and the API at the same time.</b> Registering with the API will log you out of the app, and vice versa.</li>
+        <li>Switching to the API <b>removes all previous chats and media</b> from the app for that number. Chat history is not transferred to the API.</li>
+        <li>If you want to keep using the app for manual chats, <b>use a different number for the bot/API</b>.</li>
+        <li>To send messages to specific contacts via the bot/API, you must:
+          <ul>
+            <li>Reply within 24 hours of the contact's last message (session window), or</li>
+            <li>Use a <b>pre-approved template message</b> to initiate conversations outside the 24-hour window.</li>
+          </ul>
+        </li>
+        <li>During onboarding, Meta will prompt you to verify your number (SMS or voice call).</li>
+        <li>For more details, contact support or see the full onboarding guide.</li>
+      </ul>
+    </div>
     <div class="section-hdr"><i class="fa-solid fa-sliders"></i> Bot Configuration</div>
     <div class="row g-3">
       <div class="col-12 col-lg-6">
