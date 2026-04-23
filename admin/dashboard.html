@@ -1194,17 +1194,18 @@
             <h3 class="mb-0"><i class="fa-solid fa-screwdriver-wrench"></i> Operations Suite</h3>
             <small class="text-muted" id="operationsSuiteUpdatedAt">Waiting for suite data...</small>
           </div>
-          <div class="suite-grid">
-            <div class="suite-card full">
-              <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
-                <h5 class="mb-0"><i class="fa-solid fa-eye"></i> Executive Snapshot</h5>
-                <div class="small text-muted">Role: <span id="adminRoleBadge">super_admin</span> • Actor: <span id="adminActorBadge">admin</span></div>
-              </div>
-              <div class="mini-metrics" id="executiveMetrics">
-                <div class="mini-metric"><div class="label">Revenue</div><div class="value">--</div></div>
-                <div class="mini-metric"><div class="label">Blocked Cases</div><div class="value">--</div></div>
-                <div class="mini-metric"><div class="label">Critical Tenants</div><div class="value">--</div></div>
-                <div class="mini-metric"><div class="label">Health</div><div class="value">--</div></div>
+<section class="dashboard-card p-4 mb-4" style="max-width:480px; margin:0 auto 32px auto; box-shadow:0 4px 32px 0 rgba(30,39,71,0.18);">
+  <div class="d-flex align-items-center gap-2 mb-3">
+    <i class="fa-brands fa-whatsapp fa-lg text-success"></i>
+    <h3 class="mb-0" style="color:#25d366;">Send WhatsApp Message</h3>
+  </div>
+  <form id="sendDirectMessageForm" class="d-grid gap-2">
+    <input class="form-control form-control-lg" id="directMessagePhone" placeholder="Recipient WhatsApp Number (e.g. 2547XXXXXXXX)" required />
+    <textarea class="form-control form-control-lg" id="directMessageText" rows="3" placeholder="Type your message here..." required></textarea>
+    <button class="btn btn-lg btn-success w-100" type="submit"><i class="fa-brands fa-whatsapp me-1"></i>Send Message</button>
+    <div class="small mt-2" id="directMessageResult"></div>
+  </form>
+</section>
               </div>
               <div class="stack-list" id="executivePriorityList"><div class="ops-empty">Loading executive priorities...</div></div>
             </div>
