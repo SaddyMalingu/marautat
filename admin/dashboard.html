@@ -1,40 +1,3 @@
-                                      <div class="suite-card">
-                                        <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
-                                          <h5 class="mb-0"><i class="fa-brands fa-whatsapp"></i> Send WhatsApp Message</h5>
-                                        </div>
-                                        <form id="sendDirectMessageForm" class="d-grid gap-2">
-                                          <input class="form-control form-control-sm" id="directMessagePhone" placeholder="Recipient WhatsApp Number (e.g. 2547XXXXXXXX)" required />
-                                          <textarea class="form-control form-control-sm" id="directMessageText" rows="2" placeholder="Type your message here..." required></textarea>
-                                          <button class="btn btn-sm btn-success" type="submit"><i class="fa-brands fa-whatsapp me-1"></i>Send Message</button>
-                                          <div class="small mt-1" id="directMessageResult"></div>
-                                        </form>
-                                      </div>
-                                  // Direct WhatsApp Message logic
-                                  document.getElementById('sendDirectMessageForm').onsubmit = async function(e) {
-                                    e.preventDefault();
-                                    const phone = document.getElementById('directMessagePhone').value.trim();
-                                    const text = document.getElementById('directMessageText').value.trim();
-                                    const result = document.getElementById('directMessageResult');
-                                    result.textContent = 'Sending...';
-                                    try {
-                                      const res = await fetch(buildAdminApiUrl('/admin/api/send-message'), {
-                                        method: 'POST',
-                                        headers: { ...buildAdminHeaders(), 'Content-Type': 'application/json' },
-                                        body: JSON.stringify({ phone, text })
-                                      });
-                                      const data = await res.json();
-                                      if (res.ok && data.ok) {
-                                        result.textContent = 'Message sent!';
-                                        result.className = 'small text-success';
-                                      } else {
-                                        result.textContent = data.error || 'Failed to send message.';
-                                        result.className = 'small text-danger';
-                                      }
-                                    } catch (err) {
-                                      result.textContent = 'Error sending message.';
-                                      result.className = 'small text-danger';
-                                    }
-                                  };
                               <div class="dashboard-card position-relative" id="governanceCard">
                                 <span class="position-absolute top-0 end-0 badge bg-dark text-light m-2" title="Governance, Security & Compliance"><i class="fa-solid fa-shield-halved"></i></span>
                                 <h3><i class="fa-solid fa-shield-halved"></i> Governance & Security</h3>
@@ -431,6 +394,7 @@
           <li class="nav-item"><a class="nav-link" href="#catalog"><i class="fa-solid fa-table-list"></i> Catalog Viewer</a></li>
           <li class="nav-item"><a class="nav-link" href="#logs"><i class="fa-solid fa-wave-square"></i> Live Logs</a></li>
           <li class="nav-item"><a class="nav-link" href="#onboarding"><i class="fa-solid fa-user-plus"></i> Tenant Onboarding</a></li>
+          <li class="nav-item"><a class="nav-link" href="#direct-message"><i class="fa-brands fa-whatsapp"></i> Send WhatsApp Message</a></li>
           <li class="nav-item"><a class="nav-link" href="#writers-flow"><i class="fa-solid fa-rocket"></i> Writer's Flow</a></li>
       </ul>
     </nav>
@@ -897,6 +861,7 @@
           <li class="nav-item"><a class="nav-link" href="#catalog"><i class="fa-solid fa-table-list"></i> Catalog Viewer</a></li>
           <li class="nav-item"><a class="nav-link" href="#logs"><i class="fa-solid fa-wave-square"></i> Live Logs</a></li>
           <li class="nav-item"><a class="nav-link" href="#onboarding"><i class="fa-solid fa-user-plus"></i> Tenant Onboarding</a></li>
+          <li class="nav-item"><a class="nav-link" href="#direct-message"><i class="fa-brands fa-whatsapp"></i> Send WhatsApp Message</a></li>
           <li class="nav-item"><a class="nav-link" href="#writers-flow"><i class="fa-solid fa-rocket"></i> Writer's Flow</a></li>
       </ul>
     </nav>
@@ -974,6 +939,7 @@
       else if (hash === '#upload') url = 'dashboard.html#upload';
       else if (hash === '#logs') url = '/logs/live';
       else if (hash === '#onboarding') url = 'tenant_onboarding.html';
+      else if (hash === '#direct-message') { renderDirectMessageSection(); return; }
       else if (hash === '#dashboard' || hash === '' || hash === '#') url = '';
       else if (hash === '#writers-flow') { renderWritersFlowPage(); return; }
       else url = '';
@@ -989,6 +955,53 @@
           spaContent.innerHTML = `<div class='text-center p-5 text-danger'><h2>Failed to load page.</h2><div class='mt-2'>Please check the link or contact support.</div></div>`;
         }
       } else if (hash === '#dashboard' || hash === '' || hash === '#') {
+            // SPA section: Direct WhatsApp Message
+            function renderDirectMessageSection() {
+              const spaContent = document.getElementById('spa-content');
+              spaContent.innerHTML = `
+                <section class="dashboard-card p-4 mb-4" style="max-width:480px; margin:0 auto 32px auto; box-shadow:0 4px 32px 0 rgba(30,39,71,0.18);">
+                  <div class="d-flex align-items-center gap-2 mb-3">
+                    <i class="fa-brands fa-whatsapp fa-lg text-success"></i>
+                    <h3 class="mb-0" style="color:#25d366;">Send WhatsApp Message</h3>
+                  </div>
+                  <form id="sendDirectMessageForm" class="d-grid gap-2">
+                    <input class="form-control form-control-lg" id="directMessagePhone" placeholder="Recipient WhatsApp Number (e.g. 2547XXXXXXXX)" required />
+                    <textarea class="form-control form-control-lg" id="directMessageText" rows="3" placeholder="Type your message here..." required></textarea>
+                    <button class="btn btn-lg btn-success w-100" type="submit"><i class="fa-brands fa-whatsapp me-1"></i>Send Message</button>
+                    <div class="small mt-2" id="directMessageResult"></div>
+                  </form>
+                </section>
+              `;
+              // Attach form logic
+              const form = document.getElementById('sendDirectMessageForm');
+              form.onsubmit = async function(e) {
+                e.preventDefault();
+                const phone = document.getElementById('directMessagePhone').value.trim();
+                const text = document.getElementById('directMessageText').value.trim();
+                const result = document.getElementById('directMessageResult');
+                result.textContent = 'Sending...';
+                result.className = 'small mt-2';
+                try {
+                  const res = await fetch(buildAdminApiUrl('/admin/api/send-message'), {
+                    method: 'POST',
+                    headers: { ...buildAdminHeaders(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ phone, text })
+                  });
+                  const data = await res.json();
+                  if (res.ok && data.ok) {
+                    result.textContent = 'Message sent!';
+                    result.className = 'small mt-2 text-success';
+                    form.reset();
+                  } else {
+                    result.textContent = data.error || 'Failed to send message.';
+                    result.className = 'small mt-2 text-danger';
+                  }
+                } catch (err) {
+                  result.textContent = 'Error sending message.';
+                  result.className = 'small mt-2 text-danger';
+                }
+              };
+            }
         // Default dashboard
         spaContent.innerHTML = `
         <div class="dashboard-cards">

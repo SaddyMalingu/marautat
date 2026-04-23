@@ -1,19 +1,16 @@
-﻿  // Add Direct WhatsApp Message panel to tenant dashboard
-  const directMsgPanel = document.createElement('div');
-  directMsgPanel.className = 'panel mb-4';
-  directMsgPanel.innerHTML = `
-    <div class="panel-title"><i class="fa-brands fa-whatsapp me-2"></i>Send WhatsApp Message</div>
-    <form id="sendDirectMessageForm" class="d-grid gap-2">
-      <input class="form-control form-control-sm" id="directMessagePhone" placeholder="Recipient WhatsApp Number (e.g. 2547XXXXXXXX)" required />
-      <textarea class="form-control form-control-sm" id="directMessageText" rows="2" placeholder="Type your message here..." required></textarea>
-      <button class="btn btn-sm btn-success" type="submit"><i class="fa-brands fa-whatsapp me-1"></i>Send Message</button>
-      <div class="small mt-1" id="directMessageResult"></div>
-    </form>
+﻿// Direct WhatsApp Message section
+function renderDirectMessage() {
+  document.getElementById('spa').innerHTML = `
+    <div class="section-hdr"><i class="fa-brands fa-whatsapp"></i> Send WhatsApp Message</div>
+    <div class="panel">
+      <form id="sendDirectMessageForm" class="d-grid gap-2">
+        <input class="form-control form-control-sm" id="directMessagePhone" placeholder="Recipient WhatsApp Number (e.g. 2547XXXXXXXX)" required />
+        <textarea class="form-control form-control-sm" id="directMessageText" rows="2" placeholder="Type your message here..." required></textarea>
+        <button class="btn btn-sm btn-success" type="submit"><i class="fa-brands fa-whatsapp me-1"></i>Send Message</button>
+        <div class="small mt-1" id="directMessageResult"></div>
+      </form>
+    </div>
   `;
-  // Insert above Bot Config section
-  const spa = document.getElementById('spa');
-  if (spa) spa.prepend(directMsgPanel);
-
   document.getElementById('sendDirectMessageForm').onsubmit = async function(e) {
     e.preventDefault();
     const phone = document.getElementById('directMessagePhone').value.trim();
@@ -38,6 +35,7 @@
       result.className = 'small text-danger';
     }
   };
+}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -198,6 +196,7 @@
     <div class="nav-item" data-sec="orders"><span class="nav-icon"><i class="fa-solid fa-cart-shopping"></i></span>Orders</div>
 
     <div class="sidebar-label">Bot</div>
+    <div class="nav-item" data-sec="direct-message"><span class="nav-icon"><i class="fa-brands fa-whatsapp"></i></span>Send WhatsApp Message</div>
       <div class="nav-item" data-sec="training"><span class="nav-icon"><i class="fa-solid fa-robot"></i></span>Bot Training</div>
       <div class="nav-item" data-sec="bot-config"><span class="nav-icon"><i class="fa-solid fa-sliders"></i></span>Bot Config</div>
       <div class="nav-item" data-sec="broadcast"><span class="nav-icon"><i class="fa-solid fa-bullhorn"></i></span>Bulk Message</div>
@@ -329,7 +328,7 @@ function go(sec) {
     if (main) main.scrollTo({ top: 0, behavior: 'smooth' });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, 0);
-  const map = { home:renderHome, revenue:renderRevenue, analytics:renderAnalytics, customers:renderCustomers, search:renderSearch, preferences:renderPreferences, favorites:renderFavorites, referrals:renderReferrals, catalog:renderCatalog, performance:renderPerformance, suppliers:renderSuppliers, orders:renderOrders, training:renderTraining, 'bot-config':renderBotConfig, profile:renderProfile, smtp:renderSmtp, payments:renderPayments, 'add-agent':renderAddAgent, assignments:renderAssignments, reviews:renderReviews, broadcast:renderBroadcast, abandoned:renderAbandoned, insights:renderInsights, 'auto-responses':renderAutoResponses, scheduled:renderScheduled, workflows:renderWorkflows, escalations:renderEscalations, 'agent-performance':renderAgentPerformance, onboarding:renderOnboarding, help:renderHelp };
+  const map = { home:renderHome, revenue:renderRevenue, analytics:renderAnalytics, customers:renderCustomers, search:renderSearch, preferences:renderPreferences, favorites:renderFavorites, referrals:renderReferrals, catalog:renderCatalog, performance:renderPerformance, suppliers:renderSuppliers, orders:renderOrders, training:renderTraining, 'bot-config':renderBotConfig, profile:renderProfile, smtp:renderSmtp, payments:renderPayments, 'add-agent':renderAddAgent, assignments:renderAssignments, reviews:renderReviews, broadcast:renderBroadcast, abandoned:renderAbandoned, insights:renderInsights, 'auto-responses':renderAutoResponses, scheduled:renderScheduled, workflows:renderWorkflows, escalations:renderEscalations, 'agent-performance':renderAgentPerformance, onboarding:renderOnboarding, help:renderHelp, 'direct-message':renderDirectMessage };
   (map[sec] || renderHome)();
 }
 
