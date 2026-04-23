@@ -3303,7 +3303,9 @@ app.get("/tenant/bot-settings", tenantSessionAuth, async (req, res) => {
 
 app.patch("/tenant/bot-settings", tenantSessionAuth, async (req, res) => {
   try {
-    const { tenantPhone } = req.tenantSession;
+    console.log("[PATCH /tenant/bot-settings] HEADERS:", req.headers);
+    console.log("[PATCH /tenant/bot-settings] SESSION:", req.tenantSession);
+    const { tenantPhone } = req.tenantSession || {};
     const { ai_model, ai_provider, ai_api_key, whatsapp_access_token, whatsapp_phone_number_id, whatsapp_business_account_id } = req.body || {};
     const ALLOWED_MODELS = ["gpt-4o", "gpt-4o-mini", "gpt-4", "gpt-3.5-turbo", "claude-3-haiku-20240307", "claude-3-5-sonnet-20241022"];
     console.log("[PATCH /tenant/bot-settings] tenantPhone:", tenantPhone);
