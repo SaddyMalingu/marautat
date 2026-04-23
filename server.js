@@ -1,3 +1,238 @@
+// Helper: Register WhatsApp webhook with Meta Graph API
+async function registerMetaWebhook({
+  whatsapp_business_account_id,
+  whatsapp_access_token,
+  webhook_url
+}) {
+  try {
+    const url = `https://graph.facebook.com/v19.0/${whatsapp_business_account_id}/subscribed_apps`;
+    const response = await axios.post(
+      url,
+      {
+        subscribed_fields: ["messages", "message_deliveries", "message_reads", "message_reactions"],
+        object: "whatsapp_business_account",
+        callback_url: webhook_url,
+        verify_token: process.env.META_VERIFY_TOKEN || "your-verify-token"
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${whatsapp_access_token}`,
+          "Content-Type": "application/json"
+        }
+      }
+    );
+    return { ok: true, data: response.data };
+  } catch (err) {
+    return { ok: false, error: err.response?.data || err.message };
+  }
+}
+// ===== TENANT: Automated Onboarding API =====
+// POST /tenant/onboard - Create a new tenant from portal onboarding
+app.post('/tenant/onboard', async (req, res) => {
+  try {
+    const {
+      client_name,
+      client_phone,
+      client_email,
+      point_of_contact_name,
+      business_address,
+      business_description,
+      logo,
+      industry,
+      agent_description,
+      whatsapp_phone_number_id,
+      whatsapp_business_account_id,
+      whatsapp_access_token
+    } = req.body;
+    if (!client_name || !client_phone || !whatsapp_phone_number_id || !whatsapp_business_account_id || !whatsapp_access_token) {
+      return res.status(400).json({ error: 'Missing required fields.' });
+    }
+    // Insert tenant with is_active and is_verified false by default
+    const { data, error } = await supabase
+      .from('bot_tenants')
+      .upsert([
+        {
+          client_name,
+          client_phone,
+          client_email,
+          point_of_contact_name,
+          is_active: false,
+          is_verified: false,
+          whatsapp_phone_number_id,
+          whatsapp_business_account_id,
+          whatsapp_access_token,
+          metadata: {
+            business_address,
+            business_description,
+            logo,
+            industry,
+            agent_description
+          }
+        }
+      ], { onConflict: ['client_phone'] });
+    if (error) {
+      return res.status(500).json({ error: error.message });
+    }
+    // Register webhook with Meta after onboarding
+    const webhook_url = process.env.WHATSAPP_WEBHOOK_URL || "https://yourdomain.com/webhook";
+    const metaResult = await registerMetaWebhook({
+      whatsapp_business_account_id,
+      whatsapp_access_token,
+      webhook_url
+    });
+    // Optionally update verification status if registration is successful
+    if (metaResult.ok) {
+      await supabase
+        .from('bot_tenants')
+        .update({ webhook_registered: true })
+        .eq('client_phone', client_phone);
+    }
+    res.json({ ok: true, data, meta: metaResult });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+// ===== REVENUE PERFORMANCE LAB API =====
+app.get('/admin/api/revenue-lab', adminAuth, async (req, res) => {
+  try {
+    // Campaign experiments (last 30)
+    const { data: campaigns, error: campErr } = await supabase
+      .from('campaign_history')
+      .select('id, name, status, sent_at, audience, template, total, success, failed, funnel, cohort, recovery_ladder')
+      .order('sent_at', { ascending: false })
+      .limit(30);
+    if (campErr) return res.status(500).json({ error: campErr.message });
+
+    // Funnel summary (aggregate)
+    const funnel = {
+      attempts: campaigns.reduce((a, c) => a + (c.funnel?.attempts || 0), 0),
+      success: campaigns.reduce((a, c) => a + (c.funnel?.success || 0), 0),
+      failed: campaigns.reduce((a, c) => a + (c.funnel?.failed || 0), 0),
+      pending: campaigns.reduce((a, c) => a + (c.funnel?.pending || 0), 0),
+    };
+
+    // Cohort summary (aggregate)
+    const cohort = {};
+    campaigns.forEach(c => {
+      if (c.cohort) {
+        Object.entries(c.cohort).forEach(([k, v]) => {
+          cohort[k] = (cohort[k] || 0) + v;
+        });
+      }
+    });
+
+    // Recovery ladder (aggregate)
+    const recovery = {};
+    campaigns.forEach(c => {
+      if (c.recovery_ladder) {
+        Object.entries(c.recovery_ladder).forEach(([k, v]) => {
+          recovery[k] = (recovery[k] || 0) + v;
+        });
+      }
+    });
+
+    res.json({ campaigns, funnel, cohort, recovery });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+// ===== TENANT SUCCESS & CHURN PREVENTION API =====
+app.get('/admin/api/tenant-success', adminAuth, async (req, res) => {
+  try {
+    // Get all tenants
+    const { data: tenants, error } = await supabase
+      .from('bot_tenants')
+      .select('id, client_name, client_phone, status, created_at, updated_at, onboarding_status, churn_risk, last_active_at, metadata')
+      .order('created_at', { ascending: false });
+    if (error) return res.status(500).json({ error: error.message });
+
+    // Health 2.0: readiness, onboarding, activity
+    const now = Date.now();
+    const health = tenants.map(t => {
+      const daysSinceActive = t.last_active_at ? (now - new Date(t.last_active_at).getTime()) / (1000 * 60 * 60 * 24) : null;
+      const onboarding = t.onboarding_status || (t.metadata?.onboarding_status) || 'unknown';
+      const churnRisk = t.churn_risk || (t.metadata?.churn_risk) || 0;
+      return {
+        id: t.id,
+        name: t.client_name,
+        phone: t.client_phone,
+        status: t.status,
+        onboarding,
+        churn_risk: Number(churnRisk),
+        last_active_at: t.last_active_at,
+        days_since_active: daysSinceActive,
+        created_at: t.created_at,
+        updated_at: t.updated_at,
+      };
+    });
+
+    // Churn prediction: high risk = churn_risk >= 0.7, inactive > 30d, onboarding incomplete
+    const atRisk = health.filter(t => t.churn_risk >= 0.7 || (t.days_since_active !== null && t.days_since_active > 30) || (t.onboarding !== 'completed'));
+    const onboardingStuck = health.filter(t => t.onboarding !== 'completed');
+    const churnSpark = health.map(t => t.churn_risk).slice(0, 30); // last 30 tenants
+
+    // Summary
+    const summary = {
+      total: health.length,
+      healthy: health.filter(t => t.churn_risk < 0.3 && t.onboarding === 'completed' && (t.days_since_active !== null && t.days_since_active <= 30)).length,
+      at_risk: atRisk.length,
+      onboarding_stuck: onboardingStuck.length,
+      avg_churn_risk: health.length ? (health.reduce((a, t) => a + t.churn_risk, 0) / health.length).toFixed(2) : '0.00',
+    };
+
+    res.json({ summary, at_risk: atRisk, onboarding_stuck: onboardingStuck, churn_spark: churnSpark, tenants: health });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+// ===== OWNER/ADMIN: SLO BOARD & INCIDENTS API =====
+app.get('/admin/api/slo-board', adminAuth, async (req, res) => {
+  try {
+    // SLO board (recovery board)
+    const slo = await buildSlaRecoveryBoard(30);
+
+    // Error budget: % of failed/pending/overdue out of total
+    const total = slo.summary.total || 0;
+    const errorBudget = total > 0
+      ? Math.round(((slo.summary.failed + slo.summary.pending + slo.summary.manual_pending_verification + slo.summary.cod_pending_delivery) / total) * 1000) / 10
+      : null;
+
+    // Recent and closed incidents (timeline)
+    let incidents = [];
+    try {
+      // Try to read both active and closed incidents from file
+      const fs = require('fs');
+      const path = require('path');
+      const incidentFile = path.join(process.cwd(), 'logs', 'admin_incident.json');
+      if (fs.existsSync(incidentFile)) {
+        const raw = fs.readFileSync(incidentFile, 'utf8');
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          incidents = parsed.slice(-10).reverse(); // last 10 incidents, newest first
+        } else if (parsed && typeof parsed === 'object') {
+          incidents = [parsed];
+        }
+      }
+    } catch {}
+
+    // Also include active incident if not already present
+    try {
+      const active = await readActiveIncident();
+      if (active && !incidents.some(i => i.id === active.id)) {
+        incidents.unshift(active);
+      }
+    } catch {}
+
+    return res.json({
+      generated_at: new Date().toISOString(),
+      slo_board: slo,
+      error_budget_percent: errorBudget,
+      incidents,
+    });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
 // --- Imports and app initialization ---
 
 import express from "express";
@@ -894,6 +1129,35 @@ async function buildExecutiveSnapshot() {
   // Auto-brief summary
   const autoBrief = `Revenue today: KES ${revenueToday.toLocaleString()} | Margin: ${marginEstimate !== null ? `KES ${marginEstimate.toLocaleString()}` : 'N/A'} | Burn rate: ${burnRate !== null ? `KES ${Math.round(burnRate).toLocaleString()}/day` : 'N/A'} | Cash at risk: KES ${cashAtRisk.toLocaleString()} | ΔRevenue: ${deltaRevenue !== null ? (deltaRevenue >= 0 ? '+' : '') + deltaRevenue.toLocaleString() : 'N/A'}`;
 
+  // --- Profit & Cost Intelligence ---
+  const costBreakdown = {};
+  try {
+    const cost30dResp = await supabase
+      .from("platform_costs")
+      .select("amount, cost_type, created_at")
+      .gte("created_at", new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString());
+    if (cost30dResp.data && Array.isArray(cost30dResp.data)) {
+      for (const c of cost30dResp.data) {
+        const type = c.cost_type || 'other';
+        costBreakdown[type] = (costBreakdown[type] || 0) + (Number(c.amount) || 0);
+      }
+    }
+  } catch {}
+
+  // Margin % and profit per tenant
+  const marginPercent = (revenueToday > 0 && marginEstimate !== null) ? Math.round((marginEstimate / revenueToday) * 1000) / 10 : null;
+  const profitPerTenant = (marginEstimate !== null && ops.kpis.active_tenants > 0) ? Math.round(marginEstimate / ops.kpis.active_tenants) : null;
+
+  // Anomaly detection (simple: spike if today > 2x 30d avg)
+  const avgRevenue = ops.kpis.total_revenue_kes_30d / 30;
+  const avgCost = cost30d / 30;
+  const revenueSpike = (revenueToday > 2 * avgRevenue);
+  const costSpike = (costToday > 2 * avgCost);
+  const guardrails = [];
+  if (revenueSpike) guardrails.push('Revenue spike detected');
+  if (costSpike) guardrails.push('Cost spike detected');
+  if (marginPercent !== null && marginPercent < 10) guardrails.push('Margin below 10%');
+
   return {
     generated_at: new Date().toISOString(),
     headline: {
@@ -905,14 +1169,21 @@ async function buildExecutiveSnapshot() {
       active_incident: incident ? incident.title || incident.message || "incident" : null,
       revenue_today: revenueToday,
       margin_estimate: marginEstimate,
+      margin_percent: marginPercent,
+      profit_per_tenant: profitPerTenant,
+      cost_today: costToday,
+      cost_30d: cost30d,
+      cost_breakdown: costBreakdown,
       burn_rate: burnRate,
       cash_at_risk: cashAtRisk,
       delta_revenue: deltaRevenue,
       delta_margin: deltaMargin,
       auto_brief: autoBrief,
+      guardrails,
     },
     priorities: [
       ...(revenue.priorities || []).slice(0, 3),
+      ...(guardrails.length ? guardrails : []),
       ...(incident ? [`Incident active: ${incident.title || incident.message}`] : []),
     ].slice(0, 5),
   };

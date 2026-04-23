@@ -982,3 +982,139 @@
 [2026-04-16T15:43:50.162Z] [SYSTEM] Health monitor started.
 [2026-04-16T15:43:50.170Z] [SYSTEM] ✅ Manual health check recorded.
 [2026-04-16T15:43:50.458Z] [SYSTEM] Server running on port 3000
+[2026-04-18T13:36:16.057Z] [SYSTEM] Health monitor started.
+[2026-04-18T13:36:16.063Z] [SYSTEM] ✅ Manual health check recorded.
+[2026-04-18T13:36:16.190Z] [SYSTEM] Server running on port 3000
+[2026-04-18T14:14:07.786Z] [SYSTEM] Health monitor started.
+[2026-04-18T14:14:07.922Z] [SYSTEM] ✅ Manual health check recorded.
+[2026-04-18T14:14:08.604Z] [SYSTEM] Server running on port 3000
+[2026-04-18T14:40:52.097Z] [SYSTEM] Health monitor started.
+[2026-04-18T14:40:52.111Z] [SYSTEM] ✅ Manual health check recorded.
+[2026-04-18T14:40:52.269Z] [SYSTEM] Server running on port 3000
+[2026-04-18T14:43:54.563Z] [PAGE] Admin dashboard loaded by ::1 at 2026-04-18T14:43:54.556Z
+[2026-04-18T14:45:28.119Z] [SYSTEM] Health monitor started.
+[2026-04-18T14:45:28.129Z] [SYSTEM] ✅ Manual health check recorded.
+[2026-04-18T14:45:28.210Z] [SYSTEM] Server running on port 3000
+[2026-04-18T14:55:10.955Z] [SYSTEM] Health monitor started.
+[2026-04-18T14:55:11.154Z] [SYSTEM] ✅ Manual health check recorded.
+[2026-04-18T14:55:11.903Z] [SYSTEM] Server running on port 3000
+[2026-04-18T14:56:54.808Z] [PAGE] Admin dashboard loaded by ::1 at 2026-04-18T14:56:54.804Z
+[2026-04-18T14:56:56.943Z] [PAGE] Admin dashboard loaded by ::1 at 2026-04-18T14:56:56.943Z
+[2026-04-18T16:41:18.697Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-18T19:43:23.582Z] [SYSTEM] ✅ Manual health check recorded.
+[2026-04-18T19:43:23.651Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-18T23:24:38.427Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-18T23:24:39.625Z] [SYSTEM] ✅ Manual health check recorded.
+[2026-04-18T23:24:40.064Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-18T23:24:39.576Z] [SYSTEM] ✅ Manual health check recorded.
+[2026-04-18T23:24:40.265Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-18T23:29:41.108Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-18T23:29:41.125Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-18T23:29:41.122Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T00:24:43.179Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T00:24:43.186Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T00:24:43.189Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T00:29:44.736Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T00:29:44.740Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T00:29:44.750Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T03:57:25.547Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T03:57:25.562Z] [SYSTEM] ✅ Manual health check recorded.
+[2026-04-19T03:57:25.587Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T03:57:25.834Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T04:02:24.828Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T04:02:24.834Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T04:02:24.831Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T04:07:24.667Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T04:07:24.689Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T04:07:24.691Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T05:12:27.127Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T05:12:27.129Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T05:12:27.136Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T05:17:26.469Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T05:17:26.555Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T05:17:26.558Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T05:22:26.700Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T05:22:26.700Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T05:22:26.703Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T05:24:36.050Z] [SYSTEM] ✅ Manual health check recorded.
+[2026-04-19T05:24:36.052Z] [SYSTEM] ✅ Manual health check recorded.
+[2026-04-19T05:27:25.673Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T05:27:25.677Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T05:27:25.691Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T05:32:25.601Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T05:32:25.602Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T05:32:25.615Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T05:37:25.604Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T05:37:25.603Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T05:37:26.577Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T05:42:25.606Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T05:42:25.620Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T05:42:26.430Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T05:47:25.615Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T05:47:25.615Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T05:47:25.755Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T06:15:53.586Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T06:15:53.597Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T06:15:53.585Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T06:20:53.718Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T06:20:53.769Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T06:20:54.718Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T06:25:53.720Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T06:25:53.725Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T06:25:53.945Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T06:30:53.759Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T06:30:54.662Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T06:30:54.707Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T08:25:20.334Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T08:25:20.433Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T08:25:20.757Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T08:30:20.195Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T08:30:20.316Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T08:30:20.328Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T08:35:20.289Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T08:35:20.313Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T08:35:20.293Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T08:40:20.067Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T08:40:20.680Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T08:40:20.739Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T08:45:20.016Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T08:45:20.077Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T08:45:21.162Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T08:50:19.854Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T08:50:20.138Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T08:50:20.245Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T08:55:19.840Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T08:55:20.198Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T08:55:20.258Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T09:00:20.011Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T09:00:20.164Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T09:00:20.271Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T09:05:20.585Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T09:05:20.591Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T09:05:20.606Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T14:23:23.641Z] [SYSTEM] ✅ Manual health check recorded.
+[2026-04-19T14:23:23.647Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T14:23:23.694Z] [SYSTEM] ✅ Manual health check recorded.
+[2026-04-19T14:23:23.705Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T14:23:23.643Z] [SYSTEM] ✅ Manual health check recorded.
+[2026-04-19T14:23:23.736Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T17:03:49.782Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T17:03:50.294Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T17:03:51.436Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T17:08:29.473Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T17:08:30.271Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-19T17:08:31.778Z] [ERROR] Retry job failed: TypeError: fetch failed
+[2026-04-21T11:43:11.922Z] [SYSTEM] Health monitor started.
+[2026-04-21T11:43:11.953Z] [SYSTEM] ✅ Manual health check recorded.
+[2026-04-21T11:43:12.706Z] [SYSTEM] Server running on port 3000
+[2026-04-21T11:48:13.434Z] [ERROR] Admin SLA board error: column subscriptions.product_sku does not exist
+[2026-04-21T11:48:15.334Z] [ERROR] Admin revenue center error: column subscriptions.product_sku does not exist
+[2026-04-21T12:02:17.006Z] [SYSTEM] Health monitor started.
+[2026-04-21T12:02:17.026Z] [SYSTEM] ✅ Manual health check recorded.
+[2026-04-21T12:02:17.289Z] [SYSTEM] Server running on port 3000
+[2026-04-21T12:10:15.908Z] [SYSTEM] Health monitor started.
+[2026-04-21T12:10:15.919Z] [SYSTEM] ✅ Manual health check recorded.
+[2026-04-21T12:10:16.127Z] [SYSTEM] Server running on port 3000
+[2026-04-22T08:24:45.724Z] [SYSTEM] Health monitor started.
+[2026-04-22T08:24:45.737Z] [SYSTEM] ✅ Manual health check recorded.
+[2026-04-22T08:24:46.030Z] [SYSTEM] Server running on port 3000

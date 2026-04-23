@@ -1,0 +1,228 @@
+{"at":"2026-04-18T16:15:24.871Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-18T16:17:26.987Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-18T16:19:26.997Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-18T16:21:27.025Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-18T16:23:27.028Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-18T16:25:27.030Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-18T16:27:27.030Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-18T16:29:27.039Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-18T16:31:27.045Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-18T16:33:27.045Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-18T16:35:27.060Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-18T16:37:27.063Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-18T16:39:27.076Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-18T16:41:27.080Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-18T19:43:25.361Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-18T23:24:38.309Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-18T23:26:38.534Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-18T23:28:38.564Z","ok":false,"error":"read ECONNRESET"}
+{"at":"2026-04-18T23:30:38.605Z","ok":false,"error":"read ECONNRESET"}
+{"at":"2026-04-18T23:32:38.640Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-18T23:34:38.644Z","ok":false,"error":"timeout of 20000ms exceeded"}
+{"at":"2026-04-18T23:36:41.603Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-18T23:38:41.608Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-18T23:40:41.624Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-18T23:42:41.634Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-18T23:44:41.647Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-18T23:46:41.680Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-18T23:48:41.679Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-18T23:50:41.692Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-18T23:52:41.704Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-18T23:54:41.725Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-18T23:56:41.739Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-18T23:58:41.750Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T00:00:41.758Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T00:02:41.760Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T00:04:41.798Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T00:06:41.811Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T00:08:41.816Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T00:10:41.837Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T00:12:41.851Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T00:14:41.866Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T00:16:41.877Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T00:18:41.900Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T00:20:41.910Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T00:22:41.924Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T00:24:41.940Z","ok":false,"error":"read ECONNRESET"}
+{"at":"2026-04-19T00:26:41.959Z","ok":false,"error":"read ECONNRESET"}
+{"at":"2026-04-19T00:28:41.971Z","ok":false,"error":"read ECONNRESET"}
+{"at":"2026-04-19T00:30:41.986Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T00:32:42.025Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T00:34:42.431Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T00:36:42.388Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T00:38:42.388Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T00:40:42.390Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T00:42:42.399Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T00:44:42.401Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T00:46:42.410Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T00:48:42.417Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T03:57:24.667Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T03:59:24.669Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T04:01:24.678Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T04:03:24.679Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T04:05:24.687Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T04:07:24.698Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T04:09:24.709Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T04:11:24.724Z","ok":false,"error":"timeout of 20000ms exceeded"}
+{"at":"2026-04-19T04:13:24.749Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T04:15:24.764Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T04:17:24.772Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T04:19:24.784Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T04:21:24.787Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T04:23:24.800Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T04:25:24.809Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T04:27:24.820Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T04:29:24.829Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T04:31:24.852Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T04:33:24.852Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T04:35:24.863Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T04:37:24.874Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T04:39:24.891Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T04:41:24.904Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T04:43:24.917Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T04:45:24.919Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T04:47:24.927Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T04:49:24.936Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T04:51:24.943Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T04:53:25.054Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T04:55:25.057Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T04:57:25.566Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T04:59:25.574Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T05:01:25.588Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T05:03:25.592Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T05:05:25.599Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T05:07:25.612Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T05:09:25.617Z","ok":false,"error":"read ECONNRESET"}
+{"at":"2026-04-19T05:11:25.632Z","ok":false,"error":"read ECONNRESET"}
+{"at":"2026-04-19T05:13:25.644Z","ok":false,"error":"read ECONNRESET"}
+{"at":"2026-04-19T05:15:25.652Z","ok":false,"error":"read ECONNRESET"}
+{"at":"2026-04-19T05:17:25.664Z","ok":false,"error":"read ECONNRESET"}
+{"at":"2026-04-19T05:19:25.674Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T05:21:25.678Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T05:23:25.680Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T05:25:25.690Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T05:27:25.701Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T05:29:25.703Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T05:31:25.705Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T05:33:25.706Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T05:35:25.713Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T05:37:25.721Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T05:39:25.721Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T05:41:25.722Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T05:43:25.725Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T05:45:25.727Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T05:47:25.734Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T06:15:53.554Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T06:17:53.570Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T06:19:53.573Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T06:21:53.608Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T06:23:53.631Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T06:25:53.638Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T06:27:53.645Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T06:29:53.645Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T08:25:19.932Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T08:27:19.956Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T08:29:19.968Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T08:31:19.973Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T08:33:19.978Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T08:35:19.984Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T08:37:20.005Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T08:39:20.007Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T08:41:20.015Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T08:43:20.029Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T08:45:20.035Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T08:47:20.046Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T08:49:20.047Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T08:51:20.053Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T08:53:20.056Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T08:55:20.068Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T08:57:20.073Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T08:59:20.077Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T09:01:20.091Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T09:03:20.098Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T09:05:20.105Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T09:07:20.116Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T14:23:23.591Z","ok":false,"error":"getaddrinfo ENOTFOUND alphadome.onrender.com"}
+{"at":"2026-04-19T14:25:23.921Z","ok":false,"error":"timeout of 20000ms exceeded"}
+{"at":"2026-04-19T14:27:24.635Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T14:29:24.771Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T14:31:24.778Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T14:33:24.784Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T14:35:24.794Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T14:37:24.852Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T14:39:24.870Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T14:41:24.876Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T14:43:24.892Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T14:45:24.924Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T14:47:24.942Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T14:49:24.955Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T14:51:24.991Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T14:53:25.006Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T14:55:25.008Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T14:57:25.019Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T14:59:25.036Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T15:01:25.047Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T15:03:25.049Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T15:05:25.063Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T15:07:25.080Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T15:09:25.090Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T15:11:25.106Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T15:13:25.111Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T15:15:25.131Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T15:17:25.143Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T15:19:25.144Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T15:21:25.149Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T15:23:25.160Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T15:25:25.172Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T15:27:25.173Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T15:29:25.190Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T15:31:25.225Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T15:33:25.236Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T15:35:25.245Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T15:37:25.271Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T15:39:25.285Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T15:41:25.302Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T15:43:25.308Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T15:45:25.313Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T15:47:25.317Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T15:49:25.322Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T15:51:25.330Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T15:53:25.439Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T15:55:25.444Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T15:57:25.453Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T15:59:25.509Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T16:01:25.517Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T16:03:25.564Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T16:05:18.981Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T16:07:18.985Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T16:09:18.990Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T16:11:18.995Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T16:13:19.014Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T16:15:19.021Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T16:17:19.036Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T16:19:19.043Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T16:21:19.052Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T16:23:19.059Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T16:25:19.072Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T16:27:19.083Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T16:29:19.102Z","ok":false,"error":{"error":"column conversations.message does not exist"}}
+{"at":"2026-04-19T16:31:19.115Z","ok":false,"error":{"error":"column conversations.message does not exist"}}
+{"at":"2026-04-19T16:33:19.120Z","ok":false,"error":{"error":"column conversations.message does not exist"}}
+{"at":"2026-04-19T16:35:19.857Z","ok":false,"error":{"error":"column conversations.message does not exist"}}
+{"at":"2026-04-19T16:37:19.868Z","ok":false,"error":{"error":"column conversations.message does not exist"}}
+{"at":"2026-04-19T16:39:19.870Z","ok":false,"error":{"error":"column conversations.message does not exist"}}
+{"at":"2026-04-19T16:41:19.871Z","ok":false,"error":{"error":"column conversations.message does not exist"}}
+{"at":"2026-04-19T16:43:19.880Z","ok":false,"error":{"error":"column conversations.message does not exist"}}
+{"at":"2026-04-19T16:45:19.887Z","ok":false,"error":{"error":"column conversations.message does not exist"}}
+{"at":"2026-04-19T16:47:19.925Z","ok":false,"error":{"error":"column conversations.message does not exist"}}
+{"at":"2026-04-19T16:49:20.066Z","ok":false,"error":{"error":"column conversations.message does not exist"}}
+{"at":"2026-04-19T16:51:20.244Z","ok":false,"error":{"error":"column conversations.message does not exist"}}
+{"at":"2026-04-19T16:53:20.245Z","ok":false,"error":{"error":"column conversations.message does not exist"}}
+{"at":"2026-04-19T16:55:20.260Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T16:57:20.263Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T16:59:20.275Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T17:01:20.287Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T17:03:20.297Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T17:05:20.305Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T17:07:20.318Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}
+{"at":"2026-04-19T17:09:20.327Z","ok":true,"metrics":{"revenue_kes":0,"attempts_7d":0,"conversion_rate_pct":0,"incoming_24h":0,"hot_leads":0,"failed_count":0,"pending_count":0,"fallback_queue":0}}

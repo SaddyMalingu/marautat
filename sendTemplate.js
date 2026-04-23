@@ -15,7 +15,7 @@ function normalizePhone(raw) {
 
 function parseArgs(argv) {
   const options = {
-    template: "afrika",
+    template: "alphadome",
     language: "en",
     delayMs: 800,
     to: null,
@@ -139,7 +139,7 @@ async function main() {
     console.error("  node sendTemplate.js --list 2547XXXXXXX,2547YYYYYYY");
     console.error("  node sendTemplate.js --file leads.txt");
     console.error("Optional:");
-    console.error("  --template afrika --lang en --delay 800");
+    console.error("  --template alphadome --lang en --delay 800");
     process.exit(1);
   }
 

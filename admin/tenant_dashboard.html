@@ -784,6 +784,10 @@ async function renderBotConfig() {
   if (!ok) { showErr(data.error || 'Failed to load bot settings'); return; }
   const s = data.settings || {};
   const models = ['gpt-4o','gpt-4o-mini','gpt-4','gpt-3.5-turbo','claude-3-haiku-20240307','claude-3-5-sonnet-20241022'];
+  let activateBtn = '';
+  if (s.is_verified && !s.is_active) {
+    activateBtn = `<button id="activateBotBtn" class="btn btn-success mt-2"><i class="fa-solid fa-bolt me-2"></i>Activate Bot</button>`;
+  }
   document.getElementById('spa').innerHTML = `
     <div class="section-hdr"><i class="fa-solid fa-sliders"></i> Bot Configuration</div>
     <div class="row g-3">
@@ -815,8 +819,8 @@ async function renderBotConfig() {
         <div class="panel">
           <div class="panel-title"><i class="fa-brands fa-whatsapp me-2" style="color:#25d366;"></i>WhatsApp Credentials</div>
           <form id="waForm">
-            <div class="mb-3"><label class="form-label">Phone Number ID</label><input type="text" class="form-control" name="wp_id" value="${esc(s.whatsapp_phone_number_id||'')}" placeholder="e.g. 123456789012345"/></div>
-            <div class="mb-3"><label class="form-label">Business Account ID</label><input type="text" class="form-control" name="wa_id" value="${esc(s.whatsapp_business_account_id||'')}" placeholder="e.g. 987654321098765"/></div>
+            <div class="mb-3"><label class="form-label">Phone Number ID</label><input type="text" class="form-control" name="wp_id" value="${esc(s.whatsapp_phone_number_id||'')}", placeholder="e.g. 123456789012345"/></div>
+            <div class="mb-3"><label class="form-label">Business Account ID</label><input type="text" class="form-control" name="wa_id" value="${esc(s.whatsapp_business_account_id||'')}", placeholder="e.g. 987654321098765"/></div>
             <div class="mb-3">
               <label class="form-label">Access Token ${s.has_wa_token?'<span class="badge-ok">Configured</span>':'<span class="badge-off">Not set</span>'}</label>
               <input type="password" class="form-control" name="wa_token" placeholder="${s.has_wa_token?'Leave blank to keep current token':'Enter token'}" autocomplete="new-password"/>
@@ -824,12 +828,28 @@ async function renderBotConfig() {
             <div class="mb-3 p-3 rounded" style="background:var(--bg-main);border:1px solid var(--border);font-size:0.84rem;">
               <div class="kv-row"><span class="kv-key">Bot Active</span>${badge(s.is_active?'active':'inactive')}</div>
               <div class="kv-row"><span class="kv-key">WA Verified</span>${s.is_verified?'<span class="badge-ok">Yes</span>':'<span class="badge-off">No</span>'}</div>
+              ${activateBtn}
             </div>
             <button type="submit" class="btn btn-accent"><i class="fa-solid fa-floppy-disk me-2"></i>Save WhatsApp Config</button>
           </form>
         </div>
       </div>
     </div>`;
+
+  if (s.is_verified && !s.is_active) {
+    setTimeout(() => {
+      const btn = document.getElementById('activateBotBtn');
+      if (btn) {
+        btn.onclick = async function() {
+          btn.disabled = true;
+          btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-2"></i>Activating...';
+          const { ok, data } = await apiJson('/tenant/bot-settings', { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ is_active: true }) });
+          if (!ok) { toast(data.error||'Activation failed','err'); btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-bolt me-2"></i>Activate Bot'; return; }
+          toast('Bot activated!','ok'); renderBotConfig();
+        };
+      }
+    }, 0);
+  }
 
   document.getElementById('aiForm').onsubmit = async function(e) {
     e.preventDefault(); const f = e.target;
