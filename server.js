@@ -3306,6 +3306,8 @@ app.patch("/tenant/bot-settings", tenantSessionAuth, async (req, res) => {
     const { tenantPhone } = req.tenantSession;
     const { ai_model, ai_provider, ai_api_key, whatsapp_access_token, whatsapp_phone_number_id, whatsapp_business_account_id } = req.body || {};
     const ALLOWED_MODELS = ["gpt-4o", "gpt-4o-mini", "gpt-4", "gpt-3.5-turbo", "claude-3-haiku-20240307", "claude-3-5-sonnet-20241022"];
+    console.log("[PATCH /tenant/bot-settings] tenantPhone:", tenantPhone);
+    console.log("[PATCH /tenant/bot-settings] updates payload:", req.body);
     if (ai_model && !ALLOWED_MODELS.includes(ai_model)) {
       return res.status(400).json({ error: `Invalid ai_model. Allowed: ${ALLOWED_MODELS.join(", ")}` });
     }
@@ -3316,10 +3318,15 @@ app.patch("/tenant/bot-settings", tenantSessionAuth, async (req, res) => {
     if (whatsapp_access_token) updates.whatsapp_access_token = String(whatsapp_access_token).trim();
     if (whatsapp_phone_number_id) updates.whatsapp_phone_number_id = String(whatsapp_phone_number_id).trim();
     if (whatsapp_business_account_id) updates.whatsapp_business_account_id = String(whatsapp_business_account_id).trim();
+    console.log("[PATCH /tenant/bot-settings] updates object:", updates);
     const rows = await updateAlphadomeTenantByPhone(tenantPhone, updates);
-    if (!rows.length) return res.status(404).json({ error: "Tenant not found — bot settings not updated" });
+    if (!rows.length) {
+      console.warn("[PATCH /tenant/bot-settings] No tenant found for phone:", tenantPhone, "with updates:", updates);
+      return res.status(404).json({ error: "Tenant not found — bot settings not updated" });
+    }
     return res.json({ ok: true });
   } catch (error) {
+    console.error("[PATCH /tenant/bot-settings] Error:", error);
     return res.status(500).json({ error: error.message });
   }
 });
