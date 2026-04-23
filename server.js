@@ -1,5 +1,43 @@
-// --- Imports and app initialization ---
 
+import express from "express";
+import axios from "axios";
+import crypto from "crypto";
+import fs from "fs";
+import path from "path";
+import multer from "multer";
+import { createClient } from "@supabase/supabase-js";
+import OpenAI from "openai";
+import { log } from "./utils/logger.js";
+import { sendMessage, sendImage, sendInteractiveList } from "./utils/messenger.js";
+import { startHealthMonitor, runHealthCheck, incrementErrorCount } from "./utils/healthMonitor.js";
+
+const app = express();
+app.use(express.json({
+  verify: (req, res, buf) => {
+    req.rawBody = buf ? buf.toString("utf8") : "";
+  },
+}));
+// Tenant APIs are defined below with session protection.
+
+// Robust request logging middleware (console + file)
+const logStream = fs.createWriteStream(path.join(process.cwd(), 'request.log'), { flags: 'a' });
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    const logLine = `[${new Date().toISOString()}] ${req.method} ${req.originalUrl} ${res.statusCode} - ${duration}ms\n`;
+    console.log(logLine.trim());
+    logStream.write(logLine);
+  });
+  res.on('close', () => {
+    if (!res.writableEnded) {
+      const logLine = `[${new Date().toISOString()}] ${req.method} ${req.originalUrl} CLOSED BEFORE END\n`;
+      console.log(logLine.trim());
+      logStream.write(logLine);
+    }
+  });
+  next();
+});
 
 // Helper: Register WhatsApp webhook with Meta Graph API
 async function registerMetaWebhook({
@@ -236,47 +274,6 @@ app.get('/admin/api/slo-board', adminAuth, async (req, res) => {
   } catch (error) {
     return res.status(500).json({ error: error.message });
   }
-});
-// --- Imports and app initialization ---
-
-import express from "express";
-import axios from "axios";
-import crypto from "crypto";
-import fs from "fs";
-import path from "path";
-import multer from "multer";
-import { createClient } from "@supabase/supabase-js";
-import OpenAI from "openai";
-import { log } from "./utils/logger.js";
-import { sendMessage, sendImage, sendInteractiveList } from "./utils/messenger.js";
-import { startHealthMonitor, runHealthCheck, incrementErrorCount } from "./utils/healthMonitor.js";
-
-const app = express();
-app.use(express.json({
-  verify: (req, res, buf) => {
-    req.rawBody = buf ? buf.toString("utf8") : "";
-  },
-}));
-// Tenant APIs are defined below with session protection.
-
-// Robust request logging middleware (console + file)
-const logStream = fs.createWriteStream(path.join(process.cwd(), 'request.log'), { flags: 'a' });
-app.use((req, res, next) => {
-  const start = Date.now();
-  res.on('finish', () => {
-    const duration = Date.now() - start;
-    const logLine = `[${new Date().toISOString()}] ${req.method} ${req.originalUrl} ${res.statusCode} - ${duration}ms\n`;
-    console.log(logLine.trim());
-    logStream.write(logLine);
-  });
-  res.on('close', () => {
-    if (!res.writableEnded) {
-      const logLine = `[${new Date().toISOString()}] ${req.method} ${req.originalUrl} CLOSED BEFORE END\n`;
-      console.log(logLine.trim());
-      logStream.write(logLine);
-    }
-  });
-  next();
 });
 
 // Serve static files from public directory
