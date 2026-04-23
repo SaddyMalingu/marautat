@@ -1,30 +1,3 @@
-// ===== ADMIN: Direct WhatsApp Message API =====
-app.post('/admin/api/send-message', adminAuth, async (req, res) => {
-  try {
-    const { phone, text } = req.body;
-    if (!phone || !text) return res.status(400).json({ error: 'Phone and text are required.' });
-    const result = await sendMessage(phone, text);
-    if (result && result.error) return res.status(500).json({ error: result.error });
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ===== TENANT: Direct WhatsApp Message API =====
-app.post('/tenant/api/send-message', async (req, res) => {
-  // TODO: Add tenant session auth if needed
-  try {
-    const { phone, text } = req.body;
-    if (!phone || !text) return res.status(400).json({ error: 'Phone and text are required.' });
-    const result = await sendMessage(phone, text);
-    if (result && result.error) return res.status(500).json({ error: result.error });
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-// (Moved below app initialization)
 
 import express from "express";
 import axios from "axios";
