@@ -1946,9 +1946,13 @@ app.get("/tenant/catalog", tenantSessionAuth, async (req, res) => {
       return res.json({ items: normalizeCatalogItems(rpcData?.items || []) });
     }
 
-    if (error) return res.status(500).json({ error: error.message });
+    if (error) {
+      console.error("[/tenant/catalog] Supabase error:", error);
+      return res.status(500).json({ error: error.message });
+    }
     return res.json({ items: normalizeCatalogItems(data || []) });
   } catch (error) {
+    console.error("[/tenant/catalog] Handler error:", error);
     return res.status(500).json({ error: error.message });
   }
 });
