@@ -2217,10 +2217,12 @@ app.delete("/tenant/orders/:id", tenantSessionAuth, async (req, res) => {
 async function updateAlphadomeTenantByPhone(tenantPhone, updates) {
   const candidates = buildPhoneCandidates(tenantPhone);
   if (!candidates.length) return [];
+  console.log('[updateAlphadomeTenantByPhone] candidates:', candidates);
   for (const phone of candidates) {
     const urlSafe = encodeURIComponent(phone);
     const url = `${process.env.SB_URL}/rest/v1/bot_tenants?client_phone=eq.${urlSafe}`;
     try {
+      console.log(`[updateAlphadomeTenantByPhone] PATCH url: ${url}`);
       const response = await axios.patch(url, updates, {
         headers: {
           apikey: process.env.SB_SERVICE_ROLE_KEY,
@@ -2230,17 +2232,21 @@ async function updateAlphadomeTenantByPhone(tenantPhone, updates) {
           Prefer: "return=representation",
         },
       });
+      console.log(`[updateAlphadomeTenantByPhone] PATCH status: ${response.status}, data:`, response.data);
       // Always fetch the tenant after PATCH, treat existence as success
-      const { data: check } = await supabase
+      const { data: check, error: fetchError } = await supabase
         .from("bot_tenants")
-        .select("*")
+        .select("id, client_name, client_phone, status, updated_at")
         .eq("client_phone", phone)
         .limit(1);
+      console.log(`[updateAlphadomeTenantByPhone] Fetch after PATCH for phone ${phone}:`, check, fetchError);
       if (Array.isArray(check) && check.length) return check;
     } catch (err) {
+      console.error(`[updateAlphadomeTenantByPhone] Error for phone ${phone}:`, err?.response?.data || err.message);
       if (err.response?.status !== 404 && err.response?.status !== 406) throw err;
     }
   }
+  console.warn('[updateAlphadomeTenantByPhone] No tenant updated for candidates:', candidates);
   return [];
 }
 
