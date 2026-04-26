@@ -8812,12 +8812,22 @@ async function generateReply(
     log(`HuggingFace error: ${hfErr.message}`, "ERROR");
   }
 
-  // 4️⃣ Static fallback message
-  return {
-    type: "text",
-    text: fallbackMessage(),
-    meta: { llm_used: false, reason: "fallback" },
-  };
+  // 4️⃣ Static fallback message (guaranteed response)
+  try {
+    return {
+      type: "text",
+      text: fallbackMessage(),
+      meta: { llm_used: false, reason: "fallback" },
+    };
+  } catch (finalErr) {
+    log(`Final fallback error: ${finalErr.message}`, "ERROR");
+    // Absolute last resort: plain string
+    return {
+      type: "text",
+      text: "Sorry, I couldn't process your request right now. Please try again later.",
+      meta: { llm_used: false, reason: "hard_fallback", error: finalErr.message },
+    };
+  }
 }
 
 // ===== Fallback message remains unchanged =====
