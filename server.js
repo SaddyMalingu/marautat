@@ -2228,7 +2228,7 @@ async function updateAlphadomeTenantByPhone(tenantPhone, updates) {
           apikey: process.env.SB_SERVICE_ROLE_KEY,
           Authorization: `Bearer ${process.env.SB_SERVICE_ROLE_KEY}`,
           "Content-Type": "application/json",
-          "Content-Profile": "alphadome",
+          "Content-Profile": "public",
           Prefer: "return=representation",
         },
       });
