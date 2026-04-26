@@ -1946,13 +1946,9 @@ app.get("/tenant/catalog", tenantSessionAuth, async (req, res) => {
       return res.json({ items: normalizeCatalogItems(rpcData?.items || []) });
     }
 
-    if (error) {
-      console.error("[/tenant/catalog] Supabase error:", error);
-      return res.status(500).json({ error: error.message });
-    }
+    if (error) return res.status(500).json({ error: error.message });
     return res.json({ items: normalizeCatalogItems(data || []) });
   } catch (error) {
-    console.error("[/tenant/catalog] Handler error:", error);
     return res.status(500).json({ error: error.message });
   }
 });
@@ -2234,8 +2230,19 @@ async function updateAlphadomeTenantByPhone(tenantPhone, updates) {
           Prefer: "return=representation",
         },
       });
-      const rows = Array.isArray(response.data) ? response.data : [];
-      if (rows.length) return rows;
+      // Accept 200/204 as success, even if no rows returned
+      if (response.status === 200 || response.status === 204) {
+        const rows = Array.isArray(response.data) ? response.data : [];
+        // If no rows returned, fetch the tenant to confirm existence
+        if (rows.length) return rows;
+        // Try to fetch the tenant after update
+        const { data: check } = await supabase
+          .from("bot_tenants")
+          .select("*")
+          .eq("client_phone", phone)
+          .limit(1);
+        if (Array.isArray(check) && check.length) return check;
+      }
     } catch (err) {
       if (err.response?.status !== 404 && err.response?.status !== 406) throw err;
     }
@@ -3307,13 +3314,9 @@ app.get("/tenant/bot-settings", tenantSessionAuth, async (req, res) => {
 
 app.patch("/tenant/bot-settings", tenantSessionAuth, async (req, res) => {
   try {
-    console.log("[PATCH /tenant/bot-settings] HEADERS:", req.headers);
-    console.log("[PATCH /tenant/bot-settings] SESSION:", req.tenantSession);
-    const { tenantPhone } = req.tenantSession || {};
+    const { tenantPhone } = req.tenantSession;
     const { ai_model, ai_provider, ai_api_key, whatsapp_access_token, whatsapp_phone_number_id, whatsapp_business_account_id } = req.body || {};
     const ALLOWED_MODELS = ["gpt-4o", "gpt-4o-mini", "gpt-4", "gpt-3.5-turbo", "claude-3-haiku-20240307", "claude-3-5-sonnet-20241022"];
-    console.log("[PATCH /tenant/bot-settings] tenantPhone:", tenantPhone);
-    console.log("[PATCH /tenant/bot-settings] updates payload:", req.body);
     if (ai_model && !ALLOWED_MODELS.includes(ai_model)) {
       return res.status(400).json({ error: `Invalid ai_model. Allowed: ${ALLOWED_MODELS.join(", ")}` });
     }
@@ -3324,15 +3327,10 @@ app.patch("/tenant/bot-settings", tenantSessionAuth, async (req, res) => {
     if (whatsapp_access_token) updates.whatsapp_access_token = String(whatsapp_access_token).trim();
     if (whatsapp_phone_number_id) updates.whatsapp_phone_number_id = String(whatsapp_phone_number_id).trim();
     if (whatsapp_business_account_id) updates.whatsapp_business_account_id = String(whatsapp_business_account_id).trim();
-    console.log("[PATCH /tenant/bot-settings] updates object:", updates);
     const rows = await updateAlphadomeTenantByPhone(tenantPhone, updates);
-    if (!rows.length) {
-      console.warn("[PATCH /tenant/bot-settings] No tenant found for phone:", tenantPhone, "with updates:", updates);
-      return res.status(404).json({ error: "Tenant not found — bot settings not updated" });
-    }
+    if (!rows.length) return res.status(404).json({ error: "Tenant not found — bot settings not updated" });
     return res.json({ ok: true });
   } catch (error) {
-    console.error("[PATCH /tenant/bot-settings] Error:", error);
     return res.status(500).json({ error: error.message });
   }
 });
