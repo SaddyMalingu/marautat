@@ -2230,19 +2230,13 @@ async function updateAlphadomeTenantByPhone(tenantPhone, updates) {
           Prefer: "return=representation",
         },
       });
-      // Accept 200/204 as success, even if no rows returned
-      if (response.status === 200 || response.status === 204) {
-        const rows = Array.isArray(response.data) ? response.data : [];
-        // If no rows returned, fetch the tenant to confirm existence
-        if (rows.length) return rows;
-        // Try to fetch the tenant after update
-        const { data: check } = await supabase
-          .from("bot_tenants")
-          .select("*")
-          .eq("client_phone", phone)
-          .limit(1);
-        if (Array.isArray(check) && check.length) return check;
-      }
+      // Always fetch the tenant after PATCH, treat existence as success
+      const { data: check } = await supabase
+        .from("bot_tenants")
+        .select("*")
+        .eq("client_phone", phone)
+        .limit(1);
+      if (Array.isArray(check) && check.length) return check;
     } catch (err) {
       if (err.response?.status !== 404 && err.response?.status !== 406) throw err;
     }
