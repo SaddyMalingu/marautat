@@ -7046,6 +7046,7 @@ app.post("/webhook", (req, res, next) => {
 
 // ===== HANDLE INCOMING WHATSAPP MESSAGES =====
 app.post("/webhook", loadTenantContext, async (req, res) => {
+
   const body = req.body;
 
   if (!body.object) {
@@ -7060,6 +7061,10 @@ app.post("/webhook", loadTenantContext, async (req, res) => {
   const text = message.text?.body?.trim();
   const waMessageId = message.id;
   const rawPayload = body.entry?.[0]?.changes?.[0]?.value;
+
+  // Extra logging for debugging tenant resolution and incoming number
+  log(`[WEBHOOK] Incoming WhatsApp message from: ${from} | text: ${text || '[non-text]'}`, "DEBUG");
+  log(`[WEBHOOK] Tenant resolution: isTenantAware=${req.isTenantAware} | tenantName=${req.tenant?.client_name || 'null'} | tenantPhone=${req.tenant?.client_phone || 'null'} | tenantId=${req.tenant?.id || 'null'}`, "DEBUG");
 
   // NOTE for System Update; Find a way of handling different formats (text, graphics - videos, audio, and images.)
   if (!text) return res.sendStatus(200);
