@@ -1456,10 +1456,26 @@ function buildPhoneCandidates(tenantPhone) {
 }
 
 async function findTenantByPhone(tenantPhone, requireActive = true) {
-  const candidates = buildPhoneCandidates(tenantPhone);
+  // Import normalization utilities (if not already in scope)
+  const normalizePhone = (phone) => (phone || "").replace(/\D/g, "");
+  const toKeE164 = (phone) => {
+    const digits = normalizePhone(phone);
+    if (!digits) return "";
+    if (digits.startsWith("254")) return digits;
+    if (digits.startsWith("0")) return `254${digits.slice(1)}`;
+    if (digits.length === 9) return `254${digits}`;
+    return digits;
+  };
+
+  // Build normalized candidate list (E.164 and local)
+  const rawCandidates = buildPhoneCandidates(tenantPhone);
+  const candidates = Array.from(new Set([
+    ...rawCandidates,
+    ...rawCandidates.map(toKeE164)
+  ].filter(Boolean)));
   if (!candidates.length) return null;
 
-  // Query for tenants where either client_phone or whatsapp_phone_number_id matches
+  // Query for tenants where either client_phone or whatsapp_phone_number_id matches (all normalized)
   const { data, error } = await supabase
     .from("bot_tenants")
     .select("*")
