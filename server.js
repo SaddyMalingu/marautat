@@ -1473,6 +1473,7 @@ async function findTenantByPhone(tenantPhone, requireActive = true) {
     ...rawCandidates,
     ...rawCandidates.map(toKeE164)
   ].filter(Boolean)));
+  log(`[TENANT LOOKUP] Candidates for '${tenantPhone}': ${candidates.join(', ')}`);
   if (!candidates.length) return null;
 
   // Query for tenants where either client_phone or whatsapp_phone_number_id matches (all normalized)
@@ -1486,14 +1487,18 @@ async function findTenantByPhone(tenantPhone, requireActive = true) {
     .limit(20);
 
   if (error) {
+    log(`[TENANT LOOKUP] Supabase error: ${error.message}`);
     throw error;
   }
 
   const rows = data || [];
+  log(`[TENANT LOOKUP] Found ${rows.length} candidate(s) for '${tenantPhone}'.`);
   if (!rows.length) return null;
   if (!requireActive) return rows[0];
 
-  return rows.find(isTenantRecordActive) || null;
+  const activeTenant = rows.find(isTenantRecordActive) || null;
+  log(`[TENANT LOOKUP] Active tenant: ${activeTenant ? activeTenant.client_name : 'none'}`);
+  return activeTenant;
 }
 
 function isMissingTableInSchemaCache(error) {
@@ -7066,6 +7071,7 @@ app.post("/webhook", (req, res, next) => {
 // ===== HANDLE INCOMING WHATSAPP MESSAGES =====
 app.post("/webhook", loadTenantContext, async (req, res) => {
 
+
   const body = req.body;
 
   if (!body.object) {
@@ -7081,9 +7087,25 @@ app.post("/webhook", loadTenantContext, async (req, res) => {
   const waMessageId = message.id;
   const rawPayload = body.entry?.[0]?.changes?.[0]?.value;
 
-  // Extra logging for debugging tenant resolution and incoming number
-  log(`[WEBHOOK] Incoming WhatsApp message from: ${from} | text: ${text || '[non-text]'}`, "DEBUG");
-  log(`[WEBHOOK] Tenant resolution: isTenantAware=${req.isTenantAware} | tenantName=${req.tenant?.client_name || 'null'} | tenantPhone=${req.tenant?.client_phone || 'null'} | tenantId=${req.tenant?.id || 'null'}`, "DEBUG");
+  // Extract the destination (bot) number from webhook payload
+  const destNumber = rawPayload?.metadata?.display_phone_number || rawPayload?.metadata?.phone_number_id || null;
+  log(`[WEBHOOK] Incoming WhatsApp message from: ${from} | to bot: ${destNumber} | text: ${text || '[non-text]'}` , "DEBUG");
+
+  // Always resolve tenant context using the destination number
+  let tenant = null;
+  let isTenantAware = false;
+  if (destNumber) {
+    tenant = await findTenantByPhone(destNumber, true);
+    isTenantAware = !!tenant;
+  }
+  log(`[WEBHOOK] Tenant resolution: isTenantAware=${isTenantAware} | tenantName=${tenant?.client_name || 'null'} | tenantPhone=${tenant?.client_phone || 'null'} | tenantId=${tenant?.id || 'null'}` , "DEBUG");
+
+  // If tenant not found, respond with branded fallback (never OpenAI error)
+  if (!isTenantAware) {
+    log(`[WEBHOOK] No tenant found for bot number: ${destNumber}. Sending branded fallback, no LLM call.`);
+    await sendMessage(from, `👋 This bot is not yet configured for this number (${destNumber}). Please contact support or try again later.`);
+    return res.sendStatus(200);
+  }
 
   // NOTE for System Update; Find a way of handling different formats (text, graphics - videos, audio, and images.)
   if (!text) return res.sendStatus(200);
