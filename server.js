@@ -1459,10 +1459,13 @@ async function findTenantByPhone(tenantPhone, requireActive = true) {
   const candidates = buildPhoneCandidates(tenantPhone);
   if (!candidates.length) return null;
 
+  // Query for tenants where either client_phone or whatsapp_phone_number_id matches
   const { data, error } = await supabase
     .from("bot_tenants")
     .select("*")
-    .in("client_phone", candidates)
+    .or(
+      `client_phone.in.(${candidates.join(',')}),whatsapp_phone_number_id.in.(${candidates.join(',')})`
+    )
     .order("updated_at", { ascending: false })
     .limit(20);
 
