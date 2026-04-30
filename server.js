@@ -8872,7 +8872,7 @@ async function generateReply(
         log("HuggingFace error: No choices returned", "ERROR");
       }
     } catch (hfErr) {
-      log(`HuggingFace error: ${hfErr.message}", "ERROR");
+      log(`HuggingFace error: ${hfErr.message}`, "ERROR");
     }
   } else {
     log("HuggingFace key missing; skipping HuggingFace call", "SYSTEM");
