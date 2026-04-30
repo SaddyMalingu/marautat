@@ -1,5 +1,4 @@
-﻿<!-- moved renderDirectMessage into main script block below -->
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
@@ -159,18 +158,17 @@
     <div class="nav-item" data-sec="orders"><span class="nav-icon"><i class="fa-solid fa-cart-shopping"></i></span>Orders</div>
 
     <div class="sidebar-label">Bot</div>
-    <div class="nav-item" data-sec="direct-message"><span class="nav-icon"><i class="fa-brands fa-whatsapp"></i></span>Send WhatsApp Message</div>
-    <div class="nav-item" data-sec="training"><span class="nav-icon"><i class="fa-solid fa-robot"></i></span>Bot Training</div>
-    <div class="nav-item" data-sec="bot-config"><span class="nav-icon"><i class="fa-solid fa-sliders"></i></span>Bot Config</div>
-    <div class="nav-item" data-sec="broadcast"><span class="nav-icon"><i class="fa-solid fa-bullhorn"></i></span>Bulk Message</div>
-    <div class="nav-item" data-sec="abandoned"><span class="nav-icon"><i class="fa-solid fa-cart-shopping"></i></span>Cart Recovery</div>
-    <div class="nav-item" data-sec="insights"><span class="nav-icon"><i class="fa-solid fa-lightbulb"></i></span>Insights</div>
-    <div class="nav-item" data-sec="auto-responses"><span class="nav-icon"><i class="fa-solid fa-reply"></i></span>Auto-Responses</div>
-    <div class="nav-item" data-sec="scheduled"><span class="nav-icon"><i class="fa-solid fa-clock"></i></span>Scheduled Msgs</div>
-    <div class="nav-item" data-sec="workflows"><span class="nav-icon"><i class="fa-solid fa-diagram-project"></i></span>Workflows</div>
-    <div class="nav-item" data-sec="escalations"><span class="nav-icon"><i class="fa-solid fa-headset"></i></span>Escalation Queue</div>
-    <div class="nav-item" data-sec="agent-performance"><span class="nav-icon"><i class="fa-solid fa-user-gear"></i></span>Agent Performance</div>
-    <div class="nav-item" data-sec="onboarding"><span class="nav-icon"><i class="fa-solid fa-user-plus"></i></span>Onboarding</div>
+      <div class="nav-item" data-sec="training"><span class="nav-icon"><i class="fa-solid fa-robot"></i></span>Bot Training</div>
+      <div class="nav-item" data-sec="bot-config"><span class="nav-icon"><i class="fa-solid fa-sliders"></i></span>Bot Config</div>
+      <div class="nav-item" data-sec="broadcast"><span class="nav-icon"><i class="fa-solid fa-bullhorn"></i></span>Bulk Message</div>
+      <div class="nav-item" data-sec="abandoned"><span class="nav-icon"><i class="fa-solid fa-cart-shopping"></i></span>Cart Recovery</div>
+      <div class="nav-item" data-sec="insights"><span class="nav-icon"><i class="fa-solid fa-lightbulb"></i></span>Insights</div>
+      <div class="nav-item" data-sec="auto-responses"><span class="nav-icon"><i class="fa-solid fa-reply"></i></span>Auto-Responses</div>
+      <div class="nav-item" data-sec="scheduled"><span class="nav-icon"><i class="fa-solid fa-clock"></i></span>Scheduled Msgs</div>
+      <div class="nav-item" data-sec="workflows"><span class="nav-icon"><i class="fa-solid fa-diagram-project"></i></span>Workflows</div>
+      <div class="nav-item" data-sec="escalations"><span class="nav-icon"><i class="fa-solid fa-headset"></i></span>Escalation Queue</div>
+      <div class="nav-item" data-sec="agent-performance"><span class="nav-icon"><i class="fa-solid fa-user-gear"></i></span>Agent Performance</div>
+      <div class="nav-item" data-sec="onboarding"><span class="nav-icon"><i class="fa-solid fa-user-plus"></i></span>Onboarding</div>
 
     <div class="sidebar-label">Settings</div>
     <div class="nav-item" data-sec="profile"><span class="nav-icon"><i class="fa-solid fa-user"></i></span>Profile</div>
@@ -193,44 +191,6 @@
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-// Direct WhatsApp Message section
-function renderDirectMessage() {
-  document.getElementById('spa').innerHTML = `
-    <div class="section-hdr"><i class="fa-brands fa-whatsapp"></i> Send WhatsApp Message</div>
-    <div class="panel">
-      <form id="sendDirectMessageForm" class="d-grid gap-2">
-        <input class="form-control form-control-sm" id="directMessagePhone" placeholder="Recipient WhatsApp Number (e.g. 2547XXXXXXXX)" required />
-        <textarea class="form-control form-control-sm" id="directMessageText" rows="2" placeholder="Type your message here..." required></textarea>
-        <button class="btn btn-sm btn-success" type="submit"><i class="fa-brands fa-whatsapp me-1"></i>Send Message</button>
-        <div class="small mt-1" id="directMessageResult"></div>
-      </form>
-    </div>
-  `;
-  document.getElementById('sendDirectMessageForm').onsubmit = async function(e) {
-    e.preventDefault();
-    const phone = document.getElementById('directMessagePhone').value.trim();
-    const text = document.getElementById('directMessageText').value.trim();
-    const result = document.getElementById('directMessageResult');
-    result.textContent = 'Sending...';
-    try {
-      const res = await apiJson('/tenant/api/send-message', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone, text })
-      });
-      if (res.ok && res.data && res.data.ok) {
-        result.textContent = 'Message sent!';
-        result.className = 'small text-success';
-      } else {
-        result.textContent = (res.data && res.data.error) || 'Failed to send message.';
-        result.className = 'small text-danger';
-      }
-    } catch (err) {
-      result.textContent = 'Error sending message.';
-      result.className = 'small text-danger';
-    }
-  };
-}
 "use strict";
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• STATE â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 const STORAGE_KEY = 'td_v3';
@@ -329,7 +289,7 @@ function go(sec) {
     if (main) main.scrollTo({ top: 0, behavior: 'smooth' });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, 0);
-  const map = { home:renderHome, revenue:renderRevenue, analytics:renderAnalytics, customers:renderCustomers, search:renderSearch, preferences:renderPreferences, favorites:renderFavorites, referrals:renderReferrals, catalog:renderCatalog, performance:renderPerformance, suppliers:renderSuppliers, orders:renderOrders, training:renderTraining, 'bot-config':renderBotConfig, profile:renderProfile, smtp:renderSmtp, payments:renderPayments, 'add-agent':renderAddAgent, assignments:renderAssignments, reviews:renderReviews, broadcast:renderBroadcast, abandoned:renderAbandoned, insights:renderInsights, 'auto-responses':renderAutoResponses, scheduled:renderScheduled, workflows:renderWorkflows, escalations:renderEscalations, 'agent-performance':renderAgentPerformance, onboarding:renderOnboarding, help:renderHelp, 'direct-message':renderDirectMessage };
+  const map = { home:renderHome, revenue:renderRevenue, analytics:renderAnalytics, customers:renderCustomers, search:renderSearch, preferences:renderPreferences, favorites:renderFavorites, referrals:renderReferrals, catalog:renderCatalog, performance:renderPerformance, suppliers:renderSuppliers, orders:renderOrders, training:renderTraining, 'bot-config':renderBotConfig, profile:renderProfile, smtp:renderSmtp, payments:renderPayments, 'add-agent':renderAddAgent, assignments:renderAssignments, reviews:renderReviews, broadcast:renderBroadcast, abandoned:renderAbandoned, insights:renderInsights, 'auto-responses':renderAutoResponses, scheduled:renderScheduled, workflows:renderWorkflows, escalations:renderEscalations, 'agent-performance':renderAgentPerformance, onboarding:renderOnboarding, help:renderHelp };
   (map[sec] || renderHome)();
 }
 

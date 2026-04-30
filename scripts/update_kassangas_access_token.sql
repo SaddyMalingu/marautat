@@ -1,0 +1,7 @@
+-- Update Kassangas tenant with the new WhatsApp access token
+UPDATE bot_tenants
+SET whatsapp_access_token = 'EAASWA6BaZCTIBRbCL5n1wWZCwY2KKTAKCTA2MlWNSSUWCVlYQpPZCuMWK4Nq2fvD5iQZC96pVpwzPZAc07BD4NTkyZAR1XpoLa077mzEFpxN7IXx6khayqw8moZA1vyq7V76eo9qWMJ9ynEWcbpQn3SbF0bvwmAXyJKgCmDVGTpIDYw7oFwKYbRZAk7fvuEHWZAh0cczCbEODCvOZA9ZBuH2b7uhqXbvfptg6sqNckYCP15QSyoBGZAZCPzGW1D0q6ON3hRfTGjRS2NZCUlx9I2RHUK8tb7AZCe90ZBsq9KLwgZDZD',
+    updated_at = NOW()
+WHERE client_phone = '254737245555';
+
+-- Replace with the long-lived token when available.

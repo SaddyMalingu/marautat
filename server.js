@@ -7100,11 +7100,26 @@ app.post("/webhook", loadTenantContext, async (req, res) => {
   }
   log(`[WEBHOOK] Tenant resolution: isTenantAware=${isTenantAware} | tenantName=${tenant?.client_name || 'null'} | tenantPhone=${tenant?.client_phone || 'null'} | tenantId=${tenant?.id || 'null'}` , "DEBUG");
 
-  // If tenant not found, respond with branded fallback (never OpenAI error)
+
+  // If tenant not found, check if this is the Alphadome main number
   if (!isTenantAware) {
-    log(`[WEBHOOK] No tenant found for bot number: ${destNumber}. Sending branded fallback, no LLM call.`);
-    await sendMessage(from, `👋 This bot is not yet configured for this number (${destNumber}). Please contact support or try again later.`);
-    return res.sendStatus(200);
+    if (destNumber && [
+      '254786817637',
+      '+254786817637',
+      '0786817637',
+      '786817637',
+      '254786817637'.replace(/^254/, '0'), // 0786817637
+    ].includes(destNumber.replace(/[^0-9]/g, '').replace(/^0/, '254'))) {
+      log(`[WEBHOOK] Platform-aware logic triggered for Alphadome main number (${destNumber}). Running onboarding and advanced flows.`);
+      // Set req.tenant to null and req.isTenantAware to false to trigger platform logic
+      req.tenant = null;
+      req.isTenantAware = false;
+      // Continue to main platform logic (do not return)
+    } else {
+      log(`[WEBHOOK] No tenant found for bot number: ${destNumber}. Sending branded fallback, no LLM call.`);
+      await sendMessage(from, `👋 This bot is not yet configured for this number (${destNumber}). Please contact support or try again later.`);
+      return res.sendStatus(200);
+    }
   }
 
   // NOTE for System Update; Find a way of handling different formats (text, graphics - videos, audio, and images.)
