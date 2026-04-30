@@ -8705,7 +8705,6 @@ async function generateReply(
   dbContext = ""
 ) {
   const creds = getDecryptedCredentials(tenant);
-  const openaiClient = new OpenAI({ apiKey: creds.aiApiKey });
   const systemMessage = {
     role: "system",
     content: getSystemPrompt(tenant, templates || [], trainingData || []),
@@ -8778,6 +8777,7 @@ async function generateReply(
   if (creds.aiApiKey) {
     log("LLM path: OpenAI", "SYSTEM");
     try {
+      const openaiClient = new OpenAI({ apiKey: creds.aiApiKey });
       const start = Date.now();
       const completion = await openaiClient.chat.completions.create({
         model: creds.aiModel,
