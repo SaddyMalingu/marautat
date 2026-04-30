@@ -308,12 +308,6 @@ app.get('/agent-demo-modal.html', (req, res) => {
 
 
 // Only instantiate OpenAI if the API key is present
-let openai = null;
-if (process.env.OPENAI_API_KEY) {
-  openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-  });
-}
 
 const supabase = createClient(
   process.env.SB_URL,
