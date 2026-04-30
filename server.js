@@ -8750,12 +8750,13 @@ async function generateReply(
     };
   }
 
-  // If tenant-aware but no AI providers configured, give a safe fallback
-  if (tenant && !creds.aiApiKey && !process.env.OPENROUTER_KEY && !process.env.HF_API_KEY) {
-    log("No LLM credentials available; returning guardrail reply", "SYSTEM");
+
+  // If no LLM credentials at all, return static fallback
+  if (!creds.aiApiKey && !process.env.OPENROUTER_KEY && !process.env.HF_API_KEY) {
+    log("No LLM credentials available; returning static fallback", "SYSTEM");
     return {
       type: "text",
-      text: "I can only answer from the brand catalog and approved brand data. Please share a product name, SKU, or ask for a human agent.",
+      text: fallbackMessage(),
       meta: { llm_used: false, reason: "no_llm_credentials" },
     };
   }
@@ -8771,6 +8772,7 @@ async function generateReply(
     ...(contextMessages || []),
     { role: "user", content: userMessage },
   ];
+
 
   // 1️⃣ Try OpenAI first (only if key is present)
   if (creds.aiApiKey) {
@@ -8793,16 +8795,87 @@ async function generateReply(
     } catch (openAIErr) {
       incrementErrorCount();
       log(`${creds.aiProvider} error: ${openAIErr.message}`, "ERROR");
-      if (!process.env.OPENROUTER_KEY && !process.env.HF_API_KEY) {
-        return {
-          type: "text",
-          text: fallbackMessage(),
-          meta: { llm_used: false, reason: "openai_error", llm_error: openAIErr.message },
-        };
-      }
+      // Continue to OpenRouter/HF fallback below
     }
   } else {
     log("OpenAI key missing; skipping OpenAI call", "SYSTEM");
+  }
+
+  // 2️⃣ Fallback to OpenRouter if key is present
+  if (process.env.OPENROUTER_KEY) {
+    try {
+      log("LLM path: OpenRouter", "SYSTEM");
+      const start = Date.now();
+      const routerResponse = await axios.post(
+        "https://api.openrouter.ai/v1/chat/completions",
+        {
+          model: "meta-llama/llama-3.3-70b-instruct:free",
+          messages: messageStack,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${process.env.OPENROUTER_KEY}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (routerResponse.data?.choices?.length > 0) {
+        const routerReply = routerResponse.data.choices[0].message.content;
+        const latency = Date.now() - start;
+        log(`✓ OpenRouter reply: ${routerReply.substring(0, 50)}...`, "AI");
+        return {
+          type: "text",
+          text: routerReply,
+          meta: { llm_used: true, llm_provider: "openrouter", llm_latency_ms: latency },
+        };
+      } else {
+        log("OpenRouter error: No choices returned", "ERROR");
+      }
+    } catch (routerErr) {
+      log(`OpenRouter error: ${routerErr.message}`, "ERROR");
+      // Continue to HF fallback below
+    }
+  } else {
+    log("OpenRouter key missing; skipping OpenRouter call", "SYSTEM");
+  }
+
+  // 3️⃣ Fallback to HuggingFace if key is present
+  if (process.env.HF_API_KEY) {
+    try {
+      log("LLM path: HuggingFace", "SYSTEM");
+      const start = Date.now();
+      const hfResponse = await axios.post(
+        "https://router.huggingface.co/v1/chat/completions",
+        {
+          model: "meta-llama/Llama-3.1-8B-Instruct:novita",
+          messages: messageStack,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${process.env.HF_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (hfResponse.data?.choices?.length > 0) {
+        const hfReply = hfResponse.data.choices[0].message.content;
+        const latency = Date.now() - start;
+        log(`✓ HuggingFace reply: ${hfReply.substring(0, 50)}...`, "AI");
+        return {
+          type: "text",
+          text: hfReply,
+          meta: { llm_used: true, llm_provider: "huggingface", llm_latency_ms: latency },
+        };
+      } else {
+        log("HuggingFace error: No choices returned", "ERROR");
+      }
+    } catch (hfErr) {
+      log(`HuggingFace error: ${hfErr.message}", "ERROR");
+    }
+  } else {
+    log("HuggingFace key missing; skipping HuggingFace call", "SYSTEM");
   }
 
   // 2️⃣ Fallback to OpenRouter Meta Llama 3.3 free
