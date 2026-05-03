@@ -7168,62 +7168,6 @@ app.post("/webhook", loadTenantContext, async (req, res) => {
     }
     return res.sendStatus(200);
   }
-    // STEP 1: Find or create user (moved up so userData is defined)
-    let { data: userData, error: userErr } = await supabase
-      .from("users")
-      .select("id, phone")
-      .eq("phone", from)
-      .maybeSingle();
-
-    if (userErr) throw userErr;
-
-    if (!userData) {
-      const { data: newUser, error: newUserErr } = await supabase
-        .from("users")
-        .insert([{ phone: from, full_name: "Unknown User" }])
-        .select("id")
-        .single();
-
-      if (newUserErr) throw newUserErr;
-      userData = newUser;
-      log(`New user created: ${from}`, "SYSTEM");
-      
-      // Capture first-touch attribution for Writer's Flow
-      await mergeUserSessionContext(from, {
-        first_touch_source: "writers_flow",
-        first_touch_date: new Date().toISOString(),
-      });
-    }
-
-    // Extract context/keywords (simple example: everything after the trigger)
-    let keywords = [];
-    let context = text;
-    // Example: "/writersflow AI jobs" or "I want to pitch to a restaurant to supply my products"
-    if (lowerText.startsWith('/writersflow')) {
-      keywords = text.split(' ').slice(1);
-      context = keywords.join(' ');
-    } else {
-      // For natural language, use the whole message as context
-      keywords = text.split(' ').filter(w => w.length > 2);
-    }
-
-    // Call Writer's Flow orchestrator (ESM compatible)
-    try {
-      await sendMessage(from, '⏳ Processing your request with Writer\'s Flow...');
-      const writersFlowModule = await import('./writers_flow/orchestrator.js');
-      const writersFlow = writersFlowModule.default || writersFlowModule;
-      const result = await writersFlow({
-        keywords,
-        userId: userData.id,
-        fromEmail: process.env.SMTP_USER, // or map WhatsApp user to email if available
-        context,
-      });
-      await sendMessage(from, `✅ Writer's Flow completed. Opportunities contacted: ${result.sent}`);
-    } catch (err) {
-      await sendMessage(from, `⚠️ Writer's Flow failed: ${err.message}`);
-    }
-    return res.sendStatus(200);
-  }
 
   log(`Received from ${from}: ${text}`, "INCOMING");
 
