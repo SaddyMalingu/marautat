@@ -122,6 +122,9 @@ Write a ${tone} email for the following lead. The email must:
 - For partnership: focus on mutual audience overlap and collaboration potential
 - For employment: highlight relevant skills and genuine interest in their work
 
+IMPORTANT: At the end of the email, always include this line (customize wording naturally):
+"Learn more at https://alphadome.onrender.com/ or chat with us on WhatsApp: +254786817637 (https://wa.me/254786817637)"
+
 Lead details:
 Organization: ${lead.org_name || lead.title || 'Unknown'}
 ${recipientLine}
