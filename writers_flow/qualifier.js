@@ -9,12 +9,28 @@
 
 let useHF = process.env.LLM_PROVIDER === 'hf';
 let openai, hfChatCompletion;
-if (!useHF) {
-  const OpenAI = (await import('openai')).default;
-  openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-} else {
-  hfChatCompletion = (await import('./hfLLM.js')).hfChatCompletion;
-}
+const tryInitOpenAI = async () => {
+  try {
+    const OpenAI = (await import('openai')).default;
+    if (process.env.OPENAI_API_KEY) {
+      openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+      return true;
+    }
+  } catch {}
+  return false;
+};
+const tryInitHF = async () => {
+  try {
+    hfChatCompletion = (await import('./hfLLM.js')).hfChatCompletion;
+    return true;
+  } catch {}
+  return false;
+};
+const ensureProviders = async () => {
+  if (!openai && process.env.OPENAI_API_KEY) await tryInitOpenAI();
+  if (!hfChatCompletion) await tryInitHF();
+};
+await ensureProviders();
 
 const ALPHADOME_CONTEXT = `
 Alphadome is a WhatsApp-native AI sales and customer engagement platform for small and medium businesses.
@@ -72,37 +88,49 @@ Suggested type: ${lead.outreachType || 'pitch'}
 Industry hint: ${lead.industry || 'unknown'}
 `.trim();
 
-  try {
-    let content;
-    if (useHF) {
-      content = await hfChatCompletion({ prompt, max_tokens: 300, temperature: 0.3 });
-    } else {
-      const res = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages: [{ role: 'user', content: prompt }],
-        response_format: { type: 'json_object' },
-        temperature: 0.3,
-        max_tokens: 300,
-      });
-      content = res.choices[0].message.content;
+  await ensureProviders();
+  // Try OpenAI first, then HF fallback
+  let lastErr = null;
+  for (const provider of ['openai', 'hf']) {
+    try {
+      let content;
+      if (provider === 'openai' && openai) {
+        const res = await openai.chat.completions.create({
+          model: 'gpt-4o-mini',
+          messages: [{ role: 'user', content: prompt }],
+          response_format: { type: 'json_object' },
+          temperature: 0.3,
+          max_tokens: 300,
+        });
+        content = res.choices[0].message.content;
+        console.log(`[Qualifier] Used OpenAI for ${lead.url}`);
+      } else if (provider === 'hf' && hfChatCompletion) {
+        content = await hfChatCompletion({ prompt, max_tokens: 300, temperature: 0.3 });
+        console.log(`[Qualifier] Used Hugging Face for ${lead.url}`);
+      } else {
+        continue;
+      }
+      const parsed = JSON.parse(content);
+      return {
+        ...lead,
+        relevance_score: parsed.relevance_score ?? 0,
+        should_skip: parsed.should_skip ?? false,
+        skip_reason: parsed.skip_reason ?? null,
+        outreach_type: parsed.recommended_outreach_type || lead.outreachType || 'pitch',
+        org_name: parsed.org_name || null,
+        contact_name: parsed.contact_name || null,
+        industry: parsed.industry || lead.industry || null,
+        country: parsed.country || null,
+        why_relevant: parsed.why_relevant || null,
+        llm_provider: provider,
+      };
+    } catch (err) {
+      lastErr = err;
+      continue;
     }
-    const parsed = JSON.parse(content);
-    return {
-      ...lead,
-      relevance_score: parsed.relevance_score ?? 0,
-      should_skip: parsed.should_skip ?? false,
-      skip_reason: parsed.skip_reason ?? null,
-      outreach_type: parsed.recommended_outreach_type || lead.outreachType || 'pitch',
-      org_name: parsed.org_name || null,
-      contact_name: parsed.contact_name || null,
-      industry: parsed.industry || lead.industry || null,
-      country: parsed.country || null,
-      why_relevant: parsed.why_relevant || null,
-    };
-  } catch (err) {
-    console.error(`[Qualifier] Error qualifying lead ${lead.url}: ${err.message}`);
-    return { ...lead, relevance_score: 0, should_skip: true, skip_reason: 'AI qualification failed' };
   }
+  console.error(`[Qualifier] Error qualifying lead ${lead.url}: ${lastErr?.message}`);
+  return { ...lead, relevance_score: 0, should_skip: true, skip_reason: 'AI qualification failed' };
 }
 
 // ──────────────────────────────────────────────
@@ -153,30 +181,41 @@ Respond in JSON only:
 }
 `.trim();
 
-  try {
-    let content;
-    if (useHF) {
-      content = await hfChatCompletion({ prompt, max_tokens: 700, temperature: 0.8 });
-    } else {
-      const res = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages: [{ role: 'user', content: prompt }],
-        response_format: { type: 'json_object' },
-        temperature: 0.8,
-        max_tokens: 700,
-      });
-      content = res.choices[0].message.content;
+  await ensureProviders();
+  let lastErr = null;
+  for (const provider of ['openai', 'hf']) {
+    try {
+      let content;
+      if (provider === 'openai' && openai) {
+        const res = await openai.chat.completions.create({
+          model: 'gpt-4o-mini',
+          messages: [{ role: 'user', content: prompt }],
+          response_format: { type: 'json_object' },
+          temperature: 0.8,
+          max_tokens: 700,
+        });
+        content = res.choices[0].message.content;
+        console.log(`[Generator] Used OpenAI for outreach ${lead.url}`);
+      } else if (provider === 'hf' && hfChatCompletion) {
+        content = await hfChatCompletion({ prompt, max_tokens: 700, temperature: 0.8 });
+        console.log(`[Generator] Used Hugging Face for outreach ${lead.url}`);
+      } else {
+        continue;
+      }
+      const parsed = JSON.parse(content);
+      return {
+        subject: parsed.subject || 'Hello from Alphadome',
+        body: parsed.body || '',
+        quality_score: typeof parsed.quality_score === 'number' ? parsed.quality_score : 70,
+        llm_provider: provider,
+      };
+    } catch (err) {
+      lastErr = err;
+      continue;
     }
-    const parsed = JSON.parse(content);
-    return {
-      subject: parsed.subject || 'Hello from Alphadome',
-      body: parsed.body || '',
-      quality_score: typeof parsed.quality_score === 'number' ? parsed.quality_score : 70,
-    };
-  } catch (err) {
-    console.error(`[Generator] Error generating outreach for ${lead.url}: ${err.message}`);
-    return { subject: 'Hello from Alphadome', body: '', quality_score: 0 };
   }
+  console.error(`[Generator] Error generating outreach for ${lead.url}: ${lastErr?.message}`);
+  return { subject: 'Hello from Alphadome', body: '', quality_score: 0 };
 }
 
 // ──────────────────────────────────────────────
@@ -202,22 +241,32 @@ Outreach type: ${lead.outreach_type}
 Return only the WhatsApp message text, no JSON wrapper.
 `.trim();
 
-  try {
-    let content;
-    if (useHF) {
-      content = await hfChatCompletion({ prompt, max_tokens: 400, temperature: 0.8 });
-    } else {
-      const res = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.8,
-        max_tokens: 400,
-      });
-      content = res.choices[0].message.content;
+  await ensureProviders();
+  let lastErr = null;
+  for (const provider of ['openai', 'hf']) {
+    try {
+      let content;
+      if (provider === 'openai' && openai) {
+        const res = await openai.chat.completions.create({
+          model: 'gpt-4o-mini',
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.8,
+          max_tokens: 400,
+        });
+        content = res.choices[0].message.content;
+        console.log(`[Generator] Used OpenAI for WhatsApp message ${lead.url}`);
+      } else if (provider === 'hf' && hfChatCompletion) {
+        content = await hfChatCompletion({ prompt, max_tokens: 400, temperature: 0.8 });
+        console.log(`[Generator] Used Hugging Face for WhatsApp message ${lead.url}`);
+      } else {
+        continue;
+      }
+      return content.trim();
+    } catch (err) {
+      lastErr = err;
+      continue;
     }
-    return content.trim();
-  } catch (err) {
-    console.error(`[Generator] WhatsApp message failed: ${err.message}`);
-    return emailBody.slice(0, 800);
   }
+  console.error(`[Generator] WhatsApp message failed: ${lastErr?.message}`);
+  return emailBody.slice(0, 800);
 }
