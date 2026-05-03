@@ -7,7 +7,13 @@ export interface WebSocketLike {
   readonly url: string
   readonly protocol: string
 
+  /**
+   * Closes the socket, optionally providing a close code and reason.
+   */
   close(code?: number, reason?: string): void
+  /**
+   * Sends data through the socket using the underlying implementation.
+   */
   send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void
 
   onopen: ((this: any, ev: Event) => any) | null
@@ -15,7 +21,13 @@ export interface WebSocketLike {
   onclose: ((this: any, ev: CloseEvent) => any) | null
   onerror: ((this: any, ev: Event) => any) | null
 
+  /**
+   * Registers an event listener on the socket (compatible with browser WebSocket API).
+   */
   addEventListener(type: string, listener: EventListener): void
+  /**
+   * Removes a previously registered event listener.
+   */
   removeEventListener(type: string, listener: EventListener): void
 
   // Add additional properties that may exist on WebSocket implementations
@@ -32,7 +44,14 @@ export interface WebSocketEnvironment {
   workaround?: string
 }
 
+/**
+ * Utilities for creating WebSocket instances across runtimes.
+ */
 export class WebSocketFactory {
+  /**
+   * Static-only utility – prevent instantiation.
+   */
+  private constructor() {}
   private static detectEnvironment(): WebSocketEnvironment {
     if (typeof WebSocket !== 'undefined') {
       return { type: 'native', constructor: WebSocket }
@@ -73,9 +92,10 @@ export class WebSocketFactory {
       }
     }
 
-    if (typeof process !== 'undefined') {
-      // Use dynamic property access to avoid Next.js Edge Runtime static analysis warnings
-      const processVersions = (process as any)['versions']
+    // Use dynamic property access to avoid Next.js Edge Runtime static analysis warnings
+    const _process = (globalThis as any)['process']
+    if (_process) {
+      const processVersions = _process['versions']
       if (processVersions && processVersions['node']) {
         // Remove 'v' prefix if present and parse the major version
         const versionString = processVersions['node']
@@ -115,6 +135,21 @@ export class WebSocketFactory {
     }
   }
 
+  /**
+   * Returns the best available WebSocket constructor for the current runtime.
+   *
+   * @category Realtime
+   *
+   * @example Example with error handling
+   * ```ts
+   * try {
+   *   const WS = WebSocketFactory.getWebSocketConstructor()
+   *   const socket = new WS('wss://example.com/socket')
+   * } catch (error) {
+   *   console.error('WebSocket not available in this environment.', error)
+   * }
+   * ```
+   */
   public static getWebSocketConstructor(): typeof WebSocket {
     const env = this.detectEnvironment()
     if (env.constructor) {
@@ -127,11 +162,19 @@ export class WebSocketFactory {
     throw new Error(errorMessage)
   }
 
-  public static createWebSocket(url: string | URL, protocols?: string | string[]): WebSocketLike {
-    const WS = this.getWebSocketConstructor()
-    return new WS(url, protocols)
-  }
-
+  /**
+   * Detects whether the runtime can establish WebSocket connections.
+   *
+   * @category Realtime
+   *
+   * @example Example in a Node.js script
+   * ```ts
+   * if (!WebSocketFactory.isWebSocketSupported()) {
+   *   console.error('WebSockets are required for this script.')
+   *   process.exitCode = 1
+   * }
+   * ```
+   */
   public static isWebSocketSupported(): boolean {
     try {
       const env = this.detectEnvironment()
