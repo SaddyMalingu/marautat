@@ -1,5 +1,6 @@
 
 import express from "express";
+import nlp from "compromise";
 import axios from "axios";
 import crypto from "crypto";
 import fs from "fs";
@@ -7120,20 +7121,53 @@ app.post("/webhook", loadTenantContext, async (req, res) => {
   if (!text) return res.sendStatus(200);
 
   // === CONTEXT-AWARE INTENT DETECTION FOR WRITER'S FLOW ===
-  // Simple keyword/intent detection (can be replaced with LLM/NLP for advanced use)
-  const writersFlowTriggers = [
-    '/writersflow',
-    'writer\'s flow',
-    'pitch to',
-    'supply my products',
-    'find opportunity',
-    'reach out to',
-    'send pitch',
-  ];
-  const lowerText = text.toLowerCase();
-  const matchedTrigger = writersFlowTriggers.find(trigger => lowerText.includes(trigger));
+  // Use compromise NLP for robust intent detection and entity extraction
+  const doc = nlp(text);
+  // Detect action/intent
+  const action = doc.match('(send|pitch|outreach|contact|find|help|connect|message)').out('text');
+  // Extract quantity (number)
+  let quantity = null;
+  const numbers = doc.numbers().toNumber().out('array');
+  if (numbers.length > 0) quantity = parseInt(numbers[0], 10);
+  // Extract sector/industry (look for noun after 'in', 'for', 'to', or as a main noun)
+  let sector = null;
+  const sectorPhrase = doc.match('(in|for|to) #Noun+').out('text') || doc.match('#Noun+ sector').out('text') || doc.match('#Noun+ industry').out('text');
+  if (sectorPhrase) {
+    sector = sectorPhrase.replace(/^(in|for|to)\s+/i, '').replace(/\s+(sector|industry)$/i, '').trim();
+  } else {
+    // fallback: look for a noun that isn't a generic action
+    const nouns = doc.nouns().out('array').filter(n => !['pitch','outreach','message','help','contact','find','send','connect','company','companies','organization','organizations','business','businesses','client','clients','group','groups'].includes(n.toLowerCase()));
+    if (nouns.length > 0) sector = nouns[0];
+  }
+  // Only trigger if action and (sector or quantity or 'pitch'/'outreach' present)
+  const hasIntent = action && (sector || quantity || /pitch|outreach/i.test(text));
 
-  if (matchedTrigger) {
+  if (hasIntent) {
+    // Compose keywords/context for orchestrator
+    let keywords = [];
+    let context = text;
+    if (quantity) keywords.push(quantity.toString());
+    if (sector) keywords.push(sector);
+    if (keywords.length === 0) keywords = text.split(' ').filter(w => w.length > 2);
+
+    try {
+      await sendMessage(from, '⏳ Processing your request with Writer\'s Flow...');
+      const writersFlowModule = await import('./writers_flow/orchestrator.js');
+      const writersFlow = writersFlowModule.default || writersFlowModule;
+      const result = await writersFlow({
+        keywords,
+        userId: userData?.id || null,
+        fromEmail: process.env.SMTP_USER,
+        context,
+        quantity,
+        sector,
+      });
+      await sendMessage(from, `✅ Writer's Flow completed. Opportunities contacted: ${result.sent}`);
+    } catch (err) {
+      await sendMessage(from, `⚠️ Writer's Flow failed: ${err.message}`);
+    }
+    return res.sendStatus(200);
+  }
     // STEP 1: Find or create user (moved up so userData is defined)
     let { data: userData, error: userErr } = await supabase
       .from("users")

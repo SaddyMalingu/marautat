@@ -6,9 +6,15 @@
  *  3. Self-evaluate message quality (returns score 0-100)
  */
 
-import OpenAI from 'openai';
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+let useHF = process.env.LLM_PROVIDER === 'hf';
+let openai, hfChatCompletion;
+if (!useHF) {
+  const OpenAI = (await import('openai')).default;
+  openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+} else {
+  hfChatCompletion = (await import('./hfLLM.js')).hfChatCompletion;
+}
 
 const ALPHADOME_CONTEXT = `
 Alphadome is a WhatsApp-native AI sales and customer engagement platform for small and medium businesses.
@@ -67,14 +73,20 @@ Industry hint: ${lead.industry || 'unknown'}
 `.trim();
 
   try {
-    const res = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [{ role: 'user', content: prompt }],
-      response_format: { type: 'json_object' },
-      temperature: 0.3,
-      max_tokens: 300,
-    });
-    const parsed = JSON.parse(res.choices[0].message.content);
+    let content;
+    if (useHF) {
+      content = await hfChatCompletion({ prompt, max_tokens: 300, temperature: 0.3 });
+    } else {
+      const res = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'user', content: prompt }],
+        response_format: { type: 'json_object' },
+        temperature: 0.3,
+        max_tokens: 300,
+      });
+      content = res.choices[0].message.content;
+    }
+    const parsed = JSON.parse(content);
     return {
       ...lead,
       relevance_score: parsed.relevance_score ?? 0,
@@ -142,14 +154,20 @@ Respond in JSON only:
 `.trim();
 
   try {
-    const res = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [{ role: 'user', content: prompt }],
-      response_format: { type: 'json_object' },
-      temperature: 0.8,
-      max_tokens: 700,
-    });
-    const parsed = JSON.parse(res.choices[0].message.content);
+    let content;
+    if (useHF) {
+      content = await hfChatCompletion({ prompt, max_tokens: 700, temperature: 0.8 });
+    } else {
+      const res = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'user', content: prompt }],
+        response_format: { type: 'json_object' },
+        temperature: 0.8,
+        max_tokens: 700,
+      });
+      content = res.choices[0].message.content;
+    }
+    const parsed = JSON.parse(content);
     return {
       subject: parsed.subject || 'Hello from Alphadome',
       body: parsed.body || '',
@@ -185,13 +203,19 @@ Return only the WhatsApp message text, no JSON wrapper.
 `.trim();
 
   try {
-    const res = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.8,
-      max_tokens: 400,
-    });
-    return res.choices[0].message.content.trim();
+    let content;
+    if (useHF) {
+      content = await hfChatCompletion({ prompt, max_tokens: 400, temperature: 0.8 });
+    } else {
+      const res = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.8,
+        max_tokens: 400,
+      });
+      content = res.choices[0].message.content;
+    }
+    return content.trim();
   } catch (err) {
     console.error(`[Generator] WhatsApp message failed: ${err.message}`);
     return emailBody.slice(0, 800);
