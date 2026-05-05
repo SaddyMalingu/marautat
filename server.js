@@ -7142,6 +7142,28 @@ app.post("/webhook", loadTenantContext, async (req, res) => {
   // Only trigger if action and (sector or quantity or 'pitch'/'outreach' present)
   const hasIntent = action && (sector || quantity || /pitch|outreach/i.test(text));
 
+  // STEP 1: Find or create user (must be before any use of userData)
+  let { data: userData, error: userErr } = await supabase
+    .from("users")
+    .select("id, phone")
+    .eq("phone", from)
+    .maybeSingle();
+
+  if (userErr) throw userErr;
+
+  if (!userData) {
+    const { data: newUser, error: newUserErr } = await supabase
+      .from("users")
+      .insert([{ phone: from, full_name: "Unknown User" }])
+      .select("id")
+      .single();
+
+    if (newUserErr) throw newUserErr;
+    userData = newUser;
+    log(`New user created: ${from}`, "SYSTEM");
+    // Optionally: set attribution, etc.
+  }
+
   if (hasIntent) {
     // Compose keywords/context for orchestrator
     let keywords = [];
