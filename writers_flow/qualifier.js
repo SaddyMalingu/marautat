@@ -89,27 +89,19 @@ Industry hint: ${lead.industry || 'unknown'}
 `.trim();
 
   await ensureProviders();
-  // Try OpenAI first, then HF fallback
   let lastErr = null;
-  for (const provider of ['openai', 'hf']) {
+  // Prefer OpenAI if available, otherwise HF, but never fail if HF is available
+  if (openai) {
     try {
-      let content;
-      if (provider === 'openai' && openai) {
-        const res = await openai.chat.completions.create({
-          model: 'gpt-4o-mini',
-          messages: [{ role: 'user', content: prompt }],
-          response_format: { type: 'json_object' },
-          temperature: 0.3,
-          max_tokens: 300,
-        });
-        content = res.choices[0].message.content;
-        console.log(`[Qualifier] Used OpenAI for ${lead.url}`);
-      } else if (provider === 'hf' && hfChatCompletion) {
-        content = await hfChatCompletion({ prompt, max_tokens: 300, temperature: 0.3 });
-        console.log(`[Qualifier] Used Hugging Face for ${lead.url}`);
-      } else {
-        continue;
-      }
+      const res = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'user', content: prompt }],
+        response_format: { type: 'json_object' },
+        temperature: 0.3,
+        max_tokens: 300,
+      });
+      const content = res.choices[0].message.content;
+      console.log(`[Qualifier] Used OpenAI for ${lead.url}`);
       const parsed = JSON.parse(content);
       return {
         ...lead,
@@ -122,15 +114,39 @@ Industry hint: ${lead.industry || 'unknown'}
         industry: parsed.industry || lead.industry || null,
         country: parsed.country || null,
         why_relevant: parsed.why_relevant || null,
-        llm_provider: provider,
+        llm_provider: 'openai',
       };
     } catch (err) {
       lastErr = err;
-      continue;
+      console.warn(`[Qualifier] OpenAI failed, trying Hugging Face: ${err.message}`);
     }
   }
-  console.error(`[Qualifier] Error qualifying lead ${lead.url}: ${lastErr?.message}`);
-  return { ...lead, relevance_score: 0, should_skip: true, skip_reason: 'AI qualification failed' };
+  if (hfChatCompletion) {
+    try {
+      const content = await hfChatCompletion({ prompt, max_tokens: 300, temperature: 0.3 });
+      console.log(`[Qualifier] Used Hugging Face for ${lead.url}`);
+      const parsed = JSON.parse(content);
+      return {
+        ...lead,
+        relevance_score: parsed.relevance_score ?? 0,
+        should_skip: parsed.should_skip ?? false,
+        skip_reason: parsed.skip_reason ?? null,
+        outreach_type: parsed.recommended_outreach_type || lead.outreachType || 'pitch',
+        org_name: parsed.org_name || null,
+        contact_name: parsed.contact_name || null,
+        industry: parsed.industry || lead.industry || null,
+        country: parsed.country || null,
+        why_relevant: parsed.why_relevant || null,
+        llm_provider: 'hf',
+      };
+    } catch (err) {
+      lastErr = err;
+      console.error(`[Qualifier] Hugging Face failed: ${err.message}`);
+    }
+  }
+  // If neither provider worked
+  console.error(`[Qualifier] Error qualifying lead ${lead.url}: ${lastErr?.message || 'No LLM provider available'}`);
+  return { ...lead, relevance_score: 0, should_skip: true, skip_reason: 'AI qualification failed: No LLM provider available' };
 }
 
 // ──────────────────────────────────────────────
@@ -183,38 +199,46 @@ Respond in JSON only:
 
   await ensureProviders();
   let lastErr = null;
-  for (const provider of ['openai', 'hf']) {
+  if (openai) {
     try {
-      let content;
-      if (provider === 'openai' && openai) {
-        const res = await openai.chat.completions.create({
-          model: 'gpt-4o-mini',
-          messages: [{ role: 'user', content: prompt }],
-          response_format: { type: 'json_object' },
-          temperature: 0.8,
-          max_tokens: 700,
-        });
-        content = res.choices[0].message.content;
-        console.log(`[Generator] Used OpenAI for outreach ${lead.url}`);
-      } else if (provider === 'hf' && hfChatCompletion) {
-        content = await hfChatCompletion({ prompt, max_tokens: 700, temperature: 0.8 });
-        console.log(`[Generator] Used Hugging Face for outreach ${lead.url}`);
-      } else {
-        continue;
-      }
+      const res = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'user', content: prompt }],
+        response_format: { type: 'json_object' },
+        temperature: 0.8,
+        max_tokens: 700,
+      });
+      const content = res.choices[0].message.content;
+      console.log(`[Generator] Used OpenAI for outreach ${lead.url}`);
       const parsed = JSON.parse(content);
       return {
         subject: parsed.subject || 'Hello from Alphadome',
         body: parsed.body || '',
         quality_score: typeof parsed.quality_score === 'number' ? parsed.quality_score : 70,
-        llm_provider: provider,
+        llm_provider: 'openai',
       };
     } catch (err) {
       lastErr = err;
-      continue;
+      console.warn(`[Generator] OpenAI failed, trying Hugging Face: ${err.message}`);
     }
   }
-  console.error(`[Generator] Error generating outreach for ${lead.url}: ${lastErr?.message}`);
+  if (hfChatCompletion) {
+    try {
+      const content = await hfChatCompletion({ prompt, max_tokens: 700, temperature: 0.8 });
+      console.log(`[Generator] Used Hugging Face for outreach ${lead.url}`);
+      const parsed = JSON.parse(content);
+      return {
+        subject: parsed.subject || 'Hello from Alphadome',
+        body: parsed.body || '',
+        quality_score: typeof parsed.quality_score === 'number' ? parsed.quality_score : 70,
+        llm_provider: 'hf',
+      };
+    } catch (err) {
+      lastErr = err;
+      console.error(`[Generator] Hugging Face failed: ${err.message}`);
+    }
+  }
+  console.error(`[Generator] Error generating outreach for ${lead.url}: ${lastErr?.message || 'No LLM provider available'}`);
   return { subject: 'Hello from Alphadome', body: '', quality_score: 0 };
 }
 
@@ -243,30 +267,32 @@ Return only the WhatsApp message text, no JSON wrapper.
 
   await ensureProviders();
   let lastErr = null;
-  for (const provider of ['openai', 'hf']) {
+  if (openai) {
     try {
-      let content;
-      if (provider === 'openai' && openai) {
-        const res = await openai.chat.completions.create({
-          model: 'gpt-4o-mini',
-          messages: [{ role: 'user', content: prompt }],
-          temperature: 0.8,
-          max_tokens: 400,
-        });
-        content = res.choices[0].message.content;
-        console.log(`[Generator] Used OpenAI for WhatsApp message ${lead.url}`);
-      } else if (provider === 'hf' && hfChatCompletion) {
-        content = await hfChatCompletion({ prompt, max_tokens: 400, temperature: 0.8 });
-        console.log(`[Generator] Used Hugging Face for WhatsApp message ${lead.url}`);
-      } else {
-        continue;
-      }
+      const res = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.8,
+        max_tokens: 400,
+      });
+      const content = res.choices[0].message.content;
+      console.log(`[Generator] Used OpenAI for WhatsApp message ${lead.url}`);
       return content.trim();
     } catch (err) {
       lastErr = err;
-      continue;
+      console.warn(`[Generator] OpenAI failed, trying Hugging Face: ${err.message}`);
     }
   }
-  console.error(`[Generator] WhatsApp message failed: ${lastErr?.message}`);
+  if (hfChatCompletion) {
+    try {
+      const content = await hfChatCompletion({ prompt, max_tokens: 400, temperature: 0.8 });
+      console.log(`[Generator] Used Hugging Face for WhatsApp message ${lead.url}`);
+      return content.trim();
+    } catch (err) {
+      lastErr = err;
+      console.error(`[Generator] Hugging Face failed: ${err.message}`);
+    }
+  }
+  console.error(`[Generator] WhatsApp message failed: ${lastErr?.message || 'No LLM provider available'}`);
   return emailBody.slice(0, 800);
 }
