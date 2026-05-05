@@ -6,11 +6,14 @@
 
 let useHF = process.env.LLM_PROVIDER === 'hf';
 let openai, hfChatCompletion;
-if (!useHF) {
+if (process.env.OPENAI_API_KEY && !useHF) {
   const OpenAI = (await import('openai')).default;
   openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  console.log('[WF-LLM] llmService: Using OpenAI');
 } else {
   hfChatCompletion = (await import('./hfLLM.js')).hfChatCompletion;
+  useHF = true;
+  console.log('[WF-LLM] llmService: Using Hugging Face');
 }
 
 /**
