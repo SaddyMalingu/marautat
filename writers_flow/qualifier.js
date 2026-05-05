@@ -1,3 +1,5 @@
+// --- DEBUG: Log which LLM API keys are present ---
+console.log('[WF-LLM] ENV: OPENAI_API_KEY:', process.env.OPENAI_API_KEY ? 'set' : 'missing', '| HF_API_KEY_WRITERS_FLOW:', process.env.HF_API_KEY_WRITERS_FLOW ? 'set' : 'missing', '| HF_API_KEY:', process.env.HF_API_KEY ? 'set' : 'missing');
 /**
  * Writer's Flow — Qualifier + Outreach Generator
  * Uses OpenAI GPT-4o to:
@@ -11,13 +13,17 @@ let useHF = process.env.LLM_PROVIDER === 'hf';
 let openai, hfChatCompletion;
 const tryInitOpenAI = async () => {
   try {
-    const OpenAI = (await import('openai')).default;
-    if (process.env.OPENAI_API_KEY) {
-      openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-      return true;
+    if (!process.env.OPENAI_API_KEY) {
+      console.warn('[WF-LLM] No OPENAI_API_KEY present, skipping OpenAI client init');
+      return false;
     }
-  } catch {}
-  return false;
+    const OpenAI = (await import('openai')).default;
+    openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    return true;
+  } catch (err) {
+    console.error('[WF-LLM] OpenAI client init failed:', err.message);
+    return false;
+  }
 };
 const tryInitHF = async () => {
   try {
