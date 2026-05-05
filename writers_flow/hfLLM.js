@@ -1,7 +1,7 @@
 // Hugging Face LLM utility for Writer's Flow
 import fetch from 'node-fetch';
 
-const HF_API_KEY = process.env.HF_API_KEY;
+const HF_API_KEY = process.env.HF_API_KEY_WRITERS_FLOW || process.env.HF_API_KEY;
 const HF_MODEL = process.env.HF_MODEL || 'HuggingFaceH4/zephyr-7b-beta';
 
 export async function hfChatCompletion({ prompt, max_tokens = 700, temperature = 0.8 }) {

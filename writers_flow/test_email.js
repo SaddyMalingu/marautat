@@ -4,7 +4,7 @@ import sendEmail from "../writers_flow/emailSender.js";
 (async () => {
   try {
     const info = await sendEmail({
-      to: "YOUR_EMAIL@gmail.com", // Change to your email for testing
+      to: "saddymalingu@gmail.com", // Change to your email for testing
       subject: "Writer's Flow Test Email",
       text: "This is a test email from Writer's Flow using your Gmail SMTP setup.",
     });
