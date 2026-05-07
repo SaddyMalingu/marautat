@@ -23,8 +23,9 @@ async function searchGoogle(query, numResults = 10) {
   const cx = process.env.GOOGLE_CSE_CX;
   if (!key || !cx) throw new Error('GOOGLE_CSE_KEY and GOOGLE_CSE_CX are required for Google search');
   const url = 'https://www.googleapis.com/customsearch/v1';
+  const start = Date.now();
   try {
-    const { data } = await axios.get(url, {
+    const { data, status } = await axios.get(url, {
       params: { key, cx, q: query, num: Math.min(numResults, 10) },
       timeout: 12000,
     });
@@ -34,10 +35,14 @@ async function searchGoogle(query, numResults = 10) {
       snippet: item.snippet || '',
       displayUrl: item.displayLink || '',
     }));
-    console.log(`[Scraper] [Google] Results: ${items.length}`);
+    console.log(`[Scraper] [Google] Results: ${items.length} (status=${status}, time=${Date.now()-start}ms)`);
+    items.forEach((i, idx) => console.log(`[Scraper] [Google] [${idx}] ${i.title} | ${i.url}`));
     return items;
   } catch (err) {
-    console.error(`[Scraper] [Google] ERROR: ${err.message}`);
+    const status = err.response?.status;
+    const body = err.response?.data;
+    console.error(`[Scraper] [Google] ERROR: ${err.message} (status=${status}, time=${Date.now()-start}ms)`);
+    if (body) console.error(`[Scraper] [Google] ERROR BODY: ${JSON.stringify(body).slice(0,500)}`);
     throw err;
   }
 }
@@ -46,8 +51,9 @@ async function searchSerp(query, numResults = 10) {
   console.log(`[Scraper] [SerpAPI] Searching: "${query}" (numResults=${numResults})`);
   const key = process.env.SERPAPI_KEY;
   if (!key) throw new Error('SERPAPI_KEY required for SerpAPI search');
+  const start = Date.now();
   try {
-    const { data } = await axios.get('https://serpapi.com/search.json', {
+    const { data, status } = await axios.get('https://serpapi.com/search.json', {
       params: { api_key: key, q: query, engine: 'google', num: numResults },
       timeout: 15000,
     });
@@ -57,10 +63,14 @@ async function searchSerp(query, numResults = 10) {
       snippet: r.snippet || '',
       displayUrl: r.displayed_link || '',
     }));
-    console.log(`[Scraper] [SerpAPI] Results: ${items.length}`);
+    console.log(`[Scraper] [SerpAPI] Results: ${items.length} (status=${status}, time=${Date.now()-start}ms)`);
+    items.forEach((i, idx) => console.log(`[Scraper] [SerpAPI] [${idx}] ${i.title} | ${i.url}`));
     return items;
   } catch (err) {
-    console.error(`[Scraper] [SerpAPI] ERROR: ${err.message}`);
+    const status = err.response?.status;
+    const body = err.response?.data;
+    console.error(`[Scraper] [SerpAPI] ERROR: ${err.message} (status=${status}, time=${Date.now()-start}ms)`);
+    if (body) console.error(`[Scraper] [SerpAPI] ERROR BODY: ${JSON.stringify(body).slice(0,500)}`);
     throw err;
   }
 }
@@ -69,8 +79,9 @@ async function searchBing(query, numResults = 10) {
   console.log(`[Scraper] [Bing] Searching: "${query}" (numResults=${numResults})`);
   const key = process.env.BING_SEARCH_KEY;
   if (!key) throw new Error('BING_SEARCH_KEY required for Bing search');
+  const start = Date.now();
   try {
-    const { data } = await axios.get('https://api.bing.microsoft.com/v7.0/search', {
+    const { data, status } = await axios.get('https://api.bing.microsoft.com/v7.0/search', {
       headers: { 'Ocp-Apim-Subscription-Key': key },
       params: { q: query, count: numResults, mkt: 'en-US' },
       timeout: 12000,
@@ -81,10 +92,14 @@ async function searchBing(query, numResults = 10) {
       snippet: r.snippet || '',
       displayUrl: r.displayUrl || '',
     }));
-    console.log(`[Scraper] [Bing] Results: ${items.length}`);
+    console.log(`[Scraper] [Bing] Results: ${items.length} (status=${status}, time=${Date.now()-start}ms)`);
+    items.forEach((i, idx) => console.log(`[Scraper] [Bing] [${idx}] ${i.title} | ${i.url}`));
     return items;
   } catch (err) {
-    console.error(`[Scraper] [Bing] ERROR: ${err.message}`);
+    const status = err.response?.status;
+    const body = err.response?.data;
+    console.error(`[Scraper] [Bing] ERROR: ${err.message} (status=${status}, time=${Date.now()-start}ms)`);
+    if (body) console.error(`[Scraper] [Bing] ERROR BODY: ${JSON.stringify(body).slice(0,500)}`);
     throw err;
   }
 }
@@ -249,6 +264,7 @@ export default async function scrapeLeads({
   const seen = new Set();
   const leads = [];
 
+  const scrapeStart = Date.now();
   for (const querySpec of queries) {
     if (leads.length >= targetCount) break;
     let results = [];
@@ -308,5 +324,9 @@ export default async function scrapeLeads({
     }
   }
 
+  console.log(`[Scraper] All queries complete. Total leads found: ${leads.length} (time=${Date.now()-scrapeStart}ms)`);
+  leads.forEach((lead, idx) => {
+    console.log(`[Scraper] [Lead ${idx}] ${lead.title} | ${lead.url} | email=${lead.email || 'none'} | phone=${lead.phone || 'none'}`);
+  });
   return leads;
 }
