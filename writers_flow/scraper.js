@@ -9,6 +9,7 @@
  */
 
 import axios from 'axios';
+import cheerio from 'cheerio';
 
 const EMAIL_REGEX = /[\w.+%-]+@[a-z0-9.-]+\.[a-z]{2,}/gi;
 const PHONE_REGEX = /(?:\+?\d{1,3}[\s-])?(?:\(?\d{2,4}\)?[\s.-]){2,4}\d{3,6}/g;
@@ -157,7 +158,7 @@ async function extractContactsFromPage(url) {
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; AlphadomeBot/1.0)' },
       maxRedirects: 3,
     });
-    // Standard email/phone extraction
+    // Standard email/phone extraction (raw HTML)
     let emails = [...new Set((html.match(EMAIL_REGEX) || [])
       .filter(e => !e.includes('example.com') && !e.includes('noreply')))].map(e => e.trim());
     let phones = [...new Set((html.match(PHONE_REGEX) || []).slice(0, 3))];
@@ -177,6 +178,41 @@ async function extractContactsFromPage(url) {
     const mailtos = [...html.matchAll(/mailto:([\w.+%-]+@[a-z0-9.-]+\.[a-z]{2,})/gi)].map(m => m[1]);
     emails.push(...mailtos);
 
+    // Cheerio: extract visible text and run regexes
+    const $ = cheerio.load(html);
+    const visibleText = $('body').text();
+    let emailsText = [...new Set((visibleText.match(EMAIL_REGEX) || []))];
+    let phonesText = [...new Set((visibleText.match(PHONE_REGEX) || []))];
+    emails.push(...emailsText);
+    phones.push(...phonesText);
+
+    emails = [...new Set(emails)].filter(e => !e.includes('example.com') && !e.includes('noreply'));
+    phones = [...new Set(phones)];
+
+    // Log page snippet if nothing found
+    if (emails.length === 0 && phones.length === 0) {
+      console.log(`[Scraper] [Extract] No contacts found on ${url}. Page snippet: ${visibleText.slice(0, 500)}`);
+    }
+
+    // If still nothing, optionally use LLM (Hugging Face)
+    if (emails.length === 0 && process.env.HF_API_KEY_WRITERS_FLOW) {
+      try {
+        const prompt = `Extract all email addresses and phone numbers from this text. Output as JSON with keys 'emails' and 'phones'.\nText:\n${visibleText.slice(0, 2000)}`;
+        const response = await axios.post(
+          'https://api-inference.huggingface.co/models/mistralai/Mixtral-8x7B-Instruct-v0.1',
+          { inputs: prompt },
+          { headers: { Authorization: `Bearer ${process.env.HF_API_KEY_WRITERS_FLOW}` }, timeout: 15000 }
+        );
+        const llmOut = response.data?.[0]?.generated_text || '';
+        console.log(`[Scraper] [Extract] LLM output for ${url}: ${llmOut.slice(0, 300)}`);
+        const json = JSON.parse(llmOut.match(/\{[\s\S]*\}/)?.[0] || '{}');
+        if (Array.isArray(json.emails)) emails.push(...json.emails);
+        if (Array.isArray(json.phones)) phones.push(...json.phones);
+      } catch (llmErr) {
+        console.log(`[Scraper] [Extract] LLM extraction failed for ${url}: ${llmErr.message}`);
+      }
+    }
+
     emails = [...new Set(emails)].filter(e => !e.includes('example.com') && !e.includes('noreply'));
     phones = [...new Set(phones)];
 
@@ -193,8 +229,10 @@ async function tryFetchContactPage(baseUrl) {
   let result = await extractContactsFromPage(baseUrl);
   if (result.emails.length > 0 || result.phones.length > 0) return result;
 
-  // Try common contact/about/team subpages
-  const contactPaths = ['/contact', '/contact-us', '/about', '/about-us', '/team'];
+  // Try expanded set of subpages
+  const contactPaths = [
+    '/contact', '/contact-us', '/about', '/about-us', '/team', '/staff', '/directory', '/leadership', '/support', '/help', '/people', '/our-team', '/who-we-are', '/company', '/organization', '/board', '/executives', '/management', '/faculty', '/employees', '/personnel', '/members', '/partners', '/advisors', '/committee', '/trustees', '/officers', '/admin', '/administration', '/info', '/information', '/reach-us', '/get-in-touch', '/connect', '/connections', '/community', '/resources', '/departments', '/division', '/sections', '/units', '/services', '/locations', '/branches', '/offices', '/contacts', '/contactus', '/contactus.html', '/contact.html', '/aboutus', '/aboutus.html', '/team.html', '/staff.html', '/directory.html', '/leadership.html', '/support.html', '/help.html', '/people.html', '/our-team.html', '/who-we-are.html', '/company.html', '/organization.html', '/board.html', '/executives.html', '/management.html', '/faculty.html', '/employees.html', '/personnel.html', '/members.html', '/partners.html', '/advisors.html', '/committee.html', '/trustees.html', '/officers.html', '/admin.html', '/administration.html', '/info.html', '/information.html', '/reach-us.html', '/get-in-touch.html', '/connect.html', '/connections.html', '/community.html', '/resources.html', '/departments.html', '/division.html', '/sections.html', '/units.html', '/services.html', '/locations.html', '/branches.html', '/offices.html', '/contacts.html'
+  ];
   for (const path of contactPaths) {
     try {
       const url = new URL(path, baseUrl).toString();
