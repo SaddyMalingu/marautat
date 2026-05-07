@@ -66,11 +66,31 @@ async function searchBing(query, numResults = 10) {
 }
 
 async function runSearch(query, numResults = 10) {
-  if (process.env.GOOGLE_CSE_KEY && process.env.GOOGLE_CSE_CX) {
+  const useGoogle = process.env.GOOGLE_CSE_KEY && process.env.GOOGLE_CSE_CX;
+  const useSerp = process.env.SERPAPI_KEY;
+  const useBing = process.env.BING_SEARCH_KEY;
+
+  // If both Google and SerpAPI are available, run both in parallel and merge results
+  if (useGoogle && useSerp) {
+    const [googleResults, serpResults] = await Promise.all([
+      searchGoogle(query, numResults),
+      searchSerp(query, numResults)
+    ]);
+    // Merge and deduplicate by URL
+    const all = [...googleResults, ...serpResults];
+    const seen = new Set();
+    const deduped = [];
+    for (const r of all) {
+      if (!r.url || seen.has(r.url)) continue;
+      seen.add(r.url);
+      deduped.push(r);
+    }
+    return deduped.slice(0, numResults);
+  } else if (useGoogle) {
     return searchGoogle(query, numResults);
-  } else if (process.env.SERPAPI_KEY) {
+  } else if (useSerp) {
     return searchSerp(query, numResults);
-  } else if (process.env.BING_SEARCH_KEY) {
+  } else if (useBing) {
     return searchBing(query, numResults);
   } else {
     throw new Error(
