@@ -18,51 +18,75 @@ const PHONE_REGEX = /(?:\+?\d{1,3}[\s-])?(?:\(?\d{2,4}\)?[\s.-]){2,4}\d{3,6}/g;
 // ──────────────────────────────────────────────
 
 async function searchGoogle(query, numResults = 10) {
+  console.log(`[Scraper] [Google] Searching: "${query}" (numResults=${numResults})`);
   const key = process.env.GOOGLE_CSE_KEY;
   const cx = process.env.GOOGLE_CSE_CX;
   if (!key || !cx) throw new Error('GOOGLE_CSE_KEY and GOOGLE_CSE_CX are required for Google search');
   const url = 'https://www.googleapis.com/customsearch/v1';
-  const { data } = await axios.get(url, {
-    params: { key, cx, q: query, num: Math.min(numResults, 10) },
-    timeout: 12000,
-  });
-  return (data.items || []).map(item => ({
-    title: item.title || '',
-    url: item.link || '',
-    snippet: item.snippet || '',
-    displayUrl: item.displayLink || '',
-  }));
+  try {
+    const { data } = await axios.get(url, {
+      params: { key, cx, q: query, num: Math.min(numResults, 10) },
+      timeout: 12000,
+    });
+    const items = (data.items || []).map(item => ({
+      title: item.title || '',
+      url: item.link || '',
+      snippet: item.snippet || '',
+      displayUrl: item.displayLink || '',
+    }));
+    console.log(`[Scraper] [Google] Results: ${items.length}`);
+    return items;
+  } catch (err) {
+    console.error(`[Scraper] [Google] ERROR: ${err.message}`);
+    throw err;
+  }
 }
 
 async function searchSerp(query, numResults = 10) {
+  console.log(`[Scraper] [SerpAPI] Searching: "${query}" (numResults=${numResults})`);
   const key = process.env.SERPAPI_KEY;
   if (!key) throw new Error('SERPAPI_KEY required for SerpAPI search');
-  const { data } = await axios.get('https://serpapi.com/search.json', {
-    params: { api_key: key, q: query, engine: 'google', num: numResults },
-    timeout: 15000,
-  });
-  return (data.organic_results || []).map(r => ({
-    title: r.title || '',
-    url: r.link || '',
-    snippet: r.snippet || '',
-    displayUrl: r.displayed_link || '',
-  }));
+  try {
+    const { data } = await axios.get('https://serpapi.com/search.json', {
+      params: { api_key: key, q: query, engine: 'google', num: numResults },
+      timeout: 15000,
+    });
+    const items = (data.organic_results || []).map(r => ({
+      title: r.title || '',
+      url: r.link || '',
+      snippet: r.snippet || '',
+      displayUrl: r.displayed_link || '',
+    }));
+    console.log(`[Scraper] [SerpAPI] Results: ${items.length}`);
+    return items;
+  } catch (err) {
+    console.error(`[Scraper] [SerpAPI] ERROR: ${err.message}`);
+    throw err;
+  }
 }
 
 async function searchBing(query, numResults = 10) {
+  console.log(`[Scraper] [Bing] Searching: "${query}" (numResults=${numResults})`);
   const key = process.env.BING_SEARCH_KEY;
   if (!key) throw new Error('BING_SEARCH_KEY required for Bing search');
-  const { data } = await axios.get('https://api.bing.microsoft.com/v7.0/search', {
-    headers: { 'Ocp-Apim-Subscription-Key': key },
-    params: { q: query, count: numResults, mkt: 'en-US' },
-    timeout: 12000,
-  });
-  return (data.webPages?.value || []).map(r => ({
-    title: r.name || '',
-    url: r.url || '',
-    snippet: r.snippet || '',
-    displayUrl: r.displayUrl || '',
-  }));
+  try {
+    const { data } = await axios.get('https://api.bing.microsoft.com/v7.0/search', {
+      headers: { 'Ocp-Apim-Subscription-Key': key },
+      params: { q: query, count: numResults, mkt: 'en-US' },
+      timeout: 12000,
+    });
+    const items = (data.webPages?.value || []).map(r => ({
+      title: r.name || '',
+      url: r.url || '',
+      snippet: r.snippet || '',
+      displayUrl: r.displayUrl || '',
+    }));
+    console.log(`[Scraper] [Bing] Results: ${items.length}`);
+    return items;
+  } catch (err) {
+    console.error(`[Scraper] [Bing] ERROR: ${err.message}`);
+    throw err;
+  }
 }
 
 async function runSearch(query, numResults = 10) {
@@ -70,8 +94,10 @@ async function runSearch(query, numResults = 10) {
   const useSerp = process.env.SERPAPI_KEY;
   const useBing = process.env.BING_SEARCH_KEY;
 
-  // If both Google and SerpAPI are available, run both in parallel and merge results
+  console.log(`[Scraper] Provider selection: Google=${!!useGoogle}, SerpAPI=${!!useSerp}, Bing=${!!useBing}`);
+
   if (useGoogle && useSerp) {
+    console.log(`[Scraper] Running BOTH Google and SerpAPI for query: "${query}"`);
     const [googleResults, serpResults] = await Promise.all([
       searchGoogle(query, numResults),
       searchSerp(query, numResults)
@@ -85,14 +111,19 @@ async function runSearch(query, numResults = 10) {
       seen.add(r.url);
       deduped.push(r);
     }
+    console.log(`[Scraper] Merged results: Google=${googleResults.length}, SerpAPI=${serpResults.length}, Deduped=${deduped.length}`);
     return deduped.slice(0, numResults);
   } else if (useGoogle) {
+    console.log(`[Scraper] Running ONLY Google for query: "${query}"`);
     return searchGoogle(query, numResults);
   } else if (useSerp) {
+    console.log(`[Scraper] Running ONLY SerpAPI for query: "${query}"`);
     return searchSerp(query, numResults);
   } else if (useBing) {
+    console.log(`[Scraper] Running ONLY Bing for query: "${query}"`);
     return searchBing(query, numResults);
   } else {
+    console.error('[Scraper] No search API configured.');
     throw new Error(
       'No search API configured. Set one of: GOOGLE_CSE_KEY+GOOGLE_CSE_CX, SERPAPI_KEY, or BING_SEARCH_KEY'
     );
@@ -221,8 +252,10 @@ export default async function scrapeLeads({
   for (const querySpec of queries) {
     if (leads.length >= targetCount) break;
     let results = [];
+    console.log(`[Scraper] Running query: "${querySpec.query}" (industry=${querySpec.industry}, outreachType=${querySpec.outreachType})`);
     try {
       results = await runSearch(querySpec.query, 10);
+      console.log(`[Scraper] Query results for "${querySpec.query}": ${results.length}`);
     } catch (err) {
       console.error(`[Scraper] Search failed for "${querySpec.query}": ${err.message}`);
       continue;
@@ -230,7 +263,11 @@ export default async function scrapeLeads({
 
     for (const r of results) {
       if (leads.length >= targetCount) break;
-      if (!r.url || seen.has(r.url)) continue;
+      if (!r.url || seen.has(r.url)) {
+        if (!r.url) console.log(`[Scraper] Skipping result with missing URL.`);
+        else console.log(`[Scraper] Skipping duplicate URL: ${r.url}`);
+        continue;
+      }
       seen.add(r.url);
 
       // Try quick email extract from snippet first
@@ -241,11 +278,21 @@ export default async function scrapeLeads({
       let email = snippetEmails[0] || null;
       let phone = null;
 
+      if (email) {
+        console.log(`[Scraper] Found email in snippet for ${r.url}: ${email}`);
+      }
+
       // If no email in snippet, try fetching the page
       if (!email) {
+        console.log(`[Scraper] No email in snippet for ${r.url}, trying contact page extraction...`);
         const contacts = await tryFetchContactPage(r.url);
         email = contacts.emails[0] || null;
         phone = contacts.phones[0] || null;
+        if (email) {
+          console.log(`[Scraper] Found email on contact page for ${r.url}: ${email}`);
+        } else {
+          console.log(`[Scraper] No email found for ${r.url}`);
+        }
       }
 
       leads.push({
