@@ -151,28 +151,58 @@ async function runSearch(query, numResults = 10) {
 
 async function extractContactsFromPage(url) {
   try {
+    console.log(`[Scraper] [Extract] Fetching: ${url}`);
     const { data: html } = await axios.get(url, {
       timeout: 8000,
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; AlphadomeBot/1.0)' },
       maxRedirects: 3,
     });
-    const emails = [...new Set((html.match(EMAIL_REGEX) || [])
-      .filter(e => !e.includes('example.com') && !e.includes('noreply')))];
-    const phones = [...new Set((html.match(PHONE_REGEX) || []).slice(0, 3))];
+    // Standard email/phone extraction
+    let emails = [...new Set((html.match(EMAIL_REGEX) || [])
+      .filter(e => !e.includes('example.com') && !e.includes('noreply')))].map(e => e.trim());
+    let phones = [...new Set((html.match(PHONE_REGEX) || []).slice(0, 3))];
+
+    // Obfuscated email extraction (e.g., user [at] domain [dot] com)
+    const obfuscated = [...html.matchAll(/([\w.%-]+)\s*\[at\]|\(at\)|@\s*([\w.-]+)\s*(\[dot\]|\(dot\)|\.|\s+dot\s+)([a-z]{2,})/gi)];
+    for (const match of obfuscated) {
+      const user = match[1] || '';
+      const domain = match[2] || '';
+      const tld = match[4] || '';
+      if (user && domain && tld) {
+        emails.push(`${user}@${domain}.${tld}`);
+      }
+    }
+
+    // Heuristic: look for mailto links
+    const mailtos = [...html.matchAll(/mailto:([\w.+%-]+@[a-z0-9.-]+\.[a-z]{2,})/gi)].map(m => m[1]);
+    emails.push(...mailtos);
+
+    emails = [...new Set(emails)].filter(e => !e.includes('example.com') && !e.includes('noreply'));
+    phones = [...new Set(phones)];
+
+    console.log(`[Scraper] [Extract] ${url} | emails: ${emails.length} | phones: ${phones.length}`);
     return { emails, phones };
-  } catch {
+  } catch (err) {
+    console.log(`[Scraper] [Extract] ERROR fetching ${url}: ${err.message}`);
     return { emails: [], phones: [] };
   }
 }
 
 async function tryFetchContactPage(baseUrl) {
+  // Try main page first
+  let result = await extractContactsFromPage(baseUrl);
+  if (result.emails.length > 0 || result.phones.length > 0) return result;
+
+  // Try common contact/about/team subpages
   const contactPaths = ['/contact', '/contact-us', '/about', '/about-us', '/team'];
   for (const path of contactPaths) {
     try {
       const url = new URL(path, baseUrl).toString();
-      const result = await extractContactsFromPage(url);
-      if (result.emails.length > 0) return result;
-    } catch { /* skip */ }
+      const subResult = await extractContactsFromPage(url);
+      if (subResult.emails.length > 0 || subResult.phones.length > 0) return subResult;
+    } catch (err) {
+      console.log(`[Scraper] [Extract] ERROR fetching subpage for ${baseUrl}: ${err.message}`);
+    }
   }
   return { emails: [], phones: [] };
 }
