@@ -9,7 +9,7 @@
  */
 
 import axios from 'axios';
-import cheerio from 'cheerio';
+import * as cheerio from 'cheerio';
 
 const EMAIL_REGEX = /[\w.+%-]+@[a-z0-9.-]+\.[a-z]{2,}/gi;
 const PHONE_REGEX = /(?:\+?\d{1,3}[\s-])?(?:\(?\d{2,4}\)?[\s.-]){2,4}\d{3,6}/g;
