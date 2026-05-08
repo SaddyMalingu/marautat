@@ -1,5 +1,9 @@
 
-// ===== Register /admin/test-email endpoint after app initialization =====
+
+// ...existing code...
+
+// ===== Register /admin/test-email endpoint strictly after app initialization =====
+// Place this after all imports and after 'const app = express();'
 
 /**
  * POST /admin/test-email
@@ -7,23 +11,8 @@
  * Requires x-admin-key header
  * Triggers a live SMTP test and logs all events.
  */
-app.post("/admin/test-email", adminAuth, async (req, res) => {
-  const { to, subject, text } = req.body || {};
-  if (!to) return res.status(400).json({ error: "Missing 'to' email address." });
-  const subj = subject || `SMTP Test from Alphadome (${new Date().toISOString()})`;
-  const body = text || `This is a live SMTP test from Alphadome Render deployment at ${new Date().toISOString()}.`;
-  try {
-    // Dynamic import to avoid ReferenceError before app is initialized
-    const { default: sendEmail } = await import("./writers_flow/emailSender.js");
-    console.log(`[SMTP TEST] Attempting to send test email to ${to} ...`);
-    const info = await sendEmail({ to, subject: subj, text: body });
-    console.log(`[SMTP TEST] Success: Sent to ${to} - messageId: ${info.messageId}`);
-    res.json({ ok: true, messageId: info.messageId, envelope: info.envelope, accepted: info.accepted, rejected: info.rejected });
-  } catch (err) {
-    console.error(`[SMTP TEST] ERROR sending to ${to}:`, err);
-    res.status(500).json({ error: err.message || String(err) });
-  }
-});
+// (Place this block after app is initialized)
+
 
 import express from "express";
 import nlp from "compromise";
@@ -9715,6 +9704,33 @@ app.get("/admin/api/wf/stats", adminAuth, async (req, res) => {
 app.listen(process.env.PORT, () => {
   log(`Server running on port ${process.env.PORT}`, "SYSTEM");
   console.log(`🚀 Server running on port ${process.env.PORT}`);
+});
+
+// ===== Register /admin/test-email endpoint strictly after app initialization =====
+// Place this after all imports and after 'const app = express();'
+
+/**
+ * POST /admin/test-email
+ * Body: { to: "your@email.com", subject?: string, text?: string }
+ * Requires x-admin-key header
+ * Triggers a live SMTP test and logs all events.
+ */
+app.post("/admin/test-email", adminAuth, async (req, res) => {
+  const { to, subject, text } = req.body || {};
+  if (!to) return res.status(400).json({ error: "Missing 'to' email address." });
+  const subj = subject || `SMTP Test from Alphadome (${new Date().toISOString()})`;
+  const body = text || `This is a live SMTP test from Alphadome Render deployment at ${new Date().toISOString()}.`;
+  try {
+    // Dynamic import to avoid ReferenceError before app is initialized
+    const { default: sendEmail } = await import("./writers_flow/emailSender.js");
+    console.log(`[SMTP TEST] Attempting to send test email to ${to} ...`);
+    const info = await sendEmail({ to, subject: subj, text: body });
+    console.log(`[SMTP TEST] Success: Sent to ${to} - messageId: ${info.messageId}`);
+    res.json({ ok: true, messageId: info.messageId, envelope: info.envelope, accepted: info.accepted, rejected: info.rejected });
+  } catch (err) {
+    console.error(`[SMTP TEST] ERROR sending to ${to}:`, err);
+    res.status(500).json({ error: err.message || String(err) });
+  }
 });
 
 
