@@ -1,4 +1,6 @@
 // ===== ADMIN: TEST EMAIL SMTP ENDPOINT =====
+// --- Register /admin/test-email endpoint after app is initialized ---
+
 import sendEmail from "./writers_flow/emailSender.js";
 
 /**
