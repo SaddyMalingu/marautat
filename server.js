@@ -1,12 +1,6 @@
 
 // ===== Register /admin/test-email endpoint after app initialization =====
 
-// ...existing code...
-
-// Place this after all imports and after 'const app = express();'
-
-import sendEmail from "./writers_flow/emailSender.js";
-
 /**
  * POST /admin/test-email
  * Body: { to: "your@email.com", subject?: string, text?: string }
@@ -19,6 +13,8 @@ app.post("/admin/test-email", adminAuth, async (req, res) => {
   const subj = subject || `SMTP Test from Alphadome (${new Date().toISOString()})`;
   const body = text || `This is a live SMTP test from Alphadome Render deployment at ${new Date().toISOString()}.`;
   try {
+    // Dynamic import to avoid ReferenceError before app is initialized
+    const { default: sendEmail } = await import("./writers_flow/emailSender.js");
     console.log(`[SMTP TEST] Attempting to send test email to ${to} ...`);
     const info = await sendEmail({ to, subject: subj, text: body });
     console.log(`[SMTP TEST] Success: Sent to ${to} - messageId: ${info.messageId}`);
