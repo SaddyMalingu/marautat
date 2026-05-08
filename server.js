@@ -1,3 +1,27 @@
+// ===== ADMIN: TEST EMAIL SMTP ENDPOINT =====
+import sendEmail from "./writers_flow/emailSender.js";
+
+/**
+ * POST /admin/test-email
+ * Body: { to: "your@email.com", subject?: string, text?: string }
+ * Requires x-admin-key header
+ * Triggers a live SMTP test and logs all events.
+ */
+app.post("/admin/test-email", adminAuth, async (req, res) => {
+  const { to, subject, text } = req.body || {};
+  if (!to) return res.status(400).json({ error: "Missing 'to' email address." });
+  const subj = subject || `SMTP Test from Alphadome (${new Date().toISOString()})`;
+  const body = text || `This is a live SMTP test from Alphadome Render deployment at ${new Date().toISOString()}.`;
+  try {
+    console.log(`[SMTP TEST] Attempting to send test email to ${to} ...`);
+    const info = await sendEmail({ to, subject: subj, text: body });
+    console.log(`[SMTP TEST] Success: Sent to ${to} - messageId: ${info.messageId}`);
+    res.json({ ok: true, messageId: info.messageId, envelope: info.envelope, accepted: info.accepted, rejected: info.rejected });
+  } catch (err) {
+    console.error(`[SMTP TEST] ERROR sending to ${to}:`, err);
+    res.status(500).json({ error: err.message || String(err) });
+  }
+});
 
 import express from "express";
 import nlp from "compromise";
