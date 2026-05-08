@@ -1,5 +1,8 @@
-// ===== Move /admin/test-email endpoint after app initialization =====
+
+// ===== Register /admin/test-email endpoint after app initialization =====
+
 // ...existing code...
+
 // Place this after all imports and after 'const app = express();'
 
 import sendEmail from "./writers_flow/emailSender.js";
