@@ -29,6 +29,11 @@ async function searchGoogle(query, numResults = 10) {
     const { data, status } = await axios.get(url, {
       params: { key, cx, q: query, num: Math.min(numResults, 10) },
       timeout: 12000,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+        'Accept': 'application/json, text/plain, */*',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
     });
     const items = (data.items || []).map(item => ({
       title: item.title || '',
@@ -57,6 +62,11 @@ async function searchSerp(query, numResults = 10, start = 0) {
     const { data, status } = await axios.get('https://serpapi.com/search.json', {
       params: { api_key: key, q: query, engine: 'google', num: numResults, start },
       timeout: 15000,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+        'Accept': 'application/json, text/plain, */*',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
     });
     const items = (data.organic_results || []).map(r => ({
       title: r.title || '',
@@ -83,7 +93,12 @@ async function searchBing(query, numResults = 10) {
   const start = Date.now();
   try {
     const { data, status } = await axios.get('https://api.bing.microsoft.com/v7.0/search', {
-      headers: { 'Ocp-Apim-Subscription-Key': key },
+      headers: {
+        'Ocp-Apim-Subscription-Key': key,
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+        'Accept': 'application/json, text/plain, */*',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
       params: { q: query, count: numResults, mkt: 'en-US' },
       timeout: 12000,
     });
@@ -155,7 +170,14 @@ async function extractContactsFromPage(url) {
     console.log(`[Scraper] [Extract] Fetching: ${url}`);
     const { data: html } = await axios.get(url, {
       timeout: 8000,
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; AlphadomeBot/1.0)' },
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+        'DNT': '1',
+      },
       maxRedirects: 3,
     });
     // Standard email/phone extraction (raw HTML)
