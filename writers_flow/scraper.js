@@ -48,14 +48,14 @@ async function searchGoogle(query, numResults = 10) {
   }
 }
 
-async function searchSerp(query, numResults = 10) {
-  console.log(`[Scraper] [SerpAPI] Searching: "${query}" (numResults=${numResults})`);
+async function searchSerp(query, numResults = 10, start = 0) {
+  console.log(`[Scraper] [SerpAPI] Searching: "${query}" (numResults=${numResults}, start=${start})`);
   const key = process.env.SERPAPI_KEY;
   if (!key) throw new Error('SERPAPI_KEY required for SerpAPI search');
-  const start = Date.now();
+  const reqStart = Date.now();
   try {
     const { data, status } = await axios.get('https://serpapi.com/search.json', {
-      params: { api_key: key, q: query, engine: 'google', num: numResults },
+      params: { api_key: key, q: query, engine: 'google', num: numResults, start },
       timeout: 15000,
     });
     const items = (data.organic_results || []).map(r => ({
@@ -64,13 +64,13 @@ async function searchSerp(query, numResults = 10) {
       snippet: r.snippet || '',
       displayUrl: r.displayed_link || '',
     }));
-    console.log(`[Scraper] [SerpAPI] Results: ${items.length} (status=${status}, time=${Date.now()-start}ms)`);
+    console.log(`[Scraper] [SerpAPI] Results: ${items.length} (status=${status}, time=${Date.now()-reqStart}ms)`);
     items.forEach((i, idx) => console.log(`[Scraper] [SerpAPI] [${idx}] ${i.title} | ${i.url}`));
     return items;
   } catch (err) {
     const status = err.response?.status;
     const body = err.response?.data;
-    console.error(`[Scraper] [SerpAPI] ERROR: ${err.message} (status=${status}, time=${Date.now()-start}ms)`);
+    console.error(`[Scraper] [SerpAPI] ERROR: ${err.message} (status=${status}, time=${Date.now()-reqStart}ms)`);
     if (body) console.error(`[Scraper] [SerpAPI] ERROR BODY: ${JSON.stringify(body).slice(0,500)}`);
     throw err;
   }
@@ -331,67 +331,97 @@ export default async function scrapeLeads({
   const queries = buildQueries(keywords, industries, outreachTypes, industryPlan);
   const seen = new Set();
   const leads = [];
-
   const scrapeStart = Date.now();
+  const maxPages = 10; // Prevent infinite loops (10 pages x 10 results = 100 per query max)
   for (const querySpec of queries) {
-    if (leads.length >= targetCount) break;
-    let results = [];
-    console.log(`[Scraper] Running query: "${querySpec.query}" (industry=${querySpec.industry}, outreachType=${querySpec.outreachType})`);
-    try {
-      results = await runSearch(querySpec.query, 10);
-      console.log(`[Scraper] Query results for "${querySpec.query}": ${results.length}`);
-    } catch (err) {
-      console.error(`[Scraper] Search failed for "${querySpec.query}": ${err.message}`);
-      continue;
-    }
-
-    for (const r of results) {
-      if (leads.length >= targetCount) break;
-      if (!r.url || seen.has(r.url)) {
-        if (!r.url) console.log(`[Scraper] Skipping result with missing URL.`);
-        else console.log(`[Scraper] Skipping duplicate URL: ${r.url}`);
-        continue;
+    let page = 0;
+    let foundOnQuery = 0;
+    while (leads.length < targetCount && page < maxPages) {
+      let results = [];
+      try {
+        console.log(`[Scraper] Running query: "${querySpec.query}" (industry=${querySpec.industry}, outreachType=${querySpec.outreachType}, page=${page})`);
+        // For SerpAPI, use 'start' param for pagination (10, 20, ...)
+        results = await searchSerp(querySpec.query, 10, page * 10);
+        console.log(`[Scraper] Query results for "${querySpec.query}" page ${page}: ${results.length}`);
+      } catch (err) {
+        console.error(`[Scraper] Search failed for "${querySpec.query}" page ${page}: ${err.message}`);
+        break;
       }
-      seen.add(r.url);
-
-      // Try quick email extract from snippet first
-      const snippetEmails = (r.snippet.match(EMAIL_REGEX) || []).filter(
-        e => !e.includes('example.com') && !e.includes('noreply')
-      );
-
-      let email = snippetEmails[0] || null;
-      let phone = null;
-
-      if (email) {
-        console.log(`[Scraper] Found email in snippet for ${r.url}: ${email}`);
-      }
-
-      // If no email in snippet, try fetching the page
-      if (!email) {
-        console.log(`[Scraper] No email in snippet for ${r.url}, trying contact page extraction...`);
-        const contacts = await tryFetchContactPage(r.url);
-        email = contacts.emails[0] || null;
-        phone = contacts.phones[0] || null;
-        if (email) {
-          console.log(`[Scraper] Found email on contact page for ${r.url}: ${email}`);
-        } else {
-          console.log(`[Scraper] No email found for ${r.url}`);
+      if (!results.length) break;
+      for (const r of results) {
+        if (leads.length >= targetCount) break;
+        if (!r.url || seen.has(r.url)) {
+          if (!r.url) console.log(`[Scraper] Skipping result with missing URL.`);
+          else console.log(`[Scraper] Skipping duplicate URL: ${r.url}`);
+          continue;
         }
-      }
+        seen.add(r.url);
 
-      leads.push({
-        title: r.title,
-        url: r.url,
-        snippet: r.snippet,
-        email,
-        phone,
-        sourceQuery: querySpec.query,
-        industry: querySpec.industry || industries[0] || null,
-        outreachType: querySpec.outreachType || outreachTypes[0] || 'pitch',
-      });
+        // Try quick email extract from snippet first
+        const snippetEmails = (r.snippet.match(EMAIL_REGEX) || []).filter(
+          e => !e.includes('example.com') && !e.includes('noreply')
+        );
+        let email = snippetEmails[0] || null;
+        let phone = null;
+        if (email) {
+          console.log(`[Scraper] Found email in snippet for ${r.url}: ${email}`);
+        }
+        // If no email in snippet, try fetching the page and aggressively crawl subpages
+        if (!email) {
+          console.log(`[Scraper] No email in snippet for ${r.url}, trying aggressive contact extraction...`);
+          // Aggressive: try main, all contact subpages, and fallback to LLM always if no email
+          let contacts = await tryFetchContactPage(r.url);
+          email = contacts.emails[0] || null;
+          phone = contacts.phones[0] || null;
+          if (!email && process.env.HF_API_KEY_WRITERS_FLOW) {
+            // Try LLM fallback on visible text of main page
+            try {
+              const { data: html } = await axios.get(r.url, { timeout: 8000, headers: { 'User-Agent': 'Mozilla/5.0 (compatible; AlphadomeBot/1.0)' }, maxRedirects: 3 });
+              const $ = cheerio.load(html);
+              const visibleText = $('body').text();
+              const prompt = `Extract all email addresses and phone numbers from this text. Output as JSON with keys 'emails' and 'phones'.\nText:\n${visibleText.slice(0, 2000)}`;
+              const response = await axios.post(
+                'https://api-inference.huggingface.co/models/mistralai/Mixtral-8x7B-Instruct-v0.1',
+                { inputs: prompt },
+                { headers: { Authorization: `Bearer ${process.env.HF_API_KEY_WRITERS_FLOW}` }, timeout: 15000 }
+              );
+              const llmOut = response.data?.[0]?.generated_text || '';
+              console.log(`[Scraper] [Extract] LLM output for ${r.url}: ${llmOut.slice(0, 300)}`);
+              const json = JSON.parse(llmOut.match(/\{[\s\S]*\}/)?.[0] || '{}');
+              if (Array.isArray(json.emails) && json.emails.length > 0) {
+                email = json.emails[0];
+                if (!phone && Array.isArray(json.phones) && json.phones.length > 0) phone = json.phones[0];
+                console.log(`[Scraper] [Extract] LLM found email for ${r.url}: ${email}`);
+              }
+            } catch (llmErr) {
+              console.log(`[Scraper] [Extract] LLM fallback failed for ${r.url}: ${llmErr.message}`);
+            }
+          }
+          if (email) {
+            console.log(`[Scraper] Found email on contact page or LLM for ${r.url}: ${email}`);
+          } else {
+            console.log(`[Scraper] No email found for ${r.url}`);
+          }
+        }
+        leads.push({
+          title: r.title,
+          url: r.url,
+          snippet: r.snippet,
+          email,
+          phone,
+          sourceQuery: querySpec.query,
+          industry: querySpec.industry || industries[0] || null,
+          outreachType: querySpec.outreachType || outreachTypes[0] || 'pitch',
+        });
+        foundOnQuery++;
+      }
+      page++;
+    }
+    if (leads.length >= targetCount) break;
+    if (foundOnQuery === 0) {
+      console.log(`[Scraper] No leads found for query: "${querySpec.query}" after ${page} pages.`);
     }
   }
-
   console.log(`[Scraper] All queries complete. Total leads found: ${leads.length} (time=${Date.now()-scrapeStart}ms)`);
   leads.forEach((lead, idx) => {
     console.log(`[Scraper] [Lead ${idx}] ${lead.title} | ${lead.url} | email=${lead.email || 'none'} | phone=${lead.phone || 'none'}`);
