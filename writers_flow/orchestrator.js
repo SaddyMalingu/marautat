@@ -15,10 +15,12 @@
  * @param {boolean}  [options.testMode]
  */
 
+
 import scrapeLeads from './scraper.js';
 import { qualifyLead, generateOutreach, generateWhatsAppMessage } from './qualifier.js';
 import { humanizeMessage } from './llmService.js';
 import sendEmail from './emailSender.js';
+import { generateSearchQueries } from './queryGenerator.js';
 
 const SEND_DELAY_MS = 3000;
 
@@ -75,6 +77,22 @@ async function updateCampaignStats(supabase, campaignId, stats) {
   }).eq('id', campaignId);
 }
 
+/**
+ * @param {object} options
+ * @param {string} options.campaignId
+ * @param {string[]} [options.keywords]
+ * @param {string[]} [options.industries]
+ * @param {string[]} [options.outreachTypes]
+ * @param {string[]} [options.channels]
+ * @param {number} [options.targetCount]
+ * @param {number} [options.qualityThreshold]
+ * @param {object} [options.smtpConfig]
+ * @param {object} [options.supabase]
+ * @param {boolean} [options.testMode]
+ * @param {string} [options.userCommand] - The original user request (e.g. "find me 30 opportunities in healthcare")
+ * @param {string} [options.sector] - The target sector (e.g. "healthcare")
+ * @param {string} [options.valueProps] - Alphadome's value proposition summary
+ */
 export default async function runWritersFlow({
   campaignId,
   keywords = [],
@@ -87,6 +105,9 @@ export default async function runWritersFlow({
   smtpConfig = {},
   supabase,
   testMode = false,
+  userCommand = '',
+  sector = '',
+  valueProps = 'Alphadome automates operations, content, and digital engagement for businesses via AI agents.'
 } = {}) {
   const stats = { leads_found: 0, leads_qualified: 0, outreach_sent: 0, outreach_failed: 0, skipped: 0 };
 
@@ -98,13 +119,22 @@ export default async function runWritersFlow({
 
   try {
     const topIndustryPreview = (industryPlan || []).slice(0, 3).map((p) => p.industry || p.name).filter(Boolean).join(', ');
-    console.log(`[WF] Scraping: keywords=${keywords.join(', ')} | industries=${industries.join(', ')} | target=${targetCount}`);
+    let searchQueries = keywords;
+    if (userCommand && sector) {
+      try {
+        searchQueries = await generateSearchQueries(userCommand, sector, valueProps);
+        console.log(`[WF] LLM-generated search queries: ${searchQueries.join(' | ')}`);
+      } catch (err) {
+        console.warn('[WF] Query generation failed, falling back to keywords:', err.message);
+      }
+    }
+    console.log(`[WF] Scraping: queries=${searchQueries.join(', ')} | industries=${industries.join(', ')} | target=${targetCount}`);
     if (topIndustryPreview) {
       console.log(`[WF] Research-prioritized industries: ${topIndustryPreview}`);
     }
 
     const rawLeads = await scrapeLeads({
-      keywords,
+      keywords: searchQueries,
       industries,
       industryPlan,
       outreachTypes,
