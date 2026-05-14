@@ -4,7 +4,7 @@ import fetch from 'node-fetch';
 
 const HF_API_KEY = process.env.HF_API_KEY_WRITERS_FLOW || process.env.HF_API_KEY;
 // Use a robust, public, actively maintained model by default
-const HF_MODEL = process.env.HF_MODEL || 'mistralai/Mixtral-8x7B-Instruct-v0.1';
+const HF_MODEL = process.env.HF_MODEL || 'Qwen/Qwen2.5-7B-Instruct';
 console.log('[HF-LLM] Using Hugging Face model:', HF_MODEL);
 
 export async function hfChatCompletion({ prompt, max_tokens = 700, temperature = 0.8 }) {
