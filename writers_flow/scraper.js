@@ -9,6 +9,7 @@
  */
 
 import axios from 'axios';
+import crypto from 'crypto';
 import * as cheerio from 'cheerio';
 
 const EMAIL_REGEX = /[\w.+%-]+@[a-z0-9.-]+\.[a-z]{2,}/gi;
@@ -165,90 +166,133 @@ async function runSearch(query, numResults = 10) {
 // Contact extraction from a webpage
 // ──────────────────────────────────────────────
 
-async function extractContactsFromPage(url) {
-  try {
-    console.log(`[Scraper] [Extract] Fetching: ${url}`);
-    const { data: html } = await axios.get(url, {
-      timeout: 8000,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1',
-        'DNT': '1',
-      },
-      maxRedirects: 3,
-    });
-    // Standard email/phone extraction (raw HTML)
-    let emails = [...new Set((html.match(EMAIL_REGEX) || [])
-      .filter(e => !e.includes('example.com') && !e.includes('noreply')))].map(e => e.trim());
-    let phones = [...new Set((html.match(PHONE_REGEX) || []).slice(0, 3))];
+// --- Circuit breaker state ---
+const circuitBreaker = {
+  failureCount: 0,
+  lastFailure: 0,
+  openUntil: 0,
+  threshold: 8, // failures before open
+  resetMs: 10 * 60 * 1000, // 10 min
+  openMs: 5 * 60 * 1000, // 5 min
+};
 
-    // Obfuscated email extraction (e.g., user [at] domain [dot] com)
-    const obfuscated = [...html.matchAll(/([\w.%-]+)\s*\[at\]|\(at\)|@\s*([\w.-]+)\s*(\[dot\]|\(dot\)|\.|\s+dot\s+)([a-z]{2,})/gi)];
-    for (const match of obfuscated) {
-      const user = match[1] || '';
-      const domain = match[2] || '';
-      const tld = match[4] || '';
-      if (user && domain && tld) {
-        emails.push(`${user}@${domain}.${tld}`);
-      }
-    }
-
-    // Heuristic: look for mailto links
-    const mailtos = [...html.matchAll(/mailto:([\w.+%-]+@[a-z0-9.-]+\.[a-z]{2,})/gi)].map(m => m[1]);
-    emails.push(...mailtos);
-
-    // Cheerio: extract visible text and run regexes
-    const $ = cheerio.load(html);
-    const visibleText = $('body').text();
-    let emailsText = [...new Set((visibleText.match(EMAIL_REGEX) || []))];
-    let phonesText = [...new Set((visibleText.match(PHONE_REGEX) || []))];
-    emails.push(...emailsText);
-    phones.push(...phonesText);
-
-    emails = [...new Set(emails)].filter(e => !e.includes('example.com') && !e.includes('noreply'));
-    phones = [...new Set(phones)];
-
-    // Log page snippet if nothing found
-    if (emails.length === 0 && phones.length === 0) {
-      console.log(`[Scraper] [Extract] No contacts found on ${url}. Page snippet: ${visibleText.slice(0, 500)}`);
-    }
-
-    // If still nothing, optionally use LLM (Hugging Face)
-    if (emails.length === 0 && process.env.HF_API_KEY_WRITERS_FLOW) {
-      try {
-        const prompt = `Extract all email addresses and phone numbers from this text. Output as JSON with keys 'emails' and 'phones'.\nText:\n${visibleText.slice(0, 2000)}`;
-        const response = await axios.post(
-          'https://api-inference.huggingface.co/models/mistralai/Mixtral-8x7B-Instruct-v0.1',
-          { inputs: prompt },
-          { headers: { Authorization: `Bearer ${process.env.HF_API_KEY_WRITERS_FLOW}` }, timeout: 15000 }
-        );
-        const llmOut = response.data?.[0]?.generated_text || '';
-        console.log(`[Scraper] [Extract] LLM output for ${url}: ${llmOut.slice(0, 300)}`);
-        const json = JSON.parse(llmOut.match(/\{[\s\S]*\}/)?.[0] || '{}');
-        if (Array.isArray(json.emails)) emails.push(...json.emails);
-        if (Array.isArray(json.phones)) phones.push(...json.phones);
-      } catch (llmErr) {
-        console.log(`[Scraper] [Extract] LLM extraction failed for ${url}: ${llmErr.message}`);
-      }
-    }
-
-    emails = [...new Set(emails)].filter(e => !e.includes('example.com') && !e.includes('noreply'));
-    phones = [...new Set(phones)];
-
-    console.log(`[Scraper] [Extract] ${url} | emails: ${emails.length} | phones: ${phones.length}`);
-    return { emails, phones };
-  } catch (err) {
-    console.log(`[Scraper] [Extract] ERROR fetching ${url}: ${err.message}`);
+async function extractContactsFromPage(url, maxRetries = 3) {
+  // Circuit breaker: if open, skip
+  const now = Date.now();
+  if (circuitBreaker.openUntil > now) {
+    console.log(`[Scraper] [Breaker] SKIP ${url} (breaker open until ${new Date(circuitBreaker.openUntil).toISOString()})`);
     return { emails: [], phones: [] };
   }
+  let attempt = 0;
+  let lastErr = null;
+  const userAgents = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+  ];
+  while (attempt < maxRetries) {
+    const ua = userAgents[crypto.randomInt(0, userAgents.length)];
+    const timeoutMs = 20000 + crypto.randomInt(0, 5000); // 20-25s
+    try {
+      console.log(`[Scraper] [Extract] Fetching: ${url} (attempt ${attempt + 1}, timeout=${timeoutMs}ms, UA=${ua})`);
+      const { data: html } = await axios.get(url, {
+        timeout: timeoutMs,
+        headers: {
+          'User-Agent': ua,
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Connection': 'keep-alive',
+          'Upgrade-Insecure-Requests': '1',
+          'DNT': '1',
+        },
+        maxRedirects: 3,
+      });
+      // Success: reset breaker if enough time has passed
+      if (circuitBreaker.failureCount > 0 && (now - circuitBreaker.lastFailure > circuitBreaker.resetMs)) {
+        circuitBreaker.failureCount = 0;
+      }
+      // Standard email/phone extraction (raw HTML)
+      let emails = [...new Set((html.match(EMAIL_REGEX) || [])
+        .filter(e => !e.includes('example.com') && !e.includes('noreply')))].map(e => e.trim());
+      let phones = [...new Set((html.match(PHONE_REGEX) || []).slice(0, 3))];
+
+      // Obfuscated email extraction (e.g., user [at] domain [dot] com)
+      const obfuscated = [...html.matchAll(/([\w.%-]+)\s*\[at\]|\(at\)|@\s*([\w.-]+)\s*(\[dot\]|\(dot\)|\.|\s+dot\s+)([a-z]{2,})/gi)];
+      for (const match of obfuscated) {
+        const user = match[1] || '';
+        const domain = match[2] || '';
+        const tld = match[4] || '';
+        if (user && domain && tld) {
+          emails.push(`${user}@${domain}.${tld}`);
+        }
+      }
+
+      // Heuristic: look for mailto links
+      const mailtos = [...html.matchAll(/mailto:([\w.+%-]+@[a-z0-9.-]+\.[a-z]{2,})/gi)].map(m => m[1]);
+      emails.push(...mailtos);
+
+      // Cheerio: extract visible text and run regexes
+      const $ = cheerio.load(html);
+      const visibleText = $('body').text();
+      let emailsText = [...new Set((visibleText.match(EMAIL_REGEX) || []))];
+      let phonesText = [...new Set((visibleText.match(PHONE_REGEX) || []))];
+      emails.push(...emailsText);
+      phones.push(...phonesText);
+
+      emails = [...new Set(emails)].filter(e => !e.includes('example.com') && !e.includes('noreply'));
+      phones = [...new Set(phones)];
+
+      // Log page snippet if nothing found
+      if (emails.length === 0 && phones.length === 0) {
+        console.log(`[Scraper] [Extract] No contacts found on ${url}. Page snippet: ${visibleText.slice(0, 500)}`);
+      }
+
+      // If still nothing, optionally use LLM (Hugging Face)
+      if (emails.length === 0 && process.env.HF_API_KEY_WRITERS_FLOW) {
+        try {
+          const prompt = `Extract all email addresses and phone numbers from this text. Output as JSON with keys 'emails' and 'phones'.\nText:\n${visibleText.slice(0, 2000)}`;
+          const response = await axios.post(
+            'https://api-inference.huggingface.co/models/mistralai/Mixtral-8x7B-Instruct-v0.1',
+            { inputs: prompt },
+            { headers: { Authorization: `Bearer ${process.env.HF_API_KEY_WRITERS_FLOW}` }, timeout: 20000 }
+          );
+          const llmOut = response.data?.[0]?.generated_text || '';
+          console.log(`[Scraper] [Extract] LLM output for ${url}: ${llmOut.slice(0, 300)}`);
+          const json = JSON.parse(llmOut.match(/\{[\s\S]*\}/)?.[0] || '{}');
+          if (Array.isArray(json.emails)) emails.push(...json.emails);
+          if (Array.isArray(json.phones)) phones.push(...json.phones);
+        } catch (llmErr) {
+          console.log(`[Scraper] [Extract] LLM extraction failed for ${url}: ${llmErr.message}`);
+        }
+      }
+
+      emails = [...new Set(emails)].filter(e => !e.includes('example.com') && !e.includes('noreply'));
+      phones = [...new Set(phones)];
+
+      console.log(`[Scraper] [Extract] ${url} | emails: ${emails.length} | phones: ${phones.length}`);
+      return { emails, phones };
+    } catch (err) {
+      lastErr = err;
+      circuitBreaker.failureCount++;
+      circuitBreaker.lastFailure = now;
+      if (circuitBreaker.failureCount >= circuitBreaker.threshold) {
+        circuitBreaker.openUntil = now + circuitBreaker.openMs;
+        console.log(`[Scraper] [Breaker] OPENED after ${circuitBreaker.failureCount} failures. Will skip scraping until ${new Date(circuitBreaker.openUntil).toISOString()}`);
+      }
+      const wait = Math.min(1000 * Math.pow(2, attempt), 10000) + crypto.randomInt(0, 1000);
+      console.log(`[Scraper] [Extract] ERROR fetching ${url} (attempt ${attempt + 1}): ${err.message} | waiting ${wait}ms before retry`);
+      await new Promise(r => setTimeout(r, wait));
+      attempt++;
+    }
+  }
+  console.log(`[Scraper] [Extract] FINAL FAIL for ${url} after ${maxRetries} attempts: ${lastErr?.message}`);
+  return { emails: [], phones: [] };
 }
 
 async function tryFetchContactPage(baseUrl) {
   // Try main page first
-  let result = await extractContactsFromPage(baseUrl);
+  let result = await extractContactsFromPage(baseUrl, 3);
   if (result.emails.length > 0 || result.phones.length > 0) return result;
 
   // Try expanded set of subpages
@@ -258,7 +302,7 @@ async function tryFetchContactPage(baseUrl) {
   for (const path of contactPaths) {
     try {
       const url = new URL(path, baseUrl).toString();
-      const subResult = await extractContactsFromPage(url);
+      const subResult = await extractContactsFromPage(url, 2);
       if (subResult.emails.length > 0 || subResult.phones.length > 0) return subResult;
     } catch (err) {
       console.log(`[Scraper] [Extract] ERROR fetching subpage for ${baseUrl}: ${err.message}`);

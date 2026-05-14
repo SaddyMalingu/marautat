@@ -11,24 +11,45 @@ import { hfChatCompletion } from './hfLLM.js';
  */
 export async function generateSearchQueries(userCommand, sector, valueProps) {
   const prompt = `
-You are an AI business development assistant for Alphadome, which automates operations and content for businesses via AI agents.
-Given the sector: "${sector}", and the following user request: "${userCommand}", generate a list of 10 diverse, high-value search queries to find organizations that would benefit from Alphadome's services (AI automation, digital ops, content, etc.).
-Focus on sub-industries, business types, and digital-first opportunities. Return only the queries as a JSON array of strings.
+You are an expert AI business development strategist for Alphadome, which builds information systems (websites, apps, bots, custom software) and automates operations/content for businesses using advanced AI agents.
+
+Your task: Given the sector: "${sector}", the user request: "${userCommand}", and Alphadome's value proposition: "${valueProps}", generate a list of 10 highly diverse, creative, and sector-intelligent search queries.
+
+Guidelines:
+- Cover a wide range of sub-industries, business types, and digital transformation opportunities within the sector.
+- Include queries targeting organizations with outdated digital presence, manual operations, or high potential for AI automation.
+- Vary the queries: some broad, some niche, some targeting pain points, some targeting innovators.
+- Use synonyms and related terms for the sector and value proposition.
+- Make queries actionable for Google/Bing/SerpAPI (e.g., "top fintech startups seeking automation", "healthcare clinics with outdated websites", "manufacturers AI digital transformation case studies").
+- Output ONLY the queries as a JSON array of strings, no explanation.
 `;
-  const response = await hfChatCompletion({ prompt, max_tokens: 400, temperature: 0.7 });
+  let response;
   try {
+    response = await hfChatCompletion({ prompt, max_tokens: 500, temperature: 0.85 });
     const queries = JSON.parse(response);
     if (Array.isArray(queries)) return queries;
     throw new Error('Not an array');
   } catch {
     // Fallback: try to extract JSON array from text
-    const match = response.match(/\[.*\]/s);
+    const match = response?.match(/\[.*\]/s);
     if (match) {
       try {
         const queries = JSON.parse(match[0]);
         if (Array.isArray(queries)) return queries;
       } catch {}
     }
-    throw new Error('Failed to parse LLM query output: ' + response);
+    // Final fallback: return generic queries
+    return [
+      `"${sector}" organizations digital transformation opportunities`,
+      `"${sector}" companies AI automation case studies`,
+      `"${sector}" manual operations digital upgrade`,
+      `"${sector}" outdated websites`,
+      `"${sector}" innovation leaders`,
+      `"${sector}" pain points automation`,
+      `"${sector}" digital-first startups`,
+      `"${sector}" process automation`,
+      `"${sector}" AI adoption`,
+      `"${sector}" business digitalization`
+    ];
   }
 }
