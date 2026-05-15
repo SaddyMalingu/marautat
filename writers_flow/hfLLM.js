@@ -4,7 +4,7 @@ import fetch from 'node-fetch';
 
 
 const HF_API_KEY = process.env.HF_API_KEY_WRITERS_FLOW || process.env.HF_API_KEY;
-const HF_MODEL = process.env.HF_MODEL || 'Qwen/Qwen2.5-7B-Instruct';
+const HF_MODEL = process.env.HF_MODEL || 'meta-llama/Llama-3.1-8B-Instruct';
 const HF_API_KEY_MASKED = HF_API_KEY ? HF_API_KEY.slice(0, 6) + '...' + HF_API_KEY.slice(-4) : 'undefined';
 console.log(`[HF-LLM] Using Hugging Face model: ${HF_MODEL}`);
 console.log(`[HF-LLM] Using Hugging Face API key: ${HF_API_KEY_MASKED}`);
