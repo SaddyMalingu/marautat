@@ -4,7 +4,12 @@ import fetch from 'node-fetch';
 
 
 const HF_API_KEY = process.env.HF_API_KEY_WRITERS_FLOW || process.env.HF_API_KEY;
-const HF_MODEL = process.env.HF_MODEL || 'meta-llama/Llama-3.1-8B-Instruct';
+let HF_MODEL = process.env.HF_MODEL || 'meta-llama/Llama-3.1-8B-Instruct';
+// Remove any accidental suffix (e.g., ':novita')
+if (HF_MODEL.includes(':')) {
+  HF_MODEL = HF_MODEL.split(':')[0];
+  console.log('[HF-LLM] Cleaned model name, using:', HF_MODEL);
+}
 const HF_API_KEY_MASKED = HF_API_KEY ? HF_API_KEY.slice(0, 6) + '...' + HF_API_KEY.slice(-4) : 'undefined';
 console.log(`[HF-LLM] Using Hugging Face model: ${HF_MODEL}`);
 console.log(`[HF-LLM] Using Hugging Face API key: ${HF_API_KEY_MASKED}`);
