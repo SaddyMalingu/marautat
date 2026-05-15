@@ -1,5 +1,6 @@
 // Entry point for Writer's Flow agent
-const orchestrator = require('./orchestrator');
+import runWritersFlow, { requestStop, resetStop, isStopActive } from './orchestrator.js';
+import { getLLMConfig } from './llmService.js';
 
-// Example usage as a module or CLI
-module.exports = orchestrator;
+export default runWritersFlow;
+export { requestStop, resetStop, isStopActive, getLLMConfig };

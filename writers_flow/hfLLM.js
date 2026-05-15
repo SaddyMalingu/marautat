@@ -2,10 +2,20 @@
 import fetch from 'node-fetch';
 
 
+
 const HF_API_KEY = process.env.HF_API_KEY_WRITERS_FLOW || process.env.HF_API_KEY;
-// Use a robust, public, actively maintained model by default
 const HF_MODEL = process.env.HF_MODEL || 'Qwen/Qwen2.5-7B-Instruct';
-console.log('[HF-LLM] Using Hugging Face model:', HF_MODEL);
+const HF_API_KEY_MASKED = HF_API_KEY ? HF_API_KEY.slice(0, 6) + '...' + HF_API_KEY.slice(-4) : 'undefined';
+console.log(`[HF-LLM] Using Hugging Face model: ${HF_MODEL}`);
+console.log(`[HF-LLM] Using Hugging Face API key: ${HF_API_KEY_MASKED}`);
+
+export function getHuggingFaceLLMConfig() {
+  return {
+    provider: 'huggingface',
+    model: HF_MODEL,
+    apiKeyMasked: HF_API_KEY_MASKED,
+  };
+}
 
 export async function hfChatCompletion({ prompt, max_tokens = 700, temperature = 0.8 }) {
   const url = `https://api-inference.huggingface.co/models/${HF_MODEL}`;
@@ -20,6 +30,7 @@ export async function hfChatCompletion({ prompt, max_tokens = 700, temperature =
     inputs: prompt,
     parameters: { max_new_tokens: max_tokens, temperature },
   });
+  console.log(`[HF-LLM] Sending prompt to model: ${HF_MODEL}`);
   const res = await fetch(url, { method: 'POST', headers, body });
   if (!res.ok) throw new Error(`HF API error: ${res.status}`);
   const data = await res.json();

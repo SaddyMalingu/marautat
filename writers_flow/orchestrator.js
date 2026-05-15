@@ -16,11 +16,26 @@
  */
 
 
+
 import scrapeLeads from './scraper.js';
 import { qualifyLead, generateOutreach, generateWhatsAppMessage } from './qualifier.js';
-import { humanizeMessage } from './llmService.js';
+import { humanizeMessage, getLLMConfig } from './llmService.js';
 import sendEmail from './emailSender.js';
 import { generateSearchQueries } from './queryGenerator.js';
+import { isStopCommand } from './intentHandler.js';
+
+// Stop flag for NLP-based interruption
+let STOP_REQUESTED = false;
+export function requestStop() {
+  STOP_REQUESTED = true;
+  console.log('[WF] Stop requested by user command.');
+}
+export function resetStop() {
+  STOP_REQUESTED = false;
+}
+export function isStopActive() {
+  return STOP_REQUESTED;
+}
 
 const SEND_DELAY_MS = 3000;
 
@@ -110,6 +125,9 @@ export default async function runWritersFlow({
   valueProps = 'Alphadome automates operations, content, and digital engagement for businesses via AI agents.'
 } = {}) {
   const stats = { leads_found: 0, leads_qualified: 0, outreach_sent: 0, outreach_failed: 0, skipped: 0 };
+  resetStop();
+  console.log('[WF] Writer\'s Flow started.');
+  console.log('[WF] LLM config:', getLLMConfig());
 
   if (supabase && campaignId) {
     await supabase.from('wf_campaigns')
@@ -118,6 +136,12 @@ export default async function runWritersFlow({
   }
 
   try {
+    // NLP stop command check at start
+    if (userCommand && isStopCommand(userCommand)) {
+      requestStop();
+      console.log('[WF] Received stop command at start. Exiting.');
+      return { ...stats, stopped: true };
+    }
     const topIndustryPreview = (industryPlan || []).slice(0, 3).map((p) => p.industry || p.name).filter(Boolean).join(', ');
     let searchQueries = keywords;
     if (userCommand && sector) {
@@ -133,6 +157,11 @@ export default async function runWritersFlow({
       console.log(`[WF] Research-prioritized industries: ${topIndustryPreview}`);
     }
 
+    if (STOP_REQUESTED) {
+      console.log('[WF] Stop requested before scraping. Exiting.');
+      return { ...stats, stopped: true };
+    }
+
     const rawLeads = await scrapeLeads({
       keywords: searchQueries,
       industries,
@@ -145,8 +174,18 @@ export default async function runWritersFlow({
     console.log(`[WF] Found ${rawLeads.length} raw leads`);
 
     for (const rawLead of rawLeads) {
+      if (STOP_REQUESTED) {
+        console.log('[WF] Stop requested during lead processing. Exiting.');
+        return { ...stats, stopped: true };
+      }
       // Qualify
       const lead = await qualifyLead(rawLead);
+      // NLP stop command check on each lead
+      if (lead && lead.userCommand && isStopCommand(lead.userCommand)) {
+        requestStop();
+        console.log('[WF] Stop command detected in lead. Exiting.');
+        return { ...stats, stopped: true };
+      }
       if (lead.should_skip || lead.relevance_score < 30) {
         stats.skipped++;
         if (supabase && campaignId) await saveLead(supabase, campaignId, lead).catch(() => {});
@@ -240,7 +279,12 @@ export default async function runWritersFlow({
       }
     }
 
-    await updateCampaignStats(supabase, campaignId, { ...stats, status: 'completed' });
+    await updateCampaignStats(supabase, campaignId, { ...stats, status: STOP_REQUESTED ? 'stopped' : 'completed' });
+    if (STOP_REQUESTED) {
+      console.log('[WF] Writer\'s Flow stopped by user command.');
+      return { ...stats, stopped: true };
+    }
+    console.log('[WF] Writer\'s Flow completed.');
     return stats;
 
   } catch (err) {
