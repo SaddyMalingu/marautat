@@ -8,16 +8,9 @@ const HF_API_KEY = process.env.HF_API_KEY_WRITERS_FLOW || process.env.HF_API_KEY
 // Prioritized list of fallback models
 const HF_MODELS = [
   process.env.HF_MODEL,
-  'meta-llama/Llama-3.1-8B-Instruct',
-  'Qwen/Qwen2.5-7B-Instruct',
   'mistralai/Mistral-7B-Instruct-v0.2',
   'google/gemma-7b-it',
-  'meta-llama/Llama-2-7b-chat-hf',
-  'meta-llama/Llama-3-8b-chat-hf',
-  'openchat/openchat-3.5-0106',
-  'tiiuae/falcon-7b-instruct',
-  'databricks/dolly-v2-7b',
-  'NousResearch/Nous-Hermes-2-Mistral-7B-DPO',
+  'Qwen/Qwen2.5-7B-Instruct',
   'HuggingFaceH4/zephyr-7b-beta',
 ].filter(Boolean);
 
