@@ -51,13 +51,16 @@ export async function hfChatCompletion({ prompt, max_tokens = 700, temperature =
   });
 
   let lastErr = null;
+  const attemptLog = [];
   for (const model of CLEANED_HF_MODELS) {
     const url = `https://api-inference.huggingface.co/models/${model}`;
-    console.log(`[HF-LLM] Sending prompt to model: ${model}`);
+    console.log(`[HF-LLM] Attempting model: ${model}`);
     try {
       const res = await fetch(url, { method: 'POST', headers, body });
       if (!res.ok) {
-        console.warn(`[HF-LLM] Model ${model} failed with status ${res.status}`);
+        const msg = `[HF-LLM] Model ${model} failed with status ${res.status}`;
+        attemptLog.push({ model, status: res.status, error: msg });
+        console.warn(msg);
         if (res.status === 404 || res.status === 403) {
           lastErr = new Error(`HF API error: ${res.status}`);
           continue; // Try next model
@@ -67,15 +70,39 @@ export async function hfChatCompletion({ prompt, max_tokens = 700, temperature =
       }
       const data = await res.json();
       // Try to extract the generated text
-      if (Array.isArray(data) && data[0]?.generated_text) return data[0].generated_text;
-      if (data?.generated_text) return data.generated_text;
-      if (data?.choices?.[0]?.text) return data.choices[0].text;
+      if (Array.isArray(data) && data[0]?.generated_text) {
+        console.log(`[HF-LLM] Model ${model} succeeded.`);
+        attemptLog.push({ model, status: 'success', error: null });
+        if (attemptLog.length > 1) {
+          console.log('[HF-LLM] Model fallback summary:', attemptLog);
+        }
+        return data[0].generated_text;
+      }
+      if (data?.generated_text) {
+        console.log(`[HF-LLM] Model ${model} succeeded.`);
+        attemptLog.push({ model, status: 'success', error: null });
+        if (attemptLog.length > 1) {
+          console.log('[HF-LLM] Model fallback summary:', attemptLog);
+        }
+        return data.generated_text;
+      }
+      if (data?.choices?.[0]?.text) {
+        console.log(`[HF-LLM] Model ${model} succeeded.`);
+        attemptLog.push({ model, status: 'success', error: null });
+        if (attemptLog.length > 1) {
+          console.log('[HF-LLM] Model fallback summary:', attemptLog);
+        }
+        return data.choices[0].text;
+      }
       throw new Error('No generated text from HF');
     } catch (err) {
       lastErr = err;
-      console.warn(`[HF-LLM] Model ${model} failed: ${err.message}`);
+      const msg = `[HF-LLM] Model ${model} failed: ${err.message}`;
+      attemptLog.push({ model, status: 'error', error: err.message });
+      console.warn(msg);
       continue;
     }
   }
+  console.error('[HF-LLM] All model attempts failed. Fallback summary:', attemptLog);
   throw lastErr || new Error('All Hugging Face models failed');
 }
