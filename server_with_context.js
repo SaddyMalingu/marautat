@@ -1,60 +1,3 @@
-// ===== ALPHADOME KNOWLEDGE BASE INTEGRATION =====
-let alphadomeKnowledgeBase = null;
-const knowledgeBasePath = path.join(process.cwd(), "alphadome_knowledge_base_full.json");
-try {
-  const kbRaw = fs.readFileSync(knowledgeBasePath, "utf8");
-  alphadomeKnowledgeBase = JSON.parse(kbRaw);
-  log("✓ Alphadome knowledge base loaded", "SYSTEM");
-} catch (err) {
-  log(`Failed to load alphadome_knowledge_base_full.json: ${err.message}`, "ERROR");
-  alphadomeKnowledgeBase = null;
-}
-
-/**
- * Query the Alphadome knowledge base for a user/admin question.
- * Returns the best matching public or classified answer, or null if not found.
- * @param {string} query - User/admin question
- * @param {string} role - "user" or "admin" (controls visibility)
- */
-function queryAlphadomeKnowledgeBase(query, role = "user") {
-  if (!alphadomeKnowledgeBase) return null;
-  // Flatten all modules for search
-  const modules = Object.values(alphadomeKnowledgeBase.modules || {});
-  let bestMatch = null;
-  let bestScore = 0;
-  for (const mod of modules) {
-    // Search public and classified fields
-    for (const field of ["public", "classified"]) {
-      if (field === "classified" && role !== "admin") continue;
-      const section = mod[field];
-      if (!section) continue;
-      for (const [k, v] of Object.entries(section)) {
-        if (typeof v === "string" && v.length > 0) {
-          // Simple keyword match
-          const score = scoreMatch(query, v, k);
-          if (score > bestScore) {
-            bestScore = score;
-            bestMatch = { module: mod.module_name || mod.name || "", field: k, value: v, visibility: field };
-          }
-        }
-      }
-    }
-  }
-  if (bestScore > 0.2) return bestMatch;
-  return null;
-}
-
-// Simple scoring: keyword overlap
-function scoreMatch(query, text, fieldName = "") {
-  const q = query.toLowerCase();
-  const t = text.toLowerCase();
-  let score = 0;
-  for (const word of q.split(/\s+/)) {
-    if (t.includes(word)) score += 1;
-    if (fieldName && fieldName.toLowerCase().includes(word)) score += 0.5;
-  }
-  return score / (q.split(/\s+/).length + 1);
-}
 import express from "express";
 import bodyParser from "body-parser";
 import axios from "axios";
@@ -1406,20 +1349,6 @@ async function generateReply(userMessage, tenant = null, templates = null, train
   if (trainingReply) {
     log("✓ Training data match", "AI");
     return trainingReply;
-  }
-
-  // 0️⃣c If tenant is null (platform-wide), try Alphadome knowledge base
-  if (!tenant && alphadomeKnowledgeBase) {
-    // Determine role: admin if user is in ADMIN_NUMBERS, else user
-    let role = "user";
-    // contextMessages may have user phone in context, but not always; fallback to user
-    const userPhone = contextMessages?.find?.(m => m.role === "user")?.content?.match?.(/\d{10,}/)?.[0] || null;
-    if (userPhone && ADMIN_NUMBERS.includes(userPhone)) role = "admin";
-    const kbResult = queryAlphadomeKnowledgeBase(userMessage, role);
-    if (kbResult) {
-      log(`✓ KB match: [${kbResult.visibility}] ${kbResult.module} - ${kbResult.field}`, "AI");
-      return kbResult.value;
-    }
   }
 
   // If tenant-aware, do NOT answer outside brand data
