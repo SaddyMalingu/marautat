@@ -1,0 +1,740 @@
+{
+  "alphadome": {
+    "core_purpose": "Alphadome is a modular, AI- and blockchain-powered ecosystem designed to facilitate success in the digital age through systems that automate, optimize, and secure business, creative, industrial, and research operations. It serves brands, professionals, and organizations through agentic automation, digital asset creation and management (NFTs), and intelligent orchestration. The system is designed to understand users and develop systems and assets that enhance their capacity to leverage top-notch tech and thrive.",
+    "unique_value_propositions": [
+      "Agentic Automation: Specialized AI agents automate critical decisions and workflows.",
+      "Context Awareness: Multi-tenant, context-propagating middleware ensures personalized, secure automation.",
+      "Tokenization: All assets and agents can be minted as NFTs, supporting flexible ownership and monetization.",
+      "Modularity: Each subsystem is independently deployable, extensible, and API-driven.",
+      "Security & Compliance: Enterprise-grade protocols, auditability, and privacy by design."
+    ],
+    "cross_cutting_features": [
+      "AI/ML Integration: LLMs, ControlNet, Replicate, custom models for automation, content, analytics, and workflow orchestration.",
+      "Blockchain/NFT: Asset tokenization, multi/single ownership, traceability, and monetization.",
+      "Security & Compliance: Role-based access, audit trails, encryption, compliance modules.",
+      "Extensibility: Plugin systems, modular agents, API-first design.",
+      "DevOps: Docker, CI/CD, automated deployment, environment provisioning.",
+      "Monetization: SaaS, subscription, transaction fees, marketplace commissions, NFT/asset sales."
+    ],
+    "modules": [
+      {
+        "name": "Alpha Construction",
+        "purpose": "Cloud-ready construction management platform.",
+        "core_modules": [
+          "Project Management", "Communication", "Cost Estimation & Budget Tracking", "Quality Control", "Safety Management", "Document Management", "Workforce & Training", "Supply Chain Coordination", "Performance Analytics", "Compliance Tracking"
+        ],
+        "features": [
+          "Project creation, milestone tracking, team messaging, cost estimation, inspection scheduling, incident reporting, document storage, worker management, supplier/material tracking, KPI dashboards, compliance monitoring."
+        ],
+        "api_contracts": [
+          "GET/POST/PUT/DELETE /projects", "GET/POST /messages", "GET/POST /estimates", "GET/POST /inspections", "GET/POST /incidents", "GET/POST /documents", "GET/POST /workers", "GET /training", "GET/POST /materials", "GET /deliveries", "GET /analytics/overview", "GET /compliance"
+        ],
+        "technical_architecture": {
+          "backend": "Node.js (Express) or Python (FastAPI)",
+          "frontend": "React (web), React Native/Flutter (mobile)",
+          "database": "PostgreSQL (primary), Redis (caching)",
+          "apis": "RESTful, OpenAPI/Swagger",
+          "authentication": "OAuth 2.0 / JWT",
+          "devops": "Docker, CI/CD",
+          "cloud": "AWS/Azure/GCP ready",
+          "shared_services": "Centralized authentication, notifications, file storage"
+        },
+        "folder_structure": [
+          "project-management", "communication", "cost-estimation", "quality-control", "safety-management", "document-management", "workforce", "supply-chain", "analytics", "compliance", "common"
+        ],
+        "development_integration": "Each module is developed as a standalone service with clear interfaces. The integration layer unifies modules for a seamless user experience.",
+        "developer_notes": {
+          "internal_architecture": "Gateway/API Layer, module microservices, centralized shared services, reserved analytics/AI layer.",
+          "algorithms_data_handling": "Proprietary cost/quality/compliance algorithms, internal rule sets, custom heuristics for analytics.",
+          "security_access": "OAuth 2.0/JWT with role-based access control. Sensitive endpoints restricted to admin/finance roles.",
+          "completion_earnings": "Weighted average of completed milestones, tasks, and deliverables. Earnings based on project billing milestones, cost savings, and performance bonuses.",
+          "completion_status": "~90% complete (core modules operational, advanced analytics in progress)",
+          "earnings_status": "Revenue from SaaS, subscriptions, and commissions. Detailed financials classified."
+        },
+        "user_facing_summary": "Alpha Construction is a modular platform for managing projects, teams, costs, quality, safety, documents, supply chain, analytics, and compliance in construction.",
+        "bot_training_guidance": "For general users, focus on public features and supported workflows. For admins/developers, reference classified/internal details as appropriate. For requests about algorithms, credentials, or internal scripts: Respond with 'Sorry, that information is classified and cannot be shared.'",
+        "example_bot_responses": [
+          {"q": "What does Alpha Construction offer?", "a": "Alpha Construction is a modular platform for managing projects, teams, costs, quality, safety, documents, supply chain, analytics, and compliance in construction."},
+          {"q": "How is project completion calculated?", "a": "[Classified] Project completion is calculated using a proprietary weighted average of milestones, tasks, and deliverables. Details are available to authorized users only."},
+          {"q": "Can I see how earnings are determined?", "a": "[Classified] Earnings are computed based on billing milestones, cost savings, and performance bonuses. The exact calculation is confidential and accessible only to authorized personnel."}
+        ],
+        "documentation_links": [
+          "ARCHITECTURE.md", "API_CONTRACTS.md", "README.md"
+        ],
+        "classified": {
+          "internal_architecture": "Gateway/API Layer, module microservices, centralized shared services, reserved analytics/AI layer.",
+          "algorithms_data_handling": "Proprietary cost/quality/compliance algorithms, internal rule sets, custom heuristics for analytics.",
+          "security_access": "OAuth 2.0/JWT with role-based access control. Sensitive endpoints restricted to admin/finance roles.",
+          "completion_earnings": "Weighted average of completed milestones, tasks, and deliverables. Earnings based on project billing milestones, cost savings, and performance bonuses."
+        },
+        "public": {
+          "core_features": "Project management, communication, cost estimation, quality/safety control, document/workforce/supply chain management, analytics, compliance.",
+          "api_overview": "APIs for all major modules, documented with OpenAPI/Swagger."
+        },
+        "visibility": "public"
+      },
+      {
+        "name": "Alpha Architect",
+        "purpose": "AI-driven architectural design, 3D modeling, and cloud rendering.",
+        "core_modules": [
+          "AI-Driven Design", "Cloud Rendering", "Asset Management", "Pipeline Automation", "Blender Integration", "Collaboration Tools", "Monetization & Billing"
+        ],
+        "features": [
+          "Generate architectural plans, 3D models, and visualizations from sketches, text prompts, or templates. Offload rendering to the cloud. Organize and retrieve assets. Automate pipeline from concept to render. Integrate with Blender. Share designs and manage feedback. Built-in billing endpoints."
+        ],
+        "api_contracts": [
+          "POST /design/generate", "POST /render/cloud", "GET/POST /assets", "POST /pipeline/step", "GET /collaboration/feedback", "POST /billing/usage"
+        ],
+        "technical_architecture": {
+          "backend": "Python core, FastAPI",
+          "frontend": "Web dashboards (React/HTML)",
+          "database": "Supabase (cloud DB)",
+          "ai_integration": "LLMs, ControlNet, Replicate",
+          "cloud": "Cloud job queue for distributed rendering",
+          "integration": "Blender add-ons, external AI models"
+        },
+        "folder_structure": ["src/", "addons/", "cloud_blender/", "ui/", "scripts/", "notebooks/", "external/", "outputs/"],
+        "developer_notes": {
+          "internal_architecture": "Proprietary methods for procedural geometry, AI-driven floorplan analysis, hybrid cloud rendering.",
+          "job_queue_cloud": "Custom job queue schema for distributed rendering and task management.",
+          "external_ai": "Custom wrappers and optimization for mmdetection, ControlNet, and other AI models.",
+          "environment_setup": "Automated scripts for environment provisioning, dependency management, and CI/CD.",
+          "security_privacy": "Internal protocols for user data protection and secure cloud operations.",
+          "monetization_logic": "Proprietary algorithms for usage-based billing and revenue sharing.",
+          "completion_status": "~80% (core pipeline, cloud integration, and asset management are production-ready; some UI and advanced AI features are in progress)",
+          "earnings_status": "Early-stage monetization; revenue streams from cloud rendering, premium features, and API access. (Exact figures classified)"
+        },
+        "user_facing_summary": "Alpha Architect is the core engine for AI-driven architectural design, 3D modeling, and cloud rendering, streamlining the creation, visualization, and management of architectural projects.",
+        "bot_training_guidance": "For general users, focus on user-facing features and workflows. For admins/developers, reference classified/internal details as appropriate. For requests about algorithms, credentials, or internal scripts: Respond with 'Sorry, that information is classified and cannot be shared.'",
+        "example_bot_responses": [
+          {"q": "What does Alpha Architect offer?", "a": "Alpha Architect enables AI-driven design, 3D modeling, cloud rendering, asset management, and pipeline automation for architectural projects."},
+          {"q": "How does cloud rendering work?", "a": "Cloud rendering offloads heavy tasks to distributed servers, providing fast, high-quality outputs and freeing up local resources."},
+          {"q": "Can I see the internal AI algorithms?", "a": "[Classified] Algorithmic details are confidential and only available to authorized developers."}
+        ],
+        "documentation_links": ["ARCHITECTURE.md", "README.md"],
+        "classified": {
+          "internal_architecture": "Proprietary methods for procedural geometry, AI-driven floorplan analysis, hybrid cloud rendering.",
+          "job_queue_cloud": "Custom job queue schema for distributed rendering and task management.",
+          "external_ai": "Custom wrappers and optimization for mmdetection, ControlNet, and other AI models.",
+          "environment_setup": "Automated scripts for environment provisioning, dependency management, and CI/CD.",
+          "security_privacy": "Internal protocols for user data protection and secure cloud operations.",
+          "monetization_logic": "Proprietary algorithms for usage-based billing and revenue sharing.",
+          "completion_earnings": "System Completion: ~80%. Core Features: 95% complete. Advanced AI/UX: 60% complete. Earnings: Early-stage monetization; revenue streams from cloud rendering, premium features, and API access."
+        },
+        "public": {
+          "core_features": "AI design generation, cloud rendering, asset management, pipeline automation, Blender integration, collaboration, monetization.",
+          "api_overview": "APIs for design, rendering, asset management, and billing."
+        },
+        "visibility": "public"
+      },
+      {
+        "name": "Alpha 3.0 (Comms & Outreach)",
+        "purpose": "Multi-tenant WhatsApp-centric automation for campaigns, leads, onboarding, revenue, and catalog/product management.",
+        "core_modules": [
+          "Campaign Management", "Lead Management & Onboarding", "Revenue Tracking & Analytics", "Catalog & Product Management", "Admin & Dashboard Tools", "Webhook & Integration Tools", "Fallback & Continuity Mechanisms", "Writer’s Flow (Content/LLM Integration)"
+        ],
+        "features": [
+          "Schedule, trigger, and monitor WhatsApp campaigns for multiple tenants. Automated onboarding, lead tracking, revenue dashboards, catalog upload, admin dashboards, webhook simulation, fallback for payment/campaign, and content/LLM integration."
+        ],
+        "api_contracts": [
+          "POST /webhook", "GET /dashboard", "POST /campaign/trigger", "GET/POST /leads", "GET /revenue", "POST /catalog/upload", "GET /admin", "POST /fallback/trigger"
+        ],
+        "technical_architecture": {
+          "backend": "Node.js (JavaScript/TypeScript), modular scripts",
+          "database": "SQL-based, migration and backup scripts",
+          "middleware": "Multi-tenant, strict data isolation",
+          "dashboards": "Real-time dashboards for admin and tenants",
+          "integration": "Webhook simulator, Writer’s Flow (Jupyter, LLM)"
+        },
+        "folder_structure": [
+          "campaigns", "leads", "revenue", "catalog", "admin", "webhooks", "fallback", "writers_flow"
+        ],
+        "developer_notes": {
+          "fallback_payment": "Fallback/payment logic, workflow automation, LLM prompt engineering.",
+          "technical_architecture": "Node.js (JavaScript/TypeScript), modular scripts, SQL-based, migration and backup scripts, multi-tenant middleware, live metrics, security, testing & simulation, fallback logic, deployment.",
+          "completion_status": "85–90% complete. All core modules operational; ongoing work focuses on analytics, fallback, and admin UX.",
+          "earnings_status": "Generating revenue, with growth expected as more tenants onboard. Detailed financials are confidential."
+        },
+        "user_facing_summary": "Alpha 3.0 is a multi-tenant, WhatsApp-centric automation and business enablement platform for campaigns, leads, onboarding, revenue, and catalog/product management.",
+        "bot_training_guidance": "For general users, focus on public features, value, and supported workflows. For admins/developers, reference classified/internal details as appropriate. For requests about algorithms, credentials, or internal scripts: Respond with 'Sorry, that information is classified and cannot be shared.'",
+        "example_bot_responses": [
+          {"q": "What does Alpha 3.0 offer?", "a": "Alpha 3.0 automates campaigns, lead management, onboarding, revenue tracking, and catalog/product operations for multiple tenants via WhatsApp and web tools."},
+          {"q": "What is Writer’s Flow?", "a": "Writer’s Flow is a content and workflow automation module, integrating LLMs for campaign content, product descriptions, and messaging."},
+          {"q": "How does fallback payment work?", "a": "[Classified] Fallback/payment logic is proprietary and only available to authorized personnel."}
+        ],
+        "documentation_links": ["MULTI_TENANT_README.md", "API_DOCUMENTATION.md", "Writer's_Flow_3_0.ipynb"],
+        "classified": {
+          "fallback_payment": "Fallback/payment logic, workflow automation, LLM prompt engineering.",
+          "technical_architecture": "Node.js (JavaScript/TypeScript), modular scripts, SQL-based, migration and backup scripts, multi-tenant middleware, live metrics, security, testing & simulation, fallback logic, deployment.",
+          "completion_earnings": "System Completion: 85–90%. Earnings: Generating revenue, with growth expected as more tenants onboard. Detailed financials are confidential."
+        },
+        "public": {
+          "core_features": "Campaign/lead/revenue/catalog/admin/webhook/fallback modules, Writer’s Flow for content/LLM integration.",
+          "api_overview": "APIs for campaign, lead, revenue, catalog, admin, webhook, and fallback management."
+        },
+        "visibility": "public"
+      },
+      {
+        "name": "KEMSA 3.0",
+        "purpose": "Healthcare supply chain transformation and analytics.",
+        "core_modules": [
+          "Dashboard", "ETL (Extract, Transform, Load)", "AI/ML Models", "Integration", "Documentation & Governance"
+        ],
+        "features": [
+          "Real-time inventory tracking, data visualization, anomaly detection, demand forecasting, blockchain traceability, conversational bot, data governance, and audit trails."
+        ],
+        "api_contracts": [
+          "GET /dashboard", "POST /etl/run", "GET /models/forecast", "GET /integration/partners", "GET /docs/governance"
+        ],
+        "technical_architecture": {
+          "backend": "Python microservices",
+          "frontend": "HTML/React",
+          "database": "Relational/NoSQL DB",
+          "ai_models": "Demand forecasting, anomaly detection, route optimization, federated learning",
+          "blockchain": "Traceability for supply chain transparency",
+          "devops": "Docker, CI/CD, observability"
+        },
+        "folder_structure": ["dashboard", "etl", "models", "integration", "docs", "governance"],
+        "developer_notes": {
+          "technical_architecture": "Python-based microservices, modular ETL, AI model orchestration, HTML templates, relational/time-series/NoSQL DB, role-based access, blockchain, DevOps, observability.",
+          "algorithms_ip": "Proprietary ML, federated learning, route optimization, data lineage/versioning.",
+          "completion_status": "Core modules: 85% complete. AI/ML models: 70% production-ready. Integrations: 60%. Documentation: 90% user-facing, 75% developer/internal.",
+          "earnings_status": "60% of projected revenue secured. Additional opportunities in negotiation. Revenue model: Subscription + transaction fees + integration services."
+        },
+        "user_facing_summary": "KEMSA 3.0 is a healthcare supply chain transformation and analytics platform, offering real-time dashboards, AI/ML models, blockchain traceability, and conversational interfaces.",
+        "bot_training_guidance": "For general users, focus on user-facing features, analytics, and supply chain transparency. For admins/developers, reference classified/internal details as appropriate. For requests about algorithms, credentials, or internal scripts: Respond with 'Sorry, that information is classified and cannot be shared.'",
+        "example_bot_responses": [
+          {"q": "What does KEMSA 3.0 offer?", "a": "KEMSA 3.0 provides real-time dashboards, AI/ML analytics, blockchain-backed traceability, and conversational tools for healthcare supply chains."},
+          {"q": "How does anomaly detection work?", "a": "Anomaly detection uses AI/ML models to flag unusual patterns in supply and demand data, improving operational intelligence."},
+          {"q": "Can I see the ML algorithms?", "a": "[Classified] Proprietary ML and federated learning algorithms are confidential and only available to authorized developers."}
+        ],
+        "documentation_links": ["DOCUMENTATION_INDEX.md", "DB_ALIGNMENT_REPORT.md"],
+        "classified": {
+          "technical_architecture": "Python-based microservices, modular ETL, AI model orchestration, HTML templates, relational/time-series/NoSQL DB, role-based access, blockchain, DevOps, observability.",
+          "algorithms_ip": "Proprietary ML, federated learning, route optimization, data lineage/versioning.",
+          "completion_earnings": "Core modules: 85% complete. AI/ML models: 70% production-ready. Integrations: 60%. Documentation: 90% user-facing. Earnings: 60% of projected revenue secured."
+        },
+        "public": {
+          "core_features": "Real-time dashboards, ETL, AI/ML models (demand forecasting, anomaly detection), blockchain traceability, conversational bot.",
+          "api_overview": "APIs for dashboard, ETL, models, integration, and governance."
+        },
+        "visibility": "public"
+      },
+      {
+        "name": "Alpha IDE",
+        "purpose": "Next-gen developer IDE with agent-driven orchestration.",
+        "core_modules": [
+          "Project/File Management", "Code Editing", "Build/Run/Debug", "Version Control", "Testing", "Search/Navigation", "Extensibility", "Human Interface", "Background Operation", "Documentation/Help"
+        ],
+        "features": [
+          "Create, edit, delete, and organize files and folders. Syntax highlighting, code completion, refactoring. Build, run, debug code. Integrated Git/VCS. Automated/manual test execution. Advanced code search. Plugin architecture. CLI and planned GUI. Event-driven automation. In-app documentation/help."
+        ],
+        "api_contracts": [
+          "POST /project/create", "POST /file/edit", "POST /build/run", "POST /vcs/commit", "POST /test/run", "GET /search", "POST /plugin/load", "GET /docs/help"
+        ],
+        "technical_architecture": {
+          "backend": "Modular agent architecture, event bus",
+          "frontend": "CLI/GUI (planned)",
+          "plugin_system": "Dynamic loading of agent types and features",
+          "state_management": "Stateless agents or shared state store",
+          "security": "Isolated execution, error propagation, trusted agent restrictions"
+        },
+        "folder_structure": ["agents/", "plugins/", "projects/", "docs/", "tests/", "event_bus/", "cli/", "gui/"],
+        "developer_notes": {
+          "agent_architecture": "Agent specialization, communication protocol, state management, error handling, security/sandboxing.",
+          "key_agents": "FileSystemAgent, VCSAgent, Event Bus, TerminalAgent, SearchAgent, TestAgent.",
+          "orchestration": "Event-driven orchestrator, plugin loader, agent manager/watcher.",
+          "security_error_handling": "Isolated execution, error propagation, sensitive operations restricted to trusted agents.",
+          "completion_status": "~70% (core features operational, extensibility and advanced UI in development)",
+          "earnings_status": "Enterprise licensing and premium support. Additional monetization strategies (plugin marketplace, usage-based billing) in development."
+        },
+        "user_facing_summary": "Alpha IDE is a smart, event-driven IDE that leverages specialized agents to manage all aspects of software development, from project management to testing and extensibility.",
+        "bot_training_guidance": "For general users, focus on user-facing features and agent-driven workflows. For admins/developers, reference classified/internal details as appropriate. For requests about algorithms, credentials, or internal scripts: Respond with 'Sorry, that information is classified and cannot be shared.'",
+        "example_bot_responses": [
+          {"q": "What does Alpha IDE offer?", "a": "Alpha IDE provides automated project management, code editing, version control, testing, and search, all orchestrated by specialized agents."},
+          {"q": "How does agent orchestration work?", "a": "Agents communicate via an event bus, enabling decoupled, event-driven automation and extensibility."},
+          {"q": "Can I see the agent algorithms?", "a": "[Classified] Agent algorithms and event bus logic are confidential and only available to authorized developers."}
+        ],
+        "documentation_links": ["README.md", "docs/ARCHITECTURE.md"],
+        "classified": {
+          "agent_architecture": "Agent specialization, communication protocol, state management, error handling, security/sandboxing.",
+          "key_agents": "FileSystemAgent, VCSAgent, Event Bus, TerminalAgent, SearchAgent, TestAgent.",
+          "orchestration": "Event-driven orchestrator, plugin loader, agent manager/watcher.",
+          "security_error_handling": "Isolated execution, error propagation, sensitive operations restricted to trusted agents.",
+          "completion_earnings": "System Completion: ~70%. Earnings: Enterprise licensing and premium support. Additional monetization strategies in development.",
+          "developer_algorithm_details": "Agent algorithms, event bus, plugin system, health monitoring."
+        },
+        "public": {
+          "core_features": "Project/file/code management, build/run/debug, VCS, testing, search, extensibility, event-driven automation.",
+          "api_overview": "APIs for project, file, build, VCS, test, search, plugin, and documentation management."
+        },
+        "visibility": "public"
+      },
+      {
+        "name": "Alpha Professor",
+        "purpose": "Academic CRM and outreach for education/freelance.",
+        "core_modules": [
+          "Lead Generation & Outreach", "CRM & Analytics", "Payments & Marketplace", "User Management & Onboarding", "Compliance & Integrity", "Content & Resource Management"
+        ],
+        "features": [
+          "Automated lead capture, outreach logging, campaign management, CRM schema, analytics dashboard, in-app payments, marketplace, onboarding flows, compliance checks, resource management."
+        ],
+        "api_contracts": [
+          "POST /leads/capture", "POST /outreach/log", "GET /crm/analytics", "POST /payments/process", "GET /marketplace", "POST /user/onboard", "GET /compliance/check", "POST /content/resource"
+        ],
+        "technical_architecture": {
+          "backend": "Node.js (Express), modular services (drip, email, payments, lead scoring, etc.)",
+          "frontend": "React SPA",
+          "database": "SQL-based schema",
+          "queue_system": "Job queue for async tasks",
+          "middleware": "Auth, logging, smart routing",
+          "public_api": "RESTful endpoints"
+        },
+        "folder_structure": ["leads/", "crm/", "payments/", "marketplace/", "users/", "compliance/", "content/", "docs/"],
+        "developer_notes": {
+          "algorithmic_sensitive": "Lead scoring and outreach suggestion algorithms, payment processing logic, marketplace persistence and billing logic, compliance checks.",
+          "completion_status": "~85% (core modules production-ready; advanced analytics and some marketplace features in late-stage development)",
+          "earnings_status": "10-20% commission on all marketplace transactions, with dynamic rates for premium partners (exact rates and logic classified)."
+        },
+        "user_facing_summary": "Alpha Professor is a SaaS platform for academic CRM, outreach, payments, compliance, and analytics, designed for educational institutions, freelancers, and academic service providers.",
+        "bot_training_guidance": "For general users, focus on user-facing features, lead management, and analytics. For admins/developers, reference classified/internal details as appropriate. For requests about algorithms, credentials, or internal scripts: Respond with 'Sorry, that information is classified and cannot be shared.'",
+        "example_bot_responses": [
+          {"q": "What does Alpha Professor offer?", "a": "Alpha Professor streamlines academic CRM, outreach, payments, compliance, and analytics for education and freelance professionals."},
+          {"q": "How does lead scoring work?", "a": "[Classified] Lead scoring algorithms are proprietary and only available to authorized developers."},
+          {"q": "What is the marketplace?", "a": "A platform for premium academic services, with in-app payments and automated billing."}
+        ],
+        "documentation_links": ["README.md", "docs/ARCHITECTURE.md"],
+        "classified": {
+          "algorithmic_sensitive": "Lead scoring and outreach suggestion algorithms, payment processing logic, marketplace persistence and billing logic, compliance checks.",
+          "completion_earnings": "System completion: ~85%. Revenue/earning model: 10-20% commission on all marketplace transactions."
+        },
+        "public": {
+          "core_features": "Lead generation, outreach, CRM, analytics, payments, onboarding, compliance, content/resource management.",
+          "api_overview": "APIs for leads, outreach, CRM, payments, marketplace, user onboarding, compliance, and content/resource management."
+        },
+        "visibility": "public"
+      },
+      {
+        "name": "Zone (Content & Entertainment)",
+        "purpose": "Content generation, management, and delivery.",
+        "core_modules": [
+          "Content Generation", "Workflow Orchestration", "AI Provider Integration", "Real-Time Feed", "Modular UI", "User Management", "Analytics & Reporting"
+        ],
+        "features": [
+          "Automated content creation, workflow orchestration, multi-provider AI integration, real-time content feed, modular UI components, user management, analytics dashboard."
+        ],
+        "api_contracts": [
+          "POST /content/generate", "GET /feed", "POST /workflow/trigger", "POST /ai/integrate", "GET /analytics", "POST /user/register", "GET /ui/modules"
+        ],
+        "technical_architecture": {
+          "frontend": "Next.js + Tailwind CSS",
+          "backend": "API Routes (Node.js/TypeScript)",
+          "database": "Prisma ORM + SQLite",
+          "ai_integration": "HuggingFace, Replicate, custom adapters",
+          "workers": "Background jobs for content generation and feed updates",
+          "utilities": "Reusable libraries for prompt engineering, content formatting, and analytics"
+        },
+        "folder_structure": ["content/", "workflows/", "ai/", "feed/", "ui/", "users/", "analytics/", "workers/", "libs/", "docs/"],
+        "developer_notes": {
+          "security_sensitive": "Proprietary algorithms for prompt engineering and generation orchestration, API keys, database schema, user data handling.",
+          "completion_status": "~85% (core modules production-ready; advanced analytics and multi-provider AI integration in progress)",
+          "earnings_status": "Subscription model, premium content generation, API usage (detailed revenue breakdown classified)."
+        },
+        "user_facing_summary": "Zone is a modular platform for automated content generation, workflow orchestration, AI integration, and real-time content delivery for entertainment and media.",
+        "bot_training_guidance": "For general users, focus on user-facing features, content workflows, and AI integration. For admins/developers, reference classified/internal details as appropriate. For requests about algorithms, credentials, or internal scripts: Respond with 'Sorry, that information is classified and cannot be shared.'",
+        "example_bot_responses": [
+          {"q": "What does Zone offer?", "a": "Zone automates content creation, workflow orchestration, and AI integration for entertainment and media platforms."},
+          {"q": "How does AI integration work?", "a": "Zone connects to multiple AI providers (like HuggingFace and Replicate) via custom adapters for content generation and analysis."},
+          {"q": "Can I see the prompt engineering logic?", "a": "[Classified] Prompt engineering and orchestration algorithms are proprietary and only available to authorized developers."}
+        ],
+        "documentation_links": ["README.md", "docs/ARCHITECTURE.md"],
+        "classified": {
+          "security_sensitive": "Proprietary algorithms for prompt engineering and generation orchestration, API keys, database schema, user data handling.",
+          "completion_earnings": "System completion: ~85%. Earnings: Subscription model, premium content generation, API usage."
+        },
+        "public": {
+          "core_features": "Automated content, workflow orchestration, AI provider integration, real-time feed, modular UI, user management, analytics.",
+          "api_overview": "APIs for content generation, feed, workflow, AI integration, analytics, user management, and UI modules."
+        },
+        "visibility": "public"
+      },
+      {
+        "name": "Intra Africa Journal Hub",
+        "purpose": "African research/journal aggregation, submission, peer review, publication, analytics, payments.",
+        "core_modules": [
+          "Journal Aggregation & Discovery", "Manuscript Submission & Peer Review", "Article Publication & Hosting", "Communication & Notifications", "Analytics & Reporting", "Affiliate & Partner Management", "Payment & APC Tracking"
+        ],
+        "features": [
+          "Aggregates African research journals, supports manuscript submission, peer review, publication, analytics, affiliate management, and payment/APC tracking."
+        ],
+        "api_contracts": [
+          "GET /journals", "POST /manuscript/submit", "GET /peer-review", "POST /article/publish", "GET /notifications", "GET /analytics/report", "POST /affiliate/register", "POST /payment/apc"
+        ],
+        "technical_architecture": {
+          "frontend": "Next.js (React)",
+          "backend": "Node.js/TypeScript API routes",
+          "database": "Drizzle ORM + PostgreSQL",
+          "testing": "Playwright for E2E tests",
+          "modularity": "Modular codebase for journals, submissions, reviews, analytics, payments"
+        },
+        "folder_structure": ["journals/", "manuscripts/", "peer_review/", "articles/", "notifications/", "analytics/", "affiliates/", "payments/", "docs/", "tests/"],
+        "developer_notes": {
+          "security_sensitive": "User data handling, payment processing, affiliate logic, analytics aggregation.",
+          "completion_status": "85-90% (core modules production-ready; advanced analytics and affiliate features in progress)",
+          "earnings_status": "Revenue from APCs (article processing charges) and affiliate partnerships. Detailed financials classified."
+        },
+        "user_facing_summary": "Intra Africa Journal Hub is a platform for African research journal aggregation, submission, peer review, publication, analytics, and payments, supporting researchers, editors, and institutions.",
+        "bot_training_guidance": "For general users, focus on user-facing features, journal discovery, and submission workflows. For admins/developers, reference classified/internal details as appropriate. For requests about algorithms, credentials, or internal scripts: Respond with 'Sorry, that information is classified and cannot be shared.'",
+        "example_bot_responses": [
+          {"q": "What does Intra Africa Journal Hub offer?", "a": "It aggregates African research journals, supports manuscript submission, peer review, publication, analytics, and payments."},
+          {"q": "How are APCs handled?", "a": "Article Processing Charges (APCs) are tracked and processed via integrated payment modules. Details are available to authorized users only."},
+          {"q": "Can I see the affiliate logic?", "a": "[Classified] Affiliate management and revenue logic are confidential and only available to authorized developers."}
+        ],
+        "documentation_links": ["README.md", "docs/ARCHITECTURE.md"],
+        "classified": {
+          "security_sensitive": "User data handling, payment processing, affiliate logic, analytics aggregation.",
+          "completion_earnings": "System completion: 85-90%. Revenue: APCs and affiliate partnerships."
+        },
+        "public": {
+          "core_features": "Journal aggregation, manuscript submission, peer review, publication, notifications, analytics, affiliate management, payment/APC tracking.",
+          "api_overview": "APIs for journals, manuscripts, peer review, articles, notifications, analytics, affiliates, and payments."
+        },
+        "visibility": "public"
+      },
+      {
+        "name": "Alphadome Marketing Engine",
+        "purpose": "Multi-channel marketing automation and optimization.",
+        "core_modules": [
+          "Campaign Orchestration", "Policy Engine", "AI Scoring & Analytics", "Execution Board", "Growth Strategy Engine", "Health Alerts & Monitoring", "Audit & Retention", "Channel Adapters", "Compliance & Extensibility"
+        ],
+        "features": [
+          "Automated campaign orchestration, policy-driven decision and execution, AI-based scoring, health monitoring, compliance, extensibility, multi-channel adapters."
+        ],
+        "api_contracts": [
+          "POST /campaign/orchestrate", "POST /policy/evaluate", "GET /analytics/scoring", "POST /execution/board", "GET /growth/strategy", "GET /health/alerts", "GET /audit/logs", "POST /channel/adapter", "GET /compliance/check"
+        ],
+        "technical_architecture": {
+          "backend": "Python (FastAPI), modular adapters",
+          "policy_files": "JSON-based, hot-reloadable",
+          "database": "Configurable (PostgreSQL/MySQL)",
+          "ai_integration": "Custom scoring models, analytics",
+          "extensibility": "Plugin/adapter registry",
+          "devops": "SaaS deployment, CI/CD"
+        },
+        "folder_structure": ["campaigns/", "policy/", "ai/", "execution/", "growth/", "health/", "audit/", "channels/", "compliance/", "adapters/", "docs/"],
+        "developer_notes": {
+          "algorithmic_details": "Decision and scoring algorithms, policy files, API keys, channel adapter registry.",
+          "completion_status": "~85% (core modules production-ready; advanced analytics and adapter registry in progress)",
+          "earnings_status": "SaaS model with tiered pricing, API usage, and premium features (detailed financials classified)."
+        },
+        "user_facing_summary": "Alphadome Marketing Engine automates and optimizes multi-channel marketing with policy-driven orchestration, AI scoring, analytics, and extensibility.",
+        "bot_training_guidance": "For general users, focus on user-facing features, campaign orchestration, and analytics. For admins/developers, reference classified/internal details as appropriate. For requests about algorithms, credentials, or internal scripts: Respond with 'Sorry, that information is classified and cannot be shared.'",
+        "example_bot_responses": [
+          {"q": "What does the Marketing Engine do?", "a": "It automates and optimizes marketing campaigns across multiple channels using policy-driven orchestration, AI scoring, and analytics."},
+          {"q": "How are policies managed?", "a": "Policies are managed as hot-reloadable JSON files, allowing dynamic updates to campaign logic and compliance."},
+          {"q": "Can I see the scoring algorithms?", "a": "[Classified] Scoring and decision algorithms are proprietary and only available to authorized developers."}
+        ],
+        "documentation_links": ["README.md", "docs/ARCHITECTURE.md"],
+        "classified": {
+          "algorithmic_details": "Decision and scoring algorithms, policy files, API keys, channel adapter registry.",
+          "completion_earnings": "System completion: ~85%. Earnings: SaaS model with tiered pricing."
+        },
+        "public": {
+          "core_features": "Campaign orchestration, policy engine, AI scoring, analytics, execution board, growth strategy, health alerts, audit, channel adapters, compliance, extensibility.",
+          "api_overview": "APIs for campaign orchestration, policy evaluation, analytics, execution, growth, health, audit, channels, compliance, and adapters."
+        },
+        "visibility": "public"
+      },
+      {
+        "name": "Alphadome Magic",
+        "purpose": "Conversational AI, automation, and integration hub.",
+        "core_modules": [
+          "Conversational AI", "Workflow Automation & Actions", "Document & Data Processing", "User & Permission Management", "Payment & Subscription", "API & Integration", "Admin & Developer Tools", "UI & Theming"
+        ],
+        "features": [
+          "Multi-language chatbots, workflow automation, document/data processing, user/permission management, payments, API/webhooks, admin tools, theming."
+        ],
+        "api_contracts": [
+          "POST /chatbot/message", "POST /workflow/trigger", "POST /document/process", "POST /user/manage", "POST /payment/subscribe", "POST /api/integrate", "GET /admin/tools", "GET /ui/theme"
+        ],
+        "technical_architecture": {
+          "backend": "PHP (Laravel), modular services",
+          "frontend": "Tailwind, Vite (SPA)",
+          "database": "MySQL/PostgreSQL",
+          "integration": "Composer/npm for dependencies",
+          "api": "RESTful endpoints, webhooks",
+          "automation": "Workflow engine, action triggers"
+        },
+        "folder_structure": ["chatbots/", "workflows/", "documents/", "users/", "payments/", "api/", "admin/", "ui/", "themes/", "docs/"],
+        "developer_notes": {
+          "sensitive_developer": "Proprietary algorithms for AI workflow orchestration, API keys, updater system, caching, advanced features.",
+          "completion_status": "~85% (core modules production-ready; advanced workflow and integration features in progress)",
+          "earnings_status": "SaaS subscriptions, revenue split, premium automation features (detailed financials classified)."
+        },
+        "user_facing_summary": "Alphadome Magic is a conversational AI and automation hub, integrating chatbots, workflow automation, document/data processing, user management, payments, and developer tools.",
+        "bot_training_guidance": "For general users, focus on user-facing features, chatbots, and workflow automation. For admins/developers, reference classified/internal details as appropriate. For requests about algorithms, credentials, or internal scripts: Respond with 'Sorry, that information is classified and cannot be shared.'",
+        "example_bot_responses": [
+          {"q": "What does Alphadome Magic do?", "a": "It provides conversational AI, workflow automation, document/data processing, user management, payments, and developer tools in one platform."},
+          {"q": "How does workflow automation work?", "a": "Workflows are defined as modular actions and triggers, enabling automation of business processes and integrations."},
+          {"q": "Can I see the AI orchestration logic?", "a": "[Classified] AI workflow orchestration and advanced features are proprietary and only available to authorized developers."}
+        ],
+        "documentation_links": ["README.md", "docs/ARCHITECTURE.md"],
+        "classified": {
+          "sensitive_developer": "Proprietary algorithms for AI workflow orchestration, API keys, updater system, caching, advanced features.",
+          "completion_earnings": "System completion: ~85%. Earnings: SaaS subscriptions, revenue split."
+        },
+        "public": {
+          "core_features": "Conversational AI, workflow automation, document/data processing, user/permission management, payments, API/webhooks, admin tools, theming.",
+          "api_overview": "APIs for chatbots, workflow, document processing, user management, payments, integration, admin tools, and theming."
+        },
+        "visibility": "public"
+      },
+      {
+        "name": "Project Ganji (Blockchain & Tokenization)",
+        "purpose": "Industrial automation, secure material handling, machine vision, tokenization, and digital assets.",
+        "core_modules": [
+          "Industrial Automation", "Secure Material Handling", "Machine Vision", "Data Auditing", "Human-Machine Interface (HMI)", "Safety & Compliance", "NFT/Token Support", "Alphacoin Stablecoin"
+        ],
+        "features": [
+          "Hardware integration, process monitoring, HMI, compliance, NFT/token support, Alphacoin stablecoin."
+        ],
+        "api_contracts": [
+          "POST /automation/trigger", "GET /material/status", "POST /vision/process", "GET /audit/logs", "POST /hmi/command", "GET /compliance/check", "POST /token/mint", "GET /alphacoin/balance"
+        ],
+        "technical_architecture": {
+          "backend": "Python hardware abstraction, vision systems, blockchain integration",
+          "frontend": "Custom HMI (web/desktop)",
+          "blockchain": "NFT/tokenization, Alphacoin stablecoin",
+          "security": "Encryption, access control, data privacy",
+          "comms": "Secure communication protocols"
+        },
+        "folder_structure": ["automation/", "material/", "vision/", "audit/", "hmi/", "compliance/", "tokens/", "alphacoin/", "docs/"],
+        "developer_notes": {
+          "security_sensitive": "Vision/security algorithms, encryption, tokenization roadmap, access control, data privacy.",
+          "completion_status": "Core automation: ~85% complete. Tokenization & Alphacoin: ~30% prototyped.",
+          "earnings_status": "Revenue from automation deployments, token/NFT issuance, and Alphacoin integrations (detailed financials classified)."
+        },
+        "user_facing_summary": "Project Ganji delivers industrial automation, secure material handling, machine vision, and digital asset/tokenization features, including Alphacoin stablecoin.",
+        "bot_training_guidance": "For general users, focus on user-facing features, automation, and tokenization. For admins/developers, reference classified/internal details as appropriate. For requests about algorithms, credentials, or internal scripts: Respond with 'Sorry, that information is classified and cannot be shared.'",
+        "example_bot_responses": [
+          {"q": "What does Project Ganji do?", "a": "It provides industrial automation, secure material handling, machine vision, data auditing, HMI, safety/compliance, and digital asset/tokenization features."},
+          {"q": "How does tokenization work?", "a": "Project Ganji supports NFT/token minting and management, plus Alphacoin stablecoin integration for digital assets."},
+          {"q": "Can I see the vision/security algorithms?", "a": "[Classified] Vision and security algorithms are proprietary and only available to authorized developers."}
+        ],
+        "documentation_links": ["README.md", "docs/ARCHITECTURE.md"],
+        "classified": {
+          "security_sensitive": "Vision/security algorithms, encryption, tokenization roadmap, access control, data privacy.",
+          "completion_earnings": "Core automation: ~85% complete. Tokenization & Alphacoin: ~30% prototyped."
+        },
+        "public": {
+          "core_features": "Industrial automation, secure material handling, machine vision, data auditing, HMI, safety/compliance, NFT/token support, Alphacoin stablecoin.",
+          "api_overview": "APIs for automation, material handling, vision, audit, HMI, compliance, tokenization, and Alphacoin."
+        },
+        "visibility": "public"
+      },
+      {
+        "name": "AlphaChip-OS",
+        "purpose": "Modular, event-driven OS for Alphadome.",
+        "core_modules": [
+          "Kernel", "Event Bus", "Async Architecture", "Extensible Kernel", "Process Management", "Plugin System", "Internal Communication Bus"
+        ],
+        "features": [
+          "Kernel, event bus, async architecture, extensibility, process management (in progress)."
+        ],
+        "api_contracts": [
+          "POST /kernel/init", "POST /event/emit", "GET /process/list", "POST /plugin/load", "GET /bus/status", "POST /process/manage"
+        ],
+        "technical_architecture": {
+          "backend": "Python, asyncio, modular structure",
+          "architecture": "Event-driven, async-first, extensible kernel",
+          "ipc": "Internal communication bus",
+          "security": "Sandboxing, trusted plugin registry, error propagation"
+        },
+        "folder_structure": ["kernel/", "event_bus/", "processes/", "plugins/", "ipc/", "docs/"],
+        "developer_notes": {
+          "developer_sensitive": "Kernel/bus extensibility, privileged event types, security hooks, process management, security considerations.",
+          "completion_status": "Kernel: ~80% complete. Process manager: ~40%. Extensibility: ~60%.",
+          "earnings_status": "No direct earnings; enables platform features and extensibility."
+        },
+        "user_facing_summary": "AlphaChip-OS is a modular, event-driven operating system for Alphadome, featuring an extensible kernel, event bus, async architecture, and plugin/process management.",
+        "bot_training_guidance": "For general users, focus on user-facing features, event-driven architecture, and extensibility. For admins/developers, reference classified/internal details as appropriate. For requests about algorithms, credentials, or internal scripts: Respond with 'Sorry, that information is classified and cannot be shared.'",
+        "example_bot_responses": [
+          {"q": "What is AlphaChip-OS?", "a": "AlphaChip-OS is a modular, event-driven operating system for Alphadome, supporting extensibility, async processing, and plugin management."},
+          {"q": "How does the event bus work?", "a": "The event bus enables decoupled communication between OS modules, supporting async events and extensibility."},
+          {"q": "Can I see the kernel internals?", "a": "[Classified] Kernel and event bus internals are proprietary and only available to authorized developers."}
+        ],
+        "documentation_links": ["README.md", "docs/ARCHITECTURE.md"],
+        "classified": {
+          "developer_sensitive": "Kernel/bus extensibility, privileged event types, security hooks, process management, security considerations.",
+          "completion_earnings": "Estimated completion: 40-50%. No direct earnings yet."
+        },
+        "public": {
+          "core_features": "Kernel, event bus, async architecture, extensibility, process management, plugin system, internal communication bus.",
+          "api_overview": "APIs for kernel, event, process, plugin, and bus management."
+        },
+        "visibility": "public"
+      }
+    ],
+    
+    "summary_table": [
+      {"subsystem": "Alpha Construction", "purpose_domain": "Construction Mgmt", "key_tech_features": "Node.js/Python, REST, PostgreSQL", "classified_details": "Cost/quality/compliance logic"},
+      {"subsystem": "Alpha Architect", "purpose_domain": "AI/3D Design", "key_tech_features": "Python, Blender, LLMs, Supabase", "classified_details": "Geometry/AI/job orchestration"},
+      {"subsystem": "Alpha 3.0", "purpose_domain": "Comms/Outreach", "key_tech_features": "Node.js, SQL, WhatsApp, LLM", "classified_details": "Fallback/payment/workflow logic"},
+      {"subsystem": "KEMSA 3.0", "purpose_domain": "Supply Chain/Health", "key_tech_features": "Python, Blockchain, AI/ML", "classified_details": "ML, federated learning, lineage"},
+      {"subsystem": "Alpha IDE", "purpose_domain": "Dev Automation", "key_tech_features": "Modular agents, event bus", "classified_details": "Agent/plugin/health algorithms"},
+      {"subsystem": "Alpha Professor", "purpose_domain": "Academic CRM", "key_tech_features": "Node.js, React, SQL, REST", "classified_details": "Lead/payment/compliance logic"},
+      {"subsystem": "Zone", "purpose_domain": "Content/Entertainment", "key_tech_features": "Next.js, AI, Prisma, HuggingFace", "classified_details": "Prompt/job orchestration"},
+      {"subsystem": "Journal Hub", "purpose_domain": "Research/Publishing", "key_tech_features": "Next.js, Drizzle, PostgreSQL", "classified_details": "Payment/revenue/audit scripts"},
+      {"subsystem": "Marketing Engine", "purpose_domain": "Marketing Automation", "key_tech_features": "Python, JSON policies, SaaS", "classified_details": "Decision/scoring/policy files"},
+      {"subsystem": "Magic", "purpose_domain": "AI/Automation Hub", "key_tech_features": "Laravel, Tailwind, API/Webhooks", "classified_details": "Workflow/API keys/updater"},
+      {"subsystem": "Ganji", "purpose_domain": "Blockchain/Automation", "key_tech_features": "Python, hardware, vision, NFT", "classified_details": "Vision/security/tokenization"},
+      {"subsystem": "AlphaChip-OS", "purpose_domain": "OS Foundation", "key_tech_features": "Python, asyncio, event-driven", "classified_details": "Kernel/bus/security hooks"}
+    ],
+
+    "system_architecture": {
+      "diagram_reference": "VISUAL_DIAGRAMS.md",
+      "patterns": ["microservices", "event-driven", "multi-tenant isolation", "plugin/agent extensibility"],
+      "data_flow": "API gateway routes requests to module microservices, which interact with PostgreSQL/Redis/Supabase for data, LLMs for AI, and blockchain for asset/token operations. Webhooks and external APIs are integrated for real-time events.",
+      "security_model": "RBAC, JWT/OAuth2, encryption at rest and in transit, Row-Level Security (RLS), audit logs, per-tenant isolation."
+    },
+
+    "integration_points": [
+      {"module": "Alpha 3.0", "integrates_with": ["Writer's Flow", "Webhook Simulator", "Admin Dashboard", "Supabase", "WhatsApp Cloud API"]},
+      {"module": "Alpha Architect", "integrates_with": ["Blender", "Supabase", "Replicate", "ControlNet"]},
+      {"module": "Marketing Engine", "integrates_with": ["Alpha 3.0", "Magic", "external marketing APIs"]},
+      {"module": "Project Ganji", "integrates_with": ["Blockchain", "Vision Systems", "AlphaChip-OS"]}
+    ],
+
+    "api_endpoints": {
+      "webhook": {
+        "url": "/webhook",
+        "methods": ["GET (verification)", "POST (incoming messages)"]
+      },
+      "admin_dashboard": {
+        "url": "/admin",
+        "methods": ["GET", "POST (catalog upload)"]
+      },
+      "catalog": {
+        "url": "/catalog",
+        "methods": ["GET", "POST"]
+      }
+    },
+
+    "deployment_ops": {
+      "environments": ["Docker", "CI/CD", "AWS/Azure/GCP", "Supabase"],
+      "key_scripts": ["migrations/*.sql", "admin/seed_*.js", "backup/restore scripts"],
+      "monitoring": ["Supabase logs", "custom analytics", "alerting via dashboard"],
+      "upgrade_strategy": "Non-breaking SQL migrations, versioned deployments, rollback via backup scripts."
+    },
+
+    "tenant_model": {
+      "isolation": "Each tenant has unique WhatsApp ID, access token, templates, and training data. DB schema enforces per-tenant isolation (see DB_ALIGNMENT_REPORT.md).",
+      "onboarding_flow": "1. Add tenant to DB (phone, token, config). 2. Upload templates and training data. 3. Assign admin dashboard access. 4. Verify via WhatsApp Cloud API.",
+      "customization": "Per-tenant templates, features, analytics, and escalation policies.",
+      "security_checklist": ["Run migrations for new tables", "Set up encryption for sensitive fields", "Implement RLS policies", "Monitor token expiry"]
+    },
+
+    "context_awareness": {
+      "propagation": "Context is propagated via middleware, session state, and per-tenant DB records. Each bot request is enriched with tenant, user, and conversation context.",
+      "knowledge_base_usage": "Knowledge base powers RAG, onboarding, FAQ, fallback, and admin queries. Context is retrieved per-tenant for accurate, secure automation.",
+      "example": "When a user sends a message, the bot loads tenant config, templates, and relevant knowledge base entries to generate a context-aware response."
+    },
+
+    "references": {
+      "executive_summary": "EXECUTIVE_SUMMARY.md",
+      "deployment_plan": "DEPLOYMENT_PLAN.md",
+      "db_alignment_report": "DB_ALIGNMENT_REPORT.md",
+      "api_documentation": "API_DOCUMENTATION.md",
+      "multi_tenant_readme": "MULTI_TENANT_README.md",
+      "visual_diagrams": "VISUAL_DIAGRAMS.md"
+    },
+
+    "limitations_roadmap": {
+      "current_limitations": [
+        "Some advanced features (e.g., process management in AlphaChip-OS, full tokenization in Ganji) are in progress.",
+        "Manual onboarding for new tenants (automation planned).",
+        "Limited real-time monitoring (expansion planned)."
+      ],
+      "planned_features": [
+        "Automated tenant onboarding UI",
+        "Advanced analytics and alerting",
+        "Full NFT/tokenization rollout",
+        "Process management in AlphaChip-OS",
+        "Deeper LLM/AI integration"
+      ],
+      "timeline": "See DEPLOYMENT_PLAN.md for phase breakdown."
+    },
+
+    "glossary": {
+      "tenant": "A client/business with isolated config, templates, and data.",
+      "agent": "Specialized automation entity (AI, workflow, etc.).",
+      "NFT": "Non-fungible token representing digital asset/ownership.",
+      "fallback": "Automated continuity mechanism for failed workflows.",
+      "RAG": "Retrieval-Augmented Generation (context-aware AI).",
+      "RLS": "Row-Level Security (DB isolation policy)."
+    },
+
+    "security_compliance": {
+      "encryption": "All sensitive fields encrypted at rest and in transit.",
+      "rls": "Row-Level Security policies enforced for all tenant data.",
+      "audit": "Comprehensive audit logs for all admin and sensitive actions.",
+      "compliance_modules": ["GDPR", "SOC2 (planned)", "custom compliance checks"],
+      "token_management": "Access tokens are rotated and monitored for expiry."
+    },
+
+    "example_use_cases": [
+      {
+        "title": "Tenant Onboarding",
+        "steps": [
+          "Admin adds new tenant via dashboard or migration script.",
+          "Uploads templates and training data.",
+          "Assigns WhatsApp credentials and verifies integration.",
+          "Tenant receives unique dashboard access and can manage catalog."
+        ]
+      },
+      {
+        "title": "Campaign Launch",
+        "steps": [
+          "Tenant configures campaign in dashboard.",
+          "Uploads product catalog and selects target audience.",
+          "Bot triggers WhatsApp campaign and logs analytics per tenant.",
+          "Fallback logic ensures continuity if WhatsApp fails."
+        ]
+      },
+      {
+        "title": "Catalog Upload",
+        "steps": [
+          "Tenant accesses admin dashboard.",
+          "Uploads CSV or JSON catalog file.",
+          "System validates and stores products per tenant.",
+          "Catalog is available for WhatsApp bot queries."
+        ]
+      },
+      {
+        "title": "Fallback Payment Flow",
+        "steps": [
+          "Bot detects payment failure or downtime.",
+          "Triggers fallback workflow (alternate payment, notification, or escalation).",
+          "Logs event and notifies admin for review."
+        ]
+      }
+    ],
+
+    "completion_table": [
+      {"module": "Alpha Construction", "completion": "~90%", "earnings": "SaaS, subscriptions, commissions"},
+      {"module": "Alpha Architect", "completion": "~80%", "earnings": "Cloud rendering, premium features, API access"},
+      {"module": "Alpha 3.0", "completion": "85–90%", "earnings": "Revenue from tenants, growth expected"},
+      {"module": "KEMSA 3.0", "completion": "85% core, 70% AI/ML", "earnings": "60% projected revenue secured"},
+      {"module": "Alpha IDE", "completion": "~70%", "earnings": "Enterprise licensing, premium support"},
+      {"module": "Alpha Professor", "completion": "~85%", "earnings": "10–20% commission on marketplace"},
+      {"module": "Zone", "completion": "~85%", "earnings": "Subscription, premium content, API usage"},
+      {"module": "Journal Hub", "completion": "85–90%", "earnings": "APCs, affiliate partnerships"},
+      {"module": "Marketing Engine", "completion": "~85%", "earnings": "SaaS, tiered pricing"},
+      {"module": "Magic", "completion": "~85%", "earnings": "SaaS subscriptions, revenue split"},
+      {"module": "Ganji", "completion": "~85% automation, 30% tokenization", "earnings": "Early monetization phase"},
+      {"module": "AlphaChip-OS", "completion": "40–50%", "earnings": "No direct earnings yet"}
+    ],
+
+    "bot_response_policy": "For general users, only public features and workflows are revealed. For admin/developer queries, classified/internal details are referenced as appropriate. For requests about algorithms, credentials, or internal scripts: Respond with 'Sorry, that information is classified and cannot be shared.'"
+  }
+}
