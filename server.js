@@ -995,6 +995,23 @@ async function buildFounderTrailSnapshot(limit = 800) {
       priorities: [],
     };
   }
+  if (error && isSchemaNotExposedError(error)) {
+    return {
+      generated_at: new Date().toISOString(),
+      available: false,
+      reason: "Supabase API schema profile for alphadome is not exposed to PostgREST.",
+      summary: {
+        total_blocks: 0,
+        founder_alignment_score: null,
+        family_blocks: 0,
+        strategic_blocks: 0,
+        net_kes: 0,
+      },
+      top_categories: [],
+      latest_day: null,
+      priorities: [],
+    };
+  }
   if (error) throw error;
 
   const items = rows || [];
@@ -1067,6 +1084,10 @@ async function buildABossCommandCenter() {
   const blendedExecutionScore = Math.round(((founderScore * 0.4) + (revenueConversion * 0.3) + ((100 - readinessPressure) * 0.3)) * 10) / 10;
 
   const priorities = [];
+  if (founderTrail?.available === false && founderTrail?.reason) {
+    priorities.push(`ABOS setup blocker: ${founderTrail.reason}`);
+    priorities.push("Expose alphadome schema in Supabase API settings or move ABOS tables into public schema.");
+  }
   if (founderScore < 70) priorities.push("Increase founder alignment blocks tied to strategic goals and family balance.");
   if (revenueConversion < 10) priorities.push("Improve conversion from outreach to successful payments.");
   if (readinessPressure > 25) priorities.push("Reduce critical tenant readiness risk this week.");
@@ -1182,6 +1203,19 @@ async function buildABOSWorkbookValidation(workbookName = null) {
       },
       workbooks: [],
       warnings: ['ABOS ingestion tables are not available in the current database schema.'],
+    };
+  }
+  if (error && isSchemaNotExposedError(error)) {
+    return {
+      generated_at: new Date().toISOString(),
+      available: false,
+      reason: 'Supabase API schema profile for alphadome is not exposed to PostgREST.',
+      policy: {
+        min_rows_per_workbook: 10,
+        min_non_empty_ratio: 0.25,
+      },
+      workbooks: [],
+      warnings: ['ABOS tables may exist but are unreachable until alphadome is added to exposed API schemas.'],
     };
   }
   if (error) throw error;
@@ -1782,6 +1816,11 @@ async function findTenantByPhone(tenantPhone, requireActive = true) {
 function isMissingTableInSchemaCache(error) {
   const msg = String(error?.message || "").toLowerCase();
   return msg.includes("could not find the table") || msg.includes("schema cache");
+}
+
+function isSchemaNotExposedError(error) {
+  const msg = String(error?.message || "").toLowerCase();
+  return msg.includes("the schema must be one of the following") || msg.includes("schema must be one of the following");
 }
 
 async function resolveAlphadomeTenantByPhone(tenantPhone) {
@@ -3904,6 +3943,40 @@ app.get('/tenant/a-boss-lite', tenantSessionAuth, async (req, res) => {
     const payload = await buildTenantABossLite(tenantPhone);
     return res.json({ ok: true, ...payload });
   } catch (error) {
+    if (isSchemaNotExposedError(error)) {
+      return res.json({
+        ok: true,
+        generated_at: new Date().toISOString(),
+        tenant_phone: req.tenantSession?.tenantPhone || null,
+        profile: {
+          readiness_level: 'needs_attention',
+          readiness_score: 0,
+          blended_execution_score: 0,
+          founder_alignment_score: 0,
+          active_tenants_context: 0,
+        },
+        goals: [
+          'Expose alphadome schema in Supabase API settings.',
+          'Import founder trail workbook once schema access is enabled.',
+          'Resume cadence and revenue hygiene tracking after import.',
+        ],
+        cadence_blocks: [
+          'Daily: 30-minute outbound follow-up block',
+          'Daily: 30-minute unresolved payment recovery block',
+          'Weekly: 60-minute offer and pricing review',
+        ],
+        revenue_hygiene: [
+          'Track payment conversion and failed payment recovery daily.',
+          'Ensure all high-intent leads receive follow-up within 30 minutes.',
+        ],
+        risk_and_runway: {
+          runway_months_estimate: 1,
+          risk_level: 'high',
+          risks: ['ABOS schema not exposed to API layer'],
+          mitigation: 'Expose alphadome in Supabase API schema settings or move ABOS tables to public.',
+        },
+      });
+    }
     return res.status(500).json({ error: error.message, ok: false });
   }
 });
@@ -5477,7 +5550,6 @@ async function fetchAdminCampaignLeads({
   const { data: convRows, error: convErr } = await supabase
     .from("conversations")
     .select("user_id")
-    .eq("direction", "incoming")
     .gte("created_at", since);
 
   if (convErr) throw convErr;
