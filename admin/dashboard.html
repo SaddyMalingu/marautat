@@ -880,7 +880,7 @@
     }
     window.addEventListener('hashchange', handleHashChange);
     // Initial load
-    handleHashChange();
+    setTimeout(handleHashChange, 0);
     // SPA page loader
     async function loadPage(hash) {
       const spaContent = document.getElementById('spa-content');
