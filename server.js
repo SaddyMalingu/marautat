@@ -970,6 +970,272 @@ async function buildRevenueCommandCenter() {
   };
 }
 
+async function buildFounderTrailSnapshot(limit = 800) {
+  let { data: rows, error } = await supabase
+    .from("abos_founder_trail_entries")
+    .select("source_sheet, activity_slot, activity_name, activity_category, resource_used, output_text, money_in_kes, money_out_kes, net_kes, priority_goal, alignment_group, created_at")
+    .order("created_at", { ascending: false })
+    .limit(Math.min(2000, Math.max(50, Number(limit || 800))));
+
+  if (error && isMissingTableInSchemaCache(error)) {
+    return {
+      generated_at: new Date().toISOString(),
+      available: false,
+      reason: "abos_founder_trail_entries table missing. Run ABOS integration migration and importer.",
+      summary: {
+        total_blocks: 0,
+        founder_alignment_score: null,
+        family_blocks: 0,
+        strategic_blocks: 0,
+        net_kes: 0,
+      },
+      top_categories: [],
+      latest_day: null,
+      priorities: [],
+    };
+  }
+  if (error) throw error;
+
+  const items = rows || [];
+  const familyRegex = /(family|worship|selfcare|personal|home|bless)/i;
+  const strategicRegex = /(lead|client|proposal|sales|revenue|system development|digital production|ops|operation|kemsa|deployment|product)/i;
+
+  let familyBlocks = 0;
+  let strategicBlocks = 0;
+  let alignedBlocks = 0;
+  let netKes = 0;
+  const categoryCounts = new Map();
+  const latestDay = items.length ? items[0].source_sheet : null;
+  const priorities = [];
+
+  for (const item of items) {
+    const text = `${item.activity_name || ""} ${item.activity_category || ""} ${item.output_text || ""} ${item.priority_goal || ""}`;
+    const isFamily = familyRegex.test(text);
+    const isStrategic = strategicRegex.test(text);
+    if (isFamily) familyBlocks += 1;
+    if (isStrategic) strategicBlocks += 1;
+    if (isFamily || isStrategic) alignedBlocks += 1;
+    netKes += Number(item.net_kes || 0);
+
+    const cat = String(item.activity_category || item.alignment_group || "uncategorized").trim() || "uncategorized";
+    categoryCounts.set(cat, (categoryCounts.get(cat) || 0) + 1);
+
+    if (item.priority_goal) priorities.push(String(item.priority_goal));
+  }
+
+  const totalBlocks = items.length;
+  const founderAlignmentScore = totalBlocks ? Math.round((alignedBlocks / totalBlocks) * 1000) / 10 : null;
+  const topCategories = [...categoryCounts.entries()]
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 8);
+
+  const uniquePriorities = [...new Set(priorities)].slice(0, 10);
+
+  return {
+    generated_at: new Date().toISOString(),
+    available: true,
+    summary: {
+      total_blocks: totalBlocks,
+      founder_alignment_score: founderAlignmentScore,
+      family_blocks: familyBlocks,
+      strategic_blocks: strategicBlocks,
+      net_kes: Math.round(netKes * 100) / 100,
+    },
+    top_categories: topCategories,
+    latest_day: latestDay,
+    priorities: uniquePriorities,
+  };
+}
+
+async function buildABossCommandCenter() {
+  const [ops, revenue, readiness, executive, founderTrail] = await Promise.all([
+    buildAdminOpsOverview(),
+    buildRevenueCommandCenter(),
+    buildTenantReadinessReport(60),
+    buildExecutiveSnapshot(),
+    buildFounderTrailSnapshot(1000),
+  ]);
+
+  const activeTenants = Number(ops?.kpis?.active_tenants || 0);
+  const criticalTenants = Number(readiness?.summary?.critical || 0);
+  const readinessPressure = activeTenants > 0 ? Math.round((criticalTenants / activeTenants) * 1000) / 10 : 0;
+
+  const founderScore = Number(founderTrail?.summary?.founder_alignment_score || 0);
+  const revenueConversion = Number(revenue?.conversion_rate_pct_30d || 0);
+  const blendedExecutionScore = Math.round(((founderScore * 0.4) + (revenueConversion * 0.3) + ((100 - readinessPressure) * 0.3)) * 10) / 10;
+
+  const priorities = [];
+  if (founderScore < 70) priorities.push("Increase founder alignment blocks tied to strategic goals and family balance.");
+  if (revenueConversion < 10) priorities.push("Improve conversion from outreach to successful payments.");
+  if (readinessPressure > 25) priorities.push("Reduce critical tenant readiness risk this week.");
+  if (!priorities.length) priorities.push("Maintain current execution cadence and scale winning workflows to more tenants.");
+
+  return {
+    generated_at: new Date().toISOString(),
+    command_summary: {
+      blended_execution_score: blendedExecutionScore,
+      founder_alignment_score: founderScore,
+      revenue_conversion_pct_30d: revenueConversion,
+      readiness_pressure_pct: readinessPressure,
+      active_tenants: activeTenants,
+    },
+    founder_trail: founderTrail,
+    owner_ops: {
+      kpis: ops?.kpis || {},
+      strategies: ops?.strategies || [],
+    },
+    owner_revenue: revenue,
+    executive_snapshot: executive?.headline || executive,
+    action_queue: priorities,
+  };
+}
+
+async function buildTenantABossLite(tenantPhone) {
+  const [commandCenter, tenantReadiness] = await Promise.all([
+    buildABossCommandCenter(),
+    buildTenantReadinessReport(120),
+  ]);
+
+  const normalizedPhone = normalizeCampaignPhone(tenantPhone) || String(tenantPhone || '').replace(/\D/g, '');
+  const tenantRows = Array.isArray(tenantReadiness?.tenants) ? tenantReadiness.tenants : [];
+  const tenantRow = tenantRows.find((row) => {
+    const rowPhone = normalizeCampaignPhone(row?.client_phone || '');
+    return rowPhone && normalizedPhone && rowPhone === normalizedPhone;
+  }) || null;
+
+  const readinessLevel = tenantRow?.readiness_level || 'needs_attention';
+  const readinessScore = Number(tenantRow?.readiness_score || 0);
+  const checks = Array.isArray(tenantRow?.checks) ? tenantRow.checks : [];
+  const failingChecks = checks.filter((check) => !check.ok);
+
+  const ownerRevenue = commandCenter?.owner_revenue || {};
+  const founderTrail = commandCenter?.founder_trail || {};
+  const founderSummary = founderTrail?.summary || {};
+  const cmd = commandCenter?.command_summary || {};
+
+  const runwayMonths = Math.max(1, Math.round((readinessScore / 100) * 12));
+  const cadenceBlocks = [
+    'Daily: 30-minute outbound follow-up block',
+    'Daily: 30-minute unresolved payment recovery block',
+    'Weekly: 60-minute offer and pricing review',
+    'Weekly: 45-minute operations and risk cleanup',
+  ];
+
+  const revenueHygiene = [
+    `Maintain payment conversion at or above ${Math.max(12, Math.round(Number(ownerRevenue?.conversion_rate_pct_30d || 0)))}%`,
+    `Reduce failed plus pending payments below ${Math.max(5, Math.round((Number(ownerRevenue?.funnel?.payment_attempts_30d || 0) || 0) * 0.15))} in next cycle`,
+    'Ensure every high-intent lead gets follow-up within 30 minutes',
+  ];
+
+  const defaultGoals = [
+    'Grow net successful payments week over week',
+    'Keep response and follow-up cadence consistent daily',
+    'Improve tenant readiness score by fixing failed checks',
+  ];
+
+  const goalSeed = Array.isArray(commandCenter?.action_queue) && commandCenter.action_queue.length
+    ? commandCenter.action_queue
+    : defaultGoals;
+
+  return {
+    generated_at: new Date().toISOString(),
+    tenant_phone: tenantPhone,
+    profile: {
+      readiness_level: readinessLevel,
+      readiness_score: readinessScore,
+      blended_execution_score: Number(cmd.blended_execution_score || 0),
+      founder_alignment_score: Number(cmd.founder_alignment_score || founderSummary.founder_alignment_score || 0),
+      active_tenants_context: Number(cmd.active_tenants || 0),
+    },
+    goals: goalSeed.slice(0, 5),
+    cadence_blocks: cadenceBlocks,
+    revenue_hygiene: revenueHygiene,
+    risk_and_runway: {
+      runway_months_estimate: runwayMonths,
+      risk_level: readinessLevel,
+      risks: failingChecks.slice(0, 5).map((check) => check.label),
+      mitigation: failingChecks.length
+        ? 'Fix failed readiness checks first, then stabilize payment recovery workflow.'
+        : 'No critical readiness blockers detected. Keep execution rhythm and monitor weekly.',
+    },
+  };
+}
+
+async function buildABOSWorkbookValidation(workbookName = null) {
+  let { data: rows, error } = await supabase
+    .from('abos_workbook_ingestions')
+    .select('workbook_name, status, rows_processed, rows_failed, imported_at, metadata')
+    .order('imported_at', { ascending: false })
+    .limit(80);
+
+  if (error && isMissingTableInSchemaCache(error)) {
+    return {
+      generated_at: new Date().toISOString(),
+      available: false,
+      reason: 'abos_workbook_ingestions table missing. Run ABOS integration migration first.',
+      policy: {
+        min_rows_per_workbook: 10,
+        min_non_empty_ratio: 0.25,
+      },
+      workbooks: [],
+      warnings: ['ABOS ingestion tables are not available in the current database schema.'],
+    };
+  }
+  if (error) throw error;
+
+  const latestByWorkbook = new Map();
+  for (const row of rows || []) {
+    const key = String(row.workbook_name || '').trim();
+    if (!key) continue;
+    if (!latestByWorkbook.has(key)) latestByWorkbook.set(key, row);
+  }
+
+  const entries = [...latestByWorkbook.entries()]
+    .filter(([name]) => !workbookName || String(name).toLowerCase() === String(workbookName).toLowerCase())
+    .map(([name, row]) => {
+      const sheets = Array.isArray(row?.metadata?.sheets) ? row.metadata.sheets : [];
+      const rowsProcessed = Number(row.rows_processed || 0);
+      const minRows = 10;
+      const expectedRows = Math.max(minRows, sheets.length * 2);
+      const ratio = expectedRows > 0 ? rowsProcessed / expectedRows : 0;
+      const status = ratio >= 1 ? 'healthy' : ratio >= 0.25 ? 'warning' : 'critical';
+      return {
+        workbook_name: name,
+        imported_at: row.imported_at,
+        status: row.status,
+        rows_processed: rowsProcessed,
+        rows_failed: Number(row.rows_failed || 0),
+        sheets_detected: sheets.length,
+        expected_min_rows: expectedRows,
+        non_empty_ratio: Math.round(ratio * 1000) / 1000,
+        discipline_status: status,
+        recommendations: status === 'healthy'
+          ? ['Data-entry discipline is acceptable. Keep daily updates and weekly audit.']
+          : [
+              'Populate at least one numeric and one descriptive field for each active sheet.',
+              'Ensure Sales/Pipeline sheets include lead or deal rows, not headers only.',
+              'Ensure Financial sheets have account names and amount values before import.',
+            ],
+      };
+    });
+
+  const warnings = entries
+    .filter((entry) => entry.discipline_status !== 'healthy')
+    .map((entry) => `${entry.workbook_name}: low non-empty ratio (${entry.non_empty_ratio}).`);
+
+  return {
+    generated_at: new Date().toISOString(),
+    available: true,
+    policy: {
+      min_rows_per_workbook: 10,
+      min_non_empty_ratio: 0.25,
+    },
+    workbooks: entries,
+    warnings,
+  };
+}
+
 async function fetchAllTemplateDefinitions() {
   const phoneNumberId = process.env.PHONE_NUMBER_ID;
   const token = process.env.WHATSAPP_TOKEN;
@@ -3627,6 +3893,16 @@ app.get("/tenant/revenue", tenantSessionAuth, async (req, res) => {
     });
   } catch (error) {
     return res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/tenant/a-boss-lite', tenantSessionAuth, async (req, res) => {
+  try {
+    const { tenantPhone } = req.tenantSession;
+    const payload = await buildTenantABossLite(tenantPhone);
+    return res.json({ ok: true, ...payload });
+  } catch (error) {
+    return res.status(500).json({ error: error.message, ok: false });
   }
 });
 
@@ -6414,6 +6690,27 @@ app.get("/admin/api/executive-snapshot", adminAuth, async (req, res) => {
     const payload = await buildExecutiveSnapshot();
     return res.json({ ok: true, ...payload });
   } catch (err) {
+    return res.status(500).json({ error: err.message, ok: false });
+  }
+});
+
+app.get("/admin/api/a-boss/command-center", adminAuth, async (req, res) => {
+  try {
+    const payload = await buildABossCommandCenter();
+    return res.json({ ok: true, ...payload });
+  } catch (err) {
+    log(`A Boss command center error: ${err.message}`, "ERROR");
+    return res.status(500).json({ error: err.message, ok: false });
+  }
+});
+
+app.get('/admin/api/a-boss/discipline', adminAuth, async (req, res) => {
+  try {
+    const workbook = req.query?.workbook ? String(req.query.workbook).trim() : null;
+    const payload = await buildABOSWorkbookValidation(workbook);
+    return res.json({ ok: true, ...payload });
+  } catch (err) {
+    log(`A Boss discipline error: ${err.message}`, 'ERROR');
     return res.status(500).json({ error: err.message, ok: false });
   }
 });

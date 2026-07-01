@@ -1148,6 +1148,20 @@
             </div>
             <div class="suite-card">
               <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+                <h5 class="mb-0"><i class="fa-solid fa-crown"></i> A Boss Command Center</h5>
+                <button class="btn btn-sm btn-outline-primary" id="refreshABossBtn">Refresh</button>
+              </div>
+              <div class="mini-metrics" id="aBossMetrics">
+                <div class="mini-metric"><div class="label">Blended Score</div><div class="value">--</div></div>
+                <div class="mini-metric"><div class="label">Founder Alignment</div><div class="value">--</div></div>
+                <div class="mini-metric"><div class="label">Revenue Conversion</div><div class="value">--</div></div>
+                <div class="mini-metric"><div class="label">Readiness Pressure</div><div class="value">--</div></div>
+              </div>
+              <div class="small text-muted mb-2" id="aBossTrailSummary">Loading founder trail and action queue...</div>
+              <div class="stack-list" id="aBossActionQueue"><div class="ops-empty">Loading A Boss actions...</div></div>
+            </div>
+            <div class="suite-card">
+              <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
                 <h5 class="mb-0"><i class="fa-solid fa-clipboard-list"></i> Tenant Readiness</h5>
                 <button class="btn btn-sm btn-outline-info" id="refreshTenantReadinessBtn">Refresh</button>
               </div>
@@ -1565,6 +1579,7 @@
       incident: null,
       approvals: [],
       executiveSnapshot: null,
+      aBossCommandCenter: null,
     };
 
     const REFRESH_PREF_KEY = 'admin_dashboard_refresh_pref_v1';
@@ -2099,6 +2114,31 @@
         : '<div class="ops-empty">No revenue priorities available.</div>';
     }
 
+    function renderABossCommandCenter(payload) {
+      const metrics = document.getElementById('aBossMetrics');
+      const queue = document.getElementById('aBossActionQueue');
+      const summary = document.getElementById('aBossTrailSummary');
+      if (!metrics || !queue || !summary) return;
+
+      const command = payload?.command_summary || {};
+      metrics.innerHTML = [
+        metricMarkup('Blended Score', `${Number(command.blended_execution_score || 0)}%`),
+        metricMarkup('Founder Alignment', `${Number(command.founder_alignment_score || 0)}%`),
+        metricMarkup('Revenue Conversion', `${Number(command.revenue_conversion_pct_30d || 0)}%`),
+        metricMarkup('Readiness Pressure', `${Number(command.readiness_pressure_pct || 0)}%`),
+      ].join('');
+
+      const founderTrail = payload?.founder_trail || {};
+      const founderSummary = founderTrail?.summary || {};
+      const latestDay = founderTrail?.latest_day || 'N/A';
+      summary.textContent = `Trail blocks ${Number(founderSummary.total_blocks || 0)} | Strategic ${Number(founderSummary.strategic_blocks || 0)} | Family ${Number(founderSummary.family_blocks || 0)} | Latest ${latestDay}`;
+
+      const actions = Array.isArray(payload?.action_queue) ? payload.action_queue : [];
+      queue.innerHTML = actions.length
+        ? actions.map((item) => `<div class="stack-item">${escapeHtml(item)}</div>`).join('')
+        : '<div class="ops-empty">No A Boss actions at this time.</div>';
+    }
+
     function renderTenantReadiness(payload) {
       const summary = document.getElementById('tenantReadinessSummary');
       const list = document.getElementById('tenantReadinessList');
@@ -2260,6 +2300,13 @@
       return payload;
     }
 
+    async function loadABossCommandCenter() {
+      const payload = await fetchJsonWithFallback(['/admin/api/a-boss/command-center'], { command_summary: {}, founder_trail: { summary: {} }, action_queue: [] });
+      dashboardOpsState.aBossCommandCenter = payload;
+      renderABossCommandCenter(payload);
+      return payload;
+    }
+
     async function loadSupportInbox() {
       const payload = await fetchJsonWithFallback(['/admin/api/support/inbox?limit=20'], { summary: {}, items: [] });
       dashboardOpsState.supportInbox = payload;
@@ -2301,6 +2348,7 @@
         loadExecutiveSnapshot(),
         loadSlaBoard(),
         loadRevenueCenter(),
+        loadABossCommandCenter(),
         loadTenantReadiness(),
         loadSupportInbox(),
         loadFinance(),
@@ -2672,6 +2720,7 @@
       const refreshSupportInboxBtn = document.getElementById('refreshSupportInboxBtn');
       const refreshFinanceBtn = document.getElementById('refreshFinanceBtn');
       const refreshTemplateOpsBtn = document.getElementById('refreshTemplateOpsBtn');
+      const refreshABossBtn = document.getElementById('refreshABossBtn');
       const resolveIncidentBtn = document.getElementById('resolveIncidentBtn');
       const incidentForm = document.getElementById('incidentForm');
       const bulkTenantOpsForm = document.getElementById('bulkTenantOpsForm');
@@ -2807,6 +2856,10 @@
       if (refreshRevenueCenterBtn && !refreshRevenueCenterBtn.dataset.bound) {
         refreshRevenueCenterBtn.dataset.bound = 'true';
         refreshRevenueCenterBtn.addEventListener('click', loadRevenueCenter);
+      }
+      if (refreshABossBtn && !refreshABossBtn.dataset.bound) {
+        refreshABossBtn.dataset.bound = 'true';
+        refreshABossBtn.addEventListener('click', loadABossCommandCenter);
       }
       if (refreshTenantReadinessBtn && !refreshTenantReadinessBtn.dataset.bound) {
         refreshTenantReadinessBtn.dataset.bound = 'true';

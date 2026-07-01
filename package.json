@@ -10,13 +10,17 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "campaign:send": "node sendTemplate.js",
     "test:tenant-session": "node test_tenant_session_flow.js",
-    "test:tenant-session:auto": "AUTO_CREATE_TEST_TENANT=true node test_tenant_session_flow.js"
+    "test:tenant-session:auto": "AUTO_CREATE_TEST_TENANT=true node test_tenant_session_flow.js",
+    "abos:import": "node scripts/abos/import_abos_to_supabase.cjs",
+    "abos:import:dry": "node scripts/abos/import_abos_to_supabase.cjs --dry-run",
+    "abos:validate": "node scripts/abos/validate_abos_workbook.cjs"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
     "@supabase/supabase-js": "^2.76.1",
+    "xlsx": "^0.18.5",
     "autoprefixer": "^10.4.24",
     "axios": "^1.12.2",
     "body-parser": "^2.2.0",

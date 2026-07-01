@@ -1,0 +1,153 @@
+{
+  "version": "2026-07-01",
+  "defaultTenantPhone": "254702245555",
+  "workbookMappings": {
+    "ABOS_2.4_Strategic_Command_Center.xlsx": {
+      "Executive_Command_Center": {
+        "target": "alphadome.abos_kpi_snapshots",
+        "mode": "kpi"
+      },
+      "Strategic_OKRs": {
+        "target": "alphadome.abos_kpi_snapshots",
+        "mode": "kpi"
+      },
+      "Sales_CRM": {
+        "target": "alphadome.abos_pipeline_records",
+        "mode": "pipeline"
+      },
+      "Risk_Register": {
+        "target": "alphadome.abos_risk_register",
+        "mode": "risk"
+      },
+      "SaaS_Metrics": {
+        "target": "alphadome.abos_kpi_snapshots",
+        "mode": "kpi"
+      },
+      "Budget_Planning": {
+        "target": "alphadome.abos_financial_snapshots",
+        "mode": "financial",
+        "statementType": "budget"
+      },
+      "Forecasting": {
+        "target": "alphadome.abos_financial_snapshots",
+        "mode": "financial",
+        "statementType": "forecast"
+      },
+      "Runway_Calculator": {
+        "target": "alphadome.abos_kpi_snapshots",
+        "mode": "kpi"
+      },
+      "P&L": {
+        "target": "alphadome.abos_financial_snapshots",
+        "mode": "financial",
+        "statementType": "p_and_l"
+      },
+      "Cash_Flow": {
+        "target": "alphadome.abos_financial_snapshots",
+        "mode": "financial",
+        "statementType": "cash_flow"
+      },
+      "Balance_Sheet": {
+        "target": "alphadome.abos_financial_snapshots",
+        "mode": "financial",
+        "statementType": "balance_sheet"
+      }
+    },
+    "ABOS_2.3_Enterprise.xlsx": {
+      "Executive_Dashboard": {
+        "target": "alphadome.abos_kpi_snapshots",
+        "mode": "kpi"
+      },
+      "Revenue": {
+        "target": "alphadome.abos_financial_snapshots",
+        "mode": "financial",
+        "statementType": "revenue_mix"
+      },
+      "Projects": {
+        "target": "alphadome.abos_pipeline_records",
+        "mode": "pipeline"
+      },
+      "Opportunities": {
+        "target": "alphadome.abos_pipeline_records",
+        "mode": "pipeline"
+      },
+      "P&L": {
+        "target": "alphadome.abos_financial_snapshots",
+        "mode": "financial",
+        "statementType": "p_and_l"
+      },
+      "Cash_Flow": {
+        "target": "alphadome.abos_financial_snapshots",
+        "mode": "financial",
+        "statementType": "cash_flow"
+      },
+      "Balance_Sheet": {
+        "target": "alphadome.abos_financial_snapshots",
+        "mode": "financial",
+        "statementType": "balance_sheet"
+      }
+    },
+    "ABOS_2_3_Alphadome.xlsx": {
+      "Executive Dashboard": {
+        "target": "alphadome.abos_kpi_snapshots",
+        "mode": "kpi"
+      },
+      "Sales Pipeline": {
+        "target": "alphadome.abos_pipeline_records",
+        "mode": "pipeline"
+      },
+      "Quotations": {
+        "target": "alphadome.abos_pipeline_records",
+        "mode": "pipeline"
+      },
+      "Contracts": {
+        "target": "alphadome.abos_pipeline_records",
+        "mode": "pipeline"
+      },
+      "Projects": {
+        "target": "alphadome.abos_pipeline_records",
+        "mode": "pipeline"
+      },
+      "Invoices": {
+        "target": "alphadome.abos_financial_snapshots",
+        "mode": "financial",
+        "statementType": "invoices"
+      },
+      "Accounts Receivable": {
+        "target": "alphadome.abos_financial_snapshots",
+        "mode": "financial",
+        "statementType": "accounts_receivable"
+      }
+    },
+    "Trail.xlsx": {
+      "29th June 2026": {
+        "target": "alphadome.abos_founder_trail_entries",
+        "mode": "founder_trail"
+      },
+      "30th June 2026": {
+        "target": "alphadome.abos_founder_trail_entries",
+        "mode": "founder_trail"
+      },
+      "1st July 2026": {
+        "target": "alphadome.abos_founder_trail_entries",
+        "mode": "founder_trail"
+      },
+      "2nd July 2026": {
+        "target": "alphadome.abos_founder_trail_entries",
+        "mode": "founder_trail"
+      },
+      "3rd July 2026": {
+        "target": "alphadome.abos_founder_trail_entries",
+        "mode": "founder_trail"
+      },
+      "4th July 2026": {
+        "target": "alphadome.abos_founder_trail_entries",
+        "mode": "founder_trail"
+      },
+      "5th July 2026": {
+        "target": "alphadome.abos_founder_trail_entries",
+        "mode": "founder_trail"
+      }
+    }
+  }
+}

@@ -143,6 +143,7 @@
     <div class="sidebar-label">Sales</div>
     <div class="nav-item" data-sec="revenue"><span class="nav-icon"><i class="fa-solid fa-chart-line"></i></span>Revenue</div>
     <div class="nav-item" data-sec="analytics"><span class="nav-icon"><i class="fa-solid fa-chart-bar"></i></span>Analytics</div>
+    <div class="nav-item" data-sec="a-boss-lite"><span class="nav-icon"><i class="fa-solid fa-crown"></i></span>A Boss Lite</div>
 
     <div class="sidebar-label">Customers</div>
     <div class="nav-item" data-sec="customers"><span class="nav-icon"><i class="fa-solid fa-users"></i></span>Directory</div>
@@ -289,7 +290,7 @@ function go(sec) {
     if (main) main.scrollTo({ top: 0, behavior: 'smooth' });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, 0);
-  const map = { home:renderHome, revenue:renderRevenue, analytics:renderAnalytics, customers:renderCustomers, search:renderSearch, preferences:renderPreferences, favorites:renderFavorites, referrals:renderReferrals, catalog:renderCatalog, performance:renderPerformance, suppliers:renderSuppliers, orders:renderOrders, training:renderTraining, 'bot-config':renderBotConfig, profile:renderProfile, smtp:renderSmtp, payments:renderPayments, 'add-agent':renderAddAgent, assignments:renderAssignments, reviews:renderReviews, broadcast:renderBroadcast, abandoned:renderAbandoned, insights:renderInsights, 'auto-responses':renderAutoResponses, scheduled:renderScheduled, workflows:renderWorkflows, escalations:renderEscalations, 'agent-performance':renderAgentPerformance, onboarding:renderOnboarding, help:renderHelp };
+  const map = { home:renderHome, revenue:renderRevenue, analytics:renderAnalytics, 'a-boss-lite':renderABossLite, customers:renderCustomers, search:renderSearch, preferences:renderPreferences, favorites:renderFavorites, referrals:renderReferrals, catalog:renderCatalog, performance:renderPerformance, suppliers:renderSuppliers, orders:renderOrders, training:renderTraining, 'bot-config':renderBotConfig, profile:renderProfile, smtp:renderSmtp, payments:renderPayments, 'add-agent':renderAddAgent, assignments:renderAssignments, reviews:renderReviews, broadcast:renderBroadcast, abandoned:renderAbandoned, insights:renderInsights, 'auto-responses':renderAutoResponses, scheduled:renderScheduled, workflows:renderWorkflows, escalations:renderEscalations, 'agent-performance':renderAgentPerformance, onboarding:renderOnboarding, help:renderHelp };
   (map[sec] || renderHome)();
 }
 
@@ -513,6 +514,58 @@ async function renderAnalytics() {
         <div class="panel">
           <div class="panel-title">Last-Touch Attribution</div>
           ${lastTouch.length === 0 ? '<p style="color:var(--text-muted);font-size:0.88rem;margin:0;">No attribution data yet.</p>' : `<table class="table table-sm mb-0"><thead><tr><th>Source</th><th>Share</th><th>Conversions</th><th>Revenue</th></tr></thead><tbody>${ltRows}</tbody></table>`}
+        </div>
+      </div>
+    </div>`;
+}
+
+async function renderABossLite() {
+  const { ok, data } = await apiJson('/tenant/a-boss-lite');
+  if (!ok) {
+    showErr(data.error || 'Failed to load A Boss Lite profile');
+    return;
+  }
+
+  const profile = data?.profile || {};
+  const goals = Array.isArray(data?.goals) ? data.goals : [];
+  const cadenceBlocks = Array.isArray(data?.cadence_blocks) ? data.cadence_blocks : [];
+  const revenueHygiene = Array.isArray(data?.revenue_hygiene) ? data.revenue_hygiene : [];
+  const riskRunway = data?.risk_and_runway || {};
+  const risks = Array.isArray(riskRunway.risks) ? riskRunway.risks : [];
+
+  document.getElementById('spa').innerHTML = `
+    <div class="section-hdr"><i class="fa-solid fa-crown"></i> A Boss Lite</div>
+    <div class="row g-3 mb-3">
+      <div class="col-12 col-sm-6 col-lg-3"><div class="stat-card"><div class="stat-label">Execution Score</div><div class="stat-value">${Number(profile.blended_execution_score || 0)}%</div><div class="stat-sub">blended</div></div></div>
+      <div class="col-12 col-sm-6 col-lg-3"><div class="stat-card"><div class="stat-label">Founder Alignment</div><div class="stat-value">${Number(profile.founder_alignment_score || 0)}%</div><div class="stat-sub">cadence + focus</div></div></div>
+      <div class="col-12 col-sm-6 col-lg-3"><div class="stat-card"><div class="stat-label">Readiness Score</div><div class="stat-value">${Number(profile.readiness_score || 0)}</div><div class="stat-sub">tenant readiness</div></div></div>
+      <div class="col-12 col-sm-6 col-lg-3"><div class="stat-card"><div class="stat-label">Runway</div><div class="stat-value">${Number(riskRunway.runway_months_estimate || 0)} mo</div><div class="stat-sub">estimated</div></div></div>
+    </div>
+    <div class="row g-3">
+      <div class="col-12 col-lg-6">
+        <div class="panel">
+          <div class="panel-title"><i class="fa-solid fa-bullseye me-2"></i>Goals</div>
+          ${goals.length ? `<ul style="margin:0;padding-left:18px;color:var(--text-muted);font-size:0.88rem;line-height:1.8;">${goals.map((goal) => `<li>${esc(goal)}</li>`).join('')}</ul>` : '<div style="color:var(--text-muted);font-size:0.88rem;">No goals generated yet.</div>'}
+        </div>
+      </div>
+      <div class="col-12 col-lg-6">
+        <div class="panel">
+          <div class="panel-title"><i class="fa-solid fa-calendar-check me-2"></i>Cadence Blocks</div>
+          ${cadenceBlocks.length ? `<ul style="margin:0;padding-left:18px;color:var(--text-muted);font-size:0.88rem;line-height:1.8;">${cadenceBlocks.map((item) => `<li>${esc(item)}</li>`).join('')}</ul>` : '<div style="color:var(--text-muted);font-size:0.88rem;">Cadence guidance unavailable.</div>'}
+        </div>
+      </div>
+      <div class="col-12 col-lg-6">
+        <div class="panel">
+          <div class="panel-title"><i class="fa-solid fa-money-bill-trend-up me-2"></i>Revenue Hygiene</div>
+          ${revenueHygiene.length ? `<ul style="margin:0;padding-left:18px;color:var(--text-muted);font-size:0.88rem;line-height:1.8;">${revenueHygiene.map((item) => `<li>${esc(item)}</li>`).join('')}</ul>` : '<div style="color:var(--text-muted);font-size:0.88rem;">Revenue hygiene actions unavailable.</div>'}
+        </div>
+      </div>
+      <div class="col-12 col-lg-6">
+        <div class="panel">
+          <div class="panel-title"><i class="fa-solid fa-triangle-exclamation me-2"></i>Risk &amp; Runway</div>
+          <div style="font-size:0.88rem;color:var(--text-muted);margin-bottom:8px;">Risk Level: <b>${esc(riskRunway.risk_level || 'unknown')}</b></div>
+          ${risks.length ? `<ul style="margin:0;padding-left:18px;color:var(--text-muted);font-size:0.88rem;line-height:1.8;">${risks.map((risk) => `<li>${esc(risk)}</li>`).join('')}</ul>` : '<div style="color:var(--text-muted);font-size:0.88rem;">No critical risks flagged.</div>'}
+          <div style="margin-top:10px;font-size:0.84rem;color:var(--text-muted);">${esc(riskRunway.mitigation || '')}</div>
         </div>
       </div>
     </div>`;
