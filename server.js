@@ -971,7 +971,8 @@ async function buildRevenueCommandCenter() {
 }
 
 async function buildFounderTrailSnapshot(limit = 800) {
-  let { data: rows, error } = await supabase
+  const abosSchema = supabase.schema("alphadome");
+  let { data: rows, error } = await abosSchema
     .from("abos_founder_trail_entries")
     .select("source_sheet, activity_slot, activity_name, activity_category, resource_used, output_text, money_in_kes, money_out_kes, net_kes, priority_goal, alignment_group, created_at")
     .order("created_at", { ascending: false })
@@ -1163,7 +1164,8 @@ async function buildTenantABossLite(tenantPhone) {
 }
 
 async function buildABOSWorkbookValidation(workbookName = null) {
-  let { data: rows, error } = await supabase
+  const abosSchema = supabase.schema('alphadome');
+  let { data: rows, error } = await abosSchema
     .from('abos_workbook_ingestions')
     .select('workbook_name, status, rows_processed, rows_failed, imported_at, metadata')
     .order('imported_at', { ascending: false })

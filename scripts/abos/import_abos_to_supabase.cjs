@@ -379,6 +379,7 @@ async function main() {
   const supabase = args.dryRun
     ? null
     : createClient(requireEnv('SB_URL'), requireEnv('SB_SERVICE_ROLE_KEY'));
+  const abosSchema = args.dryRun ? null : supabase.schema('alphadome');
 
   for (const filePath of args.files) {
     const abs = path.resolve(filePath);
@@ -406,7 +407,7 @@ async function main() {
 
     let ingestionId = null;
     if (!args.dryRun) {
-      const { data, error } = await supabase
+      const { data, error } = await abosSchema
         .from('abos_workbook_ingestions')
         .insert(ingestionPayload)
         .select('id')
@@ -464,7 +465,7 @@ async function main() {
     }
 
     if (!args.dryRun && ingestionId) {
-      await supabase
+      await abosSchema
         .from('abos_workbook_ingestions')
         .update({ rows_processed: processed, rows_failed: failed })
         .eq('id', ingestionId);
