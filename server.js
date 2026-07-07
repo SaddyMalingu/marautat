@@ -322,6 +322,12 @@ app.get('/agent-demo-modal.html', (req, res) => {
   res.sendFile(path.join(publicDir, 'agent-demo-modal.html'));
 });
 
+// Serve Kassangas Music Shop payment portal
+app.get('/kassangas-music-shop', (req, res) => {
+  log(`Kassangas payment portal loaded by ${req.ip} at ${new Date().toISOString()}`, "PAGE");
+  res.sendFile(path.join(publicDir, 'kassangas-music-shop.html'));
+});
+
 
 // Only instantiate OpenAI if the API key is present
 
@@ -629,7 +635,9 @@ async function buildSlaRecoveryBoard(limit = 30) {
   }
   if (subsErr) throw subsErr;
 
-  const items = subs || [];
+  const allItems = subs || [];
+  const items = allItems.filter(isRecoverableRevenueSubscription);
+  const excludedTests = allItems.length - items.length;
   const userIds = [...new Set(items.map((item) => item.user_id).filter(Boolean))];
   let users = [];
   let conversations = [];
@@ -684,6 +692,7 @@ async function buildSlaRecoveryBoard(limit = 30) {
     generated_at: new Date().toISOString(),
     summary: {
       total: rows.length,
+      excluded_test_users: excludedTests,
       overdue: rows.filter((item) => item.overdue_minutes > 0).length,
       failed: rows.filter((item) => String(item.status).toLowerCase() === "failed").length,
       pending: rows.filter((item) => String(item.status).toLowerCase() === "pending").length,
@@ -714,6 +723,9 @@ async function loadSubscriptionForAdminAction(subscriptionId) {
 async function performAdminRecoveryAction({ action, subscriptionId, actor, sourceIp }) {
   const subscription = await loadSubscriptionForAdminAction(subscriptionId);
   if (!subscription) throw new Error("Subscription not found");
+  if (!isRecoverableRevenueSubscription(subscription)) {
+    throw new Error("Subscription is pre-revenue cutoff and treated as test user; recovery action skipped.");
+  }
   const waPhone = normalizeCampaignPhone(subscription.metadata?.customer_wa) || normalizeCampaignPhone(subscription.phone);
   if (!waPhone) throw new Error("Unable to resolve customer phone");
 
@@ -923,7 +935,9 @@ async function buildFinanceReconciliation(limit = 50) {
     .order("created_at", { ascending: false })
     .limit(500);
   if (error) throw error;
-  const items = subs || [];
+  const allItems = subs || [];
+  const items = allItems.filter(isRecoverableRevenueSubscription);
+  const excludedTests = allItems.length - items.length;
   const unresolved = items.filter((item) => ["pending", "failed", "manual_pending_verification", "cod_pending_delivery"].includes(String(item.status || "").toLowerCase()));
   const revenueCaptured = items
     .filter((item) => ["active", "completed", "subscribed"].includes(String(item.status || "").toLowerCase()))
@@ -933,6 +947,7 @@ async function buildFinanceReconciliation(limit = 50) {
     summary: {
       revenue_captured: revenueCaptured,
       unresolved_count: unresolved.length,
+      excluded_test_users: excludedTests,
       manual_pending_verification: unresolved.filter((item) => String(item.status || "").toLowerCase() === "manual_pending_verification").length,
       cod_pending_delivery: unresolved.filter((item) => String(item.status || "").toLowerCase() === "cod_pending_delivery").length,
     },
@@ -5251,6 +5266,19 @@ function parseIsoDate(dateValue) {
   return Number.isFinite(ts) ? ts : 0;
 }
 
+const REVENUE_REAL_CUTOFF_AT = process.env.REVENUE_REAL_CUTOFF_AT || "2026-07-03T00:00:00+03:00";
+const REVENUE_REAL_CUTOFF_TS = parseIsoDate(REVENUE_REAL_CUTOFF_AT);
+
+function isPreRevenueTestSubscription(sub) {
+  const createdTs = parseIsoDate(sub?.created_at || sub?.updated_at);
+  if (!REVENUE_REAL_CUTOFF_TS || !createdTs) return false;
+  return createdTs < REVENUE_REAL_CUTOFF_TS;
+}
+
+function isRecoverableRevenueSubscription(sub) {
+  return !isPreRevenueTestSubscription(sub);
+}
+
 function extractWaTargetFromSubscription(sub) {
   if (sub?.metadata?.customer_wa) return String(sub.metadata.customer_wa);
   if (sub?.phone) return String(sub.phone);
@@ -5665,6 +5693,18 @@ function isMissingColumnError(error) {
   );
 }
 
+function extractMissingColumnName(error) {
+  const message = String(error?.message || "");
+  const direct = message.match(/'([^']+)'\s+column/i);
+  if (direct?.[1]) return String(direct[1]);
+  const doesNotExist = message.match(/column\s+([a-zA-Z0-9_\.]+)\s+does not exist/i);
+  if (doesNotExist?.[1]) {
+    const raw = String(doesNotExist[1]);
+    return raw.includes(".") ? raw.split(".").pop() : raw;
+  }
+  return null;
+}
+
 function buildPerformanceReportFromOps(ops, period = "daily") {
   const k = ops?.kpis || {};
   const hotLeads = ops?.operations?.hot_leads || [];
@@ -5770,6 +5810,9 @@ async function buildAdminOpsOverview() {
   }
 
   const completedStatuses = new Set(["subscribed", "completed", "active"]);
+  const allSubscriptions = subscriptions;
+  subscriptions = allSubscriptions.filter(isRecoverableRevenueSubscription);
+  const excludedTestUsers = allSubscriptions.length - subscriptions.length;
 
   const successfulSubs = subscriptions.filter((s) => completedStatuses.has(String(s.status || "").toLowerCase()));
   const failedSubs = subscriptions.filter((s) => String(s.status || "").toLowerCase() === "failed");
@@ -5913,6 +5956,7 @@ async function buildAdminOpsOverview() {
     kpis: {
       active_tenants: activeTenants.length,
       total_tenants: tenants.length,
+      excluded_test_subscriptions_30d: excludedTestUsers,
       total_revenue_kes_30d: Math.round(revenueKes),
       payment_attempts_30d: attemptsCount,
       successful_payments_30d: successCount,
@@ -8556,6 +8600,72 @@ app.post("/mpesa/stk-push", tenantSessionAuth, async (req, res) => {
   }
 });
 
+// Public API for Kassangas Music Shop landing page checkout
+app.post("/api/kassangas/stk-push", async (req, res) => {
+  try {
+    let { phone, amount, customerName, itemName } = req.body || {};
+
+    phone = String(phone || "").trim().replace(/\s+/g, "");
+    if (phone.startsWith("0")) phone = `254${phone.slice(1)}`;
+    if (phone.startsWith("+")) phone = phone.replace(/^\+/, "");
+
+    const parsedAmount = Number(amount);
+    if (!/^2547\d{8}$/.test(phone)) {
+      return res.status(400).json({ error: "Invalid phone number. Use format 2547XXXXXXXX" });
+    }
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+      return res.status(400).json({ error: "Amount must be a number greater than 0" });
+    }
+
+    const cleanCustomerName = String(customerName || "Walk-in customer").slice(0, 80);
+    const cleanItemName = String(itemName || "Music Shop Payment").slice(0, 80);
+    const accountRef = `KASSANGAS-${Date.now().toString().slice(-6)}`;
+
+    const result = await initiateStkPush({
+      phone,
+      amount: parsedAmount,
+      accountRef,
+      transactionDesc: `Kassangas ${cleanItemName}`,
+    });
+
+    const checkoutId = result?.CheckoutRequestID || result?.checkoutRequestID || null;
+    if (checkoutId) {
+      const { error: insertErr } = await supabase.from("subscriptions").insert([
+        {
+          user_id: null,
+          phone,
+          amount: parsedAmount,
+          plan_type: "kassangas_music_shop",
+          level: 1,
+          account_ref: accountRef,
+          status: "pending",
+          mpesa_checkout_request_id: checkoutId,
+          metadata: {
+            ...(result || {}),
+            source: "kassangas_landing_page",
+            customer_name: cleanCustomerName,
+            item_name: cleanItemName,
+          },
+        },
+      ]);
+
+      if (insertErr) {
+        log(`KASSANGAS_SUBSCRIPTION_INSERT_FAILED: ${insertErr.message}`, "WARN");
+      }
+    }
+
+    log(`KASSANGAS_STK_PUSH phone=${phone} amount=${parsedAmount} checkout=${checkoutId || "n/a"}`, "PAYMENT");
+    return res.json({
+      success: true,
+      message: result?.CustomerMessage || "Payment prompt sent successfully.",
+      checkoutId,
+    });
+  } catch (err) {
+    log(`KASSANGAS_STK_PUSH_FAILED: ${err.message}`, "ERROR");
+    return res.status(502).json({ error: err.message || "STK push failed" });
+  }
+});
+
 // Helper: Send fallback payment options when M-Pesa fails
 async function sendFallbackPaymentOptions(phone, plan_type, level, amount, checkoutId, isProduct = false) {
   const productInfo = isProduct ? "your order" : `your *${plan_type.toUpperCase()}* Plan`;
@@ -8570,8 +8680,8 @@ async function sendFallbackPaymentOptions(phone, plan_type, level, amount, check
       `Choose one of the options below:`
     );
 
-    // Second message: Payment options with buttons
-    const options = [
+    // Second message: Payment options as WhatsApp list rows
+    const rows = [
       {
         id: `retry_mpesa_${checkoutId}`,
         title: "🔄 Retry M-Pesa",
@@ -8594,11 +8704,16 @@ async function sendFallbackPaymentOptions(phone, plan_type, level, amount, check
       }
     ];
 
+    const sections = [{
+      title: "Payment options",
+      rows,
+    }];
+
     await sendInteractiveList(
       phone,
-      `${plan_type.toUpperCase()} Payment Options`,
       `Select preferred payment method for KES ${amount}:`,
-      options
+      "Choose option",
+      sections
     );
 
     log(`✅ FALLBACK_OPTIONS_SENT: Phone=${phone}, Amount=${amount}, CheckoutID=${checkoutId}`, "PAYMENT");
@@ -8609,7 +8724,7 @@ async function sendFallbackPaymentOptions(phone, plan_type, level, amount, check
       phone,
       `⚠️ *M-Pesa Payment Failed*\n\nAlternative options:\n` +
       `1️⃣ *Retry M-Pesa* - Reply: *retry*\n` +
-      `2️⃣ *Bank Transfer* - Reply: *bankfees kes ${amount}*\n` +
+      `2️⃣ *Bank Transfer* - Reply: *BANK*\n` +
       `3️⃣ *Cash on Delivery* - Reply: *cod*\n` +
       `4️⃣ *Contact Support* - +254117604817 or +254743780542`
     );
@@ -9817,11 +9932,18 @@ app.post("/admin/api/wf/research-plan", adminAuth, async (req, res) => {
 // List campaigns
 app.get("/admin/api/wf/campaigns", adminAuth, async (req, res) => {
   try {
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from("wf_campaigns")
       .select("*")
       .order("created_at", { ascending: false })
       .limit(50);
+    if (error && isMissingColumnError(error)) {
+      ({ data, error } = await supabase
+        .from("wf_campaigns")
+        .select("*")
+        .order("id", { ascending: false })
+        .limit(50));
+    }
     if (error) throw error;
     res.json({ ok: true, campaigns: data });
   } catch (err) {
@@ -9839,7 +9961,7 @@ app.post("/admin/api/wf/campaigns", adminAuth, async (req, res) => {
     if (!name || !keywords.length) {
       return res.status(400).json({ ok: false, error: "name and keywords required" });
     }
-    const { data, error } = await supabase.from("wf_campaigns").insert([{
+    const insertPayload = {
       name: String(name).trim(),
       keywords: Array.isArray(keywords) ? keywords : [keywords],
       industries: Array.isArray(industries) ? industries : [],
@@ -9849,7 +9971,20 @@ app.post("/admin/api/wf/campaigns", adminAuth, async (req, res) => {
       quality_threshold: parseInt(quality_threshold, 10) || 70,
       notes: notes || null,
       status: "draft",
-    }]).select().single();
+    };
+
+    let payload = { ...insertPayload };
+    let data = null;
+    let error = null;
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      ({ data, error } = await supabase.from("wf_campaigns").insert([payload]).select().single());
+      if (!error) break;
+      if (!isMissingColumnError(error)) break;
+      const missingCol = extractMissingColumnName(error);
+      if (!missingCol || !Object.prototype.hasOwnProperty.call(payload, missingCol)) break;
+      delete payload[missingCol];
+    }
+
     if (error) throw error;
     res.json({ ok: true, campaign: data });
   } catch (err) {
@@ -9979,7 +10114,14 @@ app.get("/admin/api/wf/campaigns/:id/leads", adminAuth, async (req, res) => {
       .order("discovered_at", { ascending: false })
       .range(parseInt(offset), parseInt(offset) + parseInt(limit) - 1);
     if (status) query = query.eq("status", status);
-    const { data, error } = await query;
+    let { data, error } = await query;
+    if (error && isMissingColumnError(error)) {
+      let fallbackQuery = supabase.from("wf_leads").select("*").eq("campaign_id", req.params.id)
+        .order("created_at", { ascending: false })
+        .range(parseInt(offset), parseInt(offset) + parseInt(limit) - 1);
+      if (status) fallbackQuery = fallbackQuery.eq("status", status);
+      ({ data, error } = await fallbackQuery);
+    }
     if (error) throw error;
     res.json({ ok: true, leads: data });
   } catch (err) {
