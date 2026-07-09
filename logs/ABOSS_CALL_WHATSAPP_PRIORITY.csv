@@ -1,0 +1,12 @@
+organization,industry,decision_stage,phone,whatsapp_url,recommended_script,priority_score,next_action
+Jumia Kenya,retail,ACTION_REQUIRED_CALL,+254711011011,https://wa.me/254711011011,Call now and ask for decision owner for same-day pilot close,100,Send first touch now
+BasiGo,mobility,OUTREACH_SENT,+254705837904,https://wa.me/254705837904,Use short value opener and ask for 15-minute pilot call,85,Wait for reply; trigger follow-up in 24h if no response
+Greenspoon,retail,OUTREACH_SENT,+254157267894,https://wa.me/254157267894,Use short value opener and ask for 15-minute pilot call,85,Wait for reply; trigger follow-up in 24h if no response
+Ilara Health,healthtech,OUTREACH_SENT,+254111027900,https://wa.me/254111027900,Use short value opener and ask for 15-minute pilot call,85,Wait for reply; trigger follow-up in 24h if no response
+Kopo Kopo,fintech,OUTREACH_SENT,+254709000000,https://wa.me/254709000000,Use short value opener and ask for 15-minute pilot call,85,Send first touch now
+M-Gas,energy,OUTREACH_SENT,+254792556677,https://wa.me/254792556677,Use short value opener and ask for 15-minute pilot call,85,Wait for reply; trigger follow-up in 24h if no response
+Naivas Supermarket,retail,OUTREACH_SENT,+254711000000,https://wa.me/254711000000,Use short value opener and ask for 15-minute pilot call,85,Send first touch now
+PesaPal,fintech,OUTREACH_SENT,+254709219000,https://wa.me/254709219000,Use short value opener and ask for 15-minute pilot call,85,Send first touch now
+Quickmart,retail,OUTREACH_SENT,+254789646464,https://wa.me/254789646464,Use short value opener and ask for 15-minute pilot call,85,Send first touch now
+Safaricom,telecom,OUTREACH_SENT,+254722002222,https://wa.me/254722002222,Use short value opener and ask for 15-minute pilot call,85,Send first touch now
+Twiva,social-commerce,OUTREACH_SENT,+254715819949,https://wa.me/254715819949,Use short value opener and ask for 15-minute pilot call,85,Wait for reply; trigger follow-up in 24h if no response

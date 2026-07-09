@@ -219,7 +219,44 @@ async function loadTenantTrainingData(tenantId) {
   }
 }
 
-// ========== Get System Prompt ==========
+// ========== Load Tenant Knowledge Base Entries ==========
+async function loadTenantKnowledgeData(tenantId, query = null) {
+  try {
+    const { data, error } = await supabase.rpc("get_knowledge_by_tenant", {
+      p_tenant_id: tenantId,
+      p_query: query || null,
+    });
+
+    if (error) {
+      log(`Error loading knowledge base entries: ${error.message}`, "ERROR");
+      return [];
+    }
+    return data?.items || [];
+  } catch (err) {
+    log(`Exception loading knowledge base entries: ${err.message}`, "ERROR");
+    return [];
+  }
+}
+
+function buildKnowledgeContext(knowledgeData = []) {
+  if (!knowledgeData.length) return "";
+
+  const maxItems = 10;
+  const maxChars = 2000;
+  let result = "";
+
+  for (const entry of knowledgeData.slice(0, maxItems)) {
+    const title = (entry.title || entry.path || "Knowledge item").trim();
+    const content = (entry.content || "").trim();
+    if (!content) continue;
+    const line = `- ${title}: ${content}\n`;
+    if (result.length + line.length > maxChars) break;
+    result += line;
+  }
+
+  return result.trim();
+}
+
 function buildTrainingContext(trainingData = []) {
   if (!trainingData.length) return "";
 
@@ -239,7 +276,7 @@ function buildTrainingContext(trainingData = []) {
   return result.trim();
 }
 
-function getSystemPrompt(tenant = null, templates = [], trainingData = []) {
+function getSystemPrompt(tenant = null, templates = [], trainingData = [], knowledgeData = []) {
   const brandName = tenant?.client_name || "Alphadome";
   let basePrompt = `You are a helpful WhatsApp assistant for ${brandName}. Be professional, warm, and concise.`;
 
@@ -250,12 +287,35 @@ function getSystemPrompt(tenant = null, templates = [], trainingData = []) {
     }
   }
 
-  const guardrails = `You must ONLY answer using the brand's portfolio, catalog, and the training data provided. Do NOT invent details or mention unrelated communities. If the information is not available, say you don't have it in the catalog/brand data and ask for a more specific product name, SKU, or request to connect with a human.`;
+  const guardrails = `You must ONLY answer using the brand's portfolio, catalog, training data, and knowledge base provided. Do NOT invent details or mention unrelated communities. If the information is not available, say you don't have it in the catalog/brand data and ask for a more specific product name, SKU, or request to connect with a human.`;
 
   const trainingContext = buildTrainingContext(trainingData);
+  const knowledgeContext = buildKnowledgeContext(knowledgeData);
   const trainingBlock = trainingContext ? `\n\nBrand data:\n${trainingContext}` : "";
+  const knowledgeBlock = knowledgeContext ? `\n\nKnowledge base:\n${knowledgeContext}` : "";
 
-  return `${basePrompt}\n\n${guardrails}${trainingBlock}`.trim();
+  return `${basePrompt}\n\n${guardrails}${trainingBlock}${knowledgeBlock}`.trim();
+}
+
+function findKnowledgeAnswer(knowledgeData = [], userMessage = "") {
+  const text = (userMessage || "").toLowerCase().trim();
+  if (!text || !knowledgeData.length) return null;
+
+  const candidates = knowledgeData
+    .map((entry) => {
+      const title = (entry.title || "").toLowerCase();
+      const content = (entry.content || "").toLowerCase();
+      let score = 0;
+      if (title && title.includes(text)) score = 4;
+      else if (content.includes(text)) score = 2;
+      return score > 0
+        ? { score, answer: entry.content, title: entry.title }
+        : null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.score - a.score);
+
+  return candidates[0]?.answer || null;
 }
 
 function findTrainingAnswer(trainingData = [], userMessage = "") {

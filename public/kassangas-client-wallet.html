@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kassangas Wallet | Scan & Pay</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Bebas+Neue&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+  <style>
+    :root {
+      --bg-1: #081421;
+      --bg-2: #132a43;
+      --accent: #ff8a00;
+      --accent-2: #ffd166;
+      --mint: #7ef9c8;
+      --panel: rgba(10, 22, 36, 0.82);
+      --text: #f3f7fa;
+      --muted: #b8c7d6;
+      --ok: #65d88f;
+      --danger: #ff5d5d;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Space Grotesk", sans-serif;
+      color: var(--text);
+      background: linear-gradient(145deg, var(--bg-1), var(--bg-2));
+      display: grid;
+      place-items: center;
+      padding: 16px;
+    }
+
+    .wallet { width: min(700px, 100%); }
+    .card { background: var(--panel); border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; padding: 24px; }
+    h1 { margin: 0 0 6px; font-size: 1.8rem; color: var(--accent-2); }
+    .sub { color: var(--muted); margin: 0 0 16px; }
+    
+    .scanner-wrapper { position: relative; margin: 20px 0; }
+    #scanner { width: 100%; max-width: 400px; border-radius: 12px; display: none; }
+    .scan-info { color: var(--muted); font-size: 0.9rem; padding: 12px; border-radius: 8px; background: rgba(255,209,102,0.08); }
+    
+    .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+    .tab-btn { flex: 1; padding: 10px; border: 0; border-radius: 8px; background: rgba(255,255,255,0.1); color: var(--text); cursor: pointer; font-weight: 600; transition: background 200ms; }
+    .tab-btn.active { background: var(--accent); color: #081421; }
+    
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+    
+    .field { display: grid; gap: 4px; margin-bottom: 12px; }
+    label { font-size: 0.85rem; color: #d2deea; }
+    input { border: 1px solid rgba(255,255,255,0.14); border-radius: 8px; background: rgba(4,12,20,0.8); color: var(--text); padding: 10px 12px; font-size: 0.95rem; font-family: inherit; outline: none; }
+    input:focus { border-color: var(--accent-2); }
+    
+    button { border: 0; border-radius: 10px; padding: 12px 16px; font-family: inherit; font-weight: 700; font-size: 1rem; cursor: pointer; transition: transform 140ms; }
+    .scan-btn, .pay-btn { background: linear-gradient(90deg, var(--accent), var(--accent-2)); color: #081421; width: 100%; margin-top: 8px; }
+    .scan-btn:disabled, .pay-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+    
+    .status { margin-top: 12px; padding: 10px; border-radius: 8px; font-size: 0.9rem; display: none; }
+    .status.show { display: block; }
+    .status.ok { background: rgba(101,216,143,0.15); color: #bef2ce; border: 1px solid rgba(101,216,143,0.45); }
+    .status.error { background: rgba(255,93,93,0.12); color: #ffd0d0; border: 1px solid rgba(255,93,93,0.45); }
+    
+    .txn-details { background: rgba(126,249,200,0.08); border: 1px solid rgba(126,249,200,0.3); border-radius: 10px; padding: 12px; margin-top: 12px; display: none; }
+    .txn-details.show { display: block; }
+    .txn-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 0.95rem; }
+    .txn-row strong { color: var(--accent-2); }
+    
+    @media (max-width: 600px) { .card { padding: 18px; } h1 { font-size: 1.3rem; } }
+  </style>
+</head>
+<body>
+  <div class="wallet">
+    <div class="card">
+      <h1>💳 Kassangas Wallet</h1>
+      <p class="sub">Scan merchant QR or paste your phone number to pay</p>
+
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="scanner">📱 Scan QR</button>
+        <button class="tab-btn" data-tab="manual">💰 Manual</button>
+        <button class="tab-btn" data-tab="history">📋 History</button>
+      </div>
+
+      <!-- SCANNER TAB -->
+      <div id="scanner-tab" class="tab-content active">
+        <div class="scan-info">Position merchant QR code in frame</div>
+        <div class="scanner-wrapper">
+          <canvas id="scanner" style="display: block; width: 100%; max-width: 400px;"></canvas>
+          <video id="scannerVideo" style="display: none;"></video>
+        </div>
+        <button class="scan-btn" id="startScanBtn">Start Camera</button>
+        <div id="scanStatus" class="status" aria-live="polite"></div>
+        <div id="scannedTxn" class="txn-details"></div>
+      </div>
+
+      <!-- MANUAL TAB -->
+      <div id="manual-tab" class="tab-content">
+        <div class="field">
+          <label for="manualPhone">Your M-Pesa Number</label>
+          <input id="manualPhone" type="tel" placeholder="2547XXXXXXXX" />
+        </div>
+        <div id="manualStatus" class="status" aria-live="polite"></div>
+        <div id="manualTxn" class="txn-details"></div>
+      </div>
+
+      <!-- HISTORY TAB -->
+      <div id="history-tab" class="tab-content">
+        <div id="historyList" style="font-size: 0.9rem; color: var(--muted);">No transactions yet</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const tabs = document.querySelectorAll(".tab-btn");
+    const tabContents = document.querySelectorAll(".tab-content");
+    const startScanBtn = document.getElementById("startScanBtn");
+    const scannerCanvas = document.getElementById("scanner");
+    const scannerVideo = document.getElementById("scannerVideo");
+    let scanning = false;
+    let currentTemplate = null;
+
+    // Tab switching
+    tabs.forEach(btn => {
+      btn.addEventListener("click", () => {
+        const tabName = btn.getAttribute("data-tab");
+        tabs.forEach(b => b.classList.remove("active"));
+        tabContents.forEach(c => c.classList.remove("active"));
+        btn.classList.add("active");
+        document.getElementById(`${tabName}-tab`).classList.add("active");
+        
+        if (tabName === "history") loadHistory();
+        if (tabName === "scanner" && !scanning) startScanBtn.textContent = "Start Camera";
+      });
+    });
+
+    // Parse QR from URL if present
+    const params = new URLSearchParams(window.location.search);
+    if (params.has("t")) {
+      currentTemplate = params.get("t");
+      fetchAndShowTemplate(currentTemplate);
+    }
+
+    async function fetchAndShowTemplate(templateId) {
+      try {
+        const res = await fetch(`/api/kassangas/template/${templateId}`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        
+        showTransactionDetails({
+          itemName: data.itemName,
+          amount: data.amount,
+          templateId: templateId
+        }, "scannedTxn");
+      } catch (err) {
+        showStatus("scanStatus", "error", "Invalid QR code: " + err.message);
+      }
+    }
+
+    function showStatus(elemId, type, msg) {
+      const elem = document.getElementById(elemId);
+      elem.className = `status show ${type}`;
+      elem.textContent = msg;
+    }
+
+    function showTransactionDetails(txn, elemId) {
+      const elem = document.getElementById(elemId);
+      elem.innerHTML = `
+        <div class="txn-row"><span>Description:</span> <strong>${txn.itemName}</strong></div>
+        <div class="txn-row"><span>Amount:</span> <strong>KES ${txn.amount}</strong></div>
+        <div class="txn-row"><span>Status:</span> <strong>Ready to pay</strong></div>
+        <input type="tel" id="${elemId}-phone" placeholder="2547XXXXXXXX" style="width: 100%; margin-top: 10px;" />
+        <button class="pay-btn" onclick="confirmPayment('${txn.templateId || ''}', '${elemId}')">Confirm & Pay</button>
+      `;
+      elem.classList.add("show");
+    }
+
+    // QR Scanner
+    startScanBtn.addEventListener("click", async () => {
+      if (scanning) {
+        scanning = false;
+        scannerVideo.pause();
+        scannerCanvas.style.display = "none";
+        startScanBtn.textContent = "Start Camera";
+        return;
+      }
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        scannerVideo.srcObject = stream;
+        scannerVideo.play();
+        scannerCanvas.style.display = "block";
+        scanning = true;
+        startScanBtn.textContent = "Stop Camera";
+        processFrame();
+      } catch (err) {
+        showStatus("scanStatus", "error", "Camera access denied: " + err.message);
+      }
+    });
+
+    function processFrame() {
+      const ctx = scannerCanvas.getContext("2d");
+      const w = scannerCanvas.width = scannerVideo.videoWidth;
+      const h = scannerCanvas.height = scannerVideo.videoHeight;
+      ctx.drawImage(scannerVideo, 0, 0);
+      
+      const imageData = ctx.getImageData(0, 0, w, h);
+      const code = jsQR(imageData.data, w, h);
+      
+      if (code) {
+        scanning = false;
+        scannerVideo.pause();
+        scannerCanvas.style.display = "none";
+        startScanBtn.textContent = "Start Camera";
+        
+        const url = new URL(code.data);
+        const templateId = url.searchParams.get("t");
+        if (templateId) {
+          fetchAndShowTemplate(templateId);
+        } else {
+          showStatus("scanStatus", "error", "Invalid QR: no template found");
+        }
+      } else if (scanning) {
+        requestAnimationFrame(processFrame);
+      }
+    }
+
+    // Manual entry
+    function loadManualFields() {
+      const phone = document.getElementById("manualPhone").value.trim();
+      if (phone) {
+        showStatus("manualStatus", "ok", "Ready to pay with " + phone);
+      }
+    }
+
+    // Confirm and pay
+    window.confirmPayment = async (templateId, elemId) => {
+      const phone = document.getElementById(`${elemId}-phone`).value.trim();
+      if (!phone || !/^2547\d{8}$/.test(phone.replace(/\s/g, ""))) {
+        showStatus(elemId === "scannedTxn" ? "scanStatus" : "manualStatus", "error", "Invalid phone");
+        return;
+      }
+
+      const normalizedPhone = phone.startsWith("0") ? "254" + phone.slice(1) : phone;
+      const statusId = elemId === "scannedTxn" ? "scanStatus" : "manualStatus";
+      
+      try {
+        showStatus(statusId, "ok", "Triggering M-Pesa prompt...");
+        const res = await fetch("/api/kassangas/payment-intent", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            templateId: templateId,
+            phone: normalizedPhone
+          })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        
+        showStatus(statusId, "ok", "STK sent to " + normalizedPhone + ". Enter your M-Pesa PIN.");
+        setTimeout(() => loadHistory(), 2000);
+      } catch (err) {
+        showStatus(statusId, "error", err.message);
+      }
+    };
+
+    async function loadHistory() {
+      document.getElementById("historyList").innerHTML = '<p style="color: var(--muted);">Loading transactions...</p>';
+      try {
+        const res = await fetch("/api/kassangas/payment-intents");
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        
+        if (data.intents && data.intents.length > 0) {
+          document.getElementById("historyList").innerHTML = data.intents
+            .map(t => `<div style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.1);">
+              <strong>${t.item_name}</strong> - KES ${t.amount} (${t.status})<br/>
+              <small>${new Date(t.created_at).toLocaleString()}</small>
+            </div>`)
+            .join("");
+        } else {
+          document.getElementById("historyList").innerHTML = '<p style="color: var(--muted);">No transactions yet</p>';
+        }
+      } catch (err) {
+        document.getElementById("historyList").innerHTML = '<p style="color: #ff5d5d;">' + err.message + '</p>';
+      }
+    }
+  </script>
+</body>
+</html>

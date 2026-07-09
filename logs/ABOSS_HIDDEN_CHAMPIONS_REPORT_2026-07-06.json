@@ -1,0 +1,11 @@
+{
+  "generated_at": "2026-07-06T11:04:43.989Z",
+  "candidates_seeded": 16,
+  "newly_researched_added": 5,
+  "batch2_existing": 5,
+  "batch2_refreshed_total": 10,
+  "files": {
+    "new_research": "ABOSS_HIDDEN_CHAMPIONS_STRIKE.csv",
+    "batch2_refreshed": "ABOSS_BATCH2_TOMORROW_REFRESHED.csv"
+  }
+}

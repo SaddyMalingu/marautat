@@ -1,0 +1,61 @@
+organization,channel,recipient_email,recipient_phone,status,next_action,followup_message
+BasiGo,email,info@basi-go.com,254705837904,sent_2026-07-06_batch2,Wait for reply; trigger follow-up in 24h if no response,"Hi {{name}},
+
+Quick follow-up in case this got buried.
+For BasiGo, we can run a short pilot focused on inquiry-to-contract conversion this week.
+
+If you are open, I will send a one-page scope with timeline and KPI target."
+Eka Hotel Nairobi,email,sales@ekahotel.com,,deferred_contacted_today,Do not resend today; use 24h follow-up only,"Hi {{name}},
+
+Quick follow-up in case this got buried.
+For Eka Hotel Nairobi, we can run a short pilot focused on inquiry-to-booking conversion this week.
+
+If you are open, I will send a one-page scope with timeline and KPI target."
+Greenspoon,email,shop@greenspoon.co.ke,254157267894,sent_2026-07-06_batch2,Wait for reply; trigger follow-up in 24h if no response,"Hi {{name}},
+
+Quick follow-up in case this got buried.
+For Greenspoon, we can run a short pilot focused on response-to-checkout conversion this week.
+
+If you are open, I will send a one-page scope with timeline and KPI target."
+Ilara Health,email,info@ilarahealth.com,254111027900,sent_2026-07-06_batch2,Wait for reply; trigger follow-up in 24h if no response,"Hi {{name}},
+
+Quick follow-up in case this got buried.
+For Ilara Health, we can run a short pilot focused on qualified-lead response speed this week.
+
+If you are open, I will send a one-page scope with timeline and KPI target."
+Kilimall Kenya,email,help@kilimall.com,,sent_2026-07-06_batch2,Wait for reply; trigger follow-up in 24h if no response,"Hi {{name}},
+
+Quick follow-up in case this got buried.
+For Kilimall Kenya, we can run a short pilot focused on response-to-checkout conversion this week.
+
+If you are open, I will send a one-page scope with timeline and KPI target."
+M-Gas,phone/whatsapp,,254800721148,sent_2026-07-06_batch2,Wait for reply; trigger follow-up in 24h if no response,"Hi {{name}},
+
+Quick follow-up in case this got buried.
+For M-Gas, we can run a short pilot focused on qualified lead conversion this week.
+
+If you are open, I will send a one-page scope with timeline and KPI target."
+Sarova Hotels,email,sarovazawadi@sarovahotels.com,,deferred_contacted_today,Do not resend today; use 24h follow-up only,"Hi {{name}},
+
+Quick follow-up in case this got buried.
+For Sarova Hotels, we can run a short pilot focused on inquiry-to-booking conversion this week.
+
+If you are open, I will send a one-page scope with timeline and KPI target."
+Serena Hotels Kenya,email,sales@serena.com.pk,,deferred_contacted_today,Do not resend today; use 24h follow-up only,"Hi {{name}},
+
+Quick follow-up in case this got buried.
+For Serena Hotels Kenya, we can run a short pilot focused on inquiry-to-booking conversion this week.
+
+If you are open, I will send a one-page scope with timeline and KPI target."
+Twiva,email,info@twiva.co.ke,254715819949,sent_2026-07-06_batch2,Wait for reply; trigger follow-up in 24h if no response,"Hi {{name}},
+
+Quick follow-up in case this got buried.
+For Twiva, we can run a short pilot focused on qualified lead conversion this week.
+
+If you are open, I will send a one-page scope with timeline and KPI target."
+Villa Rosa Kempinski Nairobi,email,info.development@kempinski.com,,deferred_contacted_today,Do not resend today; use 24h follow-up only,"Hi {{name}},
+
+Quick follow-up in case this got buried.
+For Villa Rosa Kempinski Nairobi, we can run a short pilot focused on inquiry-to-booking conversion this week.
+
+If you are open, I will send a one-page scope with timeline and KPI target."

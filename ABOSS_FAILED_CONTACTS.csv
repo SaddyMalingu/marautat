@@ -1,0 +1,5 @@
+organization,failed_channel,failed_recipient,failure_reason,status,next_attempt_channel,notes
+Hotpoint Appliances,email,channelsales@hotpoint.co.ke,remote_server_misconfigured,open,linkedin_or_contact_form,replace with decision-maker email from leadership/team page
+Carrefour Kenya,email,contact@mafcarrefour.com,address_not_found,open,linkedin_or_contact_form,find country office or ops/marketing lead email
+Quickmart,phone/whatsapp,12120250807,invalid_or_unavailable_number,open,email_or_linkedin,find operations/marketing lead on linkedin and official contact page
+Fairmont The Norfolk,phone/whatsapp,2147483647,invalid_or_unavailable_number,open,email_or_linkedin,find reservations/sales manager contact via hotel site

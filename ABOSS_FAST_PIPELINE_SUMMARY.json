@@ -1,0 +1,11 @@
+{
+  "generated_at": "2026-07-06T08:46:10.145Z",
+  "total_rows": 60,
+  "ready_now": 11,
+  "needs_research": 49,
+  "research_exported": 25,
+  "files": {
+    "ready": "ABOSS_READY_TO_CONTACT.csv",
+    "research": "ABOSS_RESEARCH_QUEUE.csv"
+  }
+}

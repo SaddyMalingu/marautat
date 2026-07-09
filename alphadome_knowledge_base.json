@@ -1,0 +1,30 @@
+{
+  "title": "Alphadome System: Comprehensive Breakdown",
+  "summary": "Alphadome is a modular, AI- and blockchain-powered ecosystem for agentic automation, digital asset management (NFTs), and intelligent orchestration. It helps brands and professionals thrive by automating, optimizing, and securing business, creative, industrial, and research operations.",
+  "details": "See the full breakdown below.",
+  "audience": "public",
+  "tags": ["overview", "platform", "automation", "AI", "blockchain"],
+  "full_breakdown": {
+    "core_purpose": "Alphadome is a modular, AI- and blockchain-powered ecosystem designed to facilitate success in the digital age through agentic automation, digital asset creation/management (NFTs), and intelligent orchestration. It helps users leverage top-notch tech to thrive.",
+    "major_subsystems": [
+      {"name": "Alpha Construction", "description": "Cloud-ready construction management (project, cost, quality, safety, analytics, compliance)."},
+      {"name": "Alpha Architect", "description": "AI-driven design, 3D modeling, cloud rendering, asset management, monetization."},
+      {"name": "Alpha 3.0", "description": "WhatsApp-centric automation for campaigns, leads, onboarding, revenue, catalog/product management."},
+      {"name": "KEMSA 3.0", "description": "Healthcare supply chain, analytics, blockchain traceability, AI/ML models."},
+      {"name": "Alpha IDE", "description": "Agent-driven developer IDE, automation, VCS, testing, extensibility."},
+      {"name": "Alpha Professor", "description": "Academic CRM, outreach, payments, analytics, compliance."},
+      {"name": "Zone", "description": "Content generation, workflow orchestration, AI provider integration."},
+      {"name": "Intra Africa Journal Hub", "description": "Research/journal aggregation, submission, peer review, analytics, payments."},
+      {"name": "Marketing Engine", "description": "Multi-channel marketing automation, AI scoring, compliance."},
+      {"name": "Magic", "description": "Conversational AI, workflow automation, document/data processing, payments, API/webhooks."},
+      {"name": "Ganji", "description": "Industrial automation, secure material handling, machine vision, tokenization, NFTs, stablecoin."},
+      {"name": "AlphaChip-OS", "description": "Modular, event-driven OS foundation for Alphadome."}
+    ],
+    "cross_cutting_features": [
+      "AI/ML integration", "blockchain/NFT", "security/compliance", "extensibility", "DevOps", "monetization"
+    ],
+    "unique_value_propositions": [
+      "Agentic automation", "context awareness", "tokenization", "modularity", "security & compliance"
+    ]
+  }
+}

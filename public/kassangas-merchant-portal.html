@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kassangas Merchant Portal | QR Payment</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Bebas+Neue&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode.js/1.5.3/qrcode.min.js"></script>
+  <style>
+    :root {
+      --bg-1: #081421;
+      --bg-2: #132a43;
+      --accent: #ff8a00;
+      --accent-2: #ffd166;
+      --mint: #7ef9c8;
+      --panel: rgba(10, 22, 36, 0.82);
+      --text: #f3f7fa;
+      --muted: #b8c7d6;
+      --ok: #65d88f;
+      --ring: rgba(255, 209, 102, 0.32);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Space Grotesk", sans-serif;
+      color: var(--text);
+      background: linear-gradient(145deg, var(--bg-1), var(--bg-2));
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+
+    .portal { width: min(900px, 100%); }
+    .card { background: var(--panel); border: 1px solid rgba(255,255,255,0.1); border-radius: 18px; padding: 28px; }
+    h1 { margin: 0 0 8px; font-size: 2rem; color: var(--accent-2); }
+    .sub { color: var(--muted); margin: 0 0 20px; }
+    .field { display: grid; gap: 6px; margin-bottom: 13px; }
+    label { color: #d2deea; font-size: 0.88rem; }
+    input { width: 100%; border: 1px solid rgba(255,255,255,0.14); border-radius: 12px; background: rgba(4,12,20,0.8); color: var(--text); padding: 12px 13px; font-size: 0.95rem; font-family: inherit; outline: none; transition: border-color 150ms; }
+    input:focus { border-color: var(--accent-2); box-shadow: 0 0 0 4px var(--ring); }
+    button { width: 100%; border: 0; border-radius: 14px; padding: 14px 16px; font-family: inherit; font-weight: 700; font-size: 1rem; cursor: pointer; transition: transform 140ms, filter 140ms; }
+    .pay-btn { color: #081421; background: linear-gradient(90deg, var(--accent), var(--accent-2)); box-shadow: 0 10px 28px rgba(255,138,0,0.35); }
+    .pay-btn:hover { transform: translateY(-1px); }
+    .pay-btn:disabled { cursor: not-allowed; filter: grayscale(0.25) brightness(0.85); }
+    .status { margin-top: 14px; border-radius: 10px; padding: 10px 12px; font-size: 0.92rem; display: none; }
+    .status.show { display: block; animation: fadeIn 220ms; }
+    .status.ok { background: rgba(101,216,143,0.15); color: #bef2ce; border: 1px solid rgba(101,216,143,0.45); }
+    .status.error { background: rgba(255,93,93,0.12); color: #ffd0d0; border: 1px solid rgba(255,93,93,0.45); }
+    #qrSection { display: none; margin-top: 24px; text-align: center; padding: 16px; background: rgba(126,249,200,0.08); border: 1px solid rgba(126,249,200,0.3); border-radius: 12px; }
+    #qrSection.show { display: block; }
+    #qrSection h3 { margin: 0 0 12px; color: var(--mint); }
+    #qrCode { display: inline-block; padding: 8px; background: #fff; border-radius: 8px; }
+    .qr-help { margin-top: 10px; font-size: 0.85rem; color: var(--muted); }
+    .copy-btn { background: var(--accent); color: #081421; padding: 8px 12px; border-radius: 8px; margin-top: 10px; font-weight: 600; font-size: 0.85rem; }
+    .copy-btn:hover { filter: brightness(1.1); }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+    @media (max-width: 600px) { .card { padding: 20px; } h1 { font-size: 1.5rem; } }
+  </style>
+</head>
+<body>
+  <div class="portal">
+    <div class="card">
+      <h1>🎵 Merchant Portal</h1>
+      <p class="sub">Create a reusable payment template. Customers scan the QR to pay instantly.</p>
+      <form id="templateForm">
+        <div class="field">
+          <label for="itemName">Item / Transaction Description</label>
+          <input id="itemName" type="text" placeholder="e.g. Trip No. 1 (Town→Kayole)" required maxlength="80" />
+        </div>
+        <div class="field">
+          <label for="amount">Amount (KES)</label>
+          <input id="amount" type="number" min="1" step="1" placeholder="e.g. 500" required />
+        </div>
+        <button class="pay-btn" type="submit">Generate QR Code</button>
+        <div id="status" class="status" aria-live="polite"></div>
+      </form>
+
+      <div id="qrSection" aria-live="polite">
+        <h3>📱 Customer QR Code</h3>
+        <div id="qrCode"></div>
+        <p class="qr-help">Customers scan this code to pay. Valid for all transactions: <span id="templateDesc"></span> @ KES <span id="templateAmount"></span></p>
+        <button type="button" class="copy-btn" id="copyLink">Copy Portal Link</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const form = document.getElementById("templateForm");
+    const statusBox = document.getElementById("status");
+    const qrSection = document.getElementById("qrSection");
+    const qrCodeDiv = document.getElementById("qrCode");
+    const copyBtn = document.getElementById("copyLink");
+    let currentTemplateId = null;
+
+    function showStatus(type, msg) {
+      statusBox.className = `status show ${type}`;
+      statusBox.textContent = msg;
+    }
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const itemName = document.getElementById("itemName").value.trim();
+      const amount = Number(document.getElementById("amount").value);
+
+      if (!itemName || amount <= 0) {
+        showStatus("error", "Please fill all fields");
+        return;
+      }
+
+      showStatus("ok", "Generating QR...");
+      try {
+        const res = await fetch("/api/kassangas/create-template", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ itemName, amount, reusable: true, merchantName: "Kassangas" })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+
+        currentTemplateId = data.templateId;
+        const qrUrl = `${window.location.origin}/kassangas-client-wallet?t=${data.templateId}`;
+        
+        qrCodeDiv.innerHTML = "";
+        new QRCode(qrCodeDiv, {
+          text: qrUrl,
+          width: 220,
+          height: 220,
+          colorDark: "#081421",
+          colorLight: "#f3f7fa"
+        });
+
+        document.getElementById("templateDesc").textContent = itemName;
+        document.getElementById("templateAmount").textContent = amount;
+        qrSection.classList.add("show");
+        showStatus("ok", "QR ready! Customers can scan it.");
+      } catch (err) {
+        showStatus("error", err.message);
+      }
+    });
+
+    copyBtn.addEventListener("click", () => {
+      if (!currentTemplateId) return;
+      const url = `${window.location.origin}/kassangas-client-wallet?t=${currentTemplateId}`;
+      navigator.clipboard.writeText(url).then(() => {
+        alert("Link copied!");
+      });
+    });
+  </script>
+</body>
+</html>

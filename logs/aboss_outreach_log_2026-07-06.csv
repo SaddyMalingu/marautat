@@ -1,0 +1,12 @@
+timestamp_utc,organization,channel_primary,recipient_email,recipient_phone,status,action
+2026-07-06T10:45:46.999Z,Workpay,email,marketing@myworkpay.com,25416041588,sent_2026-07-06,Wait for replies and run follow-up in 24h if no response
+2026-07-06T10:45:46.999Z,M-KOPA,email,info@m-kopa.com,2543202618,sent_2026-07-06,Wait for replies and run follow-up in 24h if no response
+2026-07-06T10:45:46.999Z,Moringa School,email,contact@moringaschool.com,2540500150,sent_2026-07-06,Wait for replies and run follow-up in 24h if no response
+2026-07-06T10:45:46.999Z,Nairobi Garage,email,join@nairobigarage.com,2540760000000,sent_2026-07-06,Wait for replies and run follow-up in 24h if no response
+2026-07-06T10:45:46.999Z,Kopo Kopo,email,info@kopokopo.com,254709000000,sent_2026-07-06,Wait for replies and run follow-up in 24h if no response
+2026-07-06T10:45:46.999Z,Naivas Supermarket,email,onlinesupport@naivas.co.ke,254711000000,sent_2026-07-06,Wait for replies and run follow-up in 24h if no response
+2026-07-06T10:45:46.999Z,PrideInn Hotels,email,website@prideinn.co.ke,2540448512,sent_2026-07-06,Wait for replies and run follow-up in 24h if no response
+2026-07-06T10:45:46.999Z,PesaPal,email,info@pesapal.com,254709219000,sent_2026-07-06,Wait for replies and run follow-up in 24h if no response
+2026-07-06T10:45:46.999Z,Safaricom,email,business@safaricom.co.ke,254722002222,sent_2026-07-06,Wait for replies and run follow-up in 24h if no response
+2026-07-06T10:45:46.999Z,Quickmart,email,qsoko@quickmart.co.ke,254789646464,sent_2026-07-06,Wait for replies and run follow-up in 24h if no response
+2026-07-06T10:45:46.999Z,Jumia Kenya,phone/whatsapp,,254711011011,pending_jumia_call,Call +254711011011 and submit corporate bulk purchase route

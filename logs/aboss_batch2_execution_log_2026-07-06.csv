@@ -1,0 +1,11 @@
+timestamp_utc,organization,status,channel,recipient_email,recipient_phone,next_action
+2026-07-06T12:02:58.168Z,Ilara Health,sent_2026-07-06_batch2,email,info@ilarahealth.com,254111027900,Wait for reply; trigger follow-up in 24h if no response
+2026-07-06T12:02:58.168Z,BasiGo,sent_2026-07-06_batch2,email,info@basi-go.com,254705837904,Wait for reply; trigger follow-up in 24h if no response
+2026-07-06T12:02:58.168Z,Twiva,sent_2026-07-06_batch2,email,info@twiva.co.ke,254715819949,Wait for reply; trigger follow-up in 24h if no response
+2026-07-06T12:02:58.168Z,Greenspoon,sent_2026-07-06_batch2,email,shop@greenspoon.co.ke,254157267894,Wait for reply; trigger follow-up in 24h if no response
+2026-07-06T12:02:58.168Z,M-Gas,sent_2026-07-06_batch2,phone/whatsapp,,254800721148,Wait for reply; trigger follow-up in 24h if no response
+2026-07-06T12:02:58.168Z,Kilimall Kenya,sent_2026-07-06_batch2,email,help@kilimall.com,,Wait for reply; trigger follow-up in 24h if no response
+2026-07-06T12:02:58.168Z,Sarova Hotels,deferred_contacted_today,email,sarovazawadi@sarovahotels.com,,Do not resend today; use 24h follow-up only
+2026-07-06T12:02:58.168Z,Serena Hotels Kenya,deferred_contacted_today,email,sales@serena.com.pk,,Do not resend today; use 24h follow-up only
+2026-07-06T12:02:58.168Z,Villa Rosa Kempinski Nairobi,deferred_contacted_today,email,info.development@kempinski.com,,Do not resend today; use 24h follow-up only
+2026-07-06T12:02:58.168Z,Eka Hotel Nairobi,deferred_contacted_today,email,sales@ekahotel.com,,Do not resend today; use 24h follow-up only

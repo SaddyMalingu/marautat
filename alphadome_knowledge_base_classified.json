@@ -1,0 +1,21 @@
+{
+  "title": "Alphadome System: Classified Details",
+  "audience": "admin",
+  "tags": ["classified", "internal", "algorithms", "earnings", "protocols"],
+  "classified_sections": [
+    {"subsystem": "Alpha Construction", "details": "Proprietary cost/quality/compliance algorithms, internal rule sets, and completion/earnings logic."},
+    {"subsystem": "Alpha Architect", "details": "Proprietary geometry/AI algorithms, job orchestration, monetization logic."},
+    {"subsystem": "Alpha 3.0", "details": "Fallback/payment logic, workflow automation, LLM prompt engineering."},
+    {"subsystem": "KEMSA 3.0", "details": "Proprietary ML, federated learning, route optimization, data lineage/versioning."},
+    {"subsystem": "Alpha IDE", "details": "Agent algorithms, plugin contracts, health monitoring, monetization."},
+    {"subsystem": "Alpha Professor", "details": "Lead scoring, payment logic, compliance hooks, earnings model."},
+    {"subsystem": "Zone", "details": "Prompt/generation orchestration, async job queue, credential management."},
+    {"subsystem": "Intra Africa Journal Hub", "details": "Payment/revenue logic, migration scripts, audit logs."},
+    {"subsystem": "Marketing Engine", "details": "Decision/scoring algorithms, policy files, channel registry, earnings."},
+    {"subsystem": "Magic", "details": "Workflow orchestration, API keys, updater system, caching, advanced features."},
+    {"subsystem": "Ganji", "details": "Vision/security algorithms, encryption, tokenization roadmap."},
+    {"subsystem": "AlphaChip-OS", "details": "Kernel/bus extensibility, privileged event types, security hooks."}
+  ],
+  "system_completion": "Most core modules are 70–90% complete; advanced features and integrations are ongoing.",
+  "earnings": "Earnings are generated via SaaS, subscriptions, commissions, and asset/NFT monetization. Detailed financials, proprietary algorithms, and internal protocols are classified."
+}

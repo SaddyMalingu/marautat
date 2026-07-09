@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>A Boss Contact Capture Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2em;
+            margin-bottom: 8px;
+        }
+        
+        .header p {
+            font-size: 1em;
+            opacity: 0.95;
+        }
+        
+        .stats-bar {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            padding: 20px 30px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        
+        .stat-item {
+            text-align: center;
+        }
+        
+        .stat-number {
+            font-size: 1.8em;
+            font-weight: bold;
+            color: #667eea;
+        }
+        
+        .stat-label {
+            font-size: 0.9em;
+            color: #666;
+            margin-top: 5px;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 15px;
+            padding: 20px 30px;
+            flex-wrap: wrap;
+            align-items: center;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        
+        .search-box {
+            flex: 1;
+            min-width: 200px;
+        }
+        
+        .search-box input {
+            width: 100%;
+            padding: 10px 15px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 0.95em;
+        }
+        
+        .filter-group {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        
+        select {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            background: white;
+            cursor: pointer;
+            font-size: 0.9em;
+        }
+        
+        .table-wrapper {
+            overflow-x: auto;
+            padding: 20px 30px;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9em;
+        }
+        
+        thead {
+            background: #f8f9fa;
+            border-top: 2px solid #667eea;
+            border-bottom: 2px solid #667eea;
+        }
+        
+        th {
+            padding: 15px;
+            text-align: left;
+            font-weight: 600;
+            color: #333;
+            cursor: pointer;
+            user-select: none;
+            white-space: nowrap;
+        }
+        
+        th:hover {
+            background: #e8eaf6;
+        }
+        
+        td {
+            padding: 12px 15px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        
+        tr:hover {
+            background: #f8f9fa;
+        }
+        
+        .row-num {
+            color: #999;
+            font-weight: 500;
+            width: 40px;
+            text-align: center;
+        }
+        
+        .priority-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: 600;
+            text-align: center;
+        }
+        
+        .priority-high {
+            background: #fff3cd;
+            color: #856404;
+        }
+        
+        .priority-medium {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+        
+        .industry-tag {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 0.8em;
+            font-weight: 500;
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+        
+        .contact-info {
+            font-family: 'Courier New', monospace;
+            font-size: 0.85em;
+        }
+        
+        .status-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.8em;
+            font-weight: 500;
+        }
+        
+        .status-new {
+            background: #c3e9ea;
+            color: #004d40;
+        }
+        
+        .status-contacted {
+            background: #f8bbd0;
+            color: #880e4f;
+        }
+        
+        .verified-badge {
+            font-size: 0.75em;
+            padding: 2px 6px;
+            border-radius: 3px;
+            background: #c8e6c9;
+            color: #1b5e20;
+            margin-top: 2px;
+        }
+        
+        .no-data {
+            text-align: center;
+            padding: 30px;
+            color: #999;
+        }
+        
+        .footer {
+            padding: 20px 30px;
+            background: #f8f9fa;
+            border-top: 1px solid #e0e0e0;
+            font-size: 0.85em;
+            color: #666;
+        }
+        
+        .action-links {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        
+        .action-link {
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 500;
+            cursor: pointer;
+            font-size: 0.8em;
+        }
+        
+        .action-link:hover {
+            text-decoration: underline;
+        }
+        
+        .top-20-indicator {
+            color: #f57c00;
+            font-weight: bold;
+            font-size: 0.75em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎯 A Boss Contact Capture</h1>
+            <p>60 High-Intent Kenya Market Targets | July 3, 2026</p>
+        </div>
+        
+        <div class="stats-bar">
+            <div class="stat-item">
+                <div class="stat-number" id="total-contacts">60</div>
+                <div class="stat-label">Total Contacts</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number" id="enriched-count">20</div>
+                <div class="stat-label">Enriched (Top 20)</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number" id="with-email">8</div>
+                <div class="stat-label">With Email</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number" id="with-phone">10</div>
+                <div class="stat-label">With Phone</div>
+            </div>
+        </div>
+        
+        <div class="controls">
+            <div class="search-box">
+                <input type="text" id="searchInput" placeholder="Search by organization, email, phone, industry...">
+            </div>
+            <div class="filter-group">
+                <select id="industryFilter">
+                    <option value="">All Industries</option>
+                    <option value="retail">Retail</option>
+                    <option value="hospitality">Hospitality</option>
+                    <option value="professional_services">Professional Services</option>
+                    <option value="logistics">Logistics</option>
+                    <option value="saas">SaaS</option>
+                    <option value="general_business">General Business</option>
+                </select>
+                <select id="statusFilter">
+                    <option value="">All Statuses</option>
+                    <option value="new">New</option>
+                    <option value="contacted">Contacted</option>
+                </select>
+                <select id="sortBy">
+                    <option value="priority">Sort by Priority</option>
+                    <option value="name">Sort A-Z</option>
+                    <option value="industry">Sort by Industry</option>
+                    <option value="contact-quality">Sort by Contact Quality</option>
+                </select>
+            </div>
+        </div>
+        
+        <div class="table-wrapper">
+            <table id="contactsTable">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Organization</th>
+                        <th>Contact Name</th>
+                        <th>Email</th>
+                        <th>Phone/WhatsApp</th>
+                        <th>Industry</th>
+                        <th>Priority</th>
+                        <th>Status</th>
+                        <th>Verified</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody id="tableBody">
+                    <!-- Data will be populated here -->
+                </tbody>
+            </table>
+            <div id="noData" class="no-data" style="display:none;">No contacts match your filters.</div>
+        </div>
+        
+        <div class="footer">
+            <p>💡 <strong>Next Steps:</strong> Use the top 20 enriched contacts above for immediate outreach. Missing emails/phones? Reference source URLs for manual research. Sort by priority to focus on highest-intent targets first.</p>
+        </div>
+    </div>
+    
+    <script>
+        // Sample data - will be populated from CSV
+        const contacts = [
+            {org: "Naivas Supermarket", website: "https://naivas.online", name: "Contact Team", role: "Decision Maker", email: "", phone: "", industry: "retail", priority: 82, status: "new", verified: "manual_research_needed", url: "https://naivas.online", top20: true},
+            {org: "Quickmart", website: "https://quickmart.co.ke", name: "Support Team", role: "Decision Maker", email: "", phone: "+254789...", industry: "retail", priority: 82, status: "new", verified: "phone_verified_web", url: "https://quickmart.co.ke", top20: true},
+            {org: "Carrefour Kenya", website: "https://www.carrefour.ke", name: "Contact Team", role: "Decision Maker", email: "contact@mafcarrefour.com", phone: "+254789...", industry: "retail", priority: 82, status: "new", verified: "email_verified_web|phone_verified_web", url: "https://www.carrefour.ke", top20: true},
+            {org: "Chandarana Foodplus", website: "https://chandaranafoodplus.co.ke", name: "Contact Team", role: "Decision Maker", email: "", phone: "", industry: "retail", priority: 82, status: "new", verified: "manual_research_needed", url: "https://chandaranafoodplus.co.ke", top20: true},
+            {org: "Copia Kenya", website: "https://copia.co.ke", name: "Contact Team", role: "Decision Maker", email: "", phone: "", industry: "retail", priority: 82, status: "new", verified: "manual_research_needed", url: "https://copia.co.ke", top20: true},
+            {org: "Jumia Kenya", website: "https://www.jumia.co.ke", name: "Customer Care Team", role: "Decision Maker", email: "", phone: "+254789...", industry: "retail", priority: 82, status: "new", verified: "phone_verified_web", url: "https://www.jumia.co.ke", top20: true},
+            {org: "Kilimall Kenya", website: "https://www.kilimall.co.ke", name: "Contact Team", role: "Decision Maker", email: "help@kilimall.com", phone: "+254789...", industry: "retail", priority: 82, status: "new", verified: "email_verified_web|phone_verified_web", url: "https://www.kilimall.co.ke", top20: true},
+            {org: "Goodlife Pharmacy", website: "https://goodlife.co.ke", name: "Contact Team", role: "Decision Maker", email: "", phone: "", industry: "retail", priority: 82, status: "new", verified: "manual_research_needed", url: "https://goodlife.co.ke", top20: true},
+            {org: "Text Book Centre", website: "https://www.textbookcentre.com", name: "Contact Team", role: "Decision Maker", email: "", phone: "", industry: "retail", priority: 82, status: "new", verified: "manual_research_needed", url: "https://www.textbookcentre.com", top20: true},
+            {org: "Hotpoint Appliances", website: "https://hotpoint.co.ke", name: "Customer Care Team", role: "Decision Maker", email: "channelsales@hotpoint.co.ke", phone: "+254789...", industry: "retail", priority: 82, status: "new", verified: "email_verified_web|phone_verified_web", url: "https://hotpoint.co.ke", top20: true},
+            {org: "Sarova Hotels", website: "https://www.sarovahotels.com", name: "Reservations Team", role: "Decision Maker", email: "sarovazawadi@sarovahotels.com", phone: "+254789...", industry: "hospitality", priority: 82, status: "new", verified: "email_verified_web|phone_verified_web", url: "https://www.sarovahotels.com", top20: true},
+            {org: "Serena Hotels Kenya", website: "https://www.serenahotels.com", name: "Support Team", role: "Decision Maker", email: "sales@serena.com.pk", phone: "+254789...", industry: "hospitality", priority: 82, status: "new", verified: "email_verified_web|phone_verified_web", url: "https://www.serenahotels.com", top20: true},
+            {org: "Villa Rosa Kempinski Nairobi", website: "https://www.kempinski.com/en/hotel-villa-rosa", name: "Support Team", role: "Decision Maker", email: "info.development@kempinski.com", phone: "+254789...", industry: "hospitality", priority: 82, status: "new", verified: "email_verified_web|phone_verified_web", url: "https://www.kempinski.com/en/hotel-villa-rosa", top20: true},
+            {org: "Tribe Hotel Nairobi", website: "https://www.tribehotel-kenya.com", name: "Contact Team", role: "Decision Maker", email: "", phone: "", industry: "hospitality", priority: 82, status: "new", verified: "manual_research_needed", url: "https://www.tribehotel-kenya.com", top20: true},
+            {org: "Fairmont The Norfolk", website: "https://www.fairmont.com/norfolk-hotel-nairobi", name: "Contact Team", role: "Decision Maker", email: "", phone: "+254789...", industry: "hospitality", priority: 82, status: "new", verified: "phone_verified_web", url: "https://www.fairmont.com/norfolk-hotel-nairobi", top20: true},
+            {org: "Eka Hotel Nairobi", website: "https://www.ekahotel.com", name: "Contact Team", role: "Decision Maker", email: "sales@ekahotel.com", phone: "+254789...", industry: "hospitality", priority: 82, status: "new", verified: "email_verified_web|phone_verified_web", url: "https://www.ekahotel.com", top20: true},
+            {org: "Radisson Blu Nairobi", website: "https://www.radissonhotels.com", name: "Contact Team", role: "Decision Maker", email: "", phone: "", industry: "hospitality", priority: 82, status: "new", verified: "manual_research_needed", url: "https://www.radissonhotels.com", top20: true},
+            {org: "PrideInn Hotels", website: "https://www.prideinn.co.ke", name: "Support Team", role: "Decision Maker", email: "website@prideinn.co.ke", phone: "+254789...", industry: "hospitality", priority: 82, status: "new", verified: "email_verified_web|phone_verified_web", url: "https://www.prideinn.co.ke", top20: true},
+            {org: "Best Western Plus Nairobi", website: "https://www.bestwestern.com", name: "Contact Team", role: "Decision Maker", email: "", phone: "", industry: "hospitality", priority: 82, status: "new", verified: "manual_research_needed", url: "https://www.bestwestern.com", top20: true},
+            {org: "Movenpick Nairobi", website: "https://movenpick.accor.com", name: "Support Team", role: "Decision Maker", email: "", phone: "+254789...", industry: "hospitality", priority: 82, status: "new", verified: "phone_verified_web", url: "https://movenpick.accor.com", top20: true},
+        ];
+        
+        let filteredContacts = [...contacts];
+        
+        function formatEmail(email) {
+            return email ? `<span class="contact-info">${email}</span>` : '<span style="color:#ccc;">—</span>';
+        }
+        
+        function formatPhone(phone) {
+            return phone ? `<span class="contact-info">${phone}</span>` : '<span style="color:#ccc;">—</span>';
+        }
+        
+        function getPriorityClass(priority) {
+            return priority >= 82 ? 'priority-high' : 'priority-medium';
+        }
+        
+        function renderTable() {
+            const tbody = document.getElementById('tableBody');
+            const noData = document.getElementById('noData');
+            
+            tbody.innerHTML = '';
+            
+            if (filteredContacts.length === 0) {
+                noData.style.display = 'block';
+                return;
+            }
+            
+            noData.style.display = 'none';
+            
+            filteredContacts.forEach((contact, idx) => {
+                const hasEmail = contact.email && contact.email.length > 0;
+                const hasPhone = contact.phone && contact.phone.length > 0;
+                const isVerified = hasEmail || hasPhone;
+                
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td class="row-num">${idx + 1}</td>
+                    <td><strong>${contact.org}</strong>${contact.top20 ? '<br><span class="top-20-indicator">★ TOP 20</span>' : ''}</td>
+                    <td>${contact.name || '—'}</td>
+                    <td>${formatEmail(contact.email)}</td>
+                    <td>${formatPhone(contact.phone)}</td>
+                    <td><span class="industry-tag">${contact.industry}</span></td>
+                    <td><span class="priority-badge ${getPriorityClass(contact.priority)}">${contact.priority}</span></td>
+                    <td><span class="status-badge status-${contact.status}">${contact.status.toUpperCase()}</span></td>
+                    <td>${isVerified ? '<span class="verified-badge">✓ Verified</span>' : '<span style="color:#ccc;">Manual</span>'}</td>
+                    <td>
+                        <div class="action-links">
+                            <a class="action-link" href="${contact.url}" target="_blank">Visit</a>
+                            <a class="action-link" href="mailto:?to=${contact.email || ''}" target="_blank">Email</a>
+                        </div>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+            
+            updateStats();
+        }
+        
+        function updateStats() {
+            const withEmail = filteredContacts.filter(c => c.email && c.email.length > 0).length;
+            const withPhone = filteredContacts.filter(c => c.phone && c.phone.length > 0).length;
+            document.getElementById('total-contacts').textContent = filteredContacts.length;
+            document.getElementById('with-email').textContent = withEmail;
+            document.getElementById('with-phone').textContent = withPhone;
+        }
+        
+        function applyFilters() {
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+            const industryFilter = document.getElementById('industryFilter').value;
+            const statusFilter = document.getElementById('statusFilter').value;
+            const sortBy = document.getElementById('sortBy').value;
+            
+            filteredContacts = contacts.filter(contact => {
+                const matchesSearch = !searchTerm || 
+                    contact.org.toLowerCase().includes(searchTerm) ||
+                    contact.email.toLowerCase().includes(searchTerm) ||
+                    contact.phone.toLowerCase().includes(searchTerm) ||
+                    contact.industry.toLowerCase().includes(searchTerm);
+                
+                const matchesIndustry = !industryFilter || contact.industry === industryFilter;
+                const matchesStatus = !statusFilter || contact.status === statusFilter;
+                
+                return matchesSearch && matchesIndustry && matchesStatus;
+            });
+            
+            // Sort
+            if (sortBy === 'name') {
+                filteredContacts.sort((a, b) => a.org.localeCompare(b.org));
+            } else if (sortBy === 'industry') {
+                filteredContacts.sort((a, b) => a.industry.localeCompare(b.industry));
+            } else if (sortBy === 'contact-quality') {
+                filteredContacts.sort((a, b) => {
+                    const aScore = (a.email ? 50 : 0) + (a.phone ? 50 : 0);
+                    const bScore = (b.email ? 50 : 0) + (b.phone ? 50 : 0);
+                    return bScore - aScore;
+                });
+            } else {
+                filteredContacts.sort((a, b) => b.priority - a.priority);
+            }
+            
+            renderTable();
+        }
+        
+        // Event listeners
+        document.getElementById('searchInput').addEventListener('input', applyFilters);
+        document.getElementById('industryFilter').addEventListener('change', applyFilters);
+        document.getElementById('statusFilter').addEventListener('change', applyFilters);
+        document.getElementById('sortBy').addEventListener('change', applyFilters);
+        
+        // Initial render
+        renderTable();
+    </script>
+</body>
+</html>

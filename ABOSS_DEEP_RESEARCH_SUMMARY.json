@@ -1,0 +1,16 @@
+{
+  "generated_at": "2026-07-06T10:03:25.607Z",
+  "total_candidates": 24,
+  "with_email": 7,
+  "with_phone": 12,
+  "large_count": 10,
+  "sme_count": 14,
+  "top12_balance": {
+    "large": 6,
+    "sme": 6
+  },
+  "files": {
+    "all": "ABOSS_DEEP_RESEARCH_MIXED.csv",
+    "top12": "ABOSS_DEEP_RESEARCH_TOP12_BALANCED.csv"
+  }
+}

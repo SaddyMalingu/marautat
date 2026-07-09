@@ -328,6 +328,18 @@ app.get('/kassangas-music-shop', (req, res) => {
   res.sendFile(path.join(publicDir, 'kassangas-music-shop.html'));
 });
 
+// Serve Kassangas Merchant Portal (QR generation)
+app.get('/kassangas-merchant-portal', (req, res) => {
+  log(`Kassangas merchant portal loaded by ${req.ip}`, "PAGE");
+  res.sendFile(path.join(publicDir, 'kassangas-merchant-portal.html'));
+});
+
+// Serve Kassangas Client Wallet (QR scanner + payments)
+app.get('/kassangas-client-wallet', (req, res) => {
+  log(`Kassangas client wallet loaded by ${req.ip}`, "PAGE");
+  res.sendFile(path.join(publicDir, 'kassangas-client-wallet.html'));
+});
+
 
 // Only instantiate OpenAI if the API key is present
 
@@ -8663,6 +8675,178 @@ app.post("/api/kassangas/stk-push", async (req, res) => {
   } catch (err) {
     log(`KASSANGAS_STK_PUSH_FAILED: ${err.message}`, "ERROR");
     return res.status(502).json({ error: err.message || "STK push failed" });
+  }
+});
+
+// ===== PHASE 1: Payment Template Routes =====
+
+// POST /api/kassangas/create-template - Merchant creates a reusable payment template
+app.post("/api/kassangas/create-template", async (req, res) => {
+  try {
+    const { itemName, amount, reusable, merchantName } = req.body || {};
+    if (!itemName || !amount || amount <= 0) {
+      return res.status(400).json({ error: "itemName and amount are required" });
+    }
+
+    const templateId = `TMPL-${Date.now().toString().slice(-6)}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+    const { error: insertErr } = await supabase.from("kassangas_templates").insert([
+      {
+        template_id: templateId,
+        item_name: itemName,
+        amount: Number(amount),
+        reusable: reusable !== false,
+        merchant_name: String(merchantName || "Merchant").slice(0, 80),
+        created_at: new Date().toISOString(),
+        metadata: { source: "merchant_portal" }
+      }
+    ]);
+
+    if (insertErr) {
+      log(`TEMPLATE_INSERT_FAILED: ${insertErr.message}`, "WARN");
+      // Fail gracefully but still return template ID for offline support
+    }
+
+    log(`TEMPLATE_CREATED: ${templateId}, item=${itemName}, amt=${amount}`, "PAYMENT");
+    return res.json({ success: true, templateId });
+  } catch (err) {
+    log(`TEMPLATE_CREATE_ERROR: ${err.message}`, "ERROR");
+    return res.status(500).json({ error: "Template creation failed" });
+  }
+});
+
+// GET /api/kassangas/template/:tokenId - Resolve template from QR scan
+app.get("/api/kassangas/template/:tokenId", async (req, res) => {
+  try {
+    const { tokenId } = req.params;
+    if (!tokenId) return res.status(400).json({ error: "Template ID required" });
+
+    const { data, error } = await supabase
+      .from("kassangas_templates")
+      .select("*")
+      .eq("template_id", tokenId)
+      .maybeSingle();
+
+    if (error || !data) {
+      log(`TEMPLATE_NOT_FOUND: ${tokenId}`, "WARN");
+      return res.status(404).json({ error: "Template not found" });
+    }
+
+    return res.json({
+      templateId: data.template_id,
+      itemName: data.item_name,
+      amount: data.amount,
+      merchantName: data.merchant_name,
+      reusable: data.reusable
+    });
+  } catch (err) {
+    log(`TEMPLATE_FETCH_ERROR: ${err.message}`, "ERROR");
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/kassangas/payment-intent - Client scans QR and triggers payment
+app.post("/api/kassangas/payment-intent", async (req, res) => {
+  try {
+    let { templateId, phone } = req.body || {};
+
+    phone = String(phone || "").trim().replace(/\s+/g, "");
+    if (phone.startsWith("0")) phone = `254${phone.slice(1)}`;
+    if (phone.startsWith("+")) phone = phone.replace(/^\+/, "");
+
+    if (!templateId || !/^2547\d{8}$/.test(phone)) {
+      return res.status(400).json({ error: "Invalid template or phone" });
+    }
+
+    // Fetch template
+    const { data: template, error: templateErr } = await supabase
+      .from("kassangas_templates")
+      .select("*")
+      .eq("template_id", templateId)
+      .maybeSingle();
+
+    if (templateErr || !template) {
+      return res.status(404).json({ error: "Template not found" });
+    }
+
+    const amount = template.amount;
+    const itemName = template.item_name;
+    const accountRef = `TMPL-${templateId.slice(-8)}`;
+
+    // Trigger STK push
+    const stkResp = await initiateStkPush({
+      phone,
+      amount,
+      accountRef,
+      transactionDesc: `Kassangas ${itemName}`
+    });
+
+    const checkoutId = stkResp?.CheckoutRequestID || null;
+
+    // Record payment intent
+    if (checkoutId) {
+      const { error: insertErr } = await supabase.from("subscriptions").insert([
+        {
+          user_id: null,
+          phone,
+          amount,
+          plan_type: "kassangas_template",
+          level: 1,
+          account_ref: accountRef,
+          status: "pending",
+          mpesa_checkout_request_id: checkoutId,
+          metadata: {
+            template_id: templateId,
+            item_name: itemName,
+            source: "client_wallet_scan",
+            ...(stkResp || {})
+          }
+        }
+      ]);
+
+      if (insertErr) {
+        log(`INTENT_INSERT_FAILED: ${insertErr.message}`, "WARN");
+      }
+    }
+
+    log(`PAYMENT_INTENT_CREATED: template=${templateId}, phone=${phone}, amount=${amount}`, "PAYMENT");
+    return res.json({
+      success: true,
+      message: stkResp?.CustomerMessage || "Payment prompt sent",
+      checkoutId
+    });
+  } catch (err) {
+    log(`PAYMENT_INTENT_ERROR: ${err.message}`, "ERROR");
+    return res.status(502).json({ error: err.message || "Payment failed" });
+  }
+});
+
+// GET /api/kassangas/payment-intents - Get transaction history (public, 20 latest)
+app.get("/api/kassangas/payment-intents", async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from("subscriptions")
+      .select("id, amount, plan_type, status, metadata, created_at")
+      .eq("plan_type", "kassangas_template")
+      .order("created_at", { ascending: false })
+      .limit(20);
+
+    if (error) {
+      log(`INTENTS_FETCH_ERROR: ${error.message}`, "WARN");
+      return res.json({ intents: [] });
+    }
+
+    const intents = (data || []).map(row => ({
+      id: row.id,
+      amount: row.amount,
+      status: row.status,
+      item_name: row.metadata?.item_name || "Payment",
+      created_at: row.created_at
+    }));
+
+    return res.json({ intents });
+  } catch (err) {
+    log(`INTENTS_ERROR: ${err.message}`, "ERROR");
+    return res.status(500).json({ error: err.message });
   }
 });
 
