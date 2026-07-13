@@ -9,6 +9,11 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
   <link rel="stylesheet" href="./tailwind.output.css">
   <style>
+    html, body {
+      width: 100%;
+      max-width: 100%;
+      overflow-x: hidden;
+    }
     body {
       margin: 0;
       font-family: 'Montserrat', Arial, sans-serif;
@@ -125,6 +130,17 @@
       gap: 1.5rem;
       justify-content: center;
       flex-wrap: wrap;
+    }
+    #hero-3d {
+      width: 100%;
+      max-width: 100%;
+      overflow: hidden;
+    }
+    .wave-divider {
+      display: block;
+      width: 100%;
+      max-width: 100%;
+      height: auto;
     }
     .assets-live {
       margin: 2.2rem auto;
@@ -619,7 +635,7 @@
     </div>
   </header>
   <!-- 3D Hero Canvas -->
-  <div id="hero-3d" style="width:100vw;max-width:100%;height:320px;margin:0 auto 1.5rem auto;z-index:1;"></div>
+  <div id="hero-3d" style="width:100%;max-width:100%;height:320px;margin:0 auto 1.5rem auto;z-index:1;"></div>
   <main>
     <section class="hero">
       <h2>Instant Checkout. Agentic Growth.</h2>
@@ -688,10 +704,10 @@
     </a>
     <style>
       #floating-whatsapp {
-        position: fixed;
-        right: 32px;
-        bottom: 32px;
-        z-index: 9999;
+        position: fixed !important;
+        right: calc(16px + env(safe-area-inset-right, 0px));
+        bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+        z-index: 2147483000;
         transition: transform 0.2s;
         display: flex;
         align-items: center;
@@ -700,6 +716,8 @@
         padding: 0;
         border-radius: 0;
         box-shadow: none;
+        transform: translateZ(0);
+        backface-visibility: hidden;
       }
       #floating-whatsapp:hover {
         transform: scale(1.08);
