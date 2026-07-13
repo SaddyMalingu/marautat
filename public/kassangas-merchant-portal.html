@@ -36,6 +36,49 @@
     }
 
     .portal { width: min(900px, 100%); }
+    .brand-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+      padding: 10px 14px;
+      border-radius: 14px;
+      background: rgba(14, 165, 233, 0.12);
+      border: 1px solid rgba(56, 189, 248, 0.26);
+    }
+    .brand-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+    .brand-logo {
+      width: 58px;
+      height: 38px;
+      object-fit: cover;
+      border-radius: 10px;
+      box-shadow: 0 2px 12px rgba(14, 165, 233, 0.25);
+      background: #0f172a;
+    }
+    .brand-text {
+      font-size: 0.88rem;
+      color: #d7e5f3;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .brand-text strong { color: #38bdf8; }
+    .brand-link {
+      color: #e2f0ff;
+      text-decoration: none;
+      font-size: 0.82rem;
+      border: 1px solid rgba(255,255,255,0.24);
+      padding: 7px 10px;
+      border-radius: 10px;
+      background: rgba(255,255,255,0.06);
+    }
+    .brand-link:hover { background: rgba(255,255,255,0.14); }
     .card { background: var(--panel); border: 1px solid rgba(255,255,255,0.1); border-radius: 18px; padding: 28px; }
     h1 { margin: 0 0 8px; font-size: 2rem; color: var(--accent-2); }
     .sub { color: var(--muted); margin: 0 0 20px; }
@@ -58,13 +101,48 @@
     .qr-help { margin-top: 10px; font-size: 0.85rem; color: var(--muted); }
     .copy-btn { background: var(--accent); color: #081421; padding: 8px 12px; border-radius: 8px; margin-top: 10px; font-weight: 600; font-size: 0.85rem; }
     .copy-btn:hover { filter: brightness(1.1); }
+    #floating-whatsapp {
+      position: fixed;
+      right: 24px;
+      bottom: 24px;
+      z-index: 9999;
+      transition: transform 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: none;
+      padding: 0;
+      border-radius: 0;
+      box-shadow: none;
+    }
+    #floating-whatsapp:hover { transform: scale(1.08); }
+    #floating-whatsapp img {
+      display: block;
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+    }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
-    @media (max-width: 600px) { .card { padding: 20px; } h1 { font-size: 1.5rem; } }
+    @media (max-width: 600px) {
+      .card { padding: 20px; }
+      h1 { font-size: 1.5rem; }
+      .brand-head { flex-direction: column; align-items: flex-start; }
+      #floating-whatsapp { right: 16px; bottom: 16px; }
+      #floating-whatsapp img { width: 52px; height: 52px; }
+    }
   </style>
 </head>
 <body>
   <div class="portal">
     <div class="card">
+      <div class="brand-head">
+        <div class="brand-left">
+          <video class="brand-logo" src="logo-bg.mp4" autoplay loop muted playsinline></video>
+          <div class="brand-text"><strong>Alphadome</strong> Fast Checkout Merchant Console</div>
+        </div>
+        <a href="/" class="brand-link">Back To Alphadome</a>
+      </div>
       <h1>🎵 Merchant Portal</h1>
       <p class="sub">Create a reusable payment template. Customers scan the QR to pay instantly.</p>
       <form id="templateForm">
@@ -88,6 +166,10 @@
       </div>
     </div>
   </div>
+
+  <a href="https://wa.me/254786817637" target="_blank" id="floating-whatsapp" title="Chat on WhatsApp">
+    <img src="./images/whatsapp-3d.png" alt="WhatsApp" />
+  </a>
 
   <script>
     const form = document.getElementById("templateForm");
