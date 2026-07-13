@@ -97,8 +97,10 @@
       <div id="scanner-tab" class="tab-content active">
         <div class="scan-info" id="scanHint">Use camera to scan QR, or upload a screenshot of the QR code.</div>
         <div class="scanner-wrapper" id="scannerWrapper" style="display:none;">
-          <canvas id="scanner"></canvas>
-          <video id="scannerVideo" style="display:none;"></video>
+          <!-- video shown as viewfinder; playsinline prevents iOS fullscreen takeover -->
+          <video id="scannerVideo" playsinline muted autoplay style="width:100%; border-radius:12px; display:block;"></video>
+          <!-- canvas is offscreen-only for jsQR frame decoding -->
+          <canvas id="scanner" style="display:none;"></canvas>
           <div class="scan-corner tl"></div>
           <div class="scan-corner tr"></div>
           <div class="scan-corner bl"></div>
@@ -170,8 +172,8 @@
       }
       scannerVideo.pause();
       scannerVideo.srcObject = null;
+      scannerVideo.style.display = "none";
       scannerWrapper.style.display = "none";
-      scannerCanvas.style.display = "none";
       startScanBtn.textContent = "📷 Start Camera";
     }
 
@@ -249,41 +251,44 @@
 
       try {
         cameraStream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: "environment" } }
+          video: {
+            facingMode: { ideal: "environment" },
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          }
         });
+
+        // Show video as viewfinder (playsinline prevents iOS fullscreen takeover)
         scannerVideo.srcObject = cameraStream;
+        scannerVideo.style.display = "block";
+        scannerWrapper.style.display = "block";
         await scannerVideo.play();
         await waitForVideoReady(scannerVideo);
 
-        // Show wrapper; canvas display controlled inside processFrame
-        scannerWrapper.style.display = "block";
-        scannerCanvas.style.display = "block";
-        // Reset CSS display size — buffer size set per-frame, display constrained by CSS
-        scannerCanvas.style.width = "100%";
-        scannerCanvas.style.height = "auto";
         scanning = true;
         startScanBtn.textContent = "⏹ Stop Camera";
-        showStatus("scanStatus", "ok", "Scanning… hold QR steady in the frame.");
-        processFrame();
+        showStatus("scanStatus", "ok", "Scanning… hold QR steady in front of camera.");
+        scheduleFrame();
       } catch (err) {
         stopCamera();
         showStatus("scanStatus", "error", "Camera error: " + err.message + ". Try uploading a screenshot instead.");
       }
     });
 
+    function scheduleFrame() {
+      // Throttle to ~5fps — enough to catch a QR, avoids killing mobile CPU/battery
+      if (scanning) setTimeout(processFrame, 200);
+    }
+
     function processFrame() {
       if (!scanning) return;
       const w = scannerVideo.videoWidth;
       const h = scannerVideo.videoHeight;
-      if (!w || !h) { requestAnimationFrame(processFrame); return; }
+      if (!w || !h) { scheduleFrame(); return; }
 
-      // Set canvas buffer to video resolution for accurate decode
-      if (scannerCanvas.width !== w) scannerCanvas.width = w;
-      if (scannerCanvas.height !== h) scannerCanvas.height = h;
-      // Re-apply CSS display size so it doesn't stretch visually
-      scannerCanvas.style.width = "100%";
-      scannerCanvas.style.height = "auto";
-
+      // Decode on offscreen canvas at full video resolution
+      scannerCanvas.width = w;
+      scannerCanvas.height = h;
       const ctx = scannerCanvas.getContext("2d");
       ctx.drawImage(scannerVideo, 0, 0, w, h);
 
@@ -293,7 +298,7 @@
         handleScannedData(code.data);
         return;
       }
-      requestAnimationFrame(processFrame);
+      scheduleFrame();
     }
 
     // Upload QR image — works great on desktop
