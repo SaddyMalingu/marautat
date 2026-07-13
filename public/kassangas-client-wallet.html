@@ -39,9 +39,18 @@
     h1 { margin: 0 0 6px; font-size: 1.8rem; color: var(--accent-2); }
     .sub { color: var(--muted); margin: 0 0 16px; }
     
-    .scanner-wrapper { position: relative; margin: 20px 0; }
-    #scanner { width: 100%; max-width: 400px; border-radius: 12px; display: none; }
+    .scanner-wrapper { position: relative; margin: 12px 0; background: #000; border-radius: 12px; overflow: hidden; max-width: 400px; }
+    #scanner { display: none; width: 100% !important; height: auto !important; max-width: 400px; border-radius: 12px; }
+    #scannerVideo { display: none; }
     .scan-info { color: var(--muted); font-size: 0.9rem; padding: 12px; border-radius: 8px; background: rgba(255,209,102,0.08); }
+    .scan-corner { position: absolute; width: 24px; height: 24px; border-color: var(--mint); border-style: solid; opacity: 0.8; }
+    .scan-corner.tl { top: 10px; left: 10px; border-width: 3px 0 0 3px; border-radius: 4px 0 0 0; }
+    .scan-corner.tr { top: 10px; right: 10px; border-width: 3px 3px 0 0; border-radius: 0 4px 0 0; }
+    .scan-corner.bl { bottom: 10px; left: 10px; border-width: 0 0 3px 3px; border-radius: 0 0 0 4px; }
+    .scan-corner.br { bottom: 10px; right: 10px; border-width: 0 3px 3px 0; border-radius: 0 0 4px 0; }
+    .upload-hint { font-size: 0.82rem; color: var(--muted); text-align: center; margin-top: 6px; }
+    #qrUpload { display: none; }
+    .upload-btn { background: rgba(255,255,255,0.1); color: var(--text); width: 100%; margin-top: 6px; border: 1px dashed rgba(255,255,255,0.25); }
     
     .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
     .tab-btn { flex: 1; padding: 10px; border: 0; border-radius: 8px; background: rgba(255,255,255,0.1); color: var(--text); cursor: pointer; font-weight: 600; transition: background 200ms; }
@@ -86,12 +95,19 @@
 
       <!-- SCANNER TAB -->
       <div id="scanner-tab" class="tab-content active">
-        <div class="scan-info">Position merchant QR code in frame</div>
-        <div class="scanner-wrapper">
-          <canvas id="scanner" style="display: block; width: 100%; max-width: 400px;"></canvas>
-          <video id="scannerVideo" style="display: none;"></video>
+        <div class="scan-info" id="scanHint">Use camera to scan QR, or upload a screenshot of the QR code.</div>
+        <div class="scanner-wrapper" id="scannerWrapper" style="display:none;">
+          <canvas id="scanner"></canvas>
+          <video id="scannerVideo" style="display:none;"></video>
+          <div class="scan-corner tl"></div>
+          <div class="scan-corner tr"></div>
+          <div class="scan-corner bl"></div>
+          <div class="scan-corner br"></div>
         </div>
-        <button class="scan-btn" id="startScanBtn">Start Camera</button>
+        <button class="scan-btn" id="startScanBtn">📷 Start Camera</button>
+        <input type="file" id="qrUpload" accept="image/*" />
+        <button class="upload-btn" id="uploadQrBtn">📎 Upload QR Image (Desktop)</button>
+        <p class="upload-hint">On PC: screenshot the merchant QR code, then upload it here.</p>
         <div id="scanStatus" class="status" aria-live="polite"></div>
         <div id="scannedTxn" class="txn-details"></div>
       </div>
@@ -142,6 +158,10 @@
       elem.classList.add("show");
     }
 
+    const scannerWrapper = document.getElementById("scannerWrapper");
+    const uploadQrBtn = document.getElementById("uploadQrBtn");
+    const qrUploadInput = document.getElementById("qrUpload");
+
     function stopCamera() {
       scanning = false;
       if (cameraStream) {
@@ -150,8 +170,9 @@
       }
       scannerVideo.pause();
       scannerVideo.srcObject = null;
+      scannerWrapper.style.display = "none";
       scannerCanvas.style.display = "none";
-      startScanBtn.textContent = "Start Camera";
+      startScanBtn.textContent = "📷 Start Camera";
     }
 
     function waitForVideoReady(videoElem) {
@@ -222,75 +243,102 @@
       showStatus("manualStatus", "ok", "Template loaded. Enter phone to pay.");
     }
 
-    // QR Scanner
+    // Camera scanner
     startScanBtn.addEventListener("click", async () => {
-      if (scanning) {
-        stopCamera();
-        return;
-      }
+      if (scanning) { stopCamera(); return; }
 
       try {
         cameraStream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: { ideal: "environment" },
-            width: { ideal: 1280 },
-            height: { ideal: 720 }
-          }
+          video: { facingMode: { ideal: "environment" } }
         });
-
         scannerVideo.srcObject = cameraStream;
         await scannerVideo.play();
         await waitForVideoReady(scannerVideo);
+
+        // Show wrapper; canvas display controlled inside processFrame
+        scannerWrapper.style.display = "block";
         scannerCanvas.style.display = "block";
+        // Reset CSS display size — buffer size set per-frame, display constrained by CSS
+        scannerCanvas.style.width = "100%";
+        scannerCanvas.style.height = "auto";
         scanning = true;
-        startScanBtn.textContent = "Stop Camera";
+        startScanBtn.textContent = "⏹ Stop Camera";
+        showStatus("scanStatus", "ok", "Scanning… hold QR steady in the frame.");
         processFrame();
       } catch (err) {
         stopCamera();
-        showStatus("scanStatus", "error", "Camera access denied: " + err.message);
+        showStatus("scanStatus", "error", "Camera error: " + err.message + ". Try uploading a screenshot instead.");
       }
     });
 
     function processFrame() {
       if (!scanning) return;
-
       const w = scannerVideo.videoWidth;
       const h = scannerVideo.videoHeight;
-      if (!w || !h) {
-        requestAnimationFrame(processFrame);
-        return;
-      }
+      if (!w || !h) { requestAnimationFrame(processFrame); return; }
 
-      scannerCanvas.width = w;
-      scannerCanvas.height = h;
+      // Set canvas buffer to video resolution for accurate decode
+      if (scannerCanvas.width !== w) scannerCanvas.width = w;
+      if (scannerCanvas.height !== h) scannerCanvas.height = h;
+      // Re-apply CSS display size so it doesn't stretch visually
+      scannerCanvas.style.width = "100%";
+      scannerCanvas.style.height = "auto";
+
       const ctx = scannerCanvas.getContext("2d");
       ctx.drawImage(scannerVideo, 0, 0, w, h);
 
-      const imageData = ctx.getImageData(0, 0, w, h);
-      const code = jsQR(imageData.data, w, h);
-
+      const code = jsQR(ctx.getImageData(0, 0, w, h).data, w, h);
       if (code && code.data) {
         stopCamera();
-
-        try {
-          const parsedUrl = new URL(code.data);
-          const templateId = parsedUrl.searchParams.get("t");
-          if (!templateId) {
-            showStatus("scanStatus", "error", "Invalid QR: no template found");
-            return;
-          }
-
-          currentTemplate = templateId;
-          fetchAndShowTemplate(templateId, "scannedTxn", "scanStatus");
-          fetchAndShowTemplate(templateId, "manualTxn", "manualStatus");
-          showStatus("scanStatus", "ok", "Template detected. Enter phone and confirm payment.");
-        } catch (_) {
-          showStatus("scanStatus", "error", "Invalid QR content");
-        }
+        handleScannedData(code.data);
         return;
       }
-
       requestAnimationFrame(processFrame);
+    }
+
+    // Upload QR image — works great on desktop
+    uploadQrBtn.addEventListener("click", () => qrUploadInput.click());
+    qrUploadInput.addEventListener("change", (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      showStatus("scanStatus", "ok", "Reading QR from image…");
+
+      const img = new Image();
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        img.onload = () => {
+          // Use offscreen canvas at image's natural resolution
+          const offscreen = document.createElement("canvas");
+          offscreen.width = img.naturalWidth;
+          offscreen.height = img.naturalHeight;
+          const ctx = offscreen.getContext("2d");
+          ctx.drawImage(img, 0, 0);
+          const imageData = ctx.getImageData(0, 0, offscreen.width, offscreen.height);
+          const code = jsQR(imageData.data, offscreen.width, offscreen.height);
+          if (code && code.data) {
+            handleScannedData(code.data);
+          } else {
+            showStatus("scanStatus", "error", "No QR code found in image. Try a clearer screenshot.");
+          }
+          qrUploadInput.value = "";
+        };
+        img.src = ev.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
+
+    function handleScannedData(data) {
+      try {
+        const parsedUrl = new URL(data);
+        const templateId = parsedUrl.searchParams.get("t");
+        if (!templateId) { showStatus("scanStatus", "error", "Invalid QR: no template found"); return; }
+        currentTemplate = templateId;
+        fetchAndShowTemplate(templateId, "scannedTxn", "scanStatus");
+        fetchAndShowTemplate(templateId, "manualTxn", "manualStatus");
+        showStatus("scanStatus", "ok", "QR decoded! Enter your phone number below and confirm.");
+      } catch (_) {
+        showStatus("scanStatus", "error", "Invalid QR content");
+      }
     }
 
     // Confirm and pay
