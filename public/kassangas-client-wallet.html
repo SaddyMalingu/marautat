@@ -107,6 +107,10 @@
           <div class="scan-corner br"></div>
         </div>
         <button class="scan-btn" id="startScanBtn">📷 Start Camera</button>
+        <label style="display:flex; gap:8px; align-items:center; margin-top:8px; font-size:0.9rem; color: var(--muted);">
+          <input type="checkbox" id="autoPayToggle" checked />
+          Fast checkout (auto-send STK after scan if default number exists)
+        </label>
         <input type="file" id="qrUpload" accept="image/*" />
         <button class="upload-btn" id="uploadQrBtn">📎 Upload QR Image (Desktop)</button>
         <p class="upload-hint">On PC: screenshot the merchant QR code, then upload it here.</p>
@@ -117,9 +121,17 @@
       <!-- MANUAL TAB -->
       <div id="manual-tab" class="tab-content">
         <div class="field">
-          <label for="manualPhone">Your M-Pesa Number</label>
+          <label for="manualSavedPhones">Saved M-Pesa Numbers</label>
+          <select id="manualSavedPhones" style="border: 1px solid rgba(255,255,255,0.14); border-radius: 8px; background: rgba(4,12,20,0.8); color: var(--text); padding: 10px 12px; font-size: 0.95rem; font-family: inherit; outline: none;">
+            <option value="">Use new number</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="manualPhone">Add New Number</label>
           <input id="manualPhone" type="tel" placeholder="2547XXXXXXXX" />
         </div>
+        <button class="upload-btn" type="button" id="saveManualPhoneBtn">Save Number</button>
+        <button class="pay-btn" type="button" id="manualPayBtn">Confirm & Pay</button>
         <div id="manualStatus" class="status" aria-live="polite"></div>
         <div id="manualTxn" class="txn-details"></div>
       </div>
@@ -135,12 +147,84 @@
     const tabs = document.querySelectorAll(".tab-btn");
     const tabContents = document.querySelectorAll(".tab-content");
     const startScanBtn = document.getElementById("startScanBtn");
+    const autoPayToggle = document.getElementById("autoPayToggle");
     const scannerCanvas = document.getElementById("scanner");
     const scannerVideo = document.getElementById("scannerVideo");
     const manualPhoneInput = document.getElementById("manualPhone");
+    const manualSavedPhones = document.getElementById("manualSavedPhones");
+    const saveManualPhoneBtn = document.getElementById("saveManualPhoneBtn");
+    const manualPayBtn = document.getElementById("manualPayBtn");
     let scanning = false;
     let currentTemplate = null;
     let cameraStream = null;
+    let frameBusy = false;
+    let barcodeDetector = null;
+
+    const STORAGE_KEYS = {
+      phones: "alphadome_fastcheckout_phones_v1",
+      defaultPhone: "alphadome_fastcheckout_default_phone_v1",
+      autoPay: "alphadome_fastcheckout_autopay_v1"
+    };
+
+    function initDetector() {
+      try {
+        if ("BarcodeDetector" in window) {
+          barcodeDetector = new BarcodeDetector({ formats: ["qr_code"] });
+        }
+      } catch (_) {
+        barcodeDetector = null;
+      }
+    }
+
+    function getSavedPhones() {
+      try {
+        const parsed = JSON.parse(localStorage.getItem(STORAGE_KEYS.phones) || "[]");
+        return Array.isArray(parsed) ? parsed.filter(p => /^2547\d{8}$/.test(p)) : [];
+      } catch (_) {
+        return [];
+      }
+    }
+
+    function getDefaultPhone() {
+      const phone = localStorage.getItem(STORAGE_KEYS.defaultPhone) || "";
+      return /^2547\d{8}$/.test(phone) ? phone : "";
+    }
+
+    function persistPhones(phones, defaultPhone) {
+      const uniquePhones = [...new Set((phones || []).filter(p => /^2547\d{8}$/.test(p)))];
+      localStorage.setItem(STORAGE_KEYS.phones, JSON.stringify(uniquePhones));
+      if (defaultPhone && uniquePhones.includes(defaultPhone)) {
+        localStorage.setItem(STORAGE_KEYS.defaultPhone, defaultPhone);
+      }
+    }
+
+    function addSavedPhone(phone, makeDefault = true) {
+      if (!/^2547\d{8}$/.test(phone)) return;
+      const phones = getSavedPhones();
+      if (!phones.includes(phone)) phones.unshift(phone);
+      persistPhones(phones, makeDefault ? phone : getDefaultPhone());
+      renderPhoneSelectors();
+    }
+
+    function renderPhoneSelectors() {
+      const phones = getSavedPhones();
+      const defaultPhone = getDefaultPhone();
+
+      manualSavedPhones.innerHTML = '<option value="">Use new number</option>' +
+        phones.map(phone => `<option value="${phone}">${phone}${phone === defaultPhone ? " (default)" : ""}</option>`).join("");
+
+      if (defaultPhone) {
+        manualSavedPhones.value = defaultPhone;
+      }
+    }
+
+    function getPreferredPhone(elemId) {
+      const savedSelect = document.getElementById(`${elemId}-savedPhones`) || manualSavedPhones;
+      const typedInput = document.getElementById(`${elemId}-phone`) || manualPhoneInput;
+      const selectedSaved = normalizePhone(savedSelect?.value || "");
+      const typed = normalizePhone(typedInput?.value || "");
+      return selectedSaved || typed;
+    }
 
     function showStatus(elemId, type, msg) {
       const elem = document.getElementById(elemId);
@@ -149,12 +233,21 @@
     }
 
     function showTransactionDetails(txn, elemId) {
+      const phones = getSavedPhones();
+      const defaultPhone = getDefaultPhone();
+      const optionsHtml = '<option value="">Use new number</option>' +
+        phones.map(phone => `<option value="${phone}" ${phone === defaultPhone ? "selected" : ""}>${phone}${phone === defaultPhone ? " (default)" : ""}</option>`).join("");
+
       const elem = document.getElementById(elemId);
       elem.innerHTML = `
         <div class="txn-row"><span>Description:</span> <strong>${txn.itemName}</strong></div>
         <div class="txn-row"><span>Amount:</span> <strong>KES ${txn.amount}</strong></div>
         <div class="txn-row"><span>Status:</span> <strong>Ready to pay</strong></div>
+        <label style="display:block; margin-top:8px; color:#d2deea; font-size:0.85rem;">Saved Number</label>
+        <select id="${elemId}-savedPhones" style="width:100%; border: 1px solid rgba(255,255,255,0.14); border-radius: 8px; background: rgba(4,12,20,0.8); color: var(--text); padding: 10px 12px; font-size: 0.95rem; font-family: inherit; outline: none; margin-top: 4px;">${optionsHtml}</select>
+        <label style="display:block; margin-top:8px; color:#d2deea; font-size:0.85rem;">Or Add New Number</label>
         <input type="tel" id="${elemId}-phone" placeholder="2547XXXXXXXX" style="width: 100%; margin-top: 10px;" />
+        <button type="button" class="upload-btn" onclick="savePhoneFromContext('${elemId}')">Save Number</button>
         <button class="pay-btn" onclick="confirmPayment('${txn.templateId || ""}', '${elemId}')">Confirm & Pay</button>
       `;
       elem.classList.add("show");
@@ -166,6 +259,7 @@
 
     function stopCamera() {
       scanning = false;
+      frameBusy = false;
       if (cameraStream) {
         cameraStream.getTracks().forEach(track => track.stop());
         cameraStream = null;
@@ -276,28 +370,54 @@
     });
 
     function scheduleFrame() {
-      // Throttle to ~5fps — enough to catch a QR, avoids killing mobile CPU/battery
-      if (scanning) setTimeout(processFrame, 200);
+      // ~20fps target for instant feel while maintaining stability.
+      if (scanning) setTimeout(processFrame, 50);
     }
 
-    function processFrame() {
-      if (!scanning) return;
+    async function processFrame() {
+      if (!scanning || frameBusy) { scheduleFrame(); return; }
+      frameBusy = true;
+
       const w = scannerVideo.videoWidth;
       const h = scannerVideo.videoHeight;
-      if (!w || !h) { scheduleFrame(); return; }
+      if (!w || !h) { frameBusy = false; scheduleFrame(); return; }
 
-      // Decode on offscreen canvas at full video resolution
-      scannerCanvas.width = w;
-      scannerCanvas.height = h;
+      // Decode on downscaled frame for speed, preserving enough detail for QR detection.
+      const maxDecodeDim = 720;
+      const scale = Math.min(1, maxDecodeDim / Math.max(w, h));
+      const dw = Math.max(240, Math.floor(w * scale));
+      const dh = Math.max(240, Math.floor(h * scale));
+
+      scannerCanvas.width = dw;
+      scannerCanvas.height = dh;
       const ctx = scannerCanvas.getContext("2d");
-      ctx.drawImage(scannerVideo, 0, 0, w, h);
+      ctx.drawImage(scannerVideo, 0, 0, dw, dh);
 
-      const code = jsQR(ctx.getImageData(0, 0, w, h).data, w, h);
-      if (code && code.data) {
+      let decodedText = null;
+      if (barcodeDetector) {
+        try {
+          const codes = await barcodeDetector.detect(scannerVideo);
+          if (codes && codes.length > 0 && codes[0].rawValue) {
+            decodedText = codes[0].rawValue;
+          }
+        } catch (_) {
+          // Fallback to jsQR below.
+        }
+      }
+
+      if (!decodedText) {
+        const code = jsQR(ctx.getImageData(0, 0, dw, dh).data, dw, dh);
+        decodedText = code?.data || null;
+      }
+
+      if (decodedText) {
+        frameBusy = false;
         stopCamera();
-        handleScannedData(code.data);
+        handleScannedData(decodedText);
         return;
       }
+
+      frameBusy = false;
       scheduleFrame();
     }
 
@@ -340,16 +460,25 @@
         currentTemplate = templateId;
         fetchAndShowTemplate(templateId, "scannedTxn", "scanStatus");
         fetchAndShowTemplate(templateId, "manualTxn", "manualStatus");
-        showStatus("scanStatus", "ok", "QR decoded! Enter your phone number below and confirm.");
+        const defaultPhone = getDefaultPhone();
+        if (autoPayToggle.checked && defaultPhone) {
+          showStatus("scanStatus", "ok", "QR decoded. Fast checkout in progress...");
+          setTimeout(() => {
+            const savedSelect = document.getElementById("scannedTxn-savedPhones");
+            if (savedSelect) savedSelect.value = defaultPhone;
+            window.confirmPayment(templateId, "scannedTxn", true);
+          }, 250);
+        } else {
+          showStatus("scanStatus", "ok", "QR decoded! Select a saved number or enter a new one.");
+        }
       } catch (_) {
         showStatus("scanStatus", "error", "Invalid QR content");
       }
     }
 
     // Confirm and pay
-    window.confirmPayment = async (templateId, elemId) => {
-      const phoneInput = document.getElementById(`${elemId}-phone`) || manualPhoneInput;
-      const normalizedPhone = normalizePhone(phoneInput?.value || "");
+    window.confirmPayment = async (templateId, elemId, autoTriggered = false) => {
+      const normalizedPhone = getPreferredPhone(elemId);
       const statusId = elemId === "scannedTxn" ? "scanStatus" : "manualStatus";
       const effectiveTemplateId = templateId || currentTemplate;
 
@@ -364,7 +493,7 @@
       }
 
       try {
-        showStatus(statusId, "ok", "Triggering M-Pesa prompt...");
+        showStatus(statusId, "ok", autoTriggered ? "Fast checkout: Triggering M-Pesa prompt..." : "Triggering M-Pesa prompt...");
         const res = await fetch("/api/kassangas/payment-intent", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -376,11 +505,24 @@
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Payment failed");
 
+        addSavedPhone(normalizedPhone, true);
         showStatus(statusId, "ok", "STK sent to " + normalizedPhone + ". Enter your M-Pesa PIN.");
         setTimeout(() => loadHistory(), 2000);
       } catch (err) {
         showStatus(statusId, "error", err.message);
       }
+    };
+
+    window.savePhoneFromContext = (elemId) => {
+      const input = document.getElementById(`${elemId}-phone`) || manualPhoneInput;
+      const normalized = normalizePhone(input?.value || "");
+      const statusId = elemId === "scannedTxn" ? "scanStatus" : "manualStatus";
+      if (!/^2547\d{8}$/.test(normalized)) {
+        showStatus(statusId, "error", "Enter valid number first: 2547XXXXXXXX");
+        return;
+      }
+      addSavedPhone(normalized, true);
+      showStatus(statusId, "ok", "Number saved as default fast-checkout number.");
     };
 
     manualPhoneInput.addEventListener("input", () => {
@@ -390,6 +532,22 @@
       }
       const normalizedPhone = normalizePhone(manualPhoneInput.value || "");
       if (normalizedPhone) showStatus("manualStatus", "ok", "Ready to pay with " + normalizedPhone);
+    });
+
+    manualSavedPhones.addEventListener("change", () => {
+      const chosen = normalizePhone(manualSavedPhones.value || "");
+      if (chosen) {
+        localStorage.setItem(STORAGE_KEYS.defaultPhone, chosen);
+        showStatus("manualStatus", "ok", "Using saved number: " + chosen);
+      }
+    });
+
+    saveManualPhoneBtn.addEventListener("click", () => {
+      window.savePhoneFromContext("manualTxn");
+    });
+
+    manualPayBtn.addEventListener("click", () => {
+      window.confirmPayment(currentTemplate, "manualTxn");
     });
 
     async function loadHistory() {
@@ -419,6 +577,14 @@
     document.addEventListener("visibilitychange", () => {
       if (document.hidden) stopCamera();
     });
+
+    autoPayToggle.checked = localStorage.getItem(STORAGE_KEYS.autoPay) !== "false";
+    autoPayToggle.addEventListener("change", () => {
+      localStorage.setItem(STORAGE_KEYS.autoPay, autoPayToggle.checked ? "true" : "false");
+    });
+
+    renderPhoneSelectors();
+    initDetector();
   </script>
 </body>
 </html>

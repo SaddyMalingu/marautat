@@ -8783,6 +8783,35 @@ app.post("/api/kassangas/payment-intent", async (req, res) => {
     const itemName = template.item_name;
     const accountRef = `TMPL-${templateId.slice(-8)}`;
 
+    // Idempotency guard: if a recent pending intent exists for same phone/template, reuse it.
+    const { data: recentIntents, error: recentErr } = await supabase
+      .from("subscriptions")
+      .select("mpesa_checkout_request_id, metadata, created_at")
+      .eq("plan_type", "kassangas_template")
+      .eq("phone", phone)
+      .eq("status", "pending")
+      .order("created_at", { ascending: false })
+      .limit(5);
+
+    if (!recentErr && Array.isArray(recentIntents) && recentIntents.length > 0) {
+      const now = Date.now();
+      const recentMatch = recentIntents.find((row) => {
+        const rowTemplate = row?.metadata?.template_id;
+        const createdAt = row?.created_at ? new Date(row.created_at).getTime() : 0;
+        return rowTemplate === templateId && row?.mpesa_checkout_request_id && createdAt > 0 && (now - createdAt) < 90_000;
+      });
+
+      if (recentMatch) {
+        log(`PAYMENT_INTENT_DUPLICATE_REUSED: template=${templateId}, phone=${phone}, checkout=${recentMatch.mpesa_checkout_request_id}`, "PAYMENT");
+        return res.json({
+          success: true,
+          message: "Payment prompt already sent. Please complete M-Pesa PIN on your phone.",
+          checkoutId: recentMatch.mpesa_checkout_request_id,
+          reused: true,
+        });
+      }
+    }
+
     // Trigger STK push
     const stkResp = await initiateStkPush({
       phone,
@@ -8976,16 +9005,28 @@ app.post("/mpesa/callback", async (req, res) => {
     // respond immediately to M-Pesa to avoid timeout
     res.status(200).json({ ResultCode: 0, ResultDesc: "Accepted" });
 
-    const checkoutId = body.Body?.stkCallback?.CheckoutRequestID;
-    const resultCode = body.Body?.stkCallback?.ResultCode;
+    const checkoutId =
+      body?.Body?.stkCallback?.CheckoutRequestID ||
+      body?.Body?.stkCallback?.MerchantRequestID ||
+      body?.CheckoutRequestID ||
+      null;
+    const resultCodeRaw = body?.Body?.stkCallback?.ResultCode;
+    const resultCode = Number(resultCodeRaw);
     const callbackMetadata = body.Body?.stkCallback?.CallbackMetadata?.Item || [];
 
-    const { data: subs, error: subErr } = await supabase
+    if (!checkoutId) {
+      log("MPESA callback: missing CheckoutRequestID", "WARN");
+      return;
+    }
+
+    const { data: subsList, error: subErr } = await supabase
       .from("subscriptions")
       .select("*")
       .eq("mpesa_checkout_request_id", checkoutId)
-      .limit(1)
-      .single();
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    const subs = Array.isArray(subsList) ? subsList[0] : null;
 
     if (subErr || !subs) {
       log(`MPESA callback: subscription not found for CheckoutRequestID ${checkoutId}`, "WARN");
@@ -8997,10 +9038,11 @@ app.post("/mpesa/callback", async (req, res) => {
       const receipt = callbackMetadata.find(i => i.Name === "MpesaReceiptNumber")?.Value || null;
       const amount = callbackMetadata.find(i => i.Name === "Amount")?.Value || null;
       const phone = callbackMetadata.find(i => i.Name === "PhoneNumber")?.Value || subs.phone;
+      const finalStatus = subs.plan_type === "kassangas_template" ? "paid" : "subscribed";
 
       // ✅ 1. Mark subscription as paid
       await supabase.from("subscriptions").update({
-        status: "subscribed",
+        status: finalStatus,
         mpesa_receipt_no: receipt,
         metadata: { ...(subs.metadata && typeof subs.metadata === "object" ? subs.metadata : {}), callback: body },
         updated_at: new Date().toISOString()
@@ -9026,7 +9068,7 @@ app.post("/mpesa/callback", async (req, res) => {
       });
       await sendMessage(phone, "⭐ Quick one: how would you rate your experience today? Reply with 1-5 (you can add a short comment).\nExample: `5 Great support`.");
 
-      log(`✅ Subscription ${subs.id} marked paid (receipt ${receipt})`, "SYSTEM");
+      log(`✅ Subscription ${subs.id} marked ${finalStatus} (receipt ${receipt})`, "SYSTEM");
     } else {
       // 🔄 Payment failed, cancelled, or refunded - Offer fallback options
       const isProduct = subs.plan_type === "product_checkout";
