@@ -119,45 +119,10 @@
     const startScanBtn = document.getElementById("startScanBtn");
     const scannerCanvas = document.getElementById("scanner");
     const scannerVideo = document.getElementById("scannerVideo");
+    const manualPhoneInput = document.getElementById("manualPhone");
     let scanning = false;
     let currentTemplate = null;
-
-    // Tab switching
-    tabs.forEach(btn => {
-      btn.addEventListener("click", () => {
-        const tabName = btn.getAttribute("data-tab");
-        tabs.forEach(b => b.classList.remove("active"));
-        tabContents.forEach(c => c.classList.remove("active"));
-        btn.classList.add("active");
-        document.getElementById(`${tabName}-tab`).classList.add("active");
-        
-        if (tabName === "history") loadHistory();
-        if (tabName === "scanner" && !scanning) startScanBtn.textContent = "Start Camera";
-      });
-    });
-
-    // Parse QR from URL if present
-    const params = new URLSearchParams(window.location.search);
-    if (params.has("t")) {
-      currentTemplate = params.get("t");
-      fetchAndShowTemplate(currentTemplate);
-    }
-
-    async function fetchAndShowTemplate(templateId) {
-      try {
-        const res = await fetch(`/api/kassangas/template/${templateId}`);
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error);
-        
-        showTransactionDetails({
-          itemName: data.itemName,
-          amount: data.amount,
-          templateId: templateId
-        }, "scannedTxn");
-      } catch (err) {
-        showStatus("scanStatus", "error", "Invalid QR code: " + err.message);
-      }
-    }
+    let cameraStream = null;
 
     function showStatus(elemId, type, msg) {
       const elem = document.getElementById(elemId);
@@ -172,93 +137,192 @@
         <div class="txn-row"><span>Amount:</span> <strong>KES ${txn.amount}</strong></div>
         <div class="txn-row"><span>Status:</span> <strong>Ready to pay</strong></div>
         <input type="tel" id="${elemId}-phone" placeholder="2547XXXXXXXX" style="width: 100%; margin-top: 10px;" />
-        <button class="pay-btn" onclick="confirmPayment('${txn.templateId || ''}', '${elemId}')">Confirm & Pay</button>
+        <button class="pay-btn" onclick="confirmPayment('${txn.templateId || ""}', '${elemId}')">Confirm & Pay</button>
       `;
       elem.classList.add("show");
+    }
+
+    function stopCamera() {
+      scanning = false;
+      if (cameraStream) {
+        cameraStream.getTracks().forEach(track => track.stop());
+        cameraStream = null;
+      }
+      scannerVideo.pause();
+      scannerVideo.srcObject = null;
+      scannerCanvas.style.display = "none";
+      startScanBtn.textContent = "Start Camera";
+    }
+
+    function waitForVideoReady(videoElem) {
+      return new Promise(resolve => {
+        if (videoElem.readyState >= 2 && videoElem.videoWidth > 0 && videoElem.videoHeight > 0) {
+          resolve();
+          return;
+        }
+
+        const onReady = () => {
+          if (videoElem.videoWidth > 0 && videoElem.videoHeight > 0) {
+            videoElem.removeEventListener("loadedmetadata", onReady);
+            videoElem.removeEventListener("canplay", onReady);
+            resolve();
+          }
+        };
+
+        videoElem.addEventListener("loadedmetadata", onReady);
+        videoElem.addEventListener("canplay", onReady);
+      });
+    }
+
+    async function fetchAndShowTemplate(templateId, targetElemId = "scannedTxn", statusElemId = "scanStatus") {
+      try {
+        const res = await fetch(`/api/kassangas/template/${templateId}`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Template fetch failed");
+
+        showTransactionDetails({
+          itemName: data.itemName,
+          amount: data.amount,
+          templateId
+        }, targetElemId);
+      } catch (err) {
+        showStatus(statusElemId, "error", "Invalid QR code: " + err.message);
+      }
+    }
+
+    function normalizePhone(phone) {
+      let val = String(phone || "").trim().replace(/\s+/g, "");
+      if (val.startsWith("+")) val = val.slice(1);
+      if (val.startsWith("0")) val = "254" + val.slice(1);
+      if (/^7\d{8}$/.test(val)) val = "254" + val;
+      return val;
+    }
+
+    // Tab switching
+    tabs.forEach(btn => {
+      btn.addEventListener("click", () => {
+        const tabName = btn.getAttribute("data-tab");
+        tabs.forEach(b => b.classList.remove("active"));
+        tabContents.forEach(c => c.classList.remove("active"));
+        btn.classList.add("active");
+        document.getElementById(`${tabName}-tab`).classList.add("active");
+
+        if (tabName !== "scanner") stopCamera();
+        if (tabName === "history") loadHistory();
+        if (tabName === "scanner" && !scanning) startScanBtn.textContent = "Start Camera";
+      });
+    });
+
+    // Parse template from URL (direct link flow)
+    const params = new URLSearchParams(window.location.search);
+    if (params.has("t")) {
+      currentTemplate = params.get("t");
+      fetchAndShowTemplate(currentTemplate, "scannedTxn", "scanStatus");
+      fetchAndShowTemplate(currentTemplate, "manualTxn", "manualStatus");
+      showStatus("manualStatus", "ok", "Template loaded. Enter phone to pay.");
     }
 
     // QR Scanner
     startScanBtn.addEventListener("click", async () => {
       if (scanning) {
-        scanning = false;
-        scannerVideo.pause();
-        scannerCanvas.style.display = "none";
-        startScanBtn.textContent = "Start Camera";
+        stopCamera();
         return;
       }
 
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-        scannerVideo.srcObject = stream;
-        scannerVideo.play();
+        cameraStream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: "environment" },
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          }
+        });
+
+        scannerVideo.srcObject = cameraStream;
+        await scannerVideo.play();
+        await waitForVideoReady(scannerVideo);
         scannerCanvas.style.display = "block";
         scanning = true;
         startScanBtn.textContent = "Stop Camera";
         processFrame();
       } catch (err) {
+        stopCamera();
         showStatus("scanStatus", "error", "Camera access denied: " + err.message);
       }
     });
 
     function processFrame() {
+      if (!scanning) return;
+
+      const w = scannerVideo.videoWidth;
+      const h = scannerVideo.videoHeight;
+      if (!w || !h) {
+        requestAnimationFrame(processFrame);
+        return;
+      }
+
+      scannerCanvas.width = w;
+      scannerCanvas.height = h;
       const ctx = scannerCanvas.getContext("2d");
-      const w = scannerCanvas.width = scannerVideo.videoWidth;
-      const h = scannerCanvas.height = scannerVideo.videoHeight;
-      ctx.drawImage(scannerVideo, 0, 0);
-      
+      ctx.drawImage(scannerVideo, 0, 0, w, h);
+
       const imageData = ctx.getImageData(0, 0, w, h);
       const code = jsQR(imageData.data, w, h);
-      
-      if (code) {
-        scanning = false;
-        scannerVideo.pause();
-        scannerCanvas.style.display = "none";
-        startScanBtn.textContent = "Start Camera";
-        
-        const url = new URL(code.data);
-        const templateId = url.searchParams.get("t");
-        if (templateId) {
-          fetchAndShowTemplate(templateId);
-        } else {
-          showStatus("scanStatus", "error", "Invalid QR: no template found");
-        }
-      } else if (scanning) {
-        requestAnimationFrame(processFrame);
-      }
-    }
 
-    // Manual entry
-    function loadManualFields() {
-      const phone = document.getElementById("manualPhone").value.trim();
-      if (phone) {
-        showStatus("manualStatus", "ok", "Ready to pay with " + phone);
+      if (code && code.data) {
+        stopCamera();
+
+        try {
+          const parsedUrl = new URL(code.data);
+          const templateId = parsedUrl.searchParams.get("t");
+          if (!templateId) {
+            showStatus("scanStatus", "error", "Invalid QR: no template found");
+            return;
+          }
+
+          currentTemplate = templateId;
+          fetchAndShowTemplate(templateId, "scannedTxn", "scanStatus");
+          fetchAndShowTemplate(templateId, "manualTxn", "manualStatus");
+          showStatus("scanStatus", "ok", "Template detected. Enter phone and confirm payment.");
+        } catch (_) {
+          showStatus("scanStatus", "error", "Invalid QR content");
+        }
+        return;
       }
+
+      requestAnimationFrame(processFrame);
     }
 
     // Confirm and pay
     window.confirmPayment = async (templateId, elemId) => {
-      const phone = document.getElementById(`${elemId}-phone`).value.trim();
-      if (!phone || !/^2547\d{8}$/.test(phone.replace(/\s/g, ""))) {
-        showStatus(elemId === "scannedTxn" ? "scanStatus" : "manualStatus", "error", "Invalid phone");
+      const phoneInput = document.getElementById(`${elemId}-phone`) || manualPhoneInput;
+      const normalizedPhone = normalizePhone(phoneInput?.value || "");
+      const statusId = elemId === "scannedTxn" ? "scanStatus" : "manualStatus";
+      const effectiveTemplateId = templateId || currentTemplate;
+
+      if (!effectiveTemplateId) {
+        showStatus(statusId, "error", "No template loaded. Scan QR or open wallet link with ?t=...");
         return;
       }
 
-      const normalizedPhone = phone.startsWith("0") ? "254" + phone.slice(1) : phone;
-      const statusId = elemId === "scannedTxn" ? "scanStatus" : "manualStatus";
-      
+      if (!/^2547\d{8}$/.test(normalizedPhone)) {
+        showStatus(statusId, "error", "Invalid phone. Use 2547XXXXXXXX");
+        return;
+      }
+
       try {
         showStatus(statusId, "ok", "Triggering M-Pesa prompt...");
         const res = await fetch("/api/kassangas/payment-intent", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            templateId: templateId,
+            templateId: effectiveTemplateId,
             phone: normalizedPhone
           })
         });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error);
-        
+        if (!res.ok) throw new Error(data.error || "Payment failed");
+
         showStatus(statusId, "ok", "STK sent to " + normalizedPhone + ". Enter your M-Pesa PIN.");
         setTimeout(() => loadHistory(), 2000);
       } catch (err) {
@@ -266,13 +330,22 @@
       }
     };
 
+    manualPhoneInput.addEventListener("input", () => {
+      if (!currentTemplate) {
+        showStatus("manualStatus", "error", "Scan QR or open a payment link to load a template first.");
+        return;
+      }
+      const normalizedPhone = normalizePhone(manualPhoneInput.value || "");
+      if (normalizedPhone) showStatus("manualStatus", "ok", "Ready to pay with " + normalizedPhone);
+    });
+
     async function loadHistory() {
       document.getElementById("historyList").innerHTML = '<p style="color: var(--muted);">Loading transactions...</p>';
       try {
         const res = await fetch("/api/kassangas/payment-intents");
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error);
-        
+        if (!res.ok) throw new Error(data.error || "Failed to load history");
+
         if (data.intents && data.intents.length > 0) {
           document.getElementById("historyList").innerHTML = data.intents
             .map(t => `<div style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.1);">
@@ -287,6 +360,12 @@
         document.getElementById("historyList").innerHTML = '<p style="color: #ff5d5d;">' + err.message + '</p>';
       }
     }
+
+    window.addEventListener("pagehide", stopCamera);
+    window.addEventListener("beforeunload", stopCamera);
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) stopCamera();
+    });
   </script>
 </body>
 </html>

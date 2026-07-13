@@ -96,6 +96,45 @@
     const qrCodeDiv = document.getElementById("qrCode");
     const copyBtn = document.getElementById("copyLink");
     let currentTemplateId = null;
+    let qrLibReady = typeof window.QRCode === "function";
+
+    function loadScript(src) {
+      return new Promise((resolve, reject) => {
+        const script = document.createElement("script");
+        script.src = src;
+        script.async = true;
+        script.onload = resolve;
+        script.onerror = reject;
+        document.head.appendChild(script);
+      });
+    }
+
+    async function ensureQrLibrary() {
+      if (typeof window.QRCode === "function") {
+        qrLibReady = true;
+        return true;
+      }
+
+      const fallbacks = [
+        "https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js",
+        "https://unpkg.com/qrcodejs@1.0.0/qrcode.min.js"
+      ];
+
+      for (const src of fallbacks) {
+        try {
+          await loadScript(src);
+          if (typeof window.QRCode === "function") {
+            qrLibReady = true;
+            return true;
+          }
+        } catch (_) {
+          // Try next fallback.
+        }
+      }
+
+      qrLibReady = false;
+      return false;
+    }
 
     function showStatus(type, msg) {
       statusBox.className = `status show ${type}`;
@@ -114,6 +153,7 @@
 
       showStatus("ok", "Generating QR...");
       try {
+        const qrAvailable = await ensureQrLibrary();
         const res = await fetch("/api/kassangas/create-template", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -126,18 +166,25 @@
         const qrUrl = `${window.location.origin}/kassangas-client-wallet?t=${data.templateId}`;
         
         qrCodeDiv.innerHTML = "";
-        new QRCode(qrCodeDiv, {
-          text: qrUrl,
-          width: 220,
-          height: 220,
-          colorDark: "#081421",
-          colorLight: "#f3f7fa"
-        });
+        if (qrAvailable) {
+          new QRCode(qrCodeDiv, {
+            text: qrUrl,
+            width: 220,
+            height: 220,
+            colorDark: "#081421",
+            colorLight: "#f3f7fa"
+          });
+        } else {
+          qrCodeDiv.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(qrUrl)}" alt="Payment QR code" width="220" height="220" />`;
+          showStatus("error", "QR library unavailable. Using fallback QR image generator.");
+        }
 
         document.getElementById("templateDesc").textContent = itemName;
         document.getElementById("templateAmount").textContent = amount;
         qrSection.classList.add("show");
-        showStatus("ok", "QR ready! Customers can scan it.");
+        if (qrAvailable) {
+          showStatus("ok", "QR ready! Customers can scan it.");
+        }
       } catch (err) {
         showStatus("error", err.message);
       }
