@@ -8684,7 +8684,8 @@ app.post("/api/kassangas/stk-push", async (req, res) => {
 app.post("/api/kassangas/create-template", async (req, res) => {
   try {
     const { itemName, amount, reusable, merchantName } = req.body || {};
-    if (!itemName || !amount || amount <= 0) {
+    const parsedAmount = Number(amount);
+    if (!itemName || !Number.isFinite(parsedAmount) || parsedAmount <= 0) {
       return res.status(400).json({ error: "itemName and amount are required" });
     }
 
@@ -8693,7 +8694,7 @@ app.post("/api/kassangas/create-template", async (req, res) => {
       {
         template_id: templateId,
         item_name: itemName,
-        amount: Number(amount),
+        amount: parsedAmount,
         reusable: reusable !== false,
         merchant_name: String(merchantName || "Merchant").slice(0, 80),
         created_at: new Date().toISOString(),
@@ -8702,11 +8703,14 @@ app.post("/api/kassangas/create-template", async (req, res) => {
     ]);
 
     if (insertErr) {
-      log(`TEMPLATE_INSERT_FAILED: ${insertErr.message}`, "WARN");
-      // Fail gracefully but still return template ID for offline support
+      log(`TEMPLATE_INSERT_FAILED: ${insertErr.message}`, "ERROR");
+      return res.status(500).json({
+        error: "Failed to save payment template. Please try again.",
+        details: insertErr.message,
+      });
     }
 
-    log(`TEMPLATE_CREATED: ${templateId}, item=${itemName}, amt=${amount}`, "PAYMENT");
+    log(`TEMPLATE_CREATED: ${templateId}, item=${itemName}, amt=${parsedAmount}`, "PAYMENT");
     return res.json({ success: true, templateId });
   } catch (err) {
     log(`TEMPLATE_CREATE_ERROR: ${err.message}`, "ERROR");
@@ -8748,6 +8752,7 @@ app.get("/api/kassangas/template/:tokenId", async (req, res) => {
 app.post("/api/kassangas/payment-intent", async (req, res) => {
   try {
     let { templateId, phone } = req.body || {};
+    templateId = String(templateId || "").trim();
 
     phone = String(phone || "").trim().replace(/\s+/g, "");
     if (phone.startsWith("0")) phone = `254${phone.slice(1)}`;
@@ -8765,10 +8770,16 @@ app.post("/api/kassangas/payment-intent", async (req, res) => {
       .maybeSingle();
 
     if (templateErr || !template) {
+      log(`PAYMENT_INTENT_TEMPLATE_NOT_FOUND: ${templateId}`, "WARN");
       return res.status(404).json({ error: "Template not found" });
     }
 
-    const amount = template.amount;
+    const amount = Number(template.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      log(`PAYMENT_INTENT_BAD_AMOUNT: template=${templateId} amount=${template.amount}`, "ERROR");
+      return res.status(400).json({ error: "Template amount is invalid" });
+    }
+
     const itemName = template.item_name;
     const accountRef = `TMPL-${templateId.slice(-8)}`;
 
