@@ -124,6 +124,71 @@
       display: flex;
       gap: 1.5rem;
       justify-content: center;
+      flex-wrap: wrap;
+    }
+    .assets-live {
+      margin: 2.2rem auto;
+      max-width: 1180px;
+      padding: 0 1.2rem;
+    }
+    .assets-live h2 {
+      text-align: center;
+      color: #38bdf8;
+      font-size: 2rem;
+      margin: 0 0 0.55rem 0;
+      font-weight: 800;
+    }
+    .assets-live .lead {
+      text-align: center;
+      color: #cbd5e1;
+      margin: 0 0 1.3rem 0;
+      font-size: 1.02rem;
+    }
+    .asset-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 1rem;
+    }
+    .asset-card {
+      background: rgba(30,41,59,0.9);
+      border: 1px solid rgba(56,189,248,0.28);
+      border-radius: 1rem;
+      padding: 1rem;
+      box-shadow: 0 8px 22px rgba(14,165,233,0.16);
+      backdrop-filter: blur(8px);
+    }
+    .asset-card h4 {
+      margin: 0 0 0.45rem 0;
+      color: #e2f6ff;
+      font-size: 1.02rem;
+      font-weight: 700;
+    }
+    .asset-card p {
+      margin: 0 0 0.8rem 0;
+      color: #cbd5e1;
+      font-size: 0.93rem;
+      line-height: 1.4;
+    }
+    .asset-actions {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .asset-link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(90deg, #6366f1 0%, #0ea5e9 100%);
+      border: 1px solid rgba(56,189,248,0.5);
+      border-radius: 999px;
+      padding: 0.46rem 0.82rem;
+      color: #fff;
+      text-decoration: none;
+      font-size: 0.83rem;
+      font-weight: 700;
+    }
+    .asset-link.secondary {
+      background: rgba(255,255,255,0.09);
     }
     @media (max-width: 600px) {
       header {
@@ -152,6 +217,7 @@
         padding: 1.2rem 0 1rem 0;
         min-height: 50vh;
       }
+      #hero-3d { height: 170px !important; margin-bottom: 0.8rem !important; }
       .hero h2 {
         font-size: 1.3rem;
         margin-bottom: 0.7rem;
@@ -173,6 +239,11 @@
         max-width: 320px;
         margin: 0 auto;
       }
+      .assets-live { margin: 1.3rem auto; padding: 0 0.8rem; }
+      .assets-live h2 { font-size: 1.35rem; }
+      .assets-live .lead { font-size: 0.95rem; }
+      .asset-grid { grid-template-columns: 1fr; gap: 0.8rem; }
+      .asset-card { padding: 0.9rem; }
       .glass {
         padding: 1rem;
         max-width: 98vw;
@@ -557,6 +628,57 @@
       <div class="hero-buttons">
         <a href="/kassangas-merchant-portal" class="cta-btn" aria-label="Launch Merchant Portal">Launch Merchant Portal</a>
         <a href="/kassangas-client-wallet" class="cta-btn" aria-label="Open Client Wallet">Open Client Wallet</a>
+      </div>
+    </section>
+    <section class="assets-live">
+      <h2>Live 3.0 Assets</h2>
+      <p class="lead">Independent operating assets from the Alphadome 3.0 infrastructure.</p>
+      <div class="asset-grid">
+        <article class="asset-card">
+          <h4>Alpha Professor 3.0</h4>
+          <p>Published AI-powered academic assistant and knowledge engine.</p>
+          <div class="asset-actions">
+            <a class="asset-link" href="https://alphaprofessor-81647-1c1e114c2185.herokuapp.com/" target="_blank" rel="noopener">Open Live</a>
+          </div>
+        </article>
+        <article class="asset-card">
+          <h4>Alpha 3.0 (Comms & Outreach)</h4>
+          <p>Campaign, onboarding, catalog, and revenue workflows in production stack.</p>
+          <div class="asset-actions">
+            <a class="asset-link" href="/portfolio.html">View Portfolio</a>
+            <a class="asset-link secondary" href="/kassangas-client-wallet">Fast Wallet</a>
+          </div>
+        </article>
+        <article class="asset-card">
+          <h4>Alpha Architect</h4>
+          <p>AI design and cloud-rendering capabilities exposed via Alphadome experience layer.</p>
+          <div class="asset-actions">
+            <a class="asset-link" href="https://alphadomemagic-production.up.railway.app/" target="_blank" rel="noopener">Open Magic Hub</a>
+          </div>
+        </article>
+        <article class="asset-card">
+          <h4>Intra Africa Journal Hub 3.0</h4>
+          <p>Journal submission/review/publishing infrastructure in the Alphadome ecosystem.</p>
+          <div class="asset-actions">
+            <a class="asset-link" href="/portfolio.html">Portfolio Entry</a>
+            <a class="asset-link secondary" href="mailto:info@alphadome.ai?subject=Intra%20Africa%20Journal%20Hub%203.0%20Access">Request Access</a>
+          </div>
+        </article>
+        <article class="asset-card">
+          <h4>Kassangas Fast Checkout</h4>
+          <p>Merchant and client QR scan-to-STK flow optimized for repeat payments.</p>
+          <div class="asset-actions">
+            <a class="asset-link" href="/kassangas-merchant-portal">Merchant Portal</a>
+            <a class="asset-link secondary" href="/kassangas-client-wallet">Client Wallet</a>
+          </div>
+        </article>
+        <article class="asset-card">
+          <h4>All 3.0 Published Agents</h4>
+          <p>Explore all live agents and brands currently onboarded in the Alphadome ecosystem.</p>
+          <div class="asset-actions">
+            <a class="asset-link" href="/portfolio.html">Open Portfolio</a>
+          </div>
+        </article>
       </div>
     </section>
     <svg class="wave-divider" viewBox="0 0 1440 60" fill="none" xmlns="http://www.w3.org/2000/svg"><path fill="#0ea5e9" fill-opacity="0.12" d="M0,30 C360,60 1080,0 1440,30 L1440,60 L0,60 Z"></path></svg>
