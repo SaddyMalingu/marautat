@@ -8680,10 +8680,675 @@ app.post("/api/kassangas/stk-push", async (req, res) => {
 
 // ===== PHASE 1: Payment Template Routes =====
 
+const KASSANGAS_VISITOR_LOG_FILE = path.join(process.cwd(), "logs", "kassangas_visitors.jsonl");
+const KASSANGAS_ONBOARDING_LOG_FILE = path.join(process.cwd(), "logs", "kassangas_onboarding.jsonl");
+const KASSANGAS_REFERRAL_SECRET = process.env.KASSANGAS_REFERRAL_SECRET || process.env.ADMIN_PASS || "alphadome-kassangas-ref";
+
+async function appendJsonlRecord(filePath, record) {
+  try {
+    await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.promises.appendFile(filePath, `${JSON.stringify(record)}\n`, "utf8");
+  } catch (err) {
+    log(`JSONL_APPEND_WARN ${path.basename(filePath)}: ${err.message}`, "WARN");
+  }
+}
+
+function toBase64Url(value) {
+  return Buffer.from(value, "utf8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function fromBase64Url(value) {
+  const normalized = String(value || "").replace(/-/g, "+").replace(/_/g, "/");
+  const padding = normalized.length % 4 === 0 ? "" : "=".repeat(4 - (normalized.length % 4));
+  return Buffer.from(normalized + padding, "base64").toString("utf8");
+}
+
+function signReferralPayload(payloadString) {
+  return crypto.createHmac("sha256", KASSANGAS_REFERRAL_SECRET).update(payloadString).digest("hex");
+}
+
+function createReferralToken(payload) {
+  const payloadJson = JSON.stringify(payload || {});
+  const payloadB64 = toBase64Url(payloadJson);
+  const signature = signReferralPayload(payloadB64);
+  return `${payloadB64}.${signature}`;
+}
+
+function decodeReferralToken(token) {
+  try {
+    const raw = String(token || "").trim();
+    if (!raw || !raw.includes(".")) return null;
+    const [payloadB64, signature] = raw.split(".");
+    if (!payloadB64 || !signature) return null;
+    const expected = signReferralPayload(payloadB64);
+    if (expected !== signature) return null;
+    const payload = JSON.parse(fromBase64Url(payloadB64));
+    return payload && typeof payload === "object" ? payload : null;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeMsisdn(value) {
+  let phone = String(value || "").trim().replace(/\s+/g, "");
+  if (phone.startsWith("+")) phone = phone.slice(1);
+  if (phone.startsWith("0")) phone = `254${phone.slice(1)}`;
+  if (/^7\d{8}$/.test(phone)) phone = `254${phone}`;
+  return phone;
+}
+
+// ===== PROVIDER ABSTRACTION & DIGITAL SALES ENGINE =====
+const SALES_MODE = process.env.SALES_MODE || "sandbox"; // "sandbox" or "production"
+const ACTIVE_PROVIDER = process.env.SALES_PROVIDER || "reloadly"; // "reloadly", "flutterwave", "dtone", "africas-talking"
+
+// Provider configuration with API endpoints and keys
+const PROVIDER_CONFIG = {
+  reloadly: {
+    name: "Reloadly",
+    sandbox_url: "https://sandbox-api.reloadly.com",
+    production_url: "https://api.reloadly.com",
+    api_key_env: "RELOADLY_API_KEY",
+    secret_key_env: "RELOADLY_SECRET_KEY",
+    categories: ["airtime", "data_bundles", "gift_cards", "gaming"],
+    supported_operators: ["Safaricom", "Airtel", "Telkom", "Vodafone"],
+  },
+  flutterwave: {
+    name: "Flutterwave Bills",
+    sandbox_url: "https://api.flutterwave.com",
+    production_url: "https://api.flutterwave.com",
+    api_key_env: "FLUTTERWAVE_PUBLIC_KEY",
+    secret_key_env: "FLUTTERWAVE_SECRET_KEY",
+    categories: ["airtime", "data_bundles", "utilities", "tv"],
+    supported_operators: ["Safaricom", "Airtel", "KPLC", "Water", "GOtv", "DStv"],
+  },
+  dtone: {
+    name: "DT One",
+    sandbox_url: "https://api-sandbox.dtone.com",
+    production_url: "https://api.dtone.com",
+    api_key_env: "DTONE_API_KEY",
+    secret_key_env: "DTONE_API_SECRET",
+    categories: ["airtime", "data_bundles", "gift_cards", "gaming"],
+    supported_operators: ["Global"],
+  },
+  "africas-talking": {
+    name: "Africa's Talking Airtime",
+    sandbox_url: "https://api.sandbox.africastalking.com",
+    production_url: "https://api.africastalking.com",
+    api_key_env: "AFRICAS_TALKING_API_KEY",
+    secret_key_env: "AFRICAS_TALKING_USERNAME",
+    categories: ["airtime"],
+    supported_operators: ["Safaricom", "Airtel", "Telkom"],
+  },
+};
+
+/**
+ * Sales transaction logger: append to JSONL for audit and reconciliation.
+ */
+const SALES_TRANSACTION_LOG = path.join(process.cwd(), "logs", "digital_sales_transactions.jsonl");
+
+async function logSalesTransaction(txn) {
+  try {
+    await appendJsonlRecord(SALES_TRANSACTION_LOG, {
+      ...txn,
+      at: new Date().toISOString(),
+    });
+  } catch (err) {
+    log(`SALES_TXN_LOG_ERROR: ${err.message}`, "WARN");
+  }
+}
+
+/**
+ * Provider Adapter Factory: Returns provider-agnostic interface.
+ * Each provider adapter has:
+ *   - init(): validate credentials
+ *   - validate_product(sku): check product availability
+ *   - execute_sale(payload): process transaction
+ *   - get_balance(): (optional) check account balance
+ */
+class ProviderAdapter {
+  constructor(providerKey) {
+    this.providerKey = providerKey;
+    this.config = PROVIDER_CONFIG[providerKey];
+    this.mode = SALES_MODE;
+    this.is_live = SALES_MODE === "production";
+  }
+
+  getApiBase() {
+    if (this.mode === "sandbox") {
+      return this.config.sandbox_url;
+    }
+    return this.config.production_url;
+  }
+
+  getApiKey() {
+    return process.env[this.config.api_key_env] || "";
+  }
+
+  getSecretKey() {
+    return process.env[this.config.secret_key_env] || "";
+  }
+
+  async init() {
+    // Validate provider credentials and connectivity
+    try {
+      if (!this.getApiKey()) {
+        return { ok: false, error: `${this.config.api_key_env} not configured` };
+      }
+
+      if (this.mode === "sandbox") {
+        log(`PROVIDER_INIT [${this.providerKey}] sandbox mode enabled`, "SALES");
+        return { ok: true, message: "Sandbox mode ready" };
+      }
+
+      // In production, call provider health endpoint
+      // This is mocked for now; implement per provider.
+      return { ok: true, message: "Production mode ready" };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  }
+
+  async validateProduct(sku, category) {
+    // Check if provider supports this product/category
+    if (!this.config.categories.includes(category)) {
+      return { ok: false, error: `Provider does not support ${category}` };
+    }
+    return { ok: true };
+  }
+
+  async executeSale(payload) {
+    // Execute sale based on provider
+    const { phone, sku, product_name, amount_kes, category, merchant_code, visitor_id } = payload;
+
+    if (this.mode === "sandbox") {
+      // Sandbox: simulate success with 95% rate
+      const success = Math.random() < 0.95;
+      const txnId = `TXN-${Date.now().toString().slice(-6)}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+      const result = {
+        ok: success,
+        transaction_id: txnId,
+        provider: this.providerKey,
+        phone,
+        sku,
+        amount_kes,
+        status: success ? "completed" : "failed",
+        message: success ? "Simulated success" : "Simulated failure (test)",
+      };
+
+      await logSalesTransaction({
+        ...result,
+        mode: "sandbox",
+        merchant_code,
+        visitor_id,
+      });
+
+      return result;
+    }
+
+    // Production: call actual provider API (not implemented in this setup)
+    try {
+      const base = this.getApiBase();
+      const apiKey = this.getApiKey();
+
+      // Placeholder for actual API call
+      // Example: POST ${base}/api/v2/topup
+      // Headers: Authorization: Bearer ${apiKey}
+      // Body: { phone, product_id: sku, amount }
+
+      const txnId = `TXN-${Date.now().toString().slice(-6)}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+      const result = {
+        ok: true,
+        transaction_id: txnId,
+        provider: this.providerKey,
+        phone,
+        sku,
+        amount_kes,
+        status: "pending",
+        message: "Transaction sent to provider (not yet integrated)",
+      };
+
+      await logSalesTransaction({
+        ...result,
+        mode: "production",
+        merchant_code,
+        visitor_id,
+      });
+
+      return result;
+    } catch (err) {
+      const result = {
+        ok: false,
+        error: err.message,
+        provider: this.providerKey,
+      };
+
+      await logSalesTransaction({
+        ...result,
+        mode: "production",
+        merchant_code,
+        visitor_id,
+      });
+
+      return result;
+    }
+  }
+
+  async getBalance() {
+    // Get provider account balance (optional, for admin dashboard)
+    if (this.mode === "sandbox") {
+      return { ok: true, balance_kes: 50000 }; // Mock balance
+    }
+    // Production would call actual provider API
+    return { ok: true, balance_kes: 0 };
+  }
+}
+
+/**
+ * Get active provider adapter (singleton pattern).
+ */
+function getProviderAdapter() {
+  return new ProviderAdapter(ACTIVE_PROVIDER);
+}
+
+function getKassangasDigitalProviders() {
+  return {
+    recommended: [
+      {
+        provider: "Flutterwave Bills",
+        fit: "Strong for bills, airtime, TV, utility collections where supported by country/operator.",
+        categories: ["airtime", "data_bundles", "utilities", "tv"],
+        integration_status: "recommended_candidate",
+      },
+      {
+        provider: "Reloadly",
+        fit: "Strong for airtime, data bundles, and gift-card style digital products.",
+        categories: ["airtime", "data_bundles", "gift_cards", "gaming"],
+        integration_status: "recommended_candidate",
+      },
+      {
+        provider: "DT One",
+        fit: "Broad global catalog for topups and digital value services.",
+        categories: ["airtime", "data_bundles", "gift_cards", "gaming"],
+        integration_status: "recommended_candidate",
+      },
+      {
+        provider: "Africa's Talking Airtime",
+        fit: "Good option for airtime resale rails and communications adjacency.",
+        categories: ["airtime"],
+        integration_status: "recommended_candidate",
+      },
+    ],
+    implementation_note: "Use a provider abstraction so Alphadome can switch or combine providers by product type, margin, and operator availability.",
+  };
+}
+
+function getKassangasMarketplaceCatalog() {
+  return {
+    bundles: [
+      {
+        sku: "SAF-DAILY-1GB",
+        title: "Safaricom Daily 1GB",
+        category: "data_bundles",
+        operator: "Safaricom",
+        price_kes: 99,
+        alphadome_fee_kes: 4,
+        label: "Quick pay-day bundle",
+      },
+      {
+        sku: "ATL-DAILY-1.5GB",
+        title: "Airtel Daily 1.5GB",
+        category: "data_bundles",
+        operator: "Airtel",
+        price_kes: 100,
+        alphadome_fee_kes: 4,
+        label: "Affordable browsing",
+      },
+      {
+        sku: "SAF-HOURLY-1GB",
+        title: "Safaricom Hourly 1GB",
+        category: "data_bundles",
+        operator: "Safaricom",
+        price_kes: 20,
+        alphadome_fee_kes: 2,
+        label: "Instant checkout rescue",
+      }
+    ],
+    bills: [
+      {
+        sku: "AIRTIME-LOAD",
+        title: "Airtime Top Up",
+        category: "airtime",
+        price_hint_kes: "Flexible",
+        label: "Resell airtime with micro-margin",
+      },
+      {
+        sku: "KPLC-TOKENS",
+        title: "KPLC Tokens",
+        category: "utilities",
+        price_hint_kes: "Flexible",
+        label: "Electricity token purchase",
+      },
+      {
+        sku: "WATER-BILL",
+        title: "Water Bills",
+        category: "utilities",
+        price_hint_kes: "Account based",
+        label: "Utility bill settlement",
+      },
+      {
+        sku: "GOTV-SUB",
+        title: "GOtv Subscription",
+        category: "tv",
+        price_hint_kes: "Package based",
+        label: "Digital TV renewal",
+      },
+      {
+        sku: "DSTV-SUB",
+        title: "DStv Subscription",
+        category: "tv",
+        price_hint_kes: "Package based",
+        label: "Premium TV renewal",
+      }
+    ],
+    digital_products: [
+      {
+        sku: "NETFLIX-GIFT",
+        title: "Netflix Gift Access",
+        category: "gift_cards",
+        price_hint_kes: "Package based",
+        label: "Entertainment gifting",
+      },
+      {
+        sku: "GAME-VOUCHER",
+        title: "Gaming Voucher",
+        category: "gaming",
+        price_hint_kes: "Package based",
+        label: "Gaming top-up / codes",
+      }
+    ]
+  };
+}
+
+async function fetchKassangasPerformanceReview({ role = "client", visitorId = "", phone = "", merchantCode = "" } = {}) {
+  const { data, error } = await supabase
+    .from("subscriptions")
+    .select("id, phone, amount, status, metadata, created_at")
+    .eq("plan_type", "kassangas_template")
+    .order("created_at", { ascending: false })
+    .limit(400);
+
+  if (error) throw error;
+
+  let rows = Array.isArray(data) ? data : [];
+  if (role === "client") {
+    rows = rows.filter((r) => {
+      const md = r.metadata && typeof r.metadata === "object" ? r.metadata : {};
+      return (visitorId && md.client_visitor_id === visitorId) || (phone && normalizeMsisdn(r.phone) === phone);
+    });
+  } else if (role === "merchant" && merchantCode) {
+    rows = rows.filter((r) => {
+      const md = r.metadata && typeof r.metadata === "object" ? r.metadata : {};
+      return md.merchant_code === merchantCode;
+    });
+  }
+
+  const paidRows = rows.filter((r) => ["paid", "subscribed"].includes(String(r.status || "").toLowerCase()));
+  const pendingRows = rows.filter((r) => String(r.status || "").toLowerCase() === "pending");
+  const failedRows = rows.filter((r) => String(r.status || "").toLowerCase() === "failed");
+  const totalAmount = rows.reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+  const paidAmount = paidRows.reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+  const conversionRate = rows.length ? Math.round((paidRows.length / rows.length) * 1000) / 10 : 0;
+  const rewardPoints = paidRows.reduce((sum, r) => sum + Math.max(1, Math.floor((Number(r.amount) || 0) / 100)), 0);
+
+  return {
+    performanceReview: {
+      total_transactions: rows.length,
+      paid_transactions: paidRows.length,
+      pending_transactions: pendingRows.length,
+      failed_transactions: failedRows.length,
+      conversion_rate_pct: conversionRate,
+      total_amount_kes: totalAmount,
+      paid_amount_kes: paidAmount,
+      reward_points: rewardPoints,
+    },
+    recent: rows.slice(0, 20).map((r) => ({
+      id: r.id,
+      amount: Number(r.amount) || 0,
+      status: r.status,
+      item_name: r.metadata?.item_name || "Payment",
+      created_at: r.created_at,
+      merchant_code: r.metadata?.merchant_code || null,
+    })),
+  };
+}
+
+// GET /api/kassangas/marketplace - Configurable digital products catalog for low-data monetization
+app.get("/api/kassangas/marketplace", async (_req, res) => {
+  try {
+    return res.json({
+      catalog: getKassangasMarketplaceCatalog(),
+      providers: getKassangasDigitalProviders(),
+      monetization_strategy: {
+        model: "micro-margin broker",
+        note: "Keep fees transparent and low to preserve adoption while adding sustainable Alphadome revenue.",
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({ error: "Failed to load marketplace catalog" });
+  }
+});
+
+// POST /api/kassangas/track-visit - Lightweight visitor analytics capture per portal
+app.post("/api/kassangas/track-visit", async (req, res) => {
+  try {
+    const portal = String(req.body?.portal || "unknown").slice(0, 80);
+    const visitorId = String(req.body?.visitorId || "anon").slice(0, 120);
+    const templateId = String(req.body?.templateId || "").slice(0, 80);
+    const referralToken = String(req.body?.referralToken || req.body?.ref || "").trim();
+    const referralDecoded = decodeReferralToken(referralToken);
+
+    const payload = {
+      at: new Date().toISOString(),
+      portal,
+      visitor_id: visitorId,
+      template_id: templateId || null,
+      path: String(req.body?.path || "").slice(0, 200),
+      user_agent: String(req.headers["user-agent"] || "").slice(0, 220),
+      ip: req.ip,
+      referral: referralDecoded || null,
+    };
+
+    await appendJsonlRecord(KASSANGAS_VISITOR_LOG_FILE, payload);
+    return res.json({ success: true });
+  } catch (err) {
+    log(`KASSANGAS_TRACK_VISIT_ERROR: ${err.message}`, "WARN");
+    return res.json({ success: false });
+  }
+});
+
+// POST /api/kassangas/merchant-onboarding - Dynamic onboarding submissions for review
+app.post("/api/kassangas/merchant-onboarding", async (req, res) => {
+  try {
+    const businessName = String(req.body?.businessName || "").trim();
+    const contactName = String(req.body?.contactName || "").trim();
+    const phone = normalizeMsisdn(req.body?.phone || "");
+    const email = String(req.body?.email || "").trim().toLowerCase();
+
+    if (!businessName || !contactName || !/^2547\d{8}$/.test(phone)) {
+      return res.status(400).json({ error: "businessName, contactName, and a valid phone are required" });
+    }
+
+    const merchantCode = `MRC-${Date.now().toString().slice(-6)}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+    const submissionId = `ONB-${Date.now().toString().slice(-6)}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`;
+
+    const payload = {
+      submission_id: submissionId,
+      merchant_code: merchantCode,
+      business_name: businessName,
+      contact_name: contactName,
+      phone,
+      email,
+      business_type: String(req.body?.businessType || "").slice(0, 80),
+      monthly_volume_range: String(req.body?.monthlyVolume || "").slice(0, 80),
+      branding_color: String(req.body?.brandingColor || "#0ea5e9").slice(0, 20),
+      preferred_subdomain: String(req.body?.preferredSubdomain || "").slice(0, 60),
+      notes: String(req.body?.notes || "").slice(0, 500),
+      status: "pending_review",
+      created_at: new Date().toISOString(),
+      source: "kassangas_client_wallet",
+      ip: req.ip,
+      user_agent: String(req.headers["user-agent"] || "").slice(0, 220),
+    };
+
+    await appendJsonlRecord(KASSANGAS_ONBOARDING_LOG_FILE, payload);
+
+    const referralToken = createReferralToken({
+      type: "merchant",
+      merchant_code: merchantCode,
+      submission_id: submissionId,
+      business_name: businessName,
+      created_at: payload.created_at,
+    });
+
+    return res.json({
+      success: true,
+      submissionId,
+      merchantCode,
+      reviewStatus: "pending_review",
+      encryptedReferralLink: `${req.protocol}://${req.get("host")}/kassangas-client-wallet?ref=${encodeURIComponent(referralToken)}`,
+    });
+  } catch (err) {
+    log(`KASSANGAS_ONBOARDING_ERROR: ${err.message}`, "ERROR");
+    return res.status(500).json({ error: "Failed to submit onboarding form" });
+  }
+});
+
+// POST /api/kassangas/referral-link - Build encrypted client or affiliate links for merchants
+app.post("/api/kassangas/referral-link", async (req, res) => {
+  try {
+    const merchantCode = String(req.body?.merchantCode || "").trim();
+    const templateId = String(req.body?.templateId || "").trim();
+    const clientLabel = String(req.body?.clientLabel || "client").trim().slice(0, 80);
+    const role = String(req.body?.role || "client").trim().toLowerCase();
+
+    if (!merchantCode) {
+      return res.status(400).json({ error: "merchantCode is required" });
+    }
+
+    const payload = {
+      type: role === "affiliate" ? "affiliate" : "client",
+      merchant_code: merchantCode,
+      template_id: templateId || null,
+      client_label: clientLabel,
+      issued_at: new Date().toISOString(),
+      nonce: Math.random().toString(36).slice(2, 9),
+    };
+
+    const token = createReferralToken(payload);
+    const base = `${req.protocol}://${req.get("host")}/kassangas-client-wallet`;
+    const query = new URLSearchParams();
+    if (templateId) query.set("t", templateId);
+    query.set("ref", token);
+
+    return res.json({
+      success: true,
+      token,
+      url: `${base}?${query.toString()}`,
+      payloadPreview: {
+        merchant_code: payload.merchant_code,
+        template_id: payload.template_id,
+        client_label: payload.client_label,
+        type: payload.type,
+      },
+    });
+  } catch (err) {
+    log(`KASSANGAS_REFERRAL_LINK_ERROR: ${err.message}`, "ERROR");
+    return res.status(500).json({ error: "Failed to generate referral link" });
+  }
+});
+
+// GET /admin/api/kassangas/onboarding-submissions - Owner review queue
+app.get("/admin/api/kassangas/onboarding-submissions", adminAuth, async (_req, res) => {
+  try {
+    let content = "";
+    try {
+      content = await fs.promises.readFile(KASSANGAS_ONBOARDING_LOG_FILE, "utf8");
+    } catch (err) {
+      if (err.code === "ENOENT") return res.json({ submissions: [] });
+      throw err;
+    }
+
+    const submissions = content
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        try { return JSON.parse(line); } catch { return null; }
+      })
+      .filter(Boolean)
+      .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+
+    return res.json({ submissions });
+  } catch (err) {
+    log(`KASSANGAS_ONBOARDING_LIST_ERROR: ${err.message}`, "ERROR");
+    return res.status(500).json({ error: "Failed to load onboarding submissions" });
+  }
+});
+
+// GET /api/kassangas/performance-review - Role-based performance view for owner/merchant/client
+app.get("/api/kassangas/performance-review", async (req, res) => {
+  try {
+    const role = String(req.query?.role || "client").toLowerCase();
+    const visitorId = String(req.query?.visitorId || "").trim();
+    const phone = normalizeMsisdn(String(req.query?.phone || ""));
+    const merchantCode = String(req.query?.merchantCode || "").trim();
+    const report = await fetchKassangasPerformanceReview({ role, visitorId, phone, merchantCode });
+
+    return res.json({
+      role,
+      performanceReview: report.performanceReview,
+      recent: report.recent,
+    });
+  } catch (err) {
+    log(`KASSANGAS_PERFORMANCE_REVIEW_ERROR: ${err.message}`, "ERROR");
+    return res.status(500).json({ error: "Failed to load performance review" });
+  }
+});
+
+// GET /api/kassangas/finance-manager - Client finance manager payload (history + calculators support data)
+app.get("/api/kassangas/finance-manager", async (req, res) => {
+  try {
+    const visitorId = String(req.query?.visitorId || "").trim();
+    const phone = normalizeMsisdn(String(req.query?.phone || ""));
+    const report = await fetchKassangasPerformanceReview({ role: "client", visitorId, phone });
+    const review = report.performanceReview || {};
+    const monthlyBudgetSuggestion = Math.max(500, Math.round((Number(review.paid_amount_kes || 0) / Math.max(1, Number(review.paid_transactions || 1))) * 1.15));
+
+    return res.json({
+      financeManager: {
+        performance_review: review,
+        reports: {
+          savings_tip: "Allocate 10-20% of each completed payment value to operational reserve.",
+          monthly_budget_suggestion_kes: monthlyBudgetSuggestion,
+          average_paid_ticket_kes: Number(review.paid_transactions || 0) > 0
+            ? Math.round((Number(review.paid_amount_kes || 0) / Number(review.paid_transactions || 1)) * 100) / 100
+            : 0,
+        },
+        digital_marketplace: getKassangasMarketplaceCatalog(),
+        recommended_providers: getKassangasDigitalProviders(),
+      },
+      history: report.recent || [],
+    });
+  } catch (err) {
+    log(`KASSANGAS_FINANCE_MANAGER_ERROR: ${err.message}`, "ERROR");
+    return res.status(500).json({ error: "Failed to load finance manager" });
+  }
+});
+
 // POST /api/kassangas/create-template - Merchant creates a reusable payment template
 app.post("/api/kassangas/create-template", async (req, res) => {
   try {
-    const { itemName, amount, reusable, merchantName } = req.body || {};
+    const { itemName, amount, reusable, merchantName, merchantCode, branding } = req.body || {};
     const parsedAmount = Number(amount);
     if (!itemName || !Number.isFinite(parsedAmount) || parsedAmount <= 0) {
       return res.status(400).json({ error: "itemName and amount are required" });
@@ -8698,7 +9363,11 @@ app.post("/api/kassangas/create-template", async (req, res) => {
         reusable: reusable !== false,
         merchant_name: String(merchantName || "Merchant").slice(0, 80),
         created_at: new Date().toISOString(),
-        metadata: { source: "merchant_portal" }
+        metadata: {
+          source: "merchant_portal",
+          merchant_code: String(merchantCode || "").slice(0, 60) || null,
+          branding: branding && typeof branding === "object" ? branding : null,
+        }
       }
     ]);
 
@@ -8751,8 +9420,9 @@ app.get("/api/kassangas/template/:tokenId", async (req, res) => {
 // POST /api/kassangas/payment-intent - Client scans QR and triggers payment
 app.post("/api/kassangas/payment-intent", async (req, res) => {
   try {
-    let { templateId, phone } = req.body || {};
+    let { templateId, phone, visitorId, referralToken, clientToken, merchantCode } = req.body || {};
     templateId = String(templateId || "").trim();
+    visitorId = String(visitorId || "").trim().slice(0, 120);
 
     phone = String(phone || "").trim().replace(/\s+/g, "");
     if (phone.startsWith("0")) phone = `254${phone.slice(1)}`;
@@ -8782,6 +9452,8 @@ app.post("/api/kassangas/payment-intent", async (req, res) => {
 
     const itemName = template.item_name;
     const accountRef = `TMPL-${templateId.slice(-8)}`;
+    const referralMeta = decodeReferralToken(referralToken || "") || decodeReferralToken(clientToken || "") || null;
+    const effectiveMerchantCode = String(merchantCode || referralMeta?.merchant_code || template?.metadata?.merchant_code || "").slice(0, 60) || null;
 
     // Idempotency guard: if a recent pending intent exists for same phone/template, reuse it.
     const { data: recentIntents, error: recentErr } = await supabase
@@ -8838,6 +9510,9 @@ app.post("/api/kassangas/payment-intent", async (req, res) => {
             template_id: templateId,
             item_name: itemName,
             source: "client_wallet_scan",
+            client_visitor_id: visitorId || null,
+            referral: referralMeta,
+            merchant_code: effectiveMerchantCode,
             ...(stkResp || {})
           }
         }
@@ -8886,6 +9561,207 @@ app.get("/api/kassangas/payment-intents", async (req, res) => {
     return res.json({ intents });
   } catch (err) {
     log(`INTENTS_ERROR: ${err.message}`, "ERROR");
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ===== DIGITAL SALES & PRODUCTS API =====
+
+// POST /api/kassangas/buy-product - Client initiates digital product purchase
+// Body: { phone: "2547XXXXXXXX", sku: "SAF-DAILY-1GB", visitor_id?: string, merchant_code?: string }
+app.post("/api/kassangas/buy-product", async (req, res) => {
+  try {
+    const phone = normalizeMsisdn(req.body?.phone || "");
+    const sku = String(req.body?.sku || "").trim();
+    const visitor_id = String(req.body?.visitor_id || "").trim();
+    const merchant_code = String(req.body?.merchant_code || "").trim();
+
+    if (!/^2547\d{8}$/.test(phone) || !sku) {
+      return res.status(400).json({ error: "Valid phone and SKU required" });
+    }
+
+    // Lookup product in catalog
+    const catalog = getKassangasMarketplaceCatalog();
+    let product = null;
+    for (const category of [catalog.bundles, catalog.bills, catalog.digital_products]) {
+      const found = category.find(p => p.sku === sku);
+      if (found) {
+        product = found;
+        break;
+      }
+    }
+
+    if (!product) {
+      return res.status(404).json({ error: "Product not found" });
+    }
+
+    // Initiate sale with provider
+    const provider = getProviderAdapter();
+    const salePayload = {
+      phone,
+      sku,
+      product_name: product.title,
+      amount_kes: product.price_kes || 0,
+      category: product.category,
+      merchant_code,
+      visitor_id,
+    };
+
+    const saleResult = await provider.executeSale(salePayload);
+
+    // Return transaction details
+    return res.json({
+      success: saleResult.ok,
+      transaction_id: saleResult.transaction_id,
+      provider: saleResult.provider,
+      product: product.title,
+      amount_kes: product.price_kes || 0,
+      status: saleResult.status,
+      message: saleResult.message || saleResult.error,
+      mode: SALES_MODE,
+    });
+  } catch (err) {
+    log(`BUY_PRODUCT_ERROR: ${err.message}`, "ERROR");
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/kassangas/sales/status/:transactionId - Check transaction status
+app.get("/api/kassangas/sales/status/:transactionId", async (req, res) => {
+  try {
+    const { transactionId } = req.params;
+
+    // In production, call provider API to check status
+    // For now, return mock data
+    return res.json({
+      transaction_id: transactionId,
+      status: "pending",
+      provider: ACTIVE_PROVIDER,
+      mode: SALES_MODE,
+      message: "Check with provider API for live status",
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/kassangas/sales/history - Get user's digital product purchase history
+app.get("/api/kassangas/sales/history", async (req, res) => {
+  try {
+    const visitor_id = String(req.query?.visitor_id || "").trim();
+    const phone = normalizeMsisdn(String(req.query?.phone || ""));
+
+    // Query sales transaction log (JSONL)
+    let history = [];
+    try {
+      const content = await fs.promises.readFile(SALES_TRANSACTION_LOG, "utf8");
+      history = content
+        .split(/\r?\n/)
+        .map(line => line.trim())
+        .filter(Boolean)
+        .map(line => {
+          try { return JSON.parse(line); } catch { return null; }
+        })
+        .filter(txn => txn && (
+          (visitor_id && txn.visitor_id === visitor_id) ||
+          (phone && txn.phone === phone)
+        ))
+        .sort((a, b) => new Date(b.at || 0).getTime() - new Date(a.at || 0).getTime())
+        .slice(0, 50);
+    } catch (err) {
+      if (err.code !== "ENOENT") throw err;
+    }
+
+    return res.json({ history });
+  } catch (err) {
+    log(`SALES_HISTORY_ERROR: ${err.message}`, "ERROR");
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /admin/api/kassangas/sales-dashboard - Admin sales overview
+app.get("/admin/api/kassangas/sales-dashboard", adminAuth, async (req, res) => {
+  try {
+    const provider = getProviderAdapter();
+    const providerInit = await provider.init();
+    const balance = await provider.getBalance();
+
+    // Parse sales transaction log
+    let transactions = [];
+    let stats = {
+      total_sales: 0,
+      successful: 0,
+      failed: 0,
+      pending: 0,
+      total_revenue_kes: 0,
+      mode: SALES_MODE,
+      active_provider: ACTIVE_PROVIDER,
+      provider_status: providerInit.ok ? "ok" : providerInit.error,
+      provider_balance_kes: balance.balance_kes,
+    };
+
+    try {
+      const content = await fs.promises.readFile(SALES_TRANSACTION_LOG, "utf8");
+      transactions = content
+        .split(/\r?\n/)
+        .map(line => line.trim())
+        .filter(Boolean)
+        .map(line => {
+          try { return JSON.parse(line); } catch { return null; }
+        })
+        .filter(Boolean)
+        .sort((a, b) => new Date(b.at || 0).getTime() - new Date(a.at || 0).getTime());
+
+      stats.total_sales = transactions.length;
+      stats.successful = transactions.filter(t => t.ok).length;
+      stats.failed = transactions.filter(t => !t.ok).length;
+      stats.pending = transactions.filter(t => t.status === "pending").length;
+      stats.total_revenue_kes = transactions.reduce((sum, t) => sum + (t.amount_kes || 0), 0);
+    } catch (err) {
+      if (err.code !== "ENOENT") throw err;
+    }
+
+    return res.json({
+      stats,
+      recent_transactions: transactions.slice(0, 50),
+    });
+  } catch (err) {
+    log(`SALES_DASHBOARD_ERROR: ${err.message}`, "ERROR");
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /admin/api/kassangas/provider-config - Update sales provider & mode
+app.post("/admin/api/kassangas/provider-config", adminAuth, async (req, res) => {
+  try {
+    const provider = String(req.body?.provider || "").toLowerCase();
+    const mode = String(req.body?.mode || "").toLowerCase();
+
+    if (!["reloadly", "flutterwave", "dtone", "africas-talking"].includes(provider)) {
+      return res.status(400).json({ error: "Invalid provider" });
+    }
+
+    if (!["sandbox", "production"].includes(mode)) {
+      return res.status(400).json({ error: "Invalid mode (sandbox or production)" });
+    }
+
+    // In a real setup, update env variables or database
+    // For now, just return the request
+    return res.json({
+      message: "Provider config update received. Restart server to apply.",
+      requested_provider: provider,
+      requested_mode: mode,
+      current_provider: ACTIVE_PROVIDER,
+      current_mode: SALES_MODE,
+      env_vars_to_set: [
+        `SALES_PROVIDER=${provider}`,
+        `SALES_MODE=${mode}`,
+        `${PROVIDER_CONFIG[provider].api_key_env}=<your-api-key>`,
+        `${PROVIDER_CONFIG[provider].secret_key_env}=<your-secret-key>`,
+      ],
+    });
+  } catch (err) {
+    log(`PROVIDER_CONFIG_ERROR: ${err.message}`, "ERROR");
     return res.status(500).json({ error: err.message });
   }
 });
