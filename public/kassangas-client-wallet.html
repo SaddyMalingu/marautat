@@ -809,10 +809,37 @@
       `;
     }
 
-    window.handleMarketplaceAction = (sku, title) => {
-      showStatus("manualStatus", "ok", `${title} will be fulfilled through Alphadome Digital Marketplace once provider rails are finalized.`);
-      tabs.forEach(b => b.classList.toggle("active", b.getAttribute("data-tab") === "finance"));
-      tabContents.forEach(c => c.classList.toggle("active", c.id === "finance-tab"));
+    window.handleMarketplaceAction = async (sku, title) => {
+      try {
+        const phone = getDefaultPhone() || normalizePhone(manualPhoneInput.value || "");
+        if (!/^2547\d{8}$/.test(phone)) {
+          showStatus("manualStatus", "error", "Enter a valid phone number first (2547XXXXXXXX), then retry.");
+          tabs.forEach(b => b.classList.toggle("active", b.getAttribute("data-tab") === "manual"));
+          tabContents.forEach(c => c.classList.toggle("active", c.id === "manual-tab"));
+          return;
+        }
+
+        showStatus("manualStatus", "ok", `Processing ${title} purchase...`);
+        const res = await fetch("/api/kassangas/buy-product", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            phone,
+            sku,
+            visitor_id: getVisitorId(),
+            referralToken,
+          })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.error || data.message || "Purchase failed");
+
+        showStatus("manualStatus", "ok", `${title} purchase complete. TXN: ${data.transaction_id}`);
+        tabs.forEach(b => b.classList.toggle("active", b.getAttribute("data-tab") === "finance"));
+        tabContents.forEach(c => c.classList.toggle("active", c.id === "finance-tab"));
+        await loadFinanceManager();
+      } catch (err) {
+        showStatus("manualStatus", "error", err.message);
+      }
     };
 
     runCalculatorBtn.addEventListener("click", () => {

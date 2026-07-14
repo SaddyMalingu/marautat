@@ -8858,7 +8858,7 @@ class ProviderAdapter {
 
   async executeSale(payload) {
     // Execute sale based on provider
-    const { phone, sku, product_name, amount_kes, category, merchant_code, visitor_id } = payload;
+    const { phone, sku, product_name, amount_kes, alphadome_fee_kes, category, merchant_code, visitor_id } = payload;
 
     if (this.mode === "sandbox") {
       // Sandbox: simulate success with 95% rate
@@ -8870,7 +8870,11 @@ class ProviderAdapter {
         provider: this.providerKey,
         phone,
         sku,
+        product_name,
+        category,
         amount_kes,
+        alphadome_fee_kes: Number(alphadome_fee_kes || 0),
+        merchant_net_kes: Math.max(0, Number(amount_kes || 0) - Number(alphadome_fee_kes || 0)),
         status: success ? "completed" : "failed",
         message: success ? "Simulated success" : "Simulated failure (test)",
       };
@@ -8902,7 +8906,11 @@ class ProviderAdapter {
         provider: this.providerKey,
         phone,
         sku,
+        product_name,
+        category,
         amount_kes,
+        alphadome_fee_kes: Number(alphadome_fee_kes || 0),
+        merchant_net_kes: Math.max(0, Number(amount_kes || 0) - Number(alphadome_fee_kes || 0)),
         status: "pending",
         message: "Transaction sent to provider (not yet integrated)",
       };
@@ -9067,6 +9075,47 @@ function getKassangasMarketplaceCatalog() {
       }
     ]
   };
+}
+
+function getMarketplaceItemBySku(sku) {
+  const catalog = getKassangasMarketplaceCatalog();
+  const allItems = [
+    ...(catalog.bundles || []),
+    ...(catalog.bills || []),
+    ...(catalog.digital_products || []),
+  ];
+  return allItems.find((item) => item.sku === sku) || null;
+}
+
+async function getSalesTransactions({ merchantCode = "", visitorId = "", phone = "", limit = 200 } = {}) {
+  let rows = [];
+  try {
+    const content = await fs.promises.readFile(SALES_TRANSACTION_LOG, "utf8");
+    rows = content
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        try { return JSON.parse(line); } catch { return null; }
+      })
+      .filter(Boolean);
+  } catch (err) {
+    if (err.code !== "ENOENT") throw err;
+  }
+
+  const merchant = String(merchantCode || "").trim();
+  const vis = String(visitorId || "").trim();
+  const msisdn = normalizeMsisdn(String(phone || ""));
+
+  rows = rows.filter((txn) => {
+    if (merchant && txn.merchant_code === merchant) return true;
+    if (vis && txn.visitor_id === vis) return true;
+    if (msisdn && normalizeMsisdn(txn.phone || "") === msisdn) return true;
+    return !merchant && !vis && !msisdn;
+  });
+
+  rows.sort((a, b) => new Date(b.at || 0).getTime() - new Date(a.at || 0).getTime());
+  return rows.slice(0, Math.max(1, Number(limit) || 200));
 }
 
 async function fetchKassangasPerformanceReview({ role = "client", visitorId = "", phone = "", merchantCode = "" } = {}) {
@@ -9345,6 +9394,79 @@ app.get("/api/kassangas/finance-manager", async (req, res) => {
   }
 });
 
+// GET /api/kassangas/merchant-finance-manager - Merchant performance + bundle sales metrics
+app.get("/api/kassangas/merchant-finance-manager", async (req, res) => {
+  try {
+    const merchantCode = String(req.query?.merchantCode || "").trim();
+    if (!merchantCode) {
+      return res.status(400).json({ error: "merchantCode is required" });
+    }
+
+    const paymentReport = await fetchKassangasPerformanceReview({ role: "merchant", merchantCode });
+    const salesRows = await getSalesTransactions({ merchantCode, limit: 500 });
+
+    const successfulSales = salesRows.filter((r) => r.ok || r.status === "completed");
+    const failedSales = salesRows.filter((r) => !(r.ok || r.status === "completed"));
+    const pendingSales = salesRows.filter((r) => r.status === "pending");
+
+    const grossSalesKes = successfulSales.reduce((sum, r) => sum + (Number(r.amount_kes) || 0), 0);
+    const alphadomeRevenueKes = successfulSales.reduce((sum, r) => sum + (Number(r.alphadome_fee_kes) || 0), 0);
+    const merchantNetKes = Math.max(0, grossSalesKes - alphadomeRevenueKes);
+    const salesConversionPct = salesRows.length
+      ? Math.round((successfulSales.length / salesRows.length) * 1000) / 10
+      : 0;
+
+    const topSkus = {};
+    successfulSales.forEach((row) => {
+      const sku = row.sku || "UNKNOWN";
+      topSkus[sku] = (topSkus[sku] || 0) + 1;
+    });
+
+    const topProducts = Object.entries(topSkus)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([sku, count]) => {
+        const item = getMarketplaceItemBySku(sku);
+        return {
+          sku,
+          title: item?.title || sku,
+          category: item?.category || "other",
+          count,
+        };
+      });
+
+    const cashflowReserveSuggestion = Math.round(Math.max(500, merchantNetKes * 0.15));
+
+    return res.json({
+      merchantCode,
+      performanceReview: {
+        checkout_payments: paymentReport.performanceReview,
+        bundle_sales: {
+          total_sales: salesRows.length,
+          successful_sales: successfulSales.length,
+          failed_sales: failedSales.length,
+          pending_sales: pendingSales.length,
+          conversion_rate_pct: salesConversionPct,
+          gross_sales_kes: grossSalesKes,
+          alphadome_revenue_kes: alphadomeRevenueKes,
+          merchant_net_kes: merchantNetKes,
+          avg_ticket_kes: successfulSales.length ? Math.round((grossSalesKes / successfulSales.length) * 100) / 100 : 0,
+        },
+      },
+      reports: {
+        top_products: topProducts,
+        reserve_suggestion_kes: cashflowReserveSuggestion,
+        note: "Use Performance Review to track completed bundle sales, conversion, and net take-home after platform fee.",
+      },
+      recent_sales: salesRows.slice(0, 20),
+      recent_checkout_payments: paymentReport.recent || [],
+    });
+  } catch (err) {
+    log(`KASSANGAS_MERCHANT_FINANCE_MANAGER_ERROR: ${err.message}`, "ERROR");
+    return res.status(500).json({ error: "Failed to load merchant finance manager" });
+  }
+});
+
 // POST /api/kassangas/create-template - Merchant creates a reusable payment template
 app.post("/api/kassangas/create-template", async (req, res) => {
   try {
@@ -9574,22 +9696,16 @@ app.post("/api/kassangas/buy-product", async (req, res) => {
     const phone = normalizeMsisdn(req.body?.phone || "");
     const sku = String(req.body?.sku || "").trim();
     const visitor_id = String(req.body?.visitor_id || "").trim();
-    const merchant_code = String(req.body?.merchant_code || "").trim();
+    const referralToken = String(req.body?.referralToken || req.body?.ref || "").trim();
+    const referralDecoded = decodeReferralToken(referralToken);
+    const merchant_code = String(req.body?.merchant_code || referralDecoded?.merchant_code || "").trim();
 
     if (!/^2547\d{8}$/.test(phone) || !sku) {
       return res.status(400).json({ error: "Valid phone and SKU required" });
     }
 
     // Lookup product in catalog
-    const catalog = getKassangasMarketplaceCatalog();
-    let product = null;
-    for (const category of [catalog.bundles, catalog.bills, catalog.digital_products]) {
-      const found = category.find(p => p.sku === sku);
-      if (found) {
-        product = found;
-        break;
-      }
-    }
+    const product = getMarketplaceItemBySku(sku);
 
     if (!product) {
       return res.status(404).json({ error: "Product not found" });
@@ -9602,6 +9718,7 @@ app.post("/api/kassangas/buy-product", async (req, res) => {
       sku,
       product_name: product.title,
       amount_kes: product.price_kes || 0,
+      alphadome_fee_kes: Number(product.alphadome_fee_kes || 0),
       category: product.category,
       merchant_code,
       visitor_id,
@@ -9616,6 +9733,8 @@ app.post("/api/kassangas/buy-product", async (req, res) => {
       provider: saleResult.provider,
       product: product.title,
       amount_kes: product.price_kes || 0,
+      alphadome_fee_kes: Number(product.alphadome_fee_kes || 0),
+      merchant_net_kes: Math.max(0, Number(product.price_kes || 0) - Number(product.alphadome_fee_kes || 0)),
       status: saleResult.status,
       message: saleResult.message || saleResult.error,
       mode: SALES_MODE,

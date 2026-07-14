@@ -123,6 +123,12 @@
     .helper-note { color: var(--muted); font-size: 0.84rem; margin-top: 8px; }
     .market-mini { margin-top: 12px; padding: 12px; border-radius: 10px; background: rgba(4,12,20,0.68); border: 1px solid rgba(255,255,255,0.08); }
     .market-mini strong { color: var(--accent-2); }
+    .mini-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 10px; }
+    .mini-card { border: 1px solid rgba(255,255,255,0.12); border-radius: 10px; padding: 10px; background: rgba(255,255,255,0.04); }
+    .mini-card span { display: block; font-size: 0.76rem; color: var(--muted); }
+    .mini-card strong { font-size: 1rem; color: var(--text); }
+    .report-list { margin: 8px 0 0 0; padding-left: 18px; color: var(--muted); font-size: 0.84rem; }
+    .inline-grid { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
     #floating-whatsapp {
       position: fixed !important;
       right: calc(16px + env(safe-area-inset-right, 0px));
@@ -166,6 +172,7 @@
       #qrSection { padding: 12px; }
       #qrCode img, #qrCode canvas { width: min(72vw, 220px); }
       .helper-actions { grid-template-columns: 1fr; }
+      .mini-grid, .inline-grid { grid-template-columns: 1fr; }
       #floating-whatsapp { right: calc(14px + env(safe-area-inset-right, 0px)); bottom: calc(14px + env(safe-area-inset-bottom, 0px)); }
       #floating-whatsapp img { width: 52px; height: 52px; }
     }
@@ -213,6 +220,41 @@
           </div>
           <div class="market-mini" id="connectivityStatus">Bundle rescue and digital marketplace shortcuts will appear here.</div>
         </div>
+
+        <div class="helper-panel">
+          <h3>Merchant Finance Manager</h3>
+          <p class="helper-note">Performance Review for bundle sales, checkout conversions, and projected reserve recommendations.</p>
+          <div id="merchantFinanceCards" class="mini-grid"></div>
+
+          <div class="field" style="margin-top:10px;">
+            <label for="merchantCalcMonthlyTarget">Monthly Sales Target (KES)</label>
+            <input id="merchantCalcMonthlyTarget" type="number" min="0" placeholder="e.g. 120000" />
+          </div>
+          <div class="field">
+            <label for="merchantCalcCurrentSales">Current Sales (KES)</label>
+            <input id="merchantCalcCurrentSales" type="number" min="0" placeholder="e.g. 42000" />
+          </div>
+          <button type="button" class="helper-btn" id="runMerchantCalculatorBtn">Run Sales Calculator</button>
+          <div id="merchantCalculatorResult" class="mini-grid"></div>
+
+          <div class="inline-grid" style="margin-top:10px;">
+            <div>
+              <label for="merchantBundleSku">Bundle/Product</label>
+              <select id="merchantBundleSku" style="width:100%; border: 1px solid rgba(255,255,255,0.14); border-radius: 10px; background: rgba(4,12,20,0.8); color: var(--text); padding: 10px 12px; font-size: 0.95rem; font-family: inherit; outline: none;"></select>
+            </div>
+            <div>
+              <label for="merchantClientPhone">Client Phone</label>
+              <input id="merchantClientPhone" type="tel" placeholder="2547XXXXXXXX" />
+            </div>
+          </div>
+          <button type="button" class="helper-btn" id="merchantBuyBundleBtn" style="margin-top:10px;">Buy Bundle For Client</button>
+          <div id="merchantBundleStatus" class="status" aria-live="polite"></div>
+
+          <div class="market-mini" style="margin-top:12px;">
+            <strong>Reports</strong>
+            <ul id="merchantReports" class="report-list"><li>Reports will load after your first template or bundle sale.</li></ul>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -232,8 +274,25 @@
     const shareCheckoutBtn = document.getElementById("shareCheckoutBtn");
     const copyBundleLinkBtn = document.getElementById("copyBundleLinkBtn");
     const openClientFinanceBtn = document.getElementById("openClientFinanceBtn");
+    const runMerchantCalculatorBtn = document.getElementById("runMerchantCalculatorBtn");
+    const merchantBuyBundleBtn = document.getElementById("merchantBuyBundleBtn");
+    const merchantBundleStatus = document.getElementById("merchantBundleStatus");
+    const merchantBundleSku = document.getElementById("merchantBundleSku");
+    const merchantClientPhone = document.getElementById("merchantClientPhone");
     let currentTemplateId = null;
     let currentReferralLink = "";
+    let merchantCode = "";
+
+    function getMerchantCode() {
+      const key = "kassangas_merchant_code_v1";
+      let code = localStorage.getItem(key) || "";
+      if (!code) {
+        code = `MRC-${Date.now().toString().slice(-6)}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+        localStorage.setItem(key, code);
+      }
+      merchantCode = code;
+      return code;
+    }
 
     function loadScript(src) {
       return new Promise((resolve, reject) => {
@@ -287,7 +346,7 @@
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            merchantCode: "KASSANGAS-MERCHANT",
+            merchantCode: getMerchantCode(),
             templateId: currentTemplateId,
             role: "affiliate",
             clientLabel: document.getElementById("itemName").value.trim() || "Client Checkout"
@@ -308,9 +367,67 @@
       const checkoutUrl = `${window.location.origin}/kassangas-client-wallet?t=${currentTemplateId || ""}`;
       statusEl.innerHTML = `
         <strong>Low-Data Checkout Mode</strong><br/>
+        Merchant code: ${getMerchantCode()}<br/>
         Client checkout link: ${checkoutUrl}<br/>
         Buy bundles flow: ${window.location.origin}/kassangas-client-wallet?t=${currentTemplateId || ""}#finance-tab
       `;
+    }
+
+    function setMerchantBundleStatus(type, message) {
+      merchantBundleStatus.className = `status show ${type}`;
+      merchantBundleStatus.textContent = message;
+    }
+
+    function normalizePhone(input) {
+      let value = String(input || "").trim().replace(/\s+/g, "");
+      if (value.startsWith("+")) value = value.slice(1);
+      if (value.startsWith("0")) value = `254${value.slice(1)}`;
+      if (/^7\d{8}$/.test(value)) value = `254${value}`;
+      return value;
+    }
+
+    async function loadMerchantBundleOptions() {
+      try {
+        const res = await fetch("/api/kassangas/marketplace");
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Failed to load marketplace");
+        const products = [
+          ...(data.catalog?.bundles || []),
+          ...(data.catalog?.bills || []),
+          ...(data.catalog?.digital_products || []),
+        ];
+        merchantBundleSku.innerHTML = products.map((item) => {
+          const price = item.price_kes ? `KES ${item.price_kes}` : item.price_hint_kes || "Flexible";
+          return `<option value="${item.sku}">${item.title} (${price})</option>`;
+        }).join("");
+      } catch (_) {
+        merchantBundleSku.innerHTML = '<option value="SAF-DAILY-1GB">Safaricom Daily 1GB</option>';
+      }
+    }
+
+    async function loadMerchantFinanceManager() {
+      try {
+        const res = await fetch(`/api/kassangas/merchant-finance-manager?merchantCode=${encodeURIComponent(getMerchantCode())}`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Failed to load merchant finance manager");
+
+        const bundleReview = data.performanceReview?.bundle_sales || {};
+        document.getElementById("merchantFinanceCards").innerHTML = `
+          <div class="mini-card"><span>Bundle Sales</span><strong>${bundleReview.total_sales || 0}</strong></div>
+          <div class="mini-card"><span>Conversion</span><strong>${bundleReview.conversion_rate_pct || 0}%</strong></div>
+          <div class="mini-card"><span>Gross Sales</span><strong>KES ${(bundleReview.gross_sales_kes || 0).toLocaleString()}</strong></div>
+          <div class="mini-card"><span>Net Take Home</span><strong>KES ${(bundleReview.merchant_net_kes || 0).toLocaleString()}</strong></div>
+        `;
+
+        const topProducts = data.reports?.top_products || [];
+        const reportItems = [
+          `Reserve suggestion: KES ${(data.reports?.reserve_suggestion_kes || 0).toLocaleString()}`,
+          ...topProducts.map((p) => `Top product: ${p.title} (${p.count} sales)`),
+        ];
+        document.getElementById("merchantReports").innerHTML = reportItems.map((line) => `<li>${line}</li>`).join("");
+      } catch (err) {
+        document.getElementById("merchantFinanceCards").innerHTML = `<div class="mini-card"><span>Status</span><strong>${err.message}</strong></div>`;
+      }
     }
 
     form.addEventListener("submit", async (e) => {
@@ -329,7 +446,7 @@
         const res = await fetch("/api/kassangas/create-template", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ itemName, amount, reusable: true, merchantName: "Kassangas" })
+          body: JSON.stringify({ itemName, amount, reusable: true, merchantName: "Kassangas", merchantCode: getMerchantCode() })
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error);
@@ -361,6 +478,7 @@
         qrSection.classList.add("show");
         await buildReferralLink();
         updateConnectivityAssistant();
+        await loadMerchantFinanceManager();
         if (qrAvailable) {
           showStatus("ok", "QR ready! Customers can scan it.");
         }
@@ -420,6 +538,52 @@
       if (!currentTemplateId) return;
       window.open(`${window.location.origin}/kassangas-client-wallet?t=${currentTemplateId}#finance-tab`, "_blank");
     });
+
+    runMerchantCalculatorBtn.addEventListener("click", () => {
+      const target = Number(document.getElementById("merchantCalcMonthlyTarget").value || 0);
+      const current = Number(document.getElementById("merchantCalcCurrentSales").value || 0);
+      const gap = Math.max(0, target - current);
+      const dailyNeeded = Math.ceil(gap / 30);
+      document.getElementById("merchantCalculatorResult").innerHTML = `
+        <div class="mini-card"><span>Remaining Gap</span><strong>KES ${gap.toLocaleString()}</strong></div>
+        <div class="mini-card"><span>Daily Target</span><strong>KES ${dailyNeeded.toLocaleString()}</strong></div>
+      `;
+    });
+
+    merchantBuyBundleBtn.addEventListener("click", async () => {
+      const phone = normalizePhone(merchantClientPhone.value || "");
+      const sku = String(merchantBundleSku.value || "").trim();
+      if (!/^2547\d{8}$/.test(phone) || !sku) {
+        setMerchantBundleStatus("error", "Valid client phone and bundle selection are required.");
+        return;
+      }
+
+      setMerchantBundleStatus("ok", "Processing bundle purchase...");
+      try {
+        const res = await fetch("/api/kassangas/buy-product", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            phone,
+            sku,
+            merchant_code: getMerchantCode(),
+            visitor_id: `merchant_${Date.now().toString(36)}`,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || data.message || "Bundle purchase failed");
+        }
+        setMerchantBundleStatus("ok", `Bundle purchase complete. TXN: ${data.transaction_id} | Net: KES ${(data.merchant_net_kes || 0).toLocaleString()}`);
+        await loadMerchantFinanceManager();
+      } catch (err) {
+        setMerchantBundleStatus("error", err.message);
+      }
+    });
+
+    getMerchantCode();
+    loadMerchantBundleOptions();
+    loadMerchantFinanceManager();
   </script>
 </body>
 </html>
