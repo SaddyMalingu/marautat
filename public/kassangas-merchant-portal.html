@@ -129,6 +129,7 @@
     .mini-card strong { font-size: 1rem; color: var(--text); }
     .report-list { margin: 8px 0 0 0; padding-left: 18px; color: var(--muted); font-size: 0.84rem; }
     .inline-grid { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .provider-note { margin-top: 8px; color: var(--muted); font-size: 0.8rem; }
     #floating-whatsapp {
       position: fixed !important;
       right: calc(16px + env(safe-area-inset-right, 0px));
@@ -247,6 +248,11 @@
               <input id="merchantClientPhone" type="tel" placeholder="2547XXXXXXXX" />
             </div>
           </div>
+          <div class="field" style="margin-top:10px;">
+            <label for="merchantProviderSelect">Provider Test Option</label>
+            <select id="merchantProviderSelect" style="width:100%; border: 1px solid rgba(255,255,255,0.14); border-radius: 10px; background: rgba(4,12,20,0.8); color: var(--text); padding: 10px 12px; font-size: 0.95rem; font-family: inherit; outline: none;"></select>
+            <div id="merchantProviderNote" class="provider-note">Provider options loading...</div>
+          </div>
           <button type="button" class="helper-btn" id="merchantBuyBundleBtn" style="margin-top:10px;">Buy Bundle For Client</button>
           <div id="merchantBundleStatus" class="status" aria-live="polite"></div>
 
@@ -279,6 +285,7 @@
     const merchantBundleStatus = document.getElementById("merchantBundleStatus");
     const merchantBundleSku = document.getElementById("merchantBundleSku");
     const merchantClientPhone = document.getElementById("merchantClientPhone");
+    const merchantProviderSelect = document.getElementById("merchantProviderSelect");
     let currentTemplateId = null;
     let currentReferralLink = "";
     let merchantCode = "";
@@ -402,6 +409,36 @@
         }).join("");
       } catch (_) {
         merchantBundleSku.innerHTML = '<option value="SAF-DAILY-1GB">Safaricom Daily 1GB</option>';
+      }
+    }
+
+    async function loadProviderOptions() {
+      try {
+        const selectedSku = String(merchantBundleSku.value || "SAF-DAILY-1GB");
+        const res = await fetch(`/api/kassangas/provider-options?sku=${encodeURIComponent(selectedSku)}`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Failed to load providers");
+
+        merchantProviderSelect.innerHTML = (data.options || []).map((option) => {
+          const badge = option.sandbox_ready ? "sandbox-ready" : "setup-needed";
+          return `<option value="${option.key}">${option.name} [${option.locality}] - ${badge}</option>`;
+        }).join("");
+
+        const best = (data.options || []).find((option) => option.key === "africas-talking" && option.can_handle_selected_category)
+          || (data.options || []).find((option) => option.can_handle_selected_category)
+          || null;
+        if (best) {
+          merchantProviderSelect.value = best.key;
+        }
+
+        const lines = (data.options || [])
+          .filter((option) => option.can_handle_selected_category)
+          .slice(0, 3)
+          .map((option) => `${option.name}: ${option.onboarding.replace(/_/g, " ")}`);
+        document.getElementById("merchantProviderNote").textContent = lines.join(" | ") || data.fastest_revenue_path?.note || "Choose a provider.";
+      } catch (err) {
+        merchantProviderSelect.innerHTML = '<option value="africas-talking">Africa\'s Talking</option>';
+        document.getElementById("merchantProviderNote").textContent = err.message;
       }
     }
 
@@ -568,6 +605,8 @@
             sku,
             merchant_code: getMerchantCode(),
             visitor_id: `merchant_${Date.now().toString(36)}`,
+            provider: merchantProviderSelect.value,
+            fulfillment_provider: "africas-talking",
           }),
         });
         const data = await res.json();
@@ -583,6 +622,8 @@
 
     getMerchantCode();
     loadMerchantBundleOptions();
+    merchantBundleSku.addEventListener("change", loadProviderOptions);
+    loadProviderOptions();
     loadMerchantFinanceManager();
   </script>
 </body>

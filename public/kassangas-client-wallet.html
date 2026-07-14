@@ -801,6 +801,18 @@
 
       const providerText = (providers.recommended || []).map(p => `<li>${p.provider}: ${p.fit}</li>`).join("");
       document.getElementById("marketplaceWrap").innerHTML = `
+        <div class="field" style="margin-bottom:12px;">
+          <label for="marketplaceProviderSelect">Provider Test Option</label>
+          <select id="marketplaceProviderSelect" style="width:100%; border: 1px solid rgba(255,255,255,0.14); border-radius: 10px; background: rgba(4,12,20,0.8); color: var(--text); padding: 10px 12px; font-size: 0.95rem; font-family: inherit; outline: none;">
+            <option value="africas-talking">Africa's Talking</option>
+            <option value="intasend">IntaSend</option>
+            <option value="safaricom-daraja">Safaricom Daraja</option>
+            <option value="flutterwave">Flutterwave Bills</option>
+            <option value="reloadly">Reloadly</option>
+            <option value="dtone">DT One</option>
+            <option value="tingg">Tingg</option>
+          </select>
+        </div>
         <div class="market-grid">${cards || '<p style="color:var(--muted);">No products configured yet.</p>'}</div>
         <div class="section-card" style="margin-top:12px;">
           <h3>Recommended Provider Layer</h3>
@@ -828,6 +840,8 @@
             sku,
             visitor_id: getVisitorId(),
             referralToken,
+            provider: document.getElementById("marketplaceProviderSelect")?.value || "africas-talking",
+            fulfillment_provider: "africas-talking",
           })
         });
         const data = await res.json();

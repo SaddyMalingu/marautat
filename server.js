@@ -8739,7 +8739,8 @@ function normalizeMsisdn(value) {
 
 // ===== PROVIDER ABSTRACTION & DIGITAL SALES ENGINE =====
 const SALES_MODE = process.env.SALES_MODE || "sandbox"; // "sandbox" or "production"
-const ACTIVE_PROVIDER = process.env.SALES_PROVIDER || "reloadly"; // "reloadly", "flutterwave", "dtone", "africas-talking"
+const ACTIVE_PROVIDER = process.env.SALES_PROVIDER || "africas-talking"; // "reloadly", "flutterwave", "dtone", "africas-talking"
+const DEFAULT_FULFILLMENT_PROVIDER = process.env.DEFAULT_FULFILLMENT_PROVIDER || "africas-talking";
 
 // Provider configuration with API endpoints and keys
 const PROVIDER_CONFIG = {
@@ -8751,6 +8752,9 @@ const PROVIDER_CONFIG = {
     secret_key_env: "RELOADLY_SECRET_KEY",
     categories: ["airtime", "data_bundles", "gift_cards", "gaming"],
     supported_operators: ["Safaricom", "Airtel", "Telkom", "Vodafone"],
+    model: "fulfillment",
+    locality: "global",
+    onboarding: "business_email_likely",
   },
   flutterwave: {
     name: "Flutterwave Bills",
@@ -8760,6 +8764,9 @@ const PROVIDER_CONFIG = {
     secret_key_env: "FLUTTERWAVE_SECRET_KEY",
     categories: ["airtime", "data_bundles", "utilities", "tv"],
     supported_operators: ["Safaricom", "Airtel", "KPLC", "Water", "GOtv", "DStv"],
+    model: "fulfillment",
+    locality: "africa",
+    onboarding: "business_email_likely",
   },
   dtone: {
     name: "DT One",
@@ -8769,6 +8776,9 @@ const PROVIDER_CONFIG = {
     secret_key_env: "DTONE_API_SECRET",
     categories: ["airtime", "data_bundles", "gift_cards", "gaming"],
     supported_operators: ["Global"],
+    model: "fulfillment",
+    locality: "global",
+    onboarding: "enterprise_likely",
   },
   "africas-talking": {
     name: "Africa's Talking Airtime",
@@ -8776,10 +8786,59 @@ const PROVIDER_CONFIG = {
     production_url: "https://api.africastalking.com",
     api_key_env: "AFRICAS_TALKING_API_KEY",
     secret_key_env: "AFRICAS_TALKING_USERNAME",
-    categories: ["airtime"],
+    categories: ["airtime", "data_bundles"],
     supported_operators: ["Safaricom", "Airtel", "Telkom"],
+    model: "fulfillment",
+    locality: "africa",
+    onboarding: "developer_friendly",
+  },
+  intasend: {
+    name: "IntaSend",
+    sandbox_url: "https://sandbox.intasend.com",
+    production_url: "https://payment.intasend.com",
+    api_key_env: "INTASEND_PUBLISHABLE_KEY",
+    secret_key_env: "INTASEND_SECRET_KEY",
+    categories: ["collections", "payouts"],
+    supported_operators: ["M-Pesa", "Cards", "Bank", "Airtel Money"],
+    model: "collection_only",
+    locality: "kenya",
+    onboarding: "unregistered_business_possible",
+  },
+  "safaricom-daraja": {
+    name: "Safaricom Daraja",
+    sandbox_url: "https://sandbox.safaricom.co.ke",
+    production_url: "https://api.safaricom.co.ke",
+    api_key_env: "DARAJA_CONSUMER_KEY",
+    secret_key_env: "DARAJA_CONSUMER_SECRET",
+    categories: ["collections", "dynamic_qr"],
+    supported_operators: ["M-Pesa"],
+    model: "collection_only",
+    locality: "kenya",
+    onboarding: "individual_or_company_supported",
+  },
+  tingg: {
+    name: "Tingg by Cellulant",
+    sandbox_url: "https://developer.tingg.africa",
+    production_url: "https://tingg.africa",
+    api_key_env: "TINGG_API_KEY",
+    secret_key_env: "TINGG_API_SECRET",
+    categories: ["collections", "utilities", "tv", "airtime"],
+    supported_operators: ["Utility", "Mobile Money", "Bank"],
+    model: "hybrid_enterprise",
+    locality: "africa",
+    onboarding: "enterprise_heavy",
   },
 };
+
+const PROVIDER_PRIORITY = [
+  "africas-talking",
+  "intasend",
+  "safaricom-daraja",
+  "flutterwave",
+  "reloadly",
+  "dtone",
+  "tingg",
+];
 
 /**
  * Sales transaction logger: append to JSONL for audit and reconciliation.
@@ -8831,18 +8890,18 @@ class ProviderAdapter {
   async init() {
     // Validate provider credentials and connectivity
     try {
+      if (this.mode === "sandbox") {
+        log(`PROVIDER_INIT [${this.providerKey}] sandbox mode enabled`, "SALES");
+        return { ok: true, message: "Sandbox mode ready", credentials_required: false };
+      }
+
       if (!this.getApiKey()) {
         return { ok: false, error: `${this.config.api_key_env} not configured` };
       }
 
-      if (this.mode === "sandbox") {
-        log(`PROVIDER_INIT [${this.providerKey}] sandbox mode enabled`, "SALES");
-        return { ok: true, message: "Sandbox mode ready" };
-      }
-
       // In production, call provider health endpoint
       // This is mocked for now; implement per provider.
-      return { ok: true, message: "Production mode ready" };
+      return { ok: true, message: "Production mode ready", credentials_required: true };
     } catch (err) {
       return { ok: false, error: err.message };
     }
@@ -8954,8 +9013,9 @@ class ProviderAdapter {
 /**
  * Get active provider adapter (singleton pattern).
  */
-function getProviderAdapter() {
-  return new ProviderAdapter(ACTIVE_PROVIDER);
+function getProviderAdapter(providerKey = ACTIVE_PROVIDER) {
+  const resolvedKey = PROVIDER_CONFIG[providerKey] ? providerKey : ACTIVE_PROVIDER;
+  return new ProviderAdapter(resolvedKey);
 }
 
 function getKassangasDigitalProviders() {
@@ -9118,6 +9178,104 @@ async function getSalesTransactions({ merchantCode = "", visitorId = "", phone =
   return rows.slice(0, Math.max(1, Number(limit) || 200));
 }
 
+async function processHybridBundleSale({
+  phone,
+  sku,
+  product,
+  merchantCode,
+  visitorId,
+  collectionProviderKey,
+  fulfillmentProviderKey = DEFAULT_FULFILLMENT_PROVIDER,
+}) {
+  const collectionConfig = PROVIDER_CONFIG[collectionProviderKey];
+  const fulfillmentConfig = PROVIDER_CONFIG[fulfillmentProviderKey];
+  if (!collectionConfig) {
+    throw new Error("Collection provider is not configured");
+  }
+  if (!fulfillmentConfig) {
+    throw new Error("Fulfillment provider is not configured");
+  }
+
+  const collectionTxnId = `COL-${Date.now().toString().slice(-6)}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+
+  if (SALES_MODE === "sandbox") {
+    const collectionResult = {
+      ok: true,
+      transaction_id: collectionTxnId,
+      provider: collectionProviderKey,
+      phone,
+      sku,
+      product_name: product.title,
+      category: product.category,
+      amount_kes: Number(product.price_kes || 0),
+      alphadome_fee_kes: Number(product.alphadome_fee_kes || 0),
+      merchant_net_kes: Math.max(0, Number(product.price_kes || 0) - Number(product.alphadome_fee_kes || 0)),
+      status: "collected",
+      message: `Simulated collection via ${collectionConfig.name}`,
+      leg: "collection",
+    };
+
+    await logSalesTransaction({
+      ...collectionResult,
+      mode: "sandbox",
+      merchant_code: merchantCode,
+      visitor_id: visitorId,
+      hybrid: true,
+      fulfillment_provider: fulfillmentProviderKey,
+    });
+
+    const fulfillmentAdapter = getProviderAdapter(fulfillmentProviderKey);
+    const fulfillmentResult = await fulfillmentAdapter.executeSale({
+      phone,
+      sku,
+      product_name: product.title,
+      amount_kes: Number(product.price_kes || 0),
+      alphadome_fee_kes: Number(product.alphadome_fee_kes || 0),
+      category: product.category,
+      merchant_code: merchantCode,
+      visitor_id: visitorId,
+    });
+
+    return {
+      success: fulfillmentResult.ok,
+      hybrid: true,
+      collection: collectionResult,
+      fulfillment: fulfillmentResult,
+      transaction_id: fulfillmentResult.transaction_id,
+      provider: fulfillmentResult.provider,
+      collection_provider: collectionProviderKey,
+      fulfillment_provider: fulfillmentProviderKey,
+      status: fulfillmentResult.status,
+      message: `${collectionConfig.name} collected payment, ${fulfillmentConfig.name} fulfilled ${product.title}`,
+    };
+  }
+
+  return {
+    success: true,
+    hybrid: true,
+    collection: {
+      ok: true,
+      transaction_id: collectionTxnId,
+      provider: collectionProviderKey,
+      status: "pending_collection",
+      message: `Collection pending via ${collectionConfig.name}`,
+      leg: "collection",
+    },
+    fulfillment: {
+      ok: false,
+      provider: fulfillmentProviderKey,
+      status: "awaiting_collection_confirmation",
+      message: "Fulfillment will dispatch after payment confirmation",
+    },
+    transaction_id: collectionTxnId,
+    provider: collectionProviderKey,
+    collection_provider: collectionProviderKey,
+    fulfillment_provider: fulfillmentProviderKey,
+    status: "pending_collection",
+    message: `Payment collection initiated with ${collectionConfig.name}. Fulfillment will continue after confirmation.`,
+  };
+}
+
 async function fetchKassangasPerformanceReview({ role = "client", visitorId = "", phone = "", merchantCode = "" } = {}) {
   const { data, error } = await supabase
     .from("subscriptions")
@@ -9184,6 +9342,54 @@ app.get("/api/kassangas/marketplace", async (_req, res) => {
     });
   } catch (err) {
     return res.status(500).json({ error: "Failed to load marketplace catalog" });
+  }
+});
+
+// GET /api/kassangas/provider-options - Available local/global provider paths for testing and rollout
+app.get("/api/kassangas/provider-options", async (req, res) => {
+  try {
+    const sku = String(req.query?.sku || "").trim();
+    const item = sku ? getMarketplaceItemBySku(sku) : null;
+    const category = item?.category || String(req.query?.category || "").trim();
+
+    const options = await Promise.all(PROVIDER_PRIORITY
+      .filter((key) => PROVIDER_CONFIG[key])
+      .map(async (key) => {
+        const adapter = getProviderAdapter(key);
+        const init = await adapter.init();
+        const config = PROVIDER_CONFIG[key];
+        const supportsCategory = category ? config.categories.includes(category) : true;
+        return {
+          key,
+          name: config.name,
+          locality: config.locality,
+          model: config.model,
+          onboarding: config.onboarding,
+          categories: config.categories,
+          supported_operators: config.supported_operators,
+          sandbox_ready: init.ok,
+          credentials_present: Boolean(process.env[config.api_key_env]),
+          can_handle_selected_category: supportsCategory,
+          best_for: supportsCategory
+            ? `${config.name} can be tested for ${category || "configured categories"}`
+            : `${config.name} is better suited to ${config.categories.join(", ")}`,
+        };
+      }));
+
+    return res.json({
+      active_provider: ACTIVE_PROVIDER,
+      sales_mode: SALES_MODE,
+      selected_sku: sku || null,
+      selected_category: category || null,
+      fastest_revenue_path: {
+        primary: "africas-talking",
+        collections: ["intasend", "safaricom-daraja"],
+        note: "Use Africa's Talking for airtime/data tests, IntaSend or Daraja for fast Kenyan collections, then keep global providers as scale-out fallbacks.",
+      },
+      options,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: "Failed to load provider options" });
   }
 });
 
@@ -9696,6 +9902,8 @@ app.post("/api/kassangas/buy-product", async (req, res) => {
     const phone = normalizeMsisdn(req.body?.phone || "");
     const sku = String(req.body?.sku || "").trim();
     const visitor_id = String(req.body?.visitor_id || "").trim();
+    const requestedProvider = String(req.body?.provider || req.body?.provider_key || "").trim().toLowerCase();
+    const requestedFulfillmentProvider = String(req.body?.fulfillment_provider || req.body?.fulfillmentProvider || DEFAULT_FULFILLMENT_PROVIDER).trim().toLowerCase();
     const referralToken = String(req.body?.referralToken || req.body?.ref || "").trim();
     const referralDecoded = decodeReferralToken(referralToken);
     const merchant_code = String(req.body?.merchant_code || referralDecoded?.merchant_code || "").trim();
@@ -9711,8 +9919,40 @@ app.post("/api/kassangas/buy-product", async (req, res) => {
       return res.status(404).json({ error: "Product not found" });
     }
 
+    const selectedProviderKey = requestedProvider || ACTIVE_PROVIDER;
+    const selectedProviderConfig = PROVIDER_CONFIG[selectedProviderKey] || PROVIDER_CONFIG[ACTIVE_PROVIDER];
+
+    if (["collection_only", "hybrid_enterprise"].includes(String(selectedProviderConfig?.model || ""))) {
+      const hybridResult = await processHybridBundleSale({
+        phone,
+        sku,
+        product,
+        merchantCode: merchant_code,
+        visitorId: visitor_id,
+        collectionProviderKey: selectedProviderKey,
+        fulfillmentProviderKey: requestedFulfillmentProvider,
+      });
+
+      return res.json({
+        success: hybridResult.success,
+        hybrid: true,
+        transaction_id: hybridResult.transaction_id,
+        provider: hybridResult.provider,
+        provider_requested: selectedProviderKey,
+        collection_provider: hybridResult.collection_provider,
+        fulfillment_provider: hybridResult.fulfillment_provider,
+        product: product.title,
+        amount_kes: product.price_kes || 0,
+        alphadome_fee_kes: Number(product.alphadome_fee_kes || 0),
+        merchant_net_kes: Math.max(0, Number(product.price_kes || 0) - Number(product.alphadome_fee_kes || 0)),
+        status: hybridResult.status,
+        message: hybridResult.message,
+        mode: SALES_MODE,
+      });
+    }
+
     // Initiate sale with provider
-    const provider = getProviderAdapter();
+    const provider = getProviderAdapter(selectedProviderKey);
     const salePayload = {
       phone,
       sku,
@@ -9731,6 +9971,7 @@ app.post("/api/kassangas/buy-product", async (req, res) => {
       success: saleResult.ok,
       transaction_id: saleResult.transaction_id,
       provider: saleResult.provider,
+      provider_requested: selectedProviderKey,
       product: product.title,
       amount_kes: product.price_kes || 0,
       alphadome_fee_kes: Number(product.alphadome_fee_kes || 0),
