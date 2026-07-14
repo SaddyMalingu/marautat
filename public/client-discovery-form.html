@@ -544,21 +544,44 @@
     e.preventDefault();
     
     const formData = new FormData(form);
-    const data = Object.fromEntries(formData);
-    
-    // Log to console for now (in production, send to API)
-    console.log('Discovery Form Submitted:', data);
-    
-    // Show success message
-    document.getElementById('successMessage').style.display = 'block';
-    form.style.display = 'none';
-    
-    // In production, you would send this to a backend:
-    // await fetch('/api/discovery-submit', {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify(data)
-    // });
+    const data = {
+      name: formData.get('name'),
+      business_name: formData.get('business_name'),
+      email: formData.get('email'),
+      phone: formData.get('phone'),
+      industry: formData.get('industry'),
+      business_description: formData.get('business_description'),
+      team_size: formData.get('team_size'),
+      challenges: formData.getAll('challenges'),
+      challenges_other: formData.get('challenges_other'),
+      whatsapp_usage: formData.get('whatsapp_usage'),
+      capabilities: formData.getAll('capabilities'),
+      revenue_target: formData.get('revenue_target'),
+      ownership_interest: formData.get('ownership_interest'),
+      timeline: formData.get('timeline'),
+      budget: formData.get('budget'),
+      blockers: formData.get('blockers'),
+      source: formData.get('source'),
+      additional_notes: formData.get('additional_notes')
+    };
+
+    try {
+      const resp = await fetch('/discovery', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+
+      const result = await resp.json();
+      if (!resp.ok || !result.ok) {
+        throw new Error(result.error || 'Failed to submit form');
+      }
+
+      document.getElementById('successMessage').style.display = 'block';
+      form.style.display = 'none';
+    } catch (err) {
+      alert(`Submission failed: ${err.message}. Please try again or contact us on WhatsApp.`);
+    }
   });
 </script>
 

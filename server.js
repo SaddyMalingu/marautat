@@ -314,7 +314,12 @@ app.get('/debug/request-log', (req, res) => {
 // Serve public/index.html at root
 app.get('/', (req, res) => {
   log(`Landing page loaded by ${req.ip} at ${new Date().toISOString()}`, "PAGE");
-  res.sendFile(path.join(publicDir, 'index.html'));
+  res.sendFile(path.join(publicDir, 'homepage-updated.html'));
+});
+
+// Phase 1: explicit route for client discovery form
+app.get('/discovery', (req, res) => {
+  res.sendFile(path.join(publicDir, 'client-discovery-form.html'));
 });
 
 // Serve agent-demo-modal.html explicitly for isolated modal demo
@@ -8948,15 +8953,114 @@ class ProviderAdapter {
       return result;
     }
 
-    // Production: call actual provider API (not implemented in this setup)
+    // Production: call actual provider API
     try {
       const base = this.getApiBase();
       const apiKey = this.getApiKey();
 
-      // Placeholder for actual API call
-      // Example: POST ${base}/api/v2/topup
-      // Headers: Authorization: Bearer ${apiKey}
-      // Body: { phone, product_id: sku, amount }
+      if (this.providerKey === "africas-talking") {
+        if (category !== "airtime") {
+          const result = {
+            ok: false,
+            transaction_id: null,
+            provider: this.providerKey,
+            phone,
+            sku,
+            product_name,
+            category,
+            amount_kes,
+            alphadome_fee_kes: Number(alphadome_fee_kes || 0),
+            merchant_net_kes: Math.max(0, Number(amount_kes || 0) - Number(alphadome_fee_kes || 0)),
+            status: "unsupported_live_product",
+            message: "Africa's Talking live fulfillment is currently enabled for airtime only.",
+          };
+
+          await logSalesTransaction({
+            ...result,
+            mode: "production",
+            merchant_code,
+            visitor_id,
+          });
+
+          return result;
+        }
+
+        const username = this.getSecretKey();
+        if (!apiKey || !username) {
+          throw new Error("AFRICAS_TALKING_API_KEY and AFRICAS_TALKING_USERNAME must be configured for live airtime sales");
+        }
+
+        const txnAmount = Number(amount_kes || 0);
+        const recipients = JSON.stringify([
+          {
+            phoneNumber: phone.startsWith("+") ? phone : `+${phone}`,
+            currencyCode: "KES",
+            amount: `KES ${txnAmount.toFixed(2)}`,
+          },
+        ]);
+
+        const form = new URLSearchParams();
+        form.set("username", username);
+        form.set("recipients", recipients);
+
+        const response = await axios.post(`${base}/version1/airtime/send`, form.toString(), {
+          headers: {
+            apiKey,
+            Accept: "application/json",
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+        });
+
+        const providerResponse = response?.data || {};
+        const providerItem =
+          providerResponse?.responses?.[0] ||
+          providerResponse?.AirtimeSentMessage?.responses?.[0] ||
+          providerResponse?.data?.[0] ||
+          null;
+        const providerError =
+          providerItem?.errorMessage ||
+          providerResponse?.errorMessage ||
+          providerResponse?.description ||
+          "";
+        const providerStatusText = String(
+          providerItem?.status || providerResponse?.status || providerResponse?.message || "submitted"
+        ).trim();
+        const providerStatusLower = providerStatusText.toLowerCase();
+        const succeeded = !providerError && !/(error|failed|invalid|insufficient)/i.test(providerStatusText);
+        const result = {
+          ok: succeeded,
+          transaction_id:
+            providerItem?.requestId ||
+            providerItem?.requestID ||
+            providerItem?.transactionId ||
+            providerItem?.id ||
+            `AT-${Date.now().toString().slice(-6)}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`,
+          provider: this.providerKey,
+          phone,
+          sku,
+          product_name,
+          category,
+          amount_kes: txnAmount,
+          alphadome_fee_kes: Number(alphadome_fee_kes || 0),
+          merchant_net_kes: Math.max(0, txnAmount - Number(alphadome_fee_kes || 0)),
+          status: succeeded
+            ? (/(queued|pending|processing)/i.test(providerStatusLower) ? "pending" : "completed")
+            : "failed",
+          message: providerError || providerStatusText || "Airtime request submitted",
+          provider_response: providerResponse,
+        };
+
+        await logSalesTransaction({
+          ...result,
+          mode: "production",
+          merchant_code,
+          visitor_id,
+        });
+
+        return result;
+      }
+
+      // Placeholder for providers not yet wired live.
 
       const txnId = `TXN-${Date.now().toString().slice(-6)}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
       const result = {
@@ -9176,6 +9280,198 @@ async function getSalesTransactions({ merchantCode = "", visitorId = "", phone =
 
   rows.sort((a, b) => new Date(b.at || 0).getTime() - new Date(a.at || 0).getTime());
   return rows.slice(0, Math.max(1, Number(limit) || 200));
+}
+
+function isLiveAutoFulfillmentSupported(product, providerKey) {
+  return providerKey === "africas-talking" && String(product?.category || "") === "airtime";
+}
+
+function buildProductCheckoutAccountRef(sku) {
+  const cleanSku = String(sku || "ITEM").replace(/[^A-Za-z0-9]/g, "").slice(0, 8).toUpperCase();
+  return `PRD${cleanSku || "ITEM"}`;
+}
+
+async function createDigitalProductCheckout({
+  phone,
+  product,
+  merchantCode,
+  visitorId,
+  requestedProviderKey,
+  fulfillmentProviderKey,
+  referralToken,
+}) {
+  const accountRef = buildProductCheckoutAccountRef(product?.sku);
+  const amount = Number(product?.price_kes || 0);
+
+  const stkResp = await initiateStkPush({
+    phone,
+    amount,
+    accountRef,
+    transactionDesc: `${product?.title || product?.sku || "Product"}`.slice(0, 80),
+  });
+
+  const checkoutId = stkResp?.CheckoutRequestID || stkResp?.checkoutRequestID || null;
+  if (!checkoutId) {
+    throw new Error("STK push succeeded without a checkout ID");
+  }
+
+  const metadata = {
+    ...(stkResp || {}),
+    checkout_type: "digital_sale",
+    sku: product?.sku || null,
+    product_name: product?.title || null,
+    category: product?.category || null,
+    provider_requested: requestedProviderKey,
+    fulfillment_provider: fulfillmentProviderKey,
+    collection_provider: "safaricom-daraja",
+    merchant_code: merchantCode || null,
+    visitor_id: visitorId || null,
+    referral_token: referralToken || null,
+  };
+
+  const { error: insertErr } = await supabase.from("subscriptions").insert([
+    {
+      user_id: null,
+      phone,
+      amount,
+      plan_type: "product_checkout",
+      level: 1,
+      account_ref: accountRef,
+      product_sku: product?.sku || null,
+      status: "pending",
+      mpesa_checkout_request_id: checkoutId,
+      metadata,
+    },
+  ]);
+
+  if (insertErr) {
+    throw new Error(`Failed to persist product checkout: ${insertErr.message}`);
+  }
+
+  await logSalesTransaction({
+    ok: true,
+    transaction_id: checkoutId,
+    provider: "safaricom-daraja",
+    phone,
+    sku: product?.sku || null,
+    product_name: product?.title || null,
+    category: product?.category || null,
+    amount_kes: amount,
+    alphadome_fee_kes: Number(product?.alphadome_fee_kes || 0),
+    merchant_net_kes: Math.max(0, amount - Number(product?.alphadome_fee_kes || 0)),
+    status: "pending_collection",
+    message: "STK push sent. Fulfillment will run after payment confirmation.",
+    mode: "production",
+    merchant_code: merchantCode,
+    visitor_id: visitorId,
+    hybrid: true,
+    fulfillment_provider: fulfillmentProviderKey,
+    provider_requested: requestedProviderKey,
+    leg: "collection",
+  });
+
+  return {
+    checkoutId,
+    accountRef,
+    collection_provider: "safaricom-daraja",
+    fulfillment_provider: fulfillmentProviderKey,
+    amount_kes: amount,
+    status: "pending_collection",
+    message: "Payment prompt sent. Fulfillment will continue after payment confirmation.",
+  };
+}
+
+async function fulfillPaidProductOrder(subs, { receipt, amount, phone, callbackBody, checkoutId }) {
+  const metadata = subs?.metadata && typeof subs.metadata === "object" ? subs.metadata : {};
+  const existingFulfillment = metadata.fulfillment && typeof metadata.fulfillment === "object"
+    ? metadata.fulfillment
+    : null;
+  if (existingFulfillment?.transaction_id) {
+    return {
+      ok: Boolean(existingFulfillment.ok),
+      transaction_id: existingFulfillment.transaction_id,
+      provider: existingFulfillment.provider || metadata.fulfillment_provider || ACTIVE_PROVIDER,
+      status: subs.status || existingFulfillment.status || "fulfilled",
+      message: "Fulfillment already processed for this order.",
+    };
+  }
+
+  const sku = String(subs?.product_sku || metadata?.sku || "").trim();
+  const product = getMarketplaceItemBySku(sku);
+  const fulfillmentProviderKey = String(
+    metadata?.fulfillment_provider || metadata?.provider_requested || ACTIVE_PROVIDER
+  ).trim().toLowerCase();
+  const waTarget = metadata?.customer_wa || phone || subs?.phone;
+
+  if (!product) {
+    const failedStatus = "payment_received_fulfillment_failed";
+    await supabase.from("subscriptions").update({
+      status: failedStatus,
+      metadata: {
+        ...metadata,
+        callback: callbackBody,
+        payment_confirmation: { receipt, amount, phone, checkoutId },
+        fulfillment_provider: fulfillmentProviderKey,
+        fulfillment: {
+          ok: false,
+          transaction_id: null,
+          provider: fulfillmentProviderKey,
+          status: failedStatus,
+          error: "Product not found in live catalog during fulfillment.",
+          attempted_at: new Date().toISOString(),
+        },
+      },
+      updated_at: new Date().toISOString(),
+    }).eq("id", subs.id);
+
+    return {
+      ok: false,
+      transaction_id: null,
+      provider: fulfillmentProviderKey,
+      status: failedStatus,
+      message: "Payment received, but the product could not be resolved for fulfillment.",
+      waTarget,
+      product: null,
+    };
+  }
+
+  const provider = getProviderAdapter(fulfillmentProviderKey);
+  const saleResult = await provider.executeSale({
+    phone: subs?.phone || phone,
+    sku: product.sku,
+    product_name: product.title,
+    amount_kes: Number(subs?.amount || product.price_kes || 0),
+    alphadome_fee_kes: Number(product.alphadome_fee_kes || 0),
+    category: product.category,
+    merchant_code: metadata?.merchant_code || null,
+    visitor_id: metadata?.visitor_id || null,
+  });
+
+  const finalStatus = saleResult.ok
+    ? (saleResult.status === "completed" ? "fulfilled" : "payment_received_pending_fulfillment")
+    : "payment_received_fulfillment_failed";
+
+  await supabase.from("subscriptions").update({
+    status: finalStatus,
+    metadata: {
+      ...metadata,
+      callback: callbackBody,
+      payment_confirmation: { receipt, amount, phone, checkoutId },
+      fulfillment_provider: fulfillmentProviderKey,
+      fulfillment: {
+        ...saleResult,
+        attempted_at: new Date().toISOString(),
+      },
+    },
+    updated_at: new Date().toISOString(),
+  }).eq("id", subs.id);
+
+  return {
+    ...saleResult,
+    status: finalStatus,
+    waTarget,
+    product,
+  };
 }
 
 async function processHybridBundleSale({
@@ -9921,6 +10217,48 @@ app.post("/api/kassangas/buy-product", async (req, res) => {
 
     const selectedProviderKey = requestedProvider || ACTIVE_PROVIDER;
     const selectedProviderConfig = PROVIDER_CONFIG[selectedProviderKey] || PROVIDER_CONFIG[ACTIVE_PROVIDER];
+    const fulfillmentProviderKey = ["collection_only", "hybrid_enterprise"].includes(String(selectedProviderConfig?.model || ""))
+      ? requestedFulfillmentProvider
+      : selectedProviderKey;
+
+    if (SALES_MODE === "production") {
+      if (!isLiveAutoFulfillmentSupported(product, fulfillmentProviderKey)) {
+        return res.status(409).json({
+          error: "Live auto-fulfillment is currently enabled only for airtime via Africa's Talking.",
+          provider_requested: selectedProviderKey,
+          fulfillment_provider: fulfillmentProviderKey,
+          supported_category: "airtime",
+        });
+      }
+
+      const checkout = await createDigitalProductCheckout({
+        phone,
+        product,
+        merchantCode: merchant_code,
+        visitorId: visitor_id,
+        requestedProviderKey: selectedProviderKey,
+        fulfillmentProviderKey,
+        referralToken,
+      });
+
+      return res.json({
+        success: true,
+        hybrid: true,
+        transaction_id: checkout.checkoutId,
+        checkoutId: checkout.checkoutId,
+        provider: checkout.collection_provider,
+        provider_requested: selectedProviderKey,
+        collection_provider: checkout.collection_provider,
+        fulfillment_provider: checkout.fulfillment_provider,
+        product: product.title,
+        amount_kes: product.price_kes || 0,
+        alphadome_fee_kes: Number(product.alphadome_fee_kes || 0),
+        merchant_net_kes: Math.max(0, Number(product.price_kes || 0) - Number(product.alphadome_fee_kes || 0)),
+        status: checkout.status,
+        message: checkout.message,
+        mode: SALES_MODE,
+      });
+    }
 
     if (["collection_only", "hybrid_enterprise"].includes(String(selectedProviderConfig?.model || ""))) {
       const hybridResult = await processHybridBundleSale({
@@ -9930,7 +10268,7 @@ app.post("/api/kassangas/buy-product", async (req, res) => {
         merchantCode: merchant_code,
         visitorId: visitor_id,
         collectionProviderKey: selectedProviderKey,
-        fulfillmentProviderKey: requestedFulfillmentProvider,
+        fulfillmentProviderKey,
       });
 
       return res.json({
@@ -10274,6 +10612,32 @@ app.post("/mpesa/callback", async (req, res) => {
       const receipt = callbackMetadata.find(i => i.Name === "MpesaReceiptNumber")?.Value || null;
       const amount = callbackMetadata.find(i => i.Name === "Amount")?.Value || null;
       const phone = callbackMetadata.find(i => i.Name === "PhoneNumber")?.Value || subs.phone;
+      if (subs.plan_type === "product_checkout") {
+        const fulfillmentResult = await fulfillPaidProductOrder(subs, {
+          receipt,
+          amount,
+          phone,
+          callbackBody: body,
+          checkoutId,
+        });
+        const targetPhone = fulfillmentResult.waTarget || phone;
+
+        if (fulfillmentResult.ok) {
+          await sendMessage(
+            targetPhone,
+            `🎉 *Payment received!*\n\nYour order for *${fulfillmentResult.product?.title || subs.product_sku || "product"}* is now ${fulfillmentResult.status === "fulfilled" ? "fulfilled" : "being processed"}.\n\n🧾 Receipt: ${receipt}\n💰 Amount: KES ${amount}\n🔌 Provider: ${fulfillmentResult.provider}`
+          );
+        } else {
+          await sendMessage(
+            targetPhone,
+            `✅ *Payment confirmed* for *${subs.product_sku || "your order"}*.\n\n🧾 Receipt: ${receipt}\n💰 Amount: KES ${amount}\n⚠️ Delivery is pending manual review: ${fulfillmentResult.message || "fulfillment not completed"}.`
+          );
+        }
+
+        log(`✅ Product checkout ${subs.id} payment received; fulfillment status=${fulfillmentResult.status}`, "SYSTEM");
+        return;
+      }
+
       const finalStatus = subs.plan_type === "kassangas_template" ? "paid" : "subscribed";
 
       // ✅ 1. Mark subscription as paid
@@ -10285,12 +10649,14 @@ app.post("/mpesa/callback", async (req, res) => {
       }).eq("id", subs.id);
 
       // ✅ 2. Mark user as subscribed
-      await supabase.from("users").update({
-        subscribed: true,
-        subscription_type: subs.plan_type,
-        subscription_level: subs.level,
-        updated_at: new Date().toISOString()
-      }).eq("id", subs.user_id);
+      if (subs.user_id) {
+        await supabase.from("users").update({
+          subscribed: true,
+          subscription_type: subs.plan_type,
+          subscription_level: subs.level,
+          updated_at: new Date().toISOString()
+        }).eq("id", subs.user_id);
+      }
 
       // ✅ 3. Confirmation message to the user
       await sendMessage(
@@ -11716,6 +12082,128 @@ app.post("/admin/test-email", adminAuth, async (req, res) => {
   } catch (err) {
     console.error(`[SMTP TEST] ERROR sending to ${to}:`, err);
     res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+// Phase 1: discovery intake endpoint with notification + confirmation email
+app.post('/discovery', async (req, res) => {
+  try {
+    const payload = req.body || {};
+    const required = ['name', 'email', 'phone', 'business_name', 'industry', 'team_size', 'whatsapp_usage', 'revenue_target', 'ownership_interest', 'timeline', 'budget'];
+    const missing = required.filter((k) => !payload[k]);
+    if (missing.length > 0) {
+      return res.status(400).json({ ok: false, error: `Missing required fields: ${missing.join(', ')}` });
+    }
+
+    const normalizeMulti = (value) => {
+      if (Array.isArray(value)) return value;
+      if (typeof value === 'string' && value.trim()) return [value.trim()];
+      return [];
+    };
+
+    const challenges = normalizeMulti(payload.challenges);
+    const capabilities = normalizeMulti(payload.capabilities);
+
+    // Persist in DB where available; if table doesn't exist, fall back to file log.
+    let dbSaved = false;
+    let dbError = null;
+    try {
+      const { error } = await supabase
+        .from('discovery_submissions')
+        .insert([{ 
+          name: payload.name,
+          email: payload.email,
+          phone: payload.phone,
+          business_name: payload.business_name,
+          industry: payload.industry,
+          business_description: payload.business_description || null,
+          team_size: payload.team_size,
+          challenges,
+          challenges_other: payload.challenges_other || null,
+          whatsapp_usage: payload.whatsapp_usage,
+          capabilities,
+          revenue_target: payload.revenue_target,
+          ownership_interest: payload.ownership_interest,
+          timeline: payload.timeline,
+          budget: payload.budget,
+          blockers: payload.blockers || null,
+          source: payload.source || null,
+          additional_notes: payload.additional_notes || null,
+          status: 'new',
+          submitted_at: new Date().toISOString(),
+        }]);
+      if (error) throw error;
+      dbSaved = true;
+    } catch (err) {
+      dbError = err;
+      try {
+        const logDir = path.join(process.cwd(), 'logs');
+        if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
+        const line = JSON.stringify({
+          event: 'discovery_submission',
+          at: new Date().toISOString(),
+          payload: { ...payload, challenges, capabilities },
+          db_error: err.message || String(err),
+        });
+        fs.appendFileSync(path.join(logDir, 'discovery_submissions.jsonl'), `${line}\n`, 'utf8');
+      } catch (fileErr) {
+        console.error('[Discovery] Failed to write fallback log:', fileErr.message || fileErr);
+      }
+    }
+
+    // Slack notification (optional)
+    if (process.env.SLACK_WEBHOOK_URL) {
+      try {
+        await axios.post(process.env.SLACK_WEBHOOK_URL, {
+          text: `New discovery form: ${payload.business_name} (${payload.name})`,
+        });
+      } catch (err) {
+        console.error('[Discovery] Slack notify failed:', err.message || err);
+      }
+    }
+
+    // Email notifications (optional, using existing SMTP settings)
+    try {
+      const { default: sendEmail } = await import('./writers_flow/emailSender.js');
+      const teamInbox = process.env.DISCOVERY_TEAM_EMAIL || process.env.SMTP_USER;
+
+      if (teamInbox) {
+        await sendEmail({
+          to: teamInbox,
+          subject: `New Discovery Submission: ${payload.business_name}`,
+          text: [
+            `Name: ${payload.name}`,
+            `Business: ${payload.business_name}`,
+            `Email: ${payload.email}`,
+            `Phone: ${payload.phone}`,
+            `Industry: ${payload.industry}`,
+            `Team Size: ${payload.team_size}`,
+            `Timeline: ${payload.timeline}`,
+            `Budget: ${payload.budget}`,
+            `Capabilities: ${capabilities.join(', ') || 'n/a'}`,
+            `Challenges: ${challenges.join(', ') || 'n/a'}`,
+          ].join('\n'),
+        });
+      }
+
+      await sendEmail({
+        to: payload.email,
+        subject: 'We received your Alphadome discovery form',
+        text: `Hi ${payload.name},\n\nThanks for submitting your 3.0 discovery questionnaire. Our team will review your submission and contact you within 24 hours.\n\n- Alphadome Team`,
+      });
+    } catch (mailErr) {
+      console.error('[Discovery] Email send failed:', mailErr.message || mailErr);
+    }
+
+    return res.json({
+      ok: true,
+      saved: dbSaved,
+      db_warning: dbSaved ? null : (dbError?.message || 'Saved to fallback log only'),
+      message: 'Discovery form submitted successfully.',
+    });
+  } catch (err) {
+    console.error('[Discovery] Unexpected error:', err.message || err);
+    return res.status(500).json({ ok: false, error: err.message || 'Failed to submit discovery form.' });
   }
 });
 
