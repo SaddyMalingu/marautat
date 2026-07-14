@@ -30,13 +30,13 @@
       font-family: "Space Grotesk", sans-serif;
       color: var(--text);
       background: linear-gradient(145deg, var(--bg-1), var(--bg-2));
-      display: grid;
-      place-items: center;
+      display: block;
       padding: 12px;
       -webkit-font-smoothing: antialiased;
+      overflow-y: auto;
     }
 
-    .wallet { width: min(700px, 100%); }
+    .wallet { width: min(700px, 100%); margin: 0 auto; }
     .brand-head {
       display: flex;
       align-items: center;
@@ -122,6 +122,20 @@
     .txn-details.show { display: block; }
     .txn-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 0.95rem; }
     .txn-row strong { color: var(--accent-2); }
+    .mini-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
+    .mini-card { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 10px; }
+    .mini-card span { display: block; font-size: 0.78rem; color: var(--muted); margin-bottom: 6px; }
+    .mini-card strong { font-size: 1rem; color: var(--accent-2); }
+    .section-card { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 12px; margin-top: 12px; }
+    .section-card h3 { margin: 0 0 8px 0; font-size: 0.98rem; color: var(--accent-2); }
+    .helper-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+    .helper-btn { background: rgba(255,255,255,0.08); color: var(--text); border: 1px solid rgba(255,255,255,0.16); width: auto; min-width: 0; flex: 1 1 180px; }
+    .market-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .market-card { background: rgba(4,12,20,0.7); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 10px; }
+    .market-card h4 { margin: 0 0 4px 0; font-size: 0.92rem; color: #fff; }
+    .market-card p { margin: 0 0 8px 0; font-size: 0.8rem; color: var(--muted); }
+    .market-meta { font-size: 0.78rem; color: var(--accent-2); margin-bottom: 8px; }
+    .finance-layout { display: grid; gap: 12px; }
 
     #floating-whatsapp {
       position: fixed !important;
@@ -156,6 +170,7 @@
       .tabs { gap: 6px; }
       .tab-btn { font-size: 0.88rem; padding: 10px 8px; }
       .brand-head { flex-direction: column; align-items: flex-start; }
+      .mini-grid, .market-grid { grid-template-columns: 1fr; }
       #floating-whatsapp { right: calc(14px + env(safe-area-inset-right, 0px)); bottom: calc(14px + env(safe-area-inset-bottom, 0px)); }
       #floating-whatsapp img { width: 52px; height: 52px; }
     }
@@ -177,7 +192,7 @@
       <div class="tabs">
         <button class="tab-btn active" data-tab="scanner">📱 Scan QR</button>
         <button class="tab-btn" data-tab="manual">💰 Manual</button>
-        <button class="tab-btn" data-tab="history">📋 History</button>
+        <button class="tab-btn" data-tab="finance">📊 Finance Manager</button>
       </div>
 
       <!-- SCANNER TAB -->
@@ -223,9 +238,50 @@
         <div id="manualTxn" class="txn-details"></div>
       </div>
 
-      <!-- HISTORY TAB -->
-      <div id="history-tab" class="tab-content">
-        <div id="historyList" style="font-size: 0.9rem; color: var(--muted);">No transactions yet</div>
+      <!-- FINANCE TAB -->
+      <div id="finance-tab" class="tab-content">
+        <div class="finance-layout">
+          <div class="section-card">
+            <h3>Performance Review</h3>
+            <div id="performanceReviewWrap" style="font-size:0.9rem; color: var(--muted);">No performance data yet</div>
+          </div>
+          <div class="section-card">
+            <h3>Financial Calculators</h3>
+            <div class="field">
+              <label for="calcIncome">Monthly Income (KES)</label>
+              <input id="calcIncome" type="number" min="0" placeholder="e.g. 25000" />
+            </div>
+            <div class="field">
+              <label for="calcExpense">Monthly Expenses (KES)</label>
+              <input id="calcExpense" type="number" min="0" placeholder="e.g. 16000" />
+            </div>
+            <button class="helper-btn" id="runCalculatorBtn" type="button">Run Calculator</button>
+            <div id="calculatorResult" class="mini-grid" style="margin-top:10px;"></div>
+          </div>
+          <div class="section-card">
+            <h3>Buy Bundles & Digital Products</h3>
+            <div class="helper-row">
+              <button class="helper-btn" id="buyBundlesBtn" type="button">Buy Bundles</button>
+              <button class="helper-btn" id="openMarketplaceBtn" type="button">Digital Product Marketplace</button>
+            </div>
+            <div id="marketplaceWrap" style="margin-top:10px; font-size:0.9rem; color: var(--muted);">Marketplace loading...</div>
+          </div>
+          <div class="section-card">
+            <h3>Transaction History</h3>
+            <div id="historyList" style="font-size: 0.9rem; color: var(--muted);">No transactions yet</div>
+          </div>
+          <div class="section-card">
+            <h3>Merchant Onboarding</h3>
+            <p style="margin:0 0 10px 0; color: var(--muted); font-size:0.84rem;">Interested in your own branded Fast M-Pesa Checkout system? Submit your details for owner review.</p>
+            <div class="field"><label for="merchantBusinessName">Business Name</label><input id="merchantBusinessName" type="text" placeholder="e.g. Mama Mboga Express" /></div>
+            <div class="field"><label for="merchantContactName">Contact Name</label><input id="merchantContactName" type="text" placeholder="Owner or manager" /></div>
+            <div class="field"><label for="merchantPhone">Business Phone</label><input id="merchantPhone" type="tel" placeholder="2547XXXXXXXX" /></div>
+            <div class="field"><label for="merchantEmail">Email</label><input id="merchantEmail" type="email" placeholder="name@business.co.ke" /></div>
+            <div class="field"><label for="merchantType">Business Type</label><input id="merchantType" type="text" placeholder="Retail, logistics, salon, pharmacy..." /></div>
+            <button class="helper-btn" id="submitMerchantOnboardingBtn" type="button">Submit For Review</button>
+            <div id="merchantOnboardingStatus" class="status" aria-live="polite"></div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -245,6 +301,10 @@
     const manualSavedPhones = document.getElementById("manualSavedPhones");
     const saveManualPhoneBtn = document.getElementById("saveManualPhoneBtn");
     const manualPayBtn = document.getElementById("manualPayBtn");
+    const runCalculatorBtn = document.getElementById("runCalculatorBtn");
+    const buyBundlesBtn = document.getElementById("buyBundlesBtn");
+    const openMarketplaceBtn = document.getElementById("openMarketplaceBtn");
+    const submitMerchantOnboardingBtn = document.getElementById("submitMerchantOnboardingBtn");
     let scanning = false;
     let currentTemplate = null;
     let cameraStream = null;
@@ -254,8 +314,18 @@
     const STORAGE_KEYS = {
       phones: "alphadome_fastcheckout_phones_v1",
       defaultPhone: "alphadome_fastcheckout_default_phone_v1",
-      autoPay: "alphadome_fastcheckout_autopay_v1"
+      autoPay: "alphadome_fastcheckout_autopay_v1",
+      visitorId: "alphadome_fastcheckout_visitor_v1"
     };
+
+    function getVisitorId() {
+      let visitorId = localStorage.getItem(STORAGE_KEYS.visitorId) || "";
+      if (!visitorId) {
+        visitorId = `vis_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+        localStorage.setItem(STORAGE_KEYS.visitorId, visitorId);
+      }
+      return visitorId;
+    }
 
     function initDetector() {
       try {
@@ -416,7 +486,7 @@
         document.getElementById(`${tabName}-tab`).classList.add("active");
 
         if (tabName !== "scanner") stopCamera();
-        if (tabName === "history") loadHistory();
+        if (tabName === "finance") loadFinanceManager();
         if (tabName === "scanner" && !scanning) startScanBtn.textContent = "Start Camera";
       });
     });
@@ -428,6 +498,25 @@
       fetchAndShowTemplate(currentTemplate, "scannedTxn", "scanStatus");
       fetchAndShowTemplate(currentTemplate, "manualTxn", "manualStatus");
       showStatus("manualStatus", "ok", "Template loaded. Enter phone to pay.");
+    }
+    const referralToken = params.get("ref") || "";
+
+    async function trackVisit(portal) {
+      try {
+        await fetch("/api/kassangas/track-visit", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            portal,
+            visitorId: getVisitorId(),
+            templateId: currentTemplate || params.get("t") || "",
+            referralToken,
+            path: window.location.pathname + window.location.search,
+          })
+        });
+      } catch (_) {
+        // Silent analytics capture.
+      }
     }
 
     // Camera scanner
@@ -598,7 +687,7 @@
 
         addSavedPhone(normalizedPhone, true);
         showStatus(statusId, "ok", "STK sent to " + normalizedPhone + ". Enter your M-Pesa PIN.");
-        setTimeout(() => loadHistory(), 2000);
+        setTimeout(() => loadFinanceManager(), 2000);
       } catch (err) {
         showStatus(statusId, "error", err.message);
       }
@@ -663,6 +752,118 @@
       }
     }
 
+    async function loadFinanceManager() {
+      document.getElementById("performanceReviewWrap").innerHTML = "Loading performance review...";
+      document.getElementById("marketplaceWrap").innerHTML = "Loading marketplace...";
+      await loadHistory();
+
+      try {
+        const phone = getDefaultPhone() || normalizePhone(manualPhoneInput.value || "");
+        const query = new URLSearchParams({ visitorId: getVisitorId() });
+        if (phone) query.set("phone", phone);
+        const res = await fetch(`/api/kassangas/finance-manager?${query.toString()}`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Failed to load finance manager");
+
+        const review = data.financeManager?.performance_review || {};
+        document.getElementById("performanceReviewWrap").innerHTML = `
+          <div class="mini-grid">
+            <div class="mini-card"><span>Total Transactions</span><strong>${review.total_transactions || 0}</strong></div>
+            <div class="mini-card"><span>Paid</span><strong>${review.paid_transactions || 0}</strong></div>
+            <div class="mini-card"><span>Conversion</span><strong>${review.conversion_rate_pct || 0}%</strong></div>
+            <div class="mini-card"><span>Paid Amount</span><strong>KES ${(review.paid_amount_kes || 0).toLocaleString()}</strong></div>
+          </div>
+          <p style="margin:10px 0 0 0; color: var(--muted); font-size:0.82rem;">Performance Review helps you monitor your payment activity, completed value, and savings guidance.</p>
+        `;
+
+        renderMarketplace(data.financeManager?.digital_marketplace || {}, data.financeManager?.recommended_providers || {});
+      } catch (err) {
+        document.getElementById("performanceReviewWrap").innerHTML = `<p style="color:#ff5d5d;">${err.message}</p>`;
+        document.getElementById("marketplaceWrap").innerHTML = `<p style="color:#ff5d5d;">${err.message}</p>`;
+      }
+    }
+
+    function renderMarketplace(catalog, providers) {
+      const groups = [
+        ...(catalog.bundles || []),
+        ...(catalog.bills || []),
+        ...(catalog.digital_products || [])
+      ];
+
+      const cards = groups.map(item => `
+        <article class="market-card">
+          <h4>${item.title}</h4>
+          <p>${item.label || item.category}</p>
+          <div class="market-meta">${item.operator || item.category} ${item.price_kes ? `• KES ${item.price_kes}` : item.price_hint_kes ? `• ${item.price_hint_kes}` : ""}</div>
+          <button class="helper-btn" type="button" onclick="handleMarketplaceAction('${item.sku}', '${item.title.replace(/'/g, "&#39;")}')">Open</button>
+        </article>
+      `).join("");
+
+      const providerText = (providers.recommended || []).map(p => `<li>${p.provider}: ${p.fit}</li>`).join("");
+      document.getElementById("marketplaceWrap").innerHTML = `
+        <div class="market-grid">${cards || '<p style="color:var(--muted);">No products configured yet.</p>'}</div>
+        <div class="section-card" style="margin-top:12px;">
+          <h3>Recommended Provider Layer</h3>
+          <ul style="margin:0; padding-left:18px; color:var(--muted); font-size:0.82rem;">${providerText}</ul>
+        </div>
+      `;
+    }
+
+    window.handleMarketplaceAction = (sku, title) => {
+      showStatus("manualStatus", "ok", `${title} will be fulfilled through Alphadome Digital Marketplace once provider rails are finalized.`);
+      tabs.forEach(b => b.classList.toggle("active", b.getAttribute("data-tab") === "finance"));
+      tabContents.forEach(c => c.classList.toggle("active", c.id === "finance-tab"));
+    };
+
+    runCalculatorBtn.addEventListener("click", () => {
+      const income = Number(document.getElementById("calcIncome").value || 0);
+      const expense = Number(document.getElementById("calcExpense").value || 0);
+      const surplus = income - expense;
+      const reserve = Math.max(0, Math.round(income * 0.1));
+      const output = document.getElementById("calculatorResult");
+      output.innerHTML = `
+        <div class="mini-card"><span>Net Cash Flow</span><strong>KES ${surplus.toLocaleString()}</strong></div>
+        <div class="mini-card"><span>Suggested Reserve</span><strong>KES ${reserve.toLocaleString()}</strong></div>
+      `;
+    });
+
+    buyBundlesBtn.addEventListener("click", () => {
+      tabs.forEach(b => b.classList.toggle("active", b.getAttribute("data-tab") === "finance"));
+      tabContents.forEach(c => c.classList.toggle("active", c.id === "finance-tab"));
+      document.getElementById("marketplaceWrap").scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+
+    openMarketplaceBtn.addEventListener("click", () => {
+      document.getElementById("marketplaceWrap").scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+
+    submitMerchantOnboardingBtn.addEventListener("click", async () => {
+      const payload = {
+        businessName: document.getElementById("merchantBusinessName").value.trim(),
+        contactName: document.getElementById("merchantContactName").value.trim(),
+        phone: document.getElementById("merchantPhone").value.trim(),
+        email: document.getElementById("merchantEmail").value.trim(),
+        businessType: document.getElementById("merchantType").value.trim(),
+      };
+      const statusEl = document.getElementById("merchantOnboardingStatus");
+      statusEl.className = "status show ok";
+      statusEl.textContent = "Submitting for owner review...";
+      try {
+        const res = await fetch("/api/kassangas/merchant-onboarding", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Onboarding failed");
+        statusEl.className = "status show ok";
+        statusEl.textContent = `Submitted successfully. Review ID: ${data.submissionId}`;
+      } catch (err) {
+        statusEl.className = "status show error";
+        statusEl.textContent = err.message;
+      }
+    });
+
     window.addEventListener("pagehide", stopCamera);
     window.addEventListener("beforeunload", stopCamera);
     document.addEventListener("visibilitychange", () => {
@@ -676,6 +877,7 @@
 
     renderPhoneSelectors();
     initDetector();
+    trackVisit("client_wallet");
   </script>
 </body>
 </html>

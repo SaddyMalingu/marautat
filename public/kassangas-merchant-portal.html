@@ -116,6 +116,13 @@
     #templateDesc { overflow-wrap: anywhere; word-break: break-word; }
     .copy-btn { background: var(--accent); color: #081421; padding: 8px 12px; border-radius: 8px; margin-top: 10px; font-weight: 600; font-size: 0.85rem; }
     .copy-btn:hover { filter: brightness(1.1); }
+    .helper-panel { margin-top: 18px; padding: 14px; border-radius: 12px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); }
+    .helper-panel h3 { margin: 0 0 8px 0; color: var(--accent-2); font-size: 1rem; }
+    .helper-actions { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 10px; }
+    .helper-btn { width: 100%; border: 1px solid rgba(255,255,255,0.18); border-radius: 10px; padding: 12px; background: rgba(255,255,255,0.06); color: var(--text); font-weight: 700; }
+    .helper-note { color: var(--muted); font-size: 0.84rem; margin-top: 8px; }
+    .market-mini { margin-top: 12px; padding: 12px; border-radius: 10px; background: rgba(4,12,20,0.68); border: 1px solid rgba(255,255,255,0.08); }
+    .market-mini strong { color: var(--accent-2); }
     #floating-whatsapp {
       position: fixed !important;
       right: calc(16px + env(safe-area-inset-right, 0px));
@@ -158,6 +165,7 @@
       .portal { padding-bottom: 88px; }
       #qrSection { padding: 12px; }
       #qrCode img, #qrCode canvas { width: min(72vw, 220px); }
+      .helper-actions { grid-template-columns: 1fr; }
       #floating-whatsapp { right: calc(14px + env(safe-area-inset-right, 0px)); bottom: calc(14px + env(safe-area-inset-bottom, 0px)); }
       #floating-whatsapp img { width: 52px; height: 52px; }
     }
@@ -193,6 +201,18 @@
         <div id="qrCode"></div>
         <p class="qr-help">Customers scan this code to pay. Valid for all transactions: <span id="templateDesc"></span> @ KES <span id="templateAmount"></span></p>
         <button type="button" class="copy-btn" id="copyLink">Copy Portal Link</button>
+        <button type="button" class="copy-btn" id="copyReferralLink">Copy Client Referral Link</button>
+        <div class="helper-panel">
+          <h3>Connectivity Assistant</h3>
+          <p class="helper-note">For clients with low or no internet, help them connect quickly or buy affordable bundles before checkout.</p>
+          <div class="helper-actions">
+            <button type="button" class="helper-btn" id="openHotspotSettingsBtn">Open Hotspot / Wi-Fi Settings</button>
+            <button type="button" class="helper-btn" id="shareCheckoutBtn">Share Checkout Link</button>
+            <button type="button" class="helper-btn" id="copyBundleLinkBtn">Copy Buy Bundles Link</button>
+            <button type="button" class="helper-btn" id="openClientFinanceBtn">Open Client Finance Manager</button>
+          </div>
+          <div class="market-mini" id="connectivityStatus">Bundle rescue and digital marketplace shortcuts will appear here.</div>
+        </div>
       </div>
     </div>
   </div>
@@ -207,7 +227,13 @@
     const qrSection = document.getElementById("qrSection");
     const qrCodeDiv = document.getElementById("qrCode");
     const copyBtn = document.getElementById("copyLink");
+    const copyReferralLinkBtn = document.getElementById("copyReferralLink");
+    const openHotspotSettingsBtn = document.getElementById("openHotspotSettingsBtn");
+    const shareCheckoutBtn = document.getElementById("shareCheckoutBtn");
+    const copyBundleLinkBtn = document.getElementById("copyBundleLinkBtn");
+    const openClientFinanceBtn = document.getElementById("openClientFinanceBtn");
     let currentTemplateId = null;
+    let currentReferralLink = "";
 
     function loadScript(src) {
       return new Promise((resolve, reject) => {
@@ -252,6 +278,39 @@
     function showStatus(type, msg) {
       statusBox.className = `status show ${type}`;
       statusBox.textContent = msg;
+    }
+
+    async function buildReferralLink() {
+      if (!currentTemplateId) return "";
+      try {
+        const res = await fetch("/api/kassangas/referral-link", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            merchantCode: "KASSANGAS-MERCHANT",
+            templateId: currentTemplateId,
+            role: "affiliate",
+            clientLabel: document.getElementById("itemName").value.trim() || "Client Checkout"
+          })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Unable to create referral link");
+        currentReferralLink = data.url;
+        return currentReferralLink;
+      } catch (err) {
+        showStatus("error", err.message);
+        return "";
+      }
+    }
+
+    function updateConnectivityAssistant() {
+      const statusEl = document.getElementById("connectivityStatus");
+      const checkoutUrl = `${window.location.origin}/kassangas-client-wallet?t=${currentTemplateId || ""}`;
+      statusEl.innerHTML = `
+        <strong>Low-Data Checkout Mode</strong><br/>
+        Client checkout link: ${checkoutUrl}<br/>
+        Buy bundles flow: ${window.location.origin}/kassangas-client-wallet?t=${currentTemplateId || ""}#finance-tab
+      `;
     }
 
     form.addEventListener("submit", async (e) => {
@@ -300,6 +359,8 @@
         document.getElementById("templateDesc").textContent = itemName;
         document.getElementById("templateAmount").textContent = amount;
         qrSection.classList.add("show");
+        await buildReferralLink();
+        updateConnectivityAssistant();
         if (qrAvailable) {
           showStatus("ok", "QR ready! Customers can scan it.");
         }
@@ -314,6 +375,50 @@
       navigator.clipboard.writeText(url).then(() => {
         alert("Link copied!");
       });
+    });
+
+    copyReferralLinkBtn.addEventListener("click", async () => {
+      const url = currentReferralLink || await buildReferralLink();
+      if (!url) return;
+      navigator.clipboard.writeText(url).then(() => {
+        alert("Referral link copied!");
+      });
+    });
+
+    openHotspotSettingsBtn.addEventListener("click", () => {
+      const ua = navigator.userAgent || "";
+      const androidIntent = "intent:#Intent;action=android.settings.WIFI_SETTINGS;end";
+      if (/Android/i.test(ua)) {
+        window.location.href = androidIntent;
+      } else {
+        alert("Open your phone's Hotspot or Wi-Fi settings to help the client connect. Browsers cannot directly toggle hotspot.");
+      }
+    });
+
+    shareCheckoutBtn.addEventListener("click", async () => {
+      const url = `${window.location.origin}/kassangas-client-wallet?t=${currentTemplateId}`;
+      if (navigator.share) {
+        try {
+          await navigator.share({ title: "Fast M-Pesa Checkout", text: "Open this checkout link to pay quickly.", url });
+        } catch (_) {
+          // user cancelled
+        }
+      } else {
+        navigator.clipboard.writeText(url);
+        alert("Checkout link copied. Share via WhatsApp, Bluetooth, or SMS.");
+      }
+    });
+
+    copyBundleLinkBtn.addEventListener("click", () => {
+      const url = `${window.location.origin}/kassangas-client-wallet?t=${currentTemplateId}#finance-tab`;
+      navigator.clipboard.writeText(url).then(() => {
+        alert("Bundles / Finance Manager link copied!");
+      });
+    });
+
+    openClientFinanceBtn.addEventListener("click", () => {
+      if (!currentTemplateId) return;
+      window.open(`${window.location.origin}/kassangas-client-wallet?t=${currentTemplateId}#finance-tab`, "_blank");
     });
   </script>
 </body>
