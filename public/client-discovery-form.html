@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Alphadome Client Discovery Questionnaire</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-1: #081421;
+      --accent: #ff8a00;
+      --accent-2: #ffd166;
+      --mint: #7ef9c8;
+      --panel: rgba(10, 22, 36, 0.82);
+      --text: #f3f7fa;
+      --muted: #b8c7d6;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      font-family: "Space Grotesk", sans-serif;
+      color: var(--text);
+      background: linear-gradient(135deg, var(--bg-1) 0%, #0a1628 100%);
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 40px 24px;
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 3rem;
+    }
+
+    .header h1 {
+      font-size: 2.2rem;
+      margin-bottom: 0.5rem;
+      background: linear-gradient(135deg, var(--accent-2), var(--mint));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .header p {
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    .form-section {
+      background: var(--panel);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 16px;
+      padding: 2rem;
+      margin-bottom: 2rem;
+    }
+
+    .form-section h2 {
+      font-size: 1.3rem;
+      margin-bottom: 1.5rem;
+      color: var(--accent-2);
+      border-bottom: 1px solid rgba(255, 209, 102, 0.2);
+      padding-bottom: 1rem;
+    }
+
+    .form-group {
+      margin-bottom: 1.5rem;
+    }
+
+    label {
+      display: block;
+      font-weight: 500;
+      margin-bottom: 0.6rem;
+      font-size: 0.95rem;
+      color: var(--text);
+    }
+
+    .required {
+      color: #ff6b6b;
+      margin-left: 4px;
+    }
+
+    input[type="text"],
+    input[type="email"],
+    input[type="tel"],
+    input[type="number"],
+    select,
+    textarea {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      background: rgba(2, 6, 23, 0.6);
+      color: var(--text);
+      border-radius: 10px;
+      font-family: inherit;
+      font-size: 0.95rem;
+      transition: all 0.2s ease;
+    }
+
+    input:focus,
+    select:focus,
+    textarea:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(255, 138, 0, 0.15);
+    }
+
+    textarea {
+      resize: vertical;
+      min-height: 100px;
+    }
+
+    .radio-group,
+    .checkbox-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.8rem;
+    }
+
+    .radio-option,
+    .checkbox-option {
+      display: flex;
+      align-items: center;
+      gap: 0.8rem;
+    }
+
+    input[type="radio"],
+    input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      cursor: pointer;
+      accent-color: var(--accent);
+    }
+
+    .radio-option label,
+    .checkbox-option label {
+      margin-bottom: 0;
+      cursor: pointer;
+      font-weight: 400;
+    }
+
+    .hint {
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-top: 0.4rem;
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+    }
+
+    @media (max-width: 600px) {
+      .form-row {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .buttons {
+      display: flex;
+      gap: 1rem;
+      justify-content: center;
+      margin-top: 2rem;
+    }
+
+    button {
+      padding: 14px 28px;
+      border: none;
+      border-radius: 10px;
+      font-weight: 700;
+      font-size: 0.95rem;
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+
+    .btn-submit {
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+      color: #081421;
+    }
+
+    .btn-submit:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(255, 138, 0, 0.3);
+    }
+
+    .btn-reset {
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: var(--text);
+    }
+
+    .btn-reset:hover {
+      background: rgba(255, 255, 255, 0.15);
+    }
+
+    .success-message {
+      display: none;
+      background: rgba(34, 211, 160, 0.15);
+      border: 1px solid rgba(34, 211, 160, 0.4);
+      color: #7ef9c8;
+      padding: 1.5rem;
+      border-radius: 12px;
+      text-align: center;
+      margin-top: 2rem;
+    }
+
+    .error-message {
+      color: #ff6b6b;
+      font-size: 0.85rem;
+      margin-top: 0.4rem;
+    }
+
+    .info-box {
+      background: rgba(56, 189, 248, 0.1);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      padding: 1.2rem;
+      border-radius: 10px;
+      margin-bottom: 1rem;
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <div class="header">
+    <h1>Let's Build Your 3.0 System</h1>
+    <p>Tell us about your business, and we'll design a custom operating system that fits your needs.</p>
+  </div>
+
+  <form id="discoveryForm">
+    
+    <!-- SECTION 1: BASICS -->
+    <div class="form-section">
+      <h2>📋 About Your Business</h2>
+      
+      <div class="form-row">
+        <div class="form-group">
+          <label>Your Name <span class="required">*</span></label>
+          <input type="text" name="name" required placeholder="e.g., Jane Doe">
+        </div>
+        <div class="form-group">
+          <label>Business Name <span class="required">*</span></label>
+          <input type="text" name="business_name" required placeholder="e.g., Kassangas Music Shop">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Email <span class="required">*</span></label>
+          <input type="email" name="email" required placeholder="you@business.com">
+        </div>
+        <div class="form-group">
+          <label>Phone <span class="required">*</span></label>
+          <input type="tel" name="phone" required placeholder="254712345678">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>What industry/sector are you in? <span class="required">*</span></label>
+        <select name="industry" required>
+          <option value="">-- Select an industry --</option>
+          <option value="e-commerce">E-Commerce / Retail</option>
+          <option value="services">Professional Services</option>
+          <option value="healthcare">Healthcare & Wellness</option>
+          <option value="education">Education & Training</option>
+          <option value="finance">Finance & Banking</option>
+          <option value="logistics">Logistics & Supply Chain</option>
+          <option value="real-estate">Real Estate</option>
+          <option value="hospitality">Hospitality & Tourism</option>
+          <option value="manufacturing">Manufacturing</option>
+          <option value="marketing">Marketing & Advertising</option>
+          <option value="other">Other (please describe below)</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Brief description of what your business does</label>
+        <textarea name="business_description" placeholder="e.g., We sell musical instruments and offer lessons online..."></textarea>
+      </div>
+    </div>
+
+    <!-- SECTION 2: CURRENT STATE -->
+    <div class="form-section">
+      <h2>🔍 Your Current Situation</h2>
+
+      <div class="form-group">
+        <label>How large is your team? <span class="required">*</span></label>
+        <div class="radio-group">
+          <div class="radio-option">
+            <input type="radio" name="team_size" value="1-5" required>
+            <label>1-5 people (solo/small team)</label>
+          </div>
+          <div class="radio-option">
+            <input type="radio" name="team_size" value="6-20">
+            <label>6-20 people</label>
+          </div>
+          <div class="radio-option">
+            <input type="radio" name="team_size" value="21-50">
+            <label>21-50 people</label>
+          </div>
+          <div class="radio-option">
+            <input type="radio" name="team_size" value="50+">
+            <label>50+ people</label>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>What are your biggest operational challenges? <span class="required">*</span></label>
+        <div class="checkbox-group">
+          <div class="checkbox-option">
+            <input type="checkbox" name="challenges" value="customer-support">
+            <label>Too many customer support requests / slow response time</label>
+          </div>
+          <div class="checkbox-option">
+            <input type="checkbox" name="challenges" value="lead-capture">
+            <label>Losing leads / missing sales opportunities</label>
+          </div>
+          <div class="checkbox-option">
+            <input type="checkbox" name="challenges" value="manual-tasks">
+            <label>Too much manual work / low team productivity</label>
+          </div>
+          <div class="checkbox-option">
+            <input type="checkbox" name="challenges" value="payments">
+            <label>Struggling with payment collection / revenue leaks</label>
+          </div>
+          <div class="checkbox-option">
+            <input type="checkbox" name="challenges" value="data">
+            <label>No visibility into customer behavior / analytics</label>
+          </div>
+          <div class="checkbox-option">
+            <input type="checkbox" name="challenges" value="scaling">
+            <label>Can't scale without hiring more staff</label>
+          </div>
+          <div class="checkbox-option">
+            <input type="checkbox" name="challenges" value="other">
+            <label>Other (describe below)</label>
+          </div>
+        </div>
+        <p class="hint">Check all that apply</p>
+      </div>
+
+      <div class="form-group">
+        <label>If "Other," describe:</label>
+        <textarea name="challenges_other" placeholder=""></textarea>
+      </div>
+
+      <div class="form-group">
+        <label>Are you currently using WhatsApp for business? <span class="required">*</span></label>
+        <div class="radio-group">
+          <div class="radio-option">
+            <input type="radio" name="whatsapp_usage" value="yes-business-account" required>
+            <label>Yes, with a business account (Meta verified)</label>
+          </div>
+          <div class="radio-option">
+            <input type="radio" name="whatsapp_usage" value="yes-personal">
+            <label>Yes, but with a personal number</label>
+          </div>
+          <div class="radio-option">
+            <input type="radio" name="whatsapp_usage" value="no">
+            <label>No, but interested in it</label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SECTION 3: GOALS & VISION -->
+    <div class="form-section">
+      <h2>🎯 Your Goals & Vision</h2>
+
+      <div class="form-group">
+        <label>What do you want your 3.0 system to do? (Select up to 3)</label>
+        <div class="checkbox-group">
+          <div class="checkbox-option">
+            <input type="checkbox" name="capabilities" value="automate-support">
+            <label>Automate customer support & FAQ answering</label>
+          </div>
+          <div class="checkbox-option">
+            <input type="checkbox" name="capabilities" value="capture-leads">
+            <label>Capture & qualify leads automatically</label>
+          </div>
+          <div class="checkbox-option">
+            <input type="checkbox" name="capabilities" value="handle-payments">
+            <label>Handle payments & revenue collection</label>
+          </div>
+          <div class="checkbox-option">
+            <input type="checkbox" name="capabilities" value="broadcast-campaigns">
+            <label>Run broadcast campaigns & marketing</label>
+          </div>
+          <div class="checkbox-option">
+            <input type="checkbox" name="capabilities" value="manage-catalog">
+            <label>Manage product catalog & orders</label>
+          </div>
+          <div class="checkbox-option">
+            <input type="checkbox" name="capabilities" value="onboard-clients">
+            <label>Onboard other clients/resellers into my ecosystem</label>
+          </div>
+          <div class="checkbox-option">
+            <input type="checkbox" name="capabilities" value="analytics">
+            <label>Get analytics & insights about customers</label>
+          </div>
+          <div class="checkbox-option">
+            <input type="checkbox" name="capabilities" value="tokenize">
+            <label>Tokenize my workflows / digital products</label>
+          </div>
+        </div>
+        <p class="hint">Select top 3 priorities</p>
+      </div>
+
+      <div class="form-group">
+        <label>Within 6 months, what revenue increase would be meaningful for you? <span class="required">*</span></label>
+        <div class="radio-group">
+          <div class="radio-option">
+            <input type="radio" name="revenue_target" value="10-30" required>
+            <label>10-30% increase</label>
+          </div>
+          <div class="radio-option">
+            <input type="radio" name="revenue_target" value="30-100">
+            <label>30-100% increase</label>
+          </div>
+          <div class="radio-option">
+            <input type="radio" name="revenue_target" value="100+">
+            <label>100%+ increase (2x or more)</label>
+          </div>
+          <div class="radio-option">
+            <input type="radio" name="revenue_target" value="not-sure">
+            <label>Not sure yet</label>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Would you be interested in letting your team or partners own portions of your 3.0 system? <span class="required">*</span></label>
+        <div class="radio-group">
+          <div class="radio-option">
+            <input type="radio" name="ownership_interest" value="very-interested" required>
+            <label>Very interested — alignment of incentives matters</label>
+          </div>
+          <div class="radio-option">
+            <input type="radio" name="ownership_interest" value="maybe">
+            <label>Maybe — interested but still learning</label>
+          </div>
+          <div class="radio-option">
+            <input type="radio" name="ownership_interest" value="not-interested">
+            <label>Not interested — prefer traditional structure</label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SECTION 4: BUDGET & TIMELINE -->
+    <div class="form-section">
+      <h2>💰 Budget & Timeline</h2>
+
+      <div class="form-group">
+        <label>When do you want to launch? <span class="required">*</span></label>
+        <div class="radio-group">
+          <div class="radio-option">
+            <input type="radio" name="timeline" value="asap" required>
+            <label>ASAP (within 4 weeks)</label>
+          </div>
+          <div class="radio-option">
+            <input type="radio" name="timeline" value="1-2-months">
+            <label>1-2 months</label>
+          </div>
+          <div class="radio-option">
+            <input type="radio" name="timeline" value="2-3-months">
+            <label>2-3 months</label>
+          </div>
+          <div class="radio-option">
+            <input type="radio" name="timeline" value="flexible">
+            <label>Flexible / exploring options</label>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>What's your budget range for this project? <span class="required">*</span></label>
+        <select name="budget" required>
+          <option value="">-- Select a range --</option>
+          <option value="1-5k">KES 1K-5K monthly (~$8-40 USD)</option>
+          <option value="5-10k">KES 5K-10K monthly (~$40-80 USD)</option>
+          <option value="10-25k">KES 10K-25K monthly (~$80-200 USD)</option>
+          <option value="25-50k">KES 25K-50K monthly (~$200-400 USD)</option>
+          <option value="50k+">KES 50K+ monthly (~$400+ USD)</option>
+          <option value="not-sure">Not sure / want to discuss options</option>
+        </select>
+        <p class="hint">This helps us scope the right solution for you</p>
+      </div>
+    </div>
+
+    <!-- SECTION 5: ADDITIONAL INFO -->
+    <div class="form-section">
+      <h2>📝 Anything Else?</h2>
+
+      <div class="form-group">
+        <label>What's holding you back from growing faster right now?</label>
+        <textarea name="blockers" placeholder="e.g., We're too busy answering WhatsApp messages to focus on sales..."></textarea>
+      </div>
+
+      <div class="form-group">
+        <label>How did you hear about Alphadome?</label>
+        <select name="source">
+          <option value="">-- Select --</option>
+          <option value="whatsapp">WhatsApp</option>
+          <option value="referral">Referral from friend/partner</option>
+          <option value="website">Website / Search</option>
+          <option value="social">Social media</option>
+          <option value="conference">Conference / Event</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Anything else you'd like us to know?</label>
+        <textarea name="additional_notes" placeholder=""></textarea>
+      </div>
+    </div>
+
+    <div class="buttons">
+      <button type="submit" class="btn-submit">Submit Questionnaire</button>
+      <button type="reset" class="btn-reset">Clear Form</button>
+    </div>
+
+    <div class="success-message" id="successMessage">
+      ✓ Thank you! We've received your questionnaire. We'll be in touch within 24 hours to discuss your 3.0 system.
+    </div>
+  </form>
+</div>
+
+<script>
+  const form = document.getElementById('discoveryForm');
+  
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const formData = new FormData(form);
+    const data = Object.fromEntries(formData);
+    
+    // Log to console for now (in production, send to API)
+    console.log('Discovery Form Submitted:', data);
+    
+    // Show success message
+    document.getElementById('successMessage').style.display = 'block';
+    form.style.display = 'none';
+    
+    // In production, you would send this to a backend:
+    // await fetch('/api/discovery-submit', {
+    //   method: 'POST',
+    //   headers: { 'Content-Type': 'application/json' },
+    //   body: JSON.stringify(data)
+    // });
+  });
+</script>
+
+</body>
+</html>

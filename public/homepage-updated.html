@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Alphadome — Co-Build Tokenizable AI Operating Systems</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Bebas+Neue&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-1: #081421;
+      --bg-2: #0a1628;
+      --accent: #ff8a00;
+      --accent-2: #ffd166;
+      --mint: #7ef9c8;
+      --panel: rgba(10, 22, 36, 0.82);
+      --text: #f3f7fa;
+      --muted: #b8c7d6;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: "Space Grotesk", sans-serif;
+      color: var(--text);
+      background: linear-gradient(135deg, var(--bg-1) 0%, var(--bg-2) 100%);
+      line-height: 1.6;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* HERO */
+    .hero {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      padding: 60px 24px;
+      background: radial-gradient(circle at 50% 50%, rgba(255, 138, 0, 0.1) 0%, transparent 70%);
+    }
+
+    .hero h1 {
+      font-family: "Bebas Neue", sans-serif;
+      font-size: clamp(2.5rem, 6vw, 4.5rem);
+      line-height: 1.1;
+      letter-spacing: 0.02em;
+      margin-bottom: 1rem;
+      background: linear-gradient(135deg, var(--accent-2), var(--mint), var(--accent));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .hero .subheading {
+      font-size: clamp(1.1rem, 2vw, 1.4rem);
+      color: var(--muted);
+      max-width: 720px;
+      margin: 0 auto 2.5rem;
+      line-height: 1.7;
+    }
+
+    .hero .cta-buttons {
+      display: flex;
+      gap: 1rem;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin-bottom: 3rem;
+    }
+
+    .btn {
+      padding: 14px 28px;
+      border: none;
+      border-radius: 12px;
+      font-weight: 700;
+      font-size: 0.95rem;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.3s ease;
+      display: inline-block;
+    }
+
+    .btn-primary {
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+      color: #081421;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 32px rgba(255, 138, 0, 0.3);
+    }
+
+    .btn-secondary {
+      background: rgba(255, 209, 102, 0.1);
+      border: 1px solid rgba(255, 209, 102, 0.4);
+      color: var(--accent-2);
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255, 209, 102, 0.2);
+      border-color: rgba(255, 209, 102, 0.6);
+    }
+
+    /* SECTION: THE 3.0 MODEL */
+    .section {
+      padding: 80px 24px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .section h2 {
+      font-family: "Bebas Neue", sans-serif;
+      font-size: clamp(2rem, 4vw, 3.2rem);
+      margin-bottom: 3rem;
+      text-align: center;
+      letter-spacing: 0.02em;
+    }
+
+    .grid-4 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 2rem;
+      margin-bottom: 3rem;
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 16px;
+      padding: 2rem;
+      transition: all 0.3s ease;
+    }
+
+    .card:hover {
+      border-color: rgba(255, 138, 0, 0.5);
+      box-shadow: 0 8px 24px rgba(255, 138, 0, 0.15);
+      transform: translateY(-4px);
+    }
+
+    .card h3 {
+      font-size: 1.3rem;
+      margin-bottom: 1rem;
+      color: var(--accent-2);
+    }
+
+    .card p {
+      font-size: 0.95rem;
+      color: var(--muted);
+      line-height: 1.7;
+    }
+
+    /* SECTION: HOW IT WORKS */
+    .workflow {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.5rem;
+    }
+
+    .workflow-step {
+      background: rgba(15, 23, 42, 0.5);
+      border: 1px solid rgba(255, 209, 102, 0.2);
+      border-radius: 12px;
+      padding: 1.8rem;
+      text-align: center;
+    }
+
+    .step-number {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      color: #081421;
+      font-weight: 700;
+      font-size: 1.5rem;
+      margin-bottom: 1rem;
+    }
+
+    .workflow-step h3 {
+      font-size: 1.15rem;
+      margin-bottom: 0.8rem;
+      color: var(--text);
+    }
+
+    .workflow-step p {
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+
+    /* SECTION: CO-OWNERSHIP */
+    .co-ownership {
+      text-align: center;
+    }
+
+    .co-ownership-body {
+      max-width: 800px;
+      margin: 0 auto;
+      background: rgba(126, 249, 200, 0.08);
+      border: 1px solid rgba(126, 249, 200, 0.3);
+      border-radius: 16px;
+      padding: 3rem 2rem;
+      margin-bottom: 2rem;
+    }
+
+    .co-ownership-body h3 {
+      font-size: 1.5rem;
+      margin-bottom: 1.5rem;
+      color: var(--mint);
+    }
+
+    .co-ownership-body p {
+      font-size: 1rem;
+      line-height: 1.8;
+      color: var(--muted);
+      margin-bottom: 1rem;
+    }
+
+    .ownership-points {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1.5rem;
+      margin-top: 2rem;
+    }
+
+    .ownership-point {
+      background: rgba(126, 249, 200, 0.05);
+      border-left: 3px solid var(--mint);
+      padding: 1.5rem;
+      border-radius: 8px;
+    }
+
+    .ownership-point h4 {
+      color: var(--mint);
+      margin-bottom: 0.5rem;
+      font-size: 1rem;
+    }
+
+    .ownership-point p {
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+
+    /* SECTION: PORTFOLIO PREVIEW */
+    .portfolio-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 2rem;
+    }
+
+    .portfolio-item {
+      background: var(--panel);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 14px;
+      padding: 2rem;
+      transition: all 0.3s ease;
+    }
+
+    .portfolio-item:hover {
+      border-color: rgba(255, 138, 0, 0.4);
+    }
+
+    .portfolio-item h3 {
+      font-size: 1.15rem;
+      margin-bottom: 0.5rem;
+      color: var(--accent-2);
+    }
+
+    .portfolio-item .domain {
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-bottom: 1rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .portfolio-item p {
+      font-size: 0.9rem;
+      color: var(--muted);
+      margin-bottom: 1.5rem;
+    }
+
+    .portfolio-item a {
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 600;
+      transition: color 0.2s ease;
+    }
+
+    .portfolio-item a:hover {
+      color: var(--accent-2);
+    }
+
+    /* SECTION: FOR YOUR AUDIENCE */
+    .audience-tabs {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 2rem;
+    }
+
+    .audience-card {
+      background: var(--panel);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 16px;
+      padding: 2.5rem;
+      transition: all 0.3s ease;
+    }
+
+    .audience-card:hover {
+      border-color: rgba(255, 138, 0, 0.5);
+    }
+
+    .audience-card .icon {
+      font-size: 2.5rem;
+      margin-bottom: 1rem;
+    }
+
+    .audience-card h3 {
+      font-size: 1.3rem;
+      margin-bottom: 1rem;
+      color: var(--text);
+    }
+
+    .audience-card .pain {
+      font-size: 0.85rem;
+      color: #ff6b6b;
+      margin-bottom: 1rem;
+      font-weight: 600;
+    }
+
+    .audience-card .message {
+      font-size: 0.95rem;
+      color: var(--muted);
+      line-height: 1.7;
+    }
+
+    /* FOOTER CTA */
+    .footer-cta {
+      text-align: center;
+      padding: 60px 24px;
+      background: radial-gradient(circle at 50% 50%, rgba(255, 138, 0, 0.12) 0%, transparent 70%);
+    }
+
+    .footer-cta h2 {
+      font-family: "Bebas Neue", sans-serif;
+      font-size: clamp(1.8rem, 3vw, 2.8rem);
+      margin-bottom: 1.5rem;
+    }
+
+    .footer-cta p {
+      font-size: 1.05rem;
+      color: var(--muted);
+      margin-bottom: 2rem;
+    }
+
+    .footer-cta .buttons {
+      display: flex;
+      gap: 1rem;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    /* RESPONSIVE */
+    @media (max-width: 768px) {
+      .hero h1 { font-size: 2rem; }
+      .hero .subheading { font-size: 1rem; }
+      .section h2 { font-size: 1.8rem; }
+      .grid-4, .workflow { grid-template-columns: 1fr; }
+      .hero .cta-buttons { flex-direction: column; }
+      .btn { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="container">
+    <h1>Co-Build AI Operating<br/>Systems Your Business<br/>Can Own</h1>
+    <p class="subheading">Deploy a 3.0 system for your business in weeks. Hold ownership stakes. Let AI and humans scale together.</p>
+    <div class="cta-buttons">
+      <button class="btn btn-primary">Request Discovery Call</button>
+      <button class="btn btn-secondary">Watch Demo</button>
+      <button class="btn btn-secondary">See Portfolio</button>
+    </div>
+  </div>
+</section>
+
+<!-- THE 3.0 MODEL -->
+<section class="section">
+  <div class="container">
+    <h2>What You Get: The 3.0 System</h2>
+    <div class="grid-4">
+      <div class="card">
+        <h3>AI Agents & Automation</h3>
+        <p>WhatsApp, email, and SMS-native assistants that handle campaigns, onboarding, support, and revenue. Real-time dashboards show what's working.</p>
+      </div>
+      <div class="card">
+        <h3>Tokenized Digital Products</h3>
+        <p>Your workflows, knowledge, and content become NFT-ready assets. Sell them. Trade them. Control them.</p>
+      </div>
+      <div class="card">
+        <h3>Blockchain Ownership</h3>
+        <p>You own your 3.0 system. Your team and partners can hold portions. Revenue flows automatically to stakeholders.</p>
+      </div>
+      <div class="card">
+        <h3>Multi-Tenant Scalability</h3>
+        <p>Onboard your own clients or franchisees into your ecosystem. They inherit all the AI, dashboards, and compliance. You capture recurring fees.</p>
+      </div>
+    </div>
+    <p style="text-align: center; color: var(--muted); font-size: 1rem; line-height: 1.7; max-width: 700px; margin: 0 auto;">
+      Each 3.0 system is tailored to your business model, your workflows, your team. You own it. You scale it. Alphadome handles the infrastructure.
+    </p>
+  </div>
+</section>
+
+<!-- HOW IT WORKS -->
+<section class="section">
+  <div class="container">
+    <h2>How It Works: 6 Steps to Your 3.0</h2>
+    <div class="workflow">
+      <div class="workflow-step">
+        <div class="step-number">1</div>
+        <h3>Discover</h3>
+        <p>We learn your business, goals, pain points, and growth targets. You tell us what matters.</p>
+      </div>
+      <div class="workflow-step">
+        <div class="step-number">2</div>
+        <h3>Architect</h3>
+        <p>Design a 3.0 system blueprint fit for your workflows, team size, and revenue model.</p>
+      </div>
+      <div class="workflow-step">
+        <div class="step-number">3</div>
+        <h3>Deploy</h3>
+        <p>Launch AI agents, dashboards, automations, and commerce tools in your environment.</p>
+      </div>
+      <div class="workflow-step">
+        <div class="step-number">4</div>
+        <h3>Productize</h3>
+        <p>Convert your workflows and content into tokenized digital products and assets.</p>
+      </div>
+      <div class="workflow-step">
+        <div class="step-number">5</div>
+        <h3>Scale</h3>
+        <p>Onboard clients, partners, or franchisees into your 3.0 ecosystem. Capture recurring revenue.</p>
+      </div>
+      <div class="workflow-step">
+        <div class="step-number">6</div>
+        <h3>Monetize</h3>
+        <p>Transaction fees, SaaS subscriptions, ownership upside. Revenue flows to all stakeholders.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CO-OWNERSHIP EXPLAINED -->
+<section class="section">
+  <div class="container">
+    <h2>How Co-Ownership Works</h2>
+    <div class="co-ownership-body">
+      <h3>Your 3.0 System Is Yours</h3>
+      <p>You hold the majority stake in your 3.0 operating system. You control the vision, the roadmap, the operations.</p>
+      <p><strong>Your team, partners, and investors can hold tokenized portions.</strong> No gatekeeping. No middleman. Revenue flows automatically to stakeholders based on their holdings.</p>
+      <p>Want to onboard a reseller? Give them a 5% stake. They'll fight to grow it. Want to attract an investor? Offer equity in your 3.0 agent. They get recurring upside.</p>
+    </div>
+    <div class="ownership-points">
+      <div class="ownership-point">
+        <h4>🔐 You Own It</h4>
+        <p>Majority shareholder. You set strategy and control operations.</p>
+      </div>
+      <div class="ownership-point">
+        <h4>🤝 Share Upside</h4>
+        <p>Team members, partners, investors hold tokenized portions. Aligned incentives.</p>
+      </div>
+      <div class="ownership-point">
+        <h4>💰 Auto Revenue Share</h4>
+        <p>Payments flow to shareholders based on ownership. No manual distribution.</p>
+      </div>
+      <div class="ownership-point">
+        <h4>📈 Transparent Growth</h4>
+        <p>Blockchain ledger shows all transactions, stakeholder positions, and revenue flows.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- LIVE PORTFOLIO -->
+<section class="section">
+  <div class="container">
+    <h2>Live 3.0 Systems (Portfolio)</h2>
+    <p style="text-align: center; color: var(--muted); margin-bottom: 2rem; font-size: 0.95rem;">Each system generated for a real client. Yours will be equally customized.</p>
+    <div class="portfolio-grid">
+      <div class="portfolio-item">
+        <h3>Alpha 3.0</h3>
+        <div class="domain">Comms & Outreach</div>
+        <p>Multi-tenant WhatsApp automation, campaigns, lead management, revenue tracking, catalog, and fallback payment recovery.</p>
+        <a href="/portfolio-viewer.html?agent=alpha-3-0">View System →</a>
+      </div>
+      <div class="portfolio-item">
+        <h3>Alpha Architect</h3>
+        <div class="domain">AI Design & Rendering</div>
+        <p>AI-driven architectural design, 3D modeling, cloud rendering, asset management, and Blender integration.</p>
+        <a href="/portfolio-viewer.html?agent=alpha-architect">View System →</a>
+      </div>
+      <div class="portfolio-item">
+        <h3>KEMSA 3.0</h3>
+        <div class="domain">Healthcare Supply Chain</div>
+        <p>Real-time dashboards, ETL, AI/ML analytics, anomaly detection, demand forecasting, and blockchain traceability.</p>
+        <a href="/portfolio-viewer.html?agent=kemsa-3-0">View System →</a>
+      </div>
+      <div class="portfolio-item">
+        <h3>Alpha Professor</h3>
+        <div class="domain">Academic CRM</div>
+        <p>Lead generation, outreach, CRM, analytics, marketplace, onboarding, compliance, and revenue tracking.</p>
+        <a href="/portfolio-viewer.html?agent=alpha-professor-3-0">View System →</a>
+      </div>
+    </div>
+    <div style="text-align: center; margin-top: 3rem;">
+      <a href="/portfolio.html" class="btn btn-secondary">See Full Portfolio →</a>
+    </div>
+  </div>
+</section>
+
+<!-- FOR YOUR AUDIENCE -->
+<section class="section">
+  <div class="container">
+    <h2>For Your Audience</h2>
+    <div class="audience-tabs">
+      <div class="audience-card">
+        <div class="icon">🏢</div>
+        <h3>Business Owners</h3>
+        <div class="pain">Pain: Manual ops, fragmented tools, revenue leaks</div>
+        <div class="message">Turn your WhatsApp hustle into a smart operating system that works 24/7, captures revenue automatically, and grows with you—without replacing your team.</div>
+      </div>
+      <div class="audience-card">
+        <div class="icon">🚀</div>
+        <h3>Agencies & Platforms</h3>
+        <div class="pain">Pain: Custom bots are slow and expensive</div>
+        <div class="message">Launch client-specific AI operating systems in days, not months. Offer them ownership stakes and watch retention and lifetime value explode.</div>
+      </div>
+      <div class="audience-card">
+        <div class="icon">💼</div>
+        <h3>Investors & Ecosystem</h3>
+        <div class="pain">Pain: How do I participate in AI upside?</div>
+        <div class="message">Own portions of 3.0 agents deployed across real businesses. Revenue-share from operations, digital products, and tokenized asset appreciation.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER CTA -->
+<section class="footer-cta">
+  <div class="container">
+    <h2>Ready to Co-Build Your 3.0 System?</h2>
+    <p>Let's talk about what you need, what you want to own, and how to scale together.</p>
+    <div class="buttons">
+      <a href="mailto:info@alphadome.ai" class="btn btn-primary">Request Discovery Call</a>
+      <a href="https://wa.me/254786817637" class="btn btn-secondary">Chat on WhatsApp</a>
+    </div>
+  </div>
+</section>
+
+</body>
+</html>
