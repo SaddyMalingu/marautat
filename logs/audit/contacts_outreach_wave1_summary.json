@@ -1,0 +1,38 @@
+{
+    "generated_at_utc":  "2026-08-05T15:03:18.5378940Z",
+    "total_contacts":  130,
+    "daily_target_attempts":  26,
+    "wave_batches":  5,
+    "by_segment":  [
+                       {
+                           "segment":  "intl-growth",
+                           "count":  3
+                       },
+                       {
+                           "segment":  "construction-ops",
+                           "count":  52
+                       },
+                       {
+                           "segment":  "health-supply",
+                           "count":  41
+                       },
+                       {
+                           "segment":  "architecture-studio",
+                           "count":  26
+                       },
+                       {
+                           "segment":  "sales-automation",
+                           "count":  8
+                       }
+                   ],
+    "by_priority":  [
+                        {
+                            "priority":  "medium",
+                            "count":  37
+                        },
+                        {
+                            "priority":  "high",
+                            "count":  93
+                        }
+                    ]
+}
