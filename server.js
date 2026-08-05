@@ -294,7 +294,7 @@ app.get('/admin/api/slo-board', adminAuth, async (req, res) => {
 
 // Serve static files from public directory
 const publicDir = path.join(process.cwd(), 'public');
-app.use(express.static(publicDir));
+app.use(express.static(publicDir, { index: false }));
 
 // Secure route to download request.log for debugging
 app.get('/debug/request-log', (req, res) => {
@@ -311,7 +311,7 @@ app.get('/debug/request-log', (req, res) => {
   fs.createReadStream(logPath).pipe(res);
 });
 
-// Serve public/index.html at root
+// Serve marketing landing page at root
 app.get('/', (req, res) => {
   log(`Landing page loaded by ${req.ip} at ${new Date().toISOString()}`, "PAGE");
   res.sendFile(path.join(publicDir, 'homepage-updated.html'));
