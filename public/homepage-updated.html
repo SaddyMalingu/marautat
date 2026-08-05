@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Alphadome — Co-Build Tokenizable AI Operating Systems</title>
+  <title>Alphadome - Deployable AI Systems for Revenue, Operations, and Scale</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Bebas+Neue&display=swap" rel="stylesheet">
@@ -72,6 +72,50 @@
       justify-content: center;
       flex-wrap: wrap;
       margin-bottom: 3rem;
+    }
+
+    .position-strip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.6rem;
+      padding: 0.55rem 1rem;
+      border: 1px solid rgba(255, 209, 102, 0.35);
+      border-radius: 999px;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--accent-2);
+      margin-bottom: 1.25rem;
+      background: rgba(255, 209, 102, 0.06);
+    }
+
+    .outcome-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 0.9rem;
+      max-width: 840px;
+      margin: 0 auto;
+    }
+
+    .outcome-item {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.13);
+      border-radius: 12px;
+      padding: 0.9rem;
+      text-align: left;
+    }
+
+    .outcome-item strong {
+      display: block;
+      color: var(--accent-2);
+      font-size: 1.15rem;
+      margin-bottom: 0.2rem;
+    }
+
+    .outcome-item span {
+      font-size: 0.85rem;
+      color: var(--muted);
+      line-height: 1.4;
     }
 
     .btn {
@@ -192,6 +236,88 @@
     .workflow-step p {
       font-size: 0.9rem;
       color: var(--muted);
+    }
+
+    /* SECTION: CAPABILITIES */
+    .capabilities-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 1.2rem;
+      margin-top: 1.5rem;
+    }
+
+    .capability-pill {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 999px;
+      padding: 0.75rem 1rem;
+      font-size: 0.9rem;
+      color: var(--text);
+      text-align: center;
+    }
+
+    .proof-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1rem;
+      margin-top: 1.5rem;
+    }
+
+    .proof-item {
+      background: rgba(126, 249, 200, 0.06);
+      border: 1px solid rgba(126, 249, 200, 0.25);
+      border-radius: 12px;
+      padding: 1rem;
+    }
+
+    .proof-item h4 {
+      color: var(--mint);
+      margin-bottom: 0.4rem;
+      font-size: 1rem;
+    }
+
+    .proof-item p {
+      color: var(--muted);
+      font-size: 0.9rem;
+      line-height: 1.6;
+    }
+
+    .capacity-matrix {
+      margin-top: 2rem;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1rem;
+    }
+
+    .capacity-module {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 14px;
+      padding: 1.2rem;
+    }
+
+    .capacity-module h4 {
+      font-size: 1.05rem;
+      margin-bottom: 0.6rem;
+      color: var(--accent-2);
+    }
+
+    .capacity-module p {
+      font-size: 0.9rem;
+      color: var(--muted);
+      line-height: 1.6;
+      margin-bottom: 0.7rem;
+    }
+
+    .capacity-module .badge {
+      display: inline-block;
+      border: 1px solid rgba(126, 249, 200, 0.4);
+      color: var(--mint);
+      border-radius: 999px;
+      padding: 0.2rem 0.65rem;
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
     }
 
     /* SECTION: CO-OWNERSHIP */
@@ -366,6 +492,23 @@
       flex-wrap: wrap;
     }
 
+    .reveal {
+      opacity: 0;
+      transform: translateY(14px);
+      animation: liftIn 0.7s ease forwards;
+    }
+
+    .delay-1 { animation-delay: 0.08s; }
+    .delay-2 { animation-delay: 0.16s; }
+    .delay-3 { animation-delay: 0.24s; }
+
+    @keyframes liftIn {
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
     /* RESPONSIVE */
     @media (max-width: 768px) {
       .hero h1 { font-size: 2rem; }
@@ -382,12 +525,31 @@
 <!-- HERO -->
 <section class="hero">
   <div class="container">
-    <h1>Co-Build AI Operating<br/>Systems Your Business<br/>Can Own</h1>
-    <p class="subheading">Deploy a 3.0 system for your business in weeks. Hold ownership stakes. Let AI and humans scale together.</p>
+    <div class="position-strip reveal">Built for Paid Pilots and Fast Production Rollout</div>
+    <h1 class="reveal delay-1">Stop Buying Tools.<br/>Deploy a Revenue Operating System.</h1>
+    <p class="subheading reveal delay-2">Alphadome turns sales, operations, design, and supply chain workflows into one modular AI system your team can run daily. Multi-tenant architecture, secure automation, and measurable conversion pipelines are already built.</p>
     <div class="cta-buttons">
-      <a class="btn btn-primary" href="/discovery">Request Discovery Call</a>
-      <a class="btn btn-secondary" href="/portfolio.html">Watch Demo</a>
-      <a class="btn btn-secondary" href="/portfolio.html">See Portfolio</a>
+      <a class="btn btn-primary" href="/discovery">Book a System Blueprint Call</a>
+      <a class="btn btn-secondary" href="/portfolio.html">View Deployable Systems</a>
+      <a class="btn btn-secondary" href="https://wa.me/254786817637">WhatsApp Us</a>
+    </div>
+    <div class="outcome-grid reveal delay-3">
+      <div class="outcome-item">
+        <strong>4 Core Platforms</strong>
+        <span>Comms, construction, architecture, and healthcare supply operations.</span>
+      </div>
+      <div class="outcome-item">
+        <strong>API-First Modules</strong>
+        <span>Composable services for campaign, lead, analytics, workflow, and governance.</span>
+      </div>
+      <div class="outcome-item">
+        <strong>Production-Ready Core</strong>
+        <span>Operational systems with active rollout paths and measurable KPI loops.</span>
+      </div>
+      <div class="outcome-item">
+        <strong>Ownership By Design</strong>
+        <span>Deploy as your internal operating asset instead of renting disconnected tools.</span>
+      </div>
     </div>
   </div>
 </section>
@@ -395,65 +557,124 @@
 <!-- THE 3.0 MODEL -->
 <section class="section">
   <div class="container">
-    <h2>What You Get: The 3.0 System</h2>
+    <h2>What Alphadome Actually Delivers</h2>
     <div class="grid-4">
       <div class="card">
-        <h3>AI Agents & Automation</h3>
-        <p>WhatsApp, email, and SMS-native assistants that handle campaigns, onboarding, support, and revenue. Real-time dashboards show what's working.</p>
+        <h3>Campaign and Lead Execution</h3>
+        <p>Launch WhatsApp-centered outreach, automate lead capture, and move contacts through onboarding and conversion workflows with live tracking.</p>
       </div>
       <div class="card">
-        <h3>Tokenized Digital Products</h3>
-        <p>Your workflows, knowledge, and content become NFT-ready assets. Sell them. Trade them. Control them.</p>
+        <h3>Operational Intelligence</h3>
+        <p>Unify dashboards, alerts, and reporting so leadership sees pipeline, revenue motion, and execution bottlenecks in one place.</p>
       </div>
       <div class="card">
-        <h3>Blockchain Ownership</h3>
-        <p>You own your 3.0 system. Your team and partners can hold portions. Revenue flows automatically to stakeholders.</p>
+        <h3>Workflow and Asset Automation</h3>
+        <p>Automate design pipelines, project controls, and data-heavy operations using modular workflows instead of siloed manual tools.</p>
       </div>
       <div class="card">
-        <h3>Multi-Tenant Scalability</h3>
-        <p>Onboard your own clients or franchisees into your ecosystem. They inherit all the AI, dashboards, and compliance. You capture recurring fees.</p>
+        <h3>Enterprise Controls</h3>
+        <p>Run with strict tenant isolation, role-based access, fallback continuity, and auditable actions for reliable scale.</p>
       </div>
     </div>
     <p style="text-align: center; color: var(--muted); font-size: 1rem; line-height: 1.7; max-width: 700px; margin: 0 auto;">
-      Each 3.0 system is tailored to your business model, your workflows, your team. You own it. You scale it. Alphadome handles the infrastructure.
+      Alphadome combines AI, analytics, and modular APIs into a single operating layer that can be deployed per business model, per team, and per market.
     </p>
+  </div>
+</section>
+
+<!-- CAPABILITIES -->
+<section class="section">
+  <div class="container">
+    <h2>Core Capacity Stack</h2>
+    <div class="capabilities-grid">
+      <div class="capability-pill">Campaign management and lead lifecycle orchestration</div>
+      <div class="capability-pill">Revenue visibility, KPI dashboards, and exception monitoring</div>
+      <div class="capability-pill">Project, cost, safety, and compliance control modules</div>
+      <div class="capability-pill">AI design generation, cloud rendering, and asset pipelines</div>
+      <div class="capability-pill">ETL, demand forecasting, anomaly detection, and traceability</div>
+      <div class="capability-pill">Webhook integration, fallback continuity, and simulation tools</div>
+      <div class="capability-pill">Modular APIs for fast integration into existing stacks</div>
+      <div class="capability-pill">Secure multi-tenant architecture for operator-grade delivery</div>
+    </div>
+
+    <div class="capacity-matrix">
+      <div class="capacity-module">
+        <h4>Alpha 3.0 (Comms and Outreach)</h4>
+        <p>Campaigns, onboarding, revenue tracking, catalog workflows, admin tools, and continuity logic for WhatsApp-led growth operations.</p>
+        <span class="badge">Operational Core</span>
+      </div>
+      <div class="capacity-module">
+        <h4>Alpha Construction</h4>
+        <p>Project, workforce, cost, quality, safety, supply, and compliance workflows that reduce delivery risk and operational leakage.</p>
+        <span class="badge">High Adoption Fit</span>
+      </div>
+      <div class="capacity-module">
+        <h4>Alpha Architect</h4>
+        <p>AI-driven architectural design, cloud rendering, collaboration, and pipeline automation for faster creative and technical delivery.</p>
+        <span class="badge">Premium Service Upsell</span>
+      </div>
+      <div class="capacity-module">
+        <h4>KEMSA 3.0</h4>
+        <p>Healthcare supply chain analytics with forecasting, anomaly detection, and governance workflows for real-time visibility.</p>
+        <span class="badge">Data-Intensive Operations</span>
+      </div>
+    </div>
+
+    <div class="proof-grid">
+      <div class="proof-item">
+        <h4>Fastest Pilot Path</h4>
+        <p>Alpha 3.0 enables immediate deployment for outreach and lead conversion with multi-tenant controls.</p>
+      </div>
+      <div class="proof-item">
+        <h4>Execution Certainty</h4>
+        <p>Built-in fallback and monitoring patterns reduce downtime risk and preserve campaign continuity.</p>
+      </div>
+      <div class="proof-item">
+        <h4>Cross-Sector Reuse</h4>
+        <p>Core modules adapt across construction, healthcare supply, creative studios, and growth teams.</p>
+      </div>
+      <div class="proof-item">
+        <h4>Ownership Advantage</h4>
+        <p>Your system is designed as a long-term operating asset with clear extensibility and monetization paths.</p>
+      </div>
+    </div>
   </div>
 </section>
 
 <!-- HOW IT WORKS -->
 <section class="section">
   <div class="container">
-    <h2>How It Works: 6 Steps to Your 3.0</h2>
+    <h2>How We Deploy in Weeks, Not Quarters</h2>
     <div class="workflow">
       <div class="workflow-step">
         <div class="step-number">1</div>
-        <h3>Discover</h3>
-        <p>We learn your business, goals, pain points, and growth targets. You tell us what matters.</p>
+        <h3>Business Discovery</h3>
+        <p>We map your customer journey, current tools, bottlenecks, and immediate revenue goals.</p>
       </div>
       <div class="workflow-step">
         <div class="step-number">2</div>
-        <h3>Architect</h3>
-        <p>Design a 3.0 system blueprint fit for your workflows, team size, and revenue model.</p>
+        <h3>System Blueprint</h3>
+        <p>We design your module mix, integrations, KPI model, and ownership structure.</p>
       </div>
       <div class="workflow-step">
         <div class="step-number">3</div>
-        <h3>Deploy</h3>
-        <p>Launch AI agents, dashboards, automations, and commerce tools in your environment.</p>
+        <h3>Rapid Deployment</h3>
+        <p>We launch your workflows, dashboards, and automations on production-ready infrastructure with clear owners.</p>
       </div>
       <div class="workflow-step">
         <div class="step-number">4</div>
-        <h3>Productize</h3>
-        <p>Convert your workflows and content into tokenized digital products and assets.</p>
+        <h3>Team Onboarding</h3>
+        <p>Your operators get practical playbooks for campaign execution, lead handling, and reporting.</p>
       </div>
       <div class="workflow-step">
         <div class="step-number">5</div>
-        <h3>Scale</h3>
-        <p>Onboard clients, partners, or franchisees into your 3.0 ecosystem. Capture recurring revenue.</p>
+        <h3>Optimization Loop</h3>
+        <p>We tune performance weekly using lead velocity, conversion rates, and operational bottleneck metrics.</p>
       </div>
       <div class="workflow-step">
         <div class="step-number">6</div>
-        <h3>Monetize</h3>
-        <p>Transaction fees, SaaS subscriptions, ownership upside. Revenue flows to all stakeholders.</p>
+        <h3>Scale and Monetize</h3>
+        <p>Expand to more products, segments, and tenants while protecting quality and compliance.</p>
       </div>
     </div>
   </div>
@@ -462,28 +683,28 @@
 <!-- CO-OWNERSHIP EXPLAINED -->
 <section class="section">
   <div class="container">
-    <h2>How Co-Ownership Works</h2>
+    <h2>Ownership Model Built for Long-Term Leverage</h2>
     <div class="co-ownership-body">
-      <h3>Your 3.0 System Is Yours</h3>
-      <p>You hold the majority stake in your 3.0 operating system. You control the vision, the roadmap, the operations.</p>
-      <p><strong>Your team, partners, and investors can hold tokenized portions.</strong> No gatekeeping. No middleman. Revenue flows automatically to stakeholders based on their holdings.</p>
-      <p>Want to onboard a reseller? Give them a 5% stake. They'll fight to grow it. Want to attract an investor? Offer equity in your 3.0 agent. They get recurring upside.</p>
+      <h3>Your System, Your Leverage</h3>
+      <p>We build around your business model so your system becomes a compounding digital asset, not a one-off campaign tool.</p>
+      <p><strong>Stakeholders can be aligned through structured participation models</strong> tied to growth outcomes and recurring value creation.</p>
+      <p>You can package repeatable workflows, onboard partners faster, and create durable operating advantage as demand grows.</p>
     </div>
     <div class="ownership-points">
       <div class="ownership-point">
-        <h4>🔐 You Own It</h4>
+        <h4>You Control The Roadmap</h4>
         <p>Majority shareholder. You set strategy and control operations.</p>
       </div>
       <div class="ownership-point">
-        <h4>🤝 Share Upside</h4>
+        <h4>Aligned Incentives</h4>
         <p>Team members, partners, investors hold tokenized portions. Aligned incentives.</p>
       </div>
       <div class="ownership-point">
-        <h4>💰 Auto Revenue Share</h4>
+        <h4>Programmable Revenue Logic</h4>
         <p>Payments flow to shareholders based on ownership. No manual distribution.</p>
       </div>
       <div class="ownership-point">
-        <h4>📈 Transparent Growth</h4>
+        <h4>Traceable Growth</h4>
         <p>Blockchain ledger shows all transactions, stakeholder positions, and revenue flows.</p>
       </div>
     </div>
@@ -493,31 +714,31 @@
 <!-- LIVE PORTFOLIO -->
 <section class="section">
   <div class="container">
-    <h2>Live 3.0 Systems (Portfolio)</h2>
-    <p style="text-align: center; color: var(--muted); margin-bottom: 2rem; font-size: 0.95rem;">Each system generated for a real client. Yours will be equally customized.</p>
+    <h2>Platform Systems You Can Deploy</h2>
+    <p style="text-align: center; color: var(--muted); margin-bottom: 2rem; font-size: 0.95rem;">Built modules can be composed to match your exact workflow and market segment.</p>
     <div class="portfolio-grid">
       <div class="portfolio-item">
         <h3>Alpha 3.0</h3>
         <div class="domain">Comms & Outreach</div>
-        <p>Multi-tenant WhatsApp automation, campaigns, lead management, revenue tracking, catalog, and fallback payment recovery.</p>
+        <p>Multi-tenant outreach automation with campaign control, lead journeys, revenue analytics, and continuity workflows.</p>
         <a href="/portfolio-viewer.html?agent=alpha-3-0">View System →</a>
       </div>
       <div class="portfolio-item">
         <h3>Alpha Architect</h3>
         <div class="domain">AI Design & Rendering</div>
-        <p>AI-driven architectural design, 3D modeling, cloud rendering, asset management, and Blender integration.</p>
+        <p>AI-assisted design generation, 3D workflows, cloud rendering, asset lifecycle management, and pipeline automation.</p>
         <a href="/portfolio-viewer.html?agent=alpha-architect">View System →</a>
       </div>
       <div class="portfolio-item">
         <h3>KEMSA 3.0</h3>
         <div class="domain">Healthcare Supply Chain</div>
-        <p>Real-time dashboards, ETL, AI/ML analytics, anomaly detection, demand forecasting, and blockchain traceability.</p>
+        <p>Supply chain intelligence with ETL operations, AI forecasting, anomaly detection, and traceable governance layers.</p>
         <a href="/portfolio-viewer.html?agent=kemsa-3-0">View System →</a>
       </div>
       <div class="portfolio-item">
         <h3>Alpha Professor</h3>
         <div class="domain">Academic CRM</div>
-        <p>Lead generation, outreach, CRM, analytics, marketplace, onboarding, compliance, and revenue tracking.</p>
+        <p>Academic and professional CRM workflows with outreach, onboarding, analytics, compliance checks, and payment flows.</p>
         <a href="/portfolio-viewer.html?agent=alpha-professor-3-0">View System →</a>
       </div>
     </div>
@@ -530,25 +751,25 @@
 <!-- FOR YOUR AUDIENCE -->
 <section class="section">
   <div class="container">
-    <h2>For Your Audience</h2>
+    <h2>Who Buys First and Why</h2>
     <div class="audience-tabs">
       <div class="audience-card">
         <div class="icon">🏢</div>
-        <h3>Business Owners</h3>
-        <div class="pain">Pain: Manual ops, fragmented tools, revenue leaks</div>
-        <div class="message">Turn your WhatsApp hustle into a smart operating system that works 24/7, captures revenue automatically, and grows with you—without replacing your team.</div>
+        <h3>SMEs and Multi-Branch Operators</h3>
+        <div class="pain">Challenge: Slow follow-up, inconsistent sales execution, weak reporting discipline</div>
+        <div class="message">Deploy Alpha 3.0 to centralize campaigns, leads, and revenue visibility with a practical daily operating cadence.</div>
       </div>
       <div class="audience-card">
         <div class="icon">🚀</div>
-        <h3>Agencies & Platforms</h3>
-        <div class="pain">Pain: Custom bots are slow and expensive</div>
-        <div class="message">Launch client-specific AI operating systems in days, not months. Offer them ownership stakes and watch retention and lifetime value explode.</div>
+        <h3>Construction and Infrastructure Teams</h3>
+        <div class="pain">Challenge: Cost leakage, fragmented project visibility, compliance exposure</div>
+        <div class="message">Deploy Alpha Construction modules for project controls, workforce coordination, quality, safety, and compliance assurance.</div>
       </div>
       <div class="audience-card">
         <div class="icon">💼</div>
-        <h3>Investors & Ecosystem</h3>
-        <div class="pain">Pain: How do I participate in AI upside?</div>
-        <div class="message">Own portions of 3.0 agents deployed across real businesses. Revenue-share from operations, digital products, and tokenized asset appreciation.</div>
+        <h3>Healthcare and Specialized Service Networks</h3>
+        <div class="pain">Challenge: Supply chain blind spots, poor forecasting, delayed decisions</div>
+        <div class="message">Deploy KEMSA 3.0 and related analytics modules for traceability, demand intelligence, and operational confidence.</div>
       </div>
     </div>
   </div>
@@ -557,10 +778,10 @@
 <!-- FOOTER CTA -->
 <section class="footer-cta">
   <div class="container">
-    <h2>Ready to Co-Build Your 3.0 System?</h2>
-    <p>Let's talk about what you need, what you want to own, and how to scale together.</p>
+    <h2>Ready to Convert More Pipeline with Alphadome?</h2>
+    <p>Share your target market, your revenue bottleneck, and your deployment timeline. We will recommend the exact module stack and rollout sequence.</p>
     <div class="buttons">
-      <a href="mailto:info@alphadome.ai" class="btn btn-primary">Request Discovery Call</a>
+      <a href="/discovery" class="btn btn-primary">Start Discovery</a>
       <a href="https://wa.me/254786817637" class="btn btn-secondary">Chat on WhatsApp</a>
     </div>
   </div>
