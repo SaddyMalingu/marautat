@@ -1,959 +1,791 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Alphadome | Agentic Commerce + Fast Checkout Platform</title>
-  <link href="https://fonts.googleapis.com/css?family=Montserrat:700,400&display=swap" rel="stylesheet">
-  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;900&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
-  <link rel="stylesheet" href="./tailwind.output.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Alphadome - Deployable AI Systems for Revenue, Operations, and Scale</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Bebas+Neue&display=swap" rel="stylesheet">
   <style>
-    html, body {
-      width: 100%;
-      max-width: 100%;
-      overflow-x: hidden;
+    :root {
+      --bg-1: #081421;
+      --bg-2: #0a1628;
+      --accent: #ff8a00;
+      --accent-2: #ffd166;
+      --mint: #7ef9c8;
+      --panel: rgba(10, 22, 36, 0.82);
+      --text: #f3f7fa;
+      --muted: #b8c7d6;
     }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
     body {
-      margin: 0;
-      font-family: 'Montserrat', Arial, sans-serif;
-      background: #0f172a;
-      color: #fff;
-      overflow-x: hidden;
-      font-size: 1.08rem;
-      letter-spacing: 0.01em;
-      -webkit-font-smoothing: antialiased;
-      -moz-osx-font-smoothing: grayscale;
+      font-family: "Space Grotesk", sans-serif;
+      color: var(--text);
+      background: linear-gradient(135deg, var(--bg-1) 0%, var(--bg-2) 100%);
+      line-height: 1.6;
     }
-    /* Remove animated-bg and gradient background */
-    header {
-      background: rgba(30,41,59,0.95);
-      padding: 2rem 0 1rem 0;
-      text-align: center;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-      position: relative;
-      z-index: 2;
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 24px;
     }
-    header h1 {
-      font-size: 3.2rem;
-      margin: 0 0 0.5rem 0;
-      letter-spacing: 2px;
-      color: #38bdf8;
-      text-shadow: 0 4px 32px #0ea5e9aa;
-      font-weight: 900;
-      font-family: 'Montserrat', Arial, sans-serif;
-      line-height: 1.1;
-    }
-    header p {
-      font-size: 1.3rem;
-      color: #cbd5e1;
-      margin: 0 0 1rem 0;
-      text-shadow: 0 2px 8px #6366f1aa;
-      font-family: 'Roboto', 'Montserrat', Arial, sans-serif;
-      font-weight: 400;
-      line-height: 1.4;
-    }
-    header .logo-container {
-      width: 100%;
-      max-width: 220px;
-      margin: 0 auto 1rem auto;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      position: relative;
-    }
-    header .logo-container video {
-      width: 100%;
-      height: auto;
-      max-width: 220px;
-      max-height: 120px;
-      border-radius: 1.2rem;
-      box-shadow: 0 2px 16px #0ea5e9aa;
-      object-fit: cover;
-      background: #222;
-      display: block;
-    }
-    .cta-btn {
-      display: inline-block;
-      background: linear-gradient(90deg, #6366f1 0%, #0ea5e9 100%);
-      color: #fff;
-      font-weight: 700;
-      padding: 1rem 2.5rem;
-      border-radius: 2rem;
-      font-size: 1.15rem;
-      text-decoration: none;
-      box-shadow: 0 4px 16px rgba(99,102,241,0.12);
-      transition: background 0.2s, box-shadow 0.2s, transform 0.2s;
-      backdrop-filter: blur(8px);
-      border: 1px solid #38bdf8;
-    }
-    .cta-btn:hover {
-      background: linear-gradient(90deg, #0ea5e9 0%, #6366f1 100%);
-      box-shadow: 0 8px 32px rgba(99,102,241,0.18);
-      transform: translateY(-2px) scale(1.03);
-      border-color: #fff;
-    }
+
+    /* HERO */
     .hero {
+      min-height: 100vh;
       display: flex;
       flex-direction: column;
-      align-items: center;
       justify-content: center;
-      min-height: 70vh;
+      align-items: center;
       text-align: center;
-      padding: 3rem 0 2rem 0;
-      position: relative;
-      z-index: 2;
+      padding: 60px 24px;
+      background: radial-gradient(circle at 50% 50%, rgba(255, 138, 0, 0.1) 0%, transparent 70%);
     }
-    .hero h2 {
-      font-size: 2.6rem;
+
+    .hero h1 {
+      font-family: "Bebas Neue", sans-serif;
+      font-size: clamp(2.5rem, 6vw, 4.5rem);
+      line-height: 1.1;
+      letter-spacing: 0.02em;
       margin-bottom: 1rem;
-      color: #38bdf8;
-      font-weight: 800;
-      text-shadow: 0 4px 32px #0ea5e9aa;
-      letter-spacing: 1px;
-      font-family: 'Montserrat', Arial, sans-serif;
-      line-height: 1.15;
+      background: linear-gradient(135deg, var(--accent-2), var(--mint), var(--accent));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
     }
-    .hero p {
-      font-size: 1.3rem;
-      max-width: 700px;
-      margin: 0 auto 2rem auto;
-      color: #e0e7ef;
-      text-shadow: 0 2px 8px #6366f1aa;
-      font-family: 'Roboto', 'Montserrat', Arial, sans-serif;
-      font-weight: 400;
-      line-height: 1.5;
+
+    .hero .subheading {
+      font-size: clamp(1.1rem, 2vw, 1.4rem);
+      color: var(--muted);
+      max-width: 720px;
+      margin: 0 auto 2.5rem;
+      line-height: 1.7;
     }
-    .hero-buttons {
-      margin-top: 2rem;
+
+    .hero .cta-buttons {
       display: flex;
-      gap: 1.5rem;
+      gap: 1rem;
       justify-content: center;
       flex-wrap: wrap;
+      margin-bottom: 3rem;
     }
-    #hero-3d {
-      width: 100%;
-      max-width: 100%;
-      overflow: hidden;
+
+    .position-strip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.6rem;
+      padding: 0.55rem 1rem;
+      border: 1px solid rgba(255, 209, 102, 0.35);
+      border-radius: 999px;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--accent-2);
+      margin-bottom: 1.25rem;
+      background: rgba(255, 209, 102, 0.06);
     }
-    .wave-divider {
-      display: block;
-      width: 100%;
-      max-width: 100%;
-      height: auto;
-    }
-    .assets-live {
-      margin: 2.2rem auto;
-      max-width: 1180px;
-      padding: 0 1.2rem;
-    }
-    .assets-live h2 {
-      text-align: center;
-      color: #38bdf8;
-      font-size: 2rem;
-      margin: 0 0 0.55rem 0;
-      font-weight: 800;
-    }
-    .assets-live .lead {
-      text-align: center;
-      color: #cbd5e1;
-      margin: 0 0 1.3rem 0;
-      font-size: 1.02rem;
-    }
-    .asset-grid {
+
+    .outcome-grid {
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 1rem;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 0.9rem;
+      max-width: 840px;
+      margin: 0 auto;
     }
-    .asset-card {
-      background: rgba(30,41,59,0.9);
-      border: 1px solid rgba(56,189,248,0.28);
-      border-radius: 1rem;
-      padding: 1rem;
-      box-shadow: 0 8px 22px rgba(14,165,233,0.16);
-      backdrop-filter: blur(8px);
+
+    .outcome-item {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.13);
+      border-radius: 12px;
+      padding: 0.9rem;
+      text-align: left;
     }
-    .asset-card h4 {
-      margin: 0 0 0.45rem 0;
-      color: #e2f6ff;
-      font-size: 1.02rem;
-      font-weight: 700;
+
+    .outcome-item strong {
+      display: block;
+      color: var(--accent-2);
+      font-size: 1.15rem;
+      margin-bottom: 0.2rem;
     }
-    .asset-card p {
-      margin: 0 0 0.8rem 0;
-      color: #cbd5e1;
-      font-size: 0.93rem;
+
+    .outcome-item span {
+      font-size: 0.85rem;
+      color: var(--muted);
       line-height: 1.4;
     }
-    .asset-actions {
-      display: flex;
-      gap: 0.5rem;
-      flex-wrap: wrap;
+
+    .btn {
+      padding: 14px 28px;
+      border: none;
+      border-radius: 12px;
+      font-weight: 700;
+      font-size: 0.95rem;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.3s ease;
+      display: inline-block;
     }
-    .asset-link {
+
+    .btn-primary {
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+      color: #081421;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 32px rgba(255, 138, 0, 0.3);
+    }
+
+    .btn-secondary {
+      background: rgba(255, 209, 102, 0.1);
+      border: 1px solid rgba(255, 209, 102, 0.4);
+      color: var(--accent-2);
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255, 209, 102, 0.2);
+      border-color: rgba(255, 209, 102, 0.6);
+    }
+
+    /* SECTION: THE 3.0 MODEL */
+    .section {
+      padding: 80px 24px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .section h2 {
+      font-family: "Bebas Neue", sans-serif;
+      font-size: clamp(2rem, 4vw, 3.2rem);
+      margin-bottom: 3rem;
+      text-align: center;
+      letter-spacing: 0.02em;
+    }
+
+    .grid-4 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 2rem;
+      margin-bottom: 3rem;
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 16px;
+      padding: 2rem;
+      transition: all 0.3s ease;
+    }
+
+    .card:hover {
+      border-color: rgba(255, 138, 0, 0.5);
+      box-shadow: 0 8px 24px rgba(255, 138, 0, 0.15);
+      transform: translateY(-4px);
+    }
+
+    .card h3 {
+      font-size: 1.3rem;
+      margin-bottom: 1rem;
+      color: var(--accent-2);
+    }
+
+    .card p {
+      font-size: 0.95rem;
+      color: var(--muted);
+      line-height: 1.7;
+    }
+
+    /* SECTION: HOW IT WORKS */
+    .workflow {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.5rem;
+    }
+
+    .workflow-step {
+      background: rgba(15, 23, 42, 0.5);
+      border: 1px solid rgba(255, 209, 102, 0.2);
+      border-radius: 12px;
+      padding: 1.8rem;
+      text-align: center;
+    }
+
+    .step-number {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      background: linear-gradient(90deg, #6366f1 0%, #0ea5e9 100%);
-      border: 1px solid rgba(56,189,248,0.5);
-      border-radius: 999px;
-      padding: 0.46rem 0.82rem;
-      color: #fff;
-      text-decoration: none;
-      font-size: 0.83rem;
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      color: #081421;
       font-weight: 700;
-    }
-    .asset-link.secondary {
-      background: rgba(255,255,255,0.09);
-    }
-    @media (max-width: 600px) {
-      header {
-        padding: 1.2rem 0 0.5rem 0;
-      }
-      header .logo-container {
-        max-width: 98vw;
-        margin-bottom: 0.7rem;
-      }
-      header .logo-container video {
-        width: 98vw;
-        max-width: 180px;
-        max-height: 90px;
-        border-radius: 1rem;
-      }
-      header h1 {
-        font-size: 1.45rem;
-        letter-spacing: 1px;
-        margin-bottom: 0.3rem;
-      }
-      header p {
-        font-size: 1rem;
-        margin-bottom: 0.7rem;
-      }
-      .hero {
-        padding: 1.2rem 0 1rem 0;
-        min-height: 50vh;
-      }
-      #hero-3d { height: 170px !important; margin-bottom: 0.8rem !important; }
-      .hero h2 {
-        font-size: 1.3rem;
-        margin-bottom: 0.7rem;
-      }
-      .hero p {
-        font-size: 1rem;
-        max-width: 95vw;
-        margin-bottom: 1.2rem;
-      }
-      .hero-buttons {
-        flex-direction: column;
-        gap: 0.7rem;
-        margin-top: 1.2rem;
-      }
-      .cta-btn {
-        font-size: 1rem;
-        padding: 0.7rem 1.2rem;
-        width: 90vw;
-        max-width: 320px;
-        margin: 0 auto;
-      }
-      .assets-live { margin: 1.3rem auto; padding: 0 0.8rem; }
-      .assets-live h2 { font-size: 1.35rem; }
-      .assets-live .lead { font-size: 0.95rem; }
-      .asset-grid { grid-template-columns: 1fr; gap: 0.8rem; }
-      .asset-card { padding: 0.9rem; }
-      .glass {
-        padding: 1rem;
-        max-width: 98vw;
-      }
-      .features {
-        font-family: 'Montserrat', Arial, sans-serif;
-        letter-spacing: 0.5px;
-        gap: 1rem;
-        margin: 2rem 0 1rem 0;
-      }
-      .feature-card {
-        padding: 1.2rem 0.7rem;
-        min-width: 0;
-        font-family: 'Roboto', 'Montserrat', Arial, sans-serif;
-        font-weight: 400;
-        line-height: 1.45;
-        max-width: 98vw;
-        font-size: 0.98rem;
-      }
-      .feature-card h4 {
-        font-size: 1.1rem;
-      }
-      .feature-card i {
-        font-size: 2rem;
-      }
-    }
-    .glass {
-      background: rgba(255,255,255,0.08);
-      border-radius: 2rem;
-      box-shadow: 0 8px 32px rgba(14,165,233,0.15);
-      backdrop-filter: blur(12px);
-      border: 1px solid #38bdf8;
-    
-      padding: 2rem;
-      margin: 2rem auto;
-      max-width: 900px;
-      z-index: 2;
-      position: relative;
-    }
-    .features {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: center;
-      gap: 2rem;
-      margin: 4rem 0 2rem 0;
-      z-index: 2;
-    }
-    
-    .feature-card {
-      background: linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%);
-      border-radius: 1.5rem;
-      box-shadow: 0 12px 32px #38bdf8aa, 0 2px 12px rgba(0,0,0,0.08);
-      padding: 2rem 1.5rem;
-      max-width: 340px;
-      min-width: 220px;
-      text-align: center;
-      transition: transform 0.2s, box-shadow 0.2s;
-      backdrop-filter: blur(8px);
-      border: 1.5px solid #38bdf8;
-      position: relative;
-      z-index: 2;
-      overflow: hidden;
-      margin-bottom: 1.2rem;
-      color: #fff;
-    }
-    .feature-card::before {
-      content: '';
-      position: absolute;
-      top: -30px; left: -30px;
-      width: 120px; height: 120px;
-      background: radial-gradient(circle, #38bdf8 0%, transparent 70%);
-      opacity: 0.18;
-      z-index: 1;
-      pointer-events: none;
-      filter: blur(12px);
-    }
-    .feature-card i {
-      font-size: 2.8rem;
-      color: #fff;
-      margin-bottom: 1rem;
-      filter: drop-shadow(0 2px 8px #38bdf8);
-    }
-    @media (max-width: 900px) {
-      .features {
-        flex-direction: column;
-        align-items: center;
-      }
-      .feature-card {
-        max-width: 98vw;
-        min-width: 0;
-        margin-bottom: 1.2rem;
-      }
-    }
-    .feature-card:hover {
-      transform: translateY(-6px) scale(1.04);
-      box-shadow: 0 16px 48px rgba(14,165,233,0.25);
-      border-color: #fff;
-    }
-    .feature-card i {
-      font-size: 2.8rem;
-      color: #0ea5e9;
-      margin-bottom: 1rem;
-      filter: drop-shadow(0 2px 8px #38bdf8);
-    }
-    .feature-card h4 {
-      margin: 0.5rem 0 0.5rem 0;
-      font-size: 1.4rem;
-      color: #38bdf8;
-      font-weight: 700;
-    }
-    .feature-card p {
-      color: #cbd5e1;
-      font-size: 1.05rem;
-      z-index: 2;
-      position: relative;
-    }
-    .showcase {
-      text-align: center;
-      margin: 4rem 0 2rem 0;
-      z-index: 2;
-    }
-    .showcase img {
-      max-width: 90%;
-      border-radius: 1.5rem;
-      box-shadow: 0 8px 32px rgba(14,165,233,0.15);
-      margin-bottom: 1.5rem;
-      border: 2px solid #6366f1;
-      animation: showcasePulse 2.5s infinite alternate;
-    }
-    @keyframes showcasePulse {
-      0% { box-shadow: 0 8px 32px rgba(14,165,233,0.15); }
-      100% { box-shadow: 0 16px 64px #38bdf8aa; }
-    }
-    .how-it-works {
-      margin: 4rem 0 2rem 0;
-      text-align: center;
-      z-index: 2;
-    }
-    .how-it-works h2 {
-      color: #38bdf8;
-      font-size: 2rem;
-      margin-bottom: 1.5rem;
-      font-weight: 800;
-    }
-    .steps {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: center;
-      gap: 2rem;
-      z-index: 2;
-    }
-    .step {
-      background: rgba(255,255,255,0.14);
-      color: #1e293b;
-      border-radius: 1.2rem;
-      box-shadow: 0 2px 12px rgba(14,165,233,0.08);
-      padding: 1.5rem 1.2rem;
-      max-width: 220px;
-      min-width: 180px;
-      text-align: center;
-      transition: transform 0.2s, box-shadow 0.2s;
-      backdrop-filter: blur(6px);
-      border: 1px solid #38bdf8;
-      color: #fff;
-      z-index: 2;
-      position: relative;
-    }
-    .step:hover {
-      transform: translateY(-4px) scale(1.03);
-      box-shadow: 0 8px 32px #38bdf8aa;
-      border-color: #fff;
-    }
-    .step i {
-      font-size: 2rem;
-      color: #0ea5e9;
-      margin-bottom: 0.5rem;
-      filter: drop-shadow(0 2px 8px #38bdf8);
-    }
-    .brands {
-      margin: 4rem 0 2rem 0;
-      text-align: center;
-      z-index: 2;
-    }
-    .brands-logos {
-      display: flex;
-      justify-content: center;
-      gap: 2rem;
-      flex-wrap: wrap;
-      margin-top: 1rem;
-      z-index: 2;
-    }
-    .brands-logos img {
-      height: 32px;
-      filter: grayscale(1) brightness(1.2);
-      opacity: 0.8;
-      border-radius: 0.5rem;
-      border: 1px solid #6366f1;
-      box-shadow: 0 2px 8px #38bdf8aa;
-      transition: transform 0.2s;
-    }
-    .brands-logos img:hover {
-      transform: scale(1.08);
-      border-color: #fff;
-    }
-    .testimonials {
-      margin: 4rem 0 2rem 0;
-      text-align: center;
-      z-index: 2;
-    }
-    .testimonial {
-      background: rgba(30,41,59,0.95);
-      border-radius: 1.2rem;
-      box-shadow: 0 2px 12px rgba(0,0,0,0.08);
-      padding: 1.5rem 1.2rem;
-      max-width: 320px;
-      margin: 1rem auto;
-      color: #cbd5e1;
-      font-size: 1.1rem;
-      border: 1px solid #6366f1;
-      backdrop-filter: blur(6px);
-      position: relative;
-      z-index: 2;
-    }
-    .testimonial span {
-      color: #38bdf8;
-      font-weight: 700;
-      font-size: 1rem;
-      margin-top: 0.5rem;
-      display: block;
-    }
-    .pricing {
-      margin: 4rem 0 2rem 0;
-      text-align: center;
-      z-index: 2;
-    }
-    .pricing-table {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: center;
-      gap: 2rem;
-      margin-top: 2rem;
-      z-index: 2;
-    }
-    .plan {
-      background: rgba(255,255,255,0.14);
-      color: #1e293b;
-      border-radius: 1.2rem;
-      box-shadow: 0 2px 12px rgba(14,165,233,0.08);
-      padding: 2rem 1.5rem;
-      max-width: 260px;
-      min-width: 200px;
-      text-align: center;
-      transition: transform 0.2s, box-shadow 0.2s;
-      backdrop-filter: blur(6px);
-      border: 1px solid #6366f1;
-      color: #fff;
-      z-index: 2;
-      position: relative;
-    }
-    .plan:hover {
-      transform: translateY(-4px) scale(1.03);
-      box-shadow: 0 8px 32px #38bdf8aa;
-      border-color: #fff;
-    }
-    .plan h4 {
-      color: #38bdf8;
-      font-weight: 700;
-      font-size: 1.2rem;
-      margin-bottom: 0.5rem;
-    }
-    .plan p {
-      color: #0ea5e9;
-      font-size: 1.1rem;
-      margin-bottom: 1rem;
-    }
-    .plan ul {
-      list-style: none;
-      padding: 0;
-      margin: 0 0 1rem 0;
-    }
-    .plan ul li {
-      color: #cbd5e1;
-      font-size: 1rem;
-      margin-bottom: 0.5rem;
-    }
-    .faq {
-      margin: 4rem 0 2rem 0;
-      text-align: center;
-      z-index: 2;
-    }
-    .faq h2 {
-      color: #38bdf8;
-      font-size: 2rem;
-      margin-bottom: 1.5rem;
-      font-weight: 800;
-    }
-    .faq-list {
-      max-width: 700px;
-      margin: 0 auto;
-      text-align: left;
-      z-index: 2;
-    }
-    .faq-item {
-      background: rgba(30,41,59,0.95);
-      border-radius: 1rem;
-      margin-bottom: 1rem;
-      padding: 1rem;
-      color: #cbd5e1;
-      font-size: 1rem;
-      cursor: pointer;
-      border: 1px solid #6366f1;
-      backdrop-filter: blur(6px);
-      z-index: 2;
-      position: relative;
-    }
-    .faq-item .answer {
-      display: none;
-      margin-top: 0.5rem;
-      color: #e0e7ef;
-    }
-    .faq-item.active .answer {
-      display: block;
-    }
-    footer {
-      background: #1e293b;
-      color: #cbd5e1;
-      text-align: center;
-      padding: 2rem 0 1rem 0;
-      margin-top: 3rem;
-      font-size: 1rem;
-      z-index: 2;
-      position: relative;
-    }
-    .social-icons {
-      margin-top: 1rem;
-      z-index: 2;
-    }
-    .social-icons a {
-      color: #0ea5e9;
-      margin: 0 0.5rem;
       font-size: 1.5rem;
-      transition: color 0.2s;
+      margin-bottom: 1rem;
     }
-    .social-icons a:hover {
-      color: #38bdf8;
+
+    .workflow-step h3 {
+      font-size: 1.15rem;
+      margin-bottom: 0.8rem;
+      color: var(--text);
     }
-    @media (max-width: 900px) {
-      .features, .pricing-table, .brands-logos {
-        flex-direction: column;
-        align-items: center;
+
+    .workflow-step p {
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+
+    /* SECTION: CAPABILITIES */
+    .capabilities-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 1.2rem;
+      margin-top: 1.5rem;
+    }
+
+    .capability-pill {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 999px;
+      padding: 0.75rem 1rem;
+      font-size: 0.9rem;
+      color: var(--text);
+      text-align: center;
+    }
+
+    .proof-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1rem;
+      margin-top: 1.5rem;
+    }
+
+    .proof-item {
+      background: rgba(126, 249, 200, 0.06);
+      border: 1px solid rgba(126, 249, 200, 0.25);
+      border-radius: 12px;
+      padding: 1rem;
+    }
+
+    .proof-item h4 {
+      color: var(--mint);
+      margin-bottom: 0.4rem;
+      font-size: 1rem;
+    }
+
+    .proof-item p {
+      color: var(--muted);
+      font-size: 0.9rem;
+      line-height: 1.6;
+    }
+
+    .capacity-matrix {
+      margin-top: 2rem;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1rem;
+    }
+
+    .capacity-module {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 14px;
+      padding: 1.2rem;
+    }
+
+    .capacity-module h4 {
+      font-size: 1.05rem;
+      margin-bottom: 0.6rem;
+      color: var(--accent-2);
+    }
+
+    .capacity-module p {
+      font-size: 0.9rem;
+      color: var(--muted);
+      line-height: 1.6;
+      margin-bottom: 0.7rem;
+    }
+
+    .capacity-module .badge {
+      display: inline-block;
+      border: 1px solid rgba(126, 249, 200, 0.4);
+      color: var(--mint);
+      border-radius: 999px;
+      padding: 0.2rem 0.65rem;
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    /* SECTION: CO-OWNERSHIP */
+    .co-ownership {
+      text-align: center;
+    }
+
+    .co-ownership-body {
+      max-width: 800px;
+      margin: 0 auto;
+      background: rgba(126, 249, 200, 0.08);
+      border: 1px solid rgba(126, 249, 200, 0.3);
+      border-radius: 16px;
+      padding: 3rem 2rem;
+      margin-bottom: 2rem;
+    }
+
+    .co-ownership-body h3 {
+      font-size: 1.5rem;
+      margin-bottom: 1.5rem;
+      color: var(--mint);
+    }
+
+    .co-ownership-body p {
+      font-size: 1rem;
+      line-height: 1.8;
+      color: var(--muted);
+      margin-bottom: 1rem;
+    }
+
+    .ownership-points {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1.5rem;
+      margin-top: 2rem;
+    }
+
+    .ownership-point {
+      background: rgba(126, 249, 200, 0.05);
+      border-left: 3px solid var(--mint);
+      padding: 1.5rem;
+      border-radius: 8px;
+    }
+
+    .ownership-point h4 {
+      color: var(--mint);
+      margin-bottom: 0.5rem;
+      font-size: 1rem;
+    }
+
+    .ownership-point p {
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+
+    /* SECTION: PORTFOLIO PREVIEW */
+    .portfolio-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 2rem;
+    }
+
+    .portfolio-item {
+      background: var(--panel);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 14px;
+      padding: 2rem;
+      transition: all 0.3s ease;
+    }
+
+    .portfolio-item:hover {
+      border-color: rgba(255, 138, 0, 0.4);
+    }
+
+    .portfolio-item h3 {
+      font-size: 1.15rem;
+      margin-bottom: 0.5rem;
+      color: var(--accent-2);
+    }
+
+    .portfolio-item .domain {
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-bottom: 1rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .portfolio-item p {
+      font-size: 0.9rem;
+      color: var(--muted);
+      margin-bottom: 1.5rem;
+    }
+
+    .portfolio-item a {
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 600;
+      transition: color 0.2s ease;
+    }
+
+    .portfolio-item a:hover {
+      color: var(--accent-2);
+    }
+
+    /* SECTION: FOR YOUR AUDIENCE */
+    .audience-tabs {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 2rem;
+    }
+
+    .audience-card {
+      background: var(--panel);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 16px;
+      padding: 2.5rem;
+      transition: all 0.3s ease;
+    }
+
+    .audience-card:hover {
+      border-color: rgba(255, 138, 0, 0.5);
+    }
+
+    .audience-card .icon {
+      font-size: 2.5rem;
+      margin-bottom: 1rem;
+    }
+
+    .audience-card h3 {
+      font-size: 1.3rem;
+      margin-bottom: 1rem;
+      color: var(--text);
+    }
+
+    .audience-card .pain {
+      font-size: 0.85rem;
+      color: #ff6b6b;
+      margin-bottom: 1rem;
+      font-weight: 600;
+    }
+
+    .audience-card .message {
+      font-size: 0.95rem;
+      color: var(--muted);
+      line-height: 1.7;
+    }
+
+    /* FOOTER CTA */
+    .footer-cta {
+      text-align: center;
+      padding: 60px 24px;
+      background: radial-gradient(circle at 50% 50%, rgba(255, 138, 0, 0.12) 0%, transparent 70%);
+    }
+
+    .footer-cta h2 {
+      font-family: "Bebas Neue", sans-serif;
+      font-size: clamp(1.8rem, 3vw, 2.8rem);
+      margin-bottom: 1.5rem;
+    }
+
+    .footer-cta p {
+      font-size: 1.05rem;
+      color: var(--muted);
+      margin-bottom: 2rem;
+    }
+
+    .footer-cta .buttons {
+      display: flex;
+      gap: 1rem;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .reveal {
+      opacity: 0;
+      transform: translateY(14px);
+      animation: liftIn 0.7s ease forwards;
+    }
+
+    .delay-1 { animation-delay: 0.08s; }
+    .delay-2 { animation-delay: 0.16s; }
+    .delay-3 { animation-delay: 0.24s; }
+
+    @keyframes liftIn {
+      to {
+        opacity: 1;
+        transform: translateY(0);
       }
-      .steps {
-        flex-direction: column;
-        align-items: center;
-      }
+    }
+
+    /* RESPONSIVE */
+    @media (max-width: 768px) {
+      .hero h1 { font-size: 2rem; }
+      .hero .subheading { font-size: 1rem; }
+      .section h2 { font-size: 1.8rem; }
+      .grid-4, .workflow { grid-template-columns: 1fr; }
+      .hero .cta-buttons { flex-direction: column; }
+      .btn { width: 100%; }
     }
   </style>
 </head>
 <body>
-  <header style="background:rgba(15,23,42,0.98);padding:2rem 0 1rem 0;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,0.1);position:relative;z-index:2;">
-    <div class="logo-container">
-      <video src="logo-bg.mp4" autoplay loop muted playsinline poster="" preload="auto"></video>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="container">
+    <div class="position-strip reveal">Built for Paid Pilots and Fast Production Rollout</div>
+    <h1 class="reveal delay-1">Stop Buying Tools.<br/>Deploy a Revenue Operating System.</h1>
+    <p class="subheading reveal delay-2">Alphadome turns sales, operations, design, and supply chain workflows into one modular AI system your team can run daily. Multi-tenant architecture, secure automation, and measurable conversion pipelines are already built.</p>
+    <div class="cta-buttons">
+      <a class="btn btn-primary" href="/discovery">Book a System Blueprint Call</a>
+      <a class="btn btn-secondary" href="/portfolio.html">View Deployable Systems</a>
+      <a class="btn btn-secondary" href="https://wa.me/254786817637">WhatsApp Us</a>
     </div>
-    <h1 style="font-size:3.2rem;margin:0 0 0.2rem 0;letter-spacing:2px;color:#38bdf8;text-shadow:0 4px 32px #0ea5e9aa;font-weight:900;font-family:'Montserrat',Arial,sans-serif;line-height:1.1;">Alphadome</h1>
-    <p style="font-size:1.35rem;color:#cbd5e1;margin:0 0 1rem 0;text-shadow:0 2px 8px #6366f1aa;font-family:'Roboto','Montserrat',Arial,sans-serif;font-weight:500;line-height:1.4;">Agentic Commerce Infrastructure for African Businesses</p>
-    <p style="font-size:1.1rem;color:#e0e7ef;margin:0 0 1.2rem 0;text-shadow:0 2px 8px #6366f1aa;font-family:'Roboto','Montserrat',Arial,sans-serif;font-weight:400;line-height:1.4;">Powering instant QR scan-to-STK checkout, multi-tenant operations, and automated growth workflows.</p>
-    <div class="hero-buttons">
-      <a href="https://alphadomemagic-production.up.railway.app/" class="cta-btn" aria-label="Alphadome Magic">Alphadome Magic</a>
-      <a href="/kassangas-merchant-portal" class="cta-btn" aria-label="Fast Mpesa Checkout">Fast Mpesa Checkout</a>
-      <a href="/kassangas-client-wallet" class="cta-btn" aria-label="Client Fast Wallet">Client Fast Wallet</a>
-      <a href="/portfolio.html" class="cta-btn" id="view-demo-btn" aria-label="Our Portfolio">Our Portfolio</a>
-      <a href="#pricing" class="cta-btn" aria-label="Join Alphadome">Join Alphadome</a>
+    <div class="outcome-grid reveal delay-3">
+      <div class="outcome-item">
+        <strong>4 Core Platforms</strong>
+        <span>Comms, construction, architecture, and healthcare supply operations.</span>
+      </div>
+      <div class="outcome-item">
+        <strong>API-First Modules</strong>
+        <span>Composable services for campaign, lead, analytics, workflow, and governance.</span>
+      </div>
+      <div class="outcome-item">
+        <strong>Production-Ready Core</strong>
+        <span>Operational systems with active rollout paths and measurable KPI loops.</span>
+      </div>
+      <div class="outcome-item">
+        <strong>Ownership By Design</strong>
+        <span>Deploy as your internal operating asset instead of renting disconnected tools.</span>
+      </div>
     </div>
-  </header>
-  <!-- 3D Hero Canvas -->
-  <div id="hero-3d" style="width:100%;max-width:100%;height:320px;margin:0 auto 1.5rem auto;z-index:1;"></div>
-  <main>
-    <section class="hero">
-      <h2>Instant Checkout. Agentic Growth.</h2>
-      <p>Alphadome enables businesses to collect payments in seconds with reusable merchant QR templates, scan-to-STK fast checkout, and customer repeat-pay acceleration across merchants.</p>
-      <noscript><p style="color:#f87171">Enable JavaScript to see interactive 3D graphics.</p></noscript>
-      <div class="hero-buttons">
-        <a href="/kassangas-merchant-portal" class="cta-btn" aria-label="Launch Merchant Portal">Launch Merchant Portal</a>
-        <a href="/kassangas-client-wallet" class="cta-btn" aria-label="Open Client Wallet">Open Client Wallet</a>
+  </div>
+</section>
+
+<!-- THE 3.0 MODEL -->
+<section class="section">
+  <div class="container">
+    <h2>What Alphadome Actually Delivers</h2>
+    <div class="grid-4">
+      <div class="card">
+        <h3>Campaign and Lead Execution</h3>
+        <p>Launch WhatsApp-centered outreach, automate lead capture, and move contacts through onboarding and conversion workflows with live tracking.</p>
       </div>
-    </section>
-    <section class="assets-live">
-      <h2>Live 3.0 Assets</h2>
-      <p class="lead">Independent operating assets from the Alphadome 3.0 infrastructure.</p>
-      <div class="asset-grid">
-        <article class="asset-card">
-          <h4>Alpha Professor 3.0</h4>
-          <p>Published AI-powered academic assistant and knowledge engine.</p>
-          <div class="asset-actions">
-            <a class="asset-link" href="https://alphaprofessor-81647-1c1e114c2185.herokuapp.com/" target="_blank" rel="noopener">Open Live</a>
-          </div>
-        </article>
-        <article class="asset-card">
-          <h4>Alpha 3.0 (Comms & Outreach)</h4>
-          <p>Campaign, onboarding, catalog, and revenue workflows in production stack.</p>
-          <div class="asset-actions">
-            <a class="asset-link" href="/portfolio.html">View Portfolio</a>
-            <a class="asset-link secondary" href="/kassangas-client-wallet">Fast Wallet</a>
-          </div>
-        </article>
-        <article class="asset-card">
-          <h4>Alpha Architect</h4>
-          <p>AI design and cloud-rendering capabilities exposed via Alphadome experience layer.</p>
-          <div class="asset-actions">
-            <a class="asset-link" href="https://alphadomemagic-production.up.railway.app/" target="_blank" rel="noopener">Open Magic Hub</a>
-          </div>
-        </article>
-        <article class="asset-card">
-          <h4>Intra Africa Journal Hub 3.0</h4>
-          <p>Journal submission/review/publishing infrastructure in the Alphadome ecosystem.</p>
-          <div class="asset-actions">
-            <a class="asset-link" href="/portfolio.html">Portfolio Entry</a>
-            <a class="asset-link secondary" href="mailto:info@alphadome.ai?subject=Intra%20Africa%20Journal%20Hub%203.0%20Access">Request Access</a>
-          </div>
-        </article>
-        <article class="asset-card">
-          <h4>Kassangas Fast Checkout</h4>
-          <p>Merchant and client QR scan-to-STK flow optimized for repeat payments.</p>
-          <div class="asset-actions">
-            <a class="asset-link" href="/kassangas-merchant-portal">Merchant Portal</a>
-            <a class="asset-link secondary" href="/kassangas-client-wallet">Client Wallet</a>
-          </div>
-        </article>
-        <article class="asset-card">
-          <h4>All 3.0 Published Agents</h4>
-          <p>Explore all live agents and brands currently onboarded in the Alphadome ecosystem.</p>
-          <div class="asset-actions">
-            <a class="asset-link" href="/portfolio.html">Open Portfolio</a>
-          </div>
-        </article>
+      <div class="card">
+        <h3>Operational Intelligence</h3>
+        <p>Unify dashboards, alerts, and reporting so leadership sees pipeline, revenue motion, and execution bottlenecks in one place.</p>
       </div>
-    </section>
-    <svg class="wave-divider" viewBox="0 0 1440 60" fill="none" xmlns="http://www.w3.org/2000/svg"><path fill="#0ea5e9" fill-opacity="0.12" d="M0,30 C360,60 1080,0 1440,30 L1440,60 L0,60 Z"></path></svg>
-    <!-- Floating WhatsApp Button -->
-    <a href="https://wa.me/254786817637" target="_blank" id="floating-whatsapp" title="Chat on WhatsApp">
-      <img src="./images/whatsapp-3d.png" alt="WhatsApp" style="width:60px;height:60px;">
-    </a>
-    <style>
-      #floating-whatsapp {
-        position: fixed !important;
-        right: calc(16px + env(safe-area-inset-right, 0px));
-        bottom: calc(16px + env(safe-area-inset-bottom, 0px));
-        z-index: 2147483000;
-        transition: transform 0.2s;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: none;
-        padding: 0;
-        border-radius: 0;
-        box-shadow: none;
-        transform: translateZ(0);
-        backface-visibility: hidden;
-      }
-      #floating-whatsapp:hover {
-        transform: scale(1.08);
-      }
-      #floating-whatsapp img {
-        display: block;
-        border-radius: 50%;
-        box-shadow: 0 4px 16px rgba(0,0,0,0.18);
-      }
-    </style>
-    <!-- End Floating WhatsApp Button -->
-      <div class="feature-card">
-        <i class="fas fa-qrcode" aria-label="Fast QR Payments"></i>
-        <h4>Fast QR Payments</h4>
-        <p>Merchant QR templates enable instant scan-to-STK checkout and repeat payments in seconds.</p>
+      <div class="card">
+        <h3>Workflow and Asset Automation</h3>
+        <p>Automate design pipelines, project controls, and data-heavy operations using modular workflows instead of siloed manual tools.</p>
       </div>
-      <div class="feature-card">
-        <i class="fas fa-cubes" aria-label="Agentic Workflows"></i>
-        <h4>Agentic Workflows</h4>
-        <p>Modular, multi-tenant automation for every brand and client.</p>
+      <div class="card">
+        <h3>Enterprise Controls</h3>
+        <p>Run with strict tenant isolation, role-based access, fallback continuity, and auditable actions for reliable scale.</p>
       </div>
-      <div class="feature-card">
-        <i class="fas fa-robot" aria-label="Creative AI Bots"></i>
-        <h4>Creative AI Bots</h4>
-        <p>WhatsApp, Email, and Social integrations for engagement and support.</p>
-      </div>
-      <div class="feature-card">
-        <i class="fas fa-chart-line" aria-label="Dynamic Dashboards"></i>
-        <h4>Dynamic Dashboards</h4>
-        <p>Real-time analytics and management for all tenants and campaigns.</p>
-      </div>
-      <div class="feature-card">
-        <i class="fas fa-lock" aria-label="Secure Multi-Tenancy"></i>
-        <h4>Secure Multi-Tenancy</h4>
-        <p>Per-tenant credentials, SMTP, and data isolation for enterprise security.</p>
-      </div>
-    </section>
-    <svg class="wave-divider" viewBox="0 0 1440 60" fill="none" xmlns="http://www.w3.org/2000/svg"><path fill="#6366f1" fill-opacity="0.12" d="M0,30 C360,0 1080,60 1440,30 L1440,60 L0,60 Z"></path></svg>
-    <section class="showcase" id="demo">
-      <h2>See Alphadome in Action</h2>
-      <img src="https://assets-global.website-files.com/63e3e7e7e7e7e7e7e7e7e7e7/63e3e7e7e7e7e7e7e7e7e7e7_whatsapp-automation-hero.svg" alt="Dashboard Demo" loading="lazy">
-      <p>Watch a demo of agentic workflows, creative bots, and tenant dashboards in real time.</p>
-    </section>
-    <svg class="wave-divider" viewBox="0 0 1440 60" fill="none" xmlns="http://www.w3.org/2000/svg"><path fill="#38bdf8" fill-opacity="0.12" d="M0,30 C360,60 1080,0 1440,30 L1440,60 L0,60 Z"></path></svg>
-    <section class="glass how-it-works">
-      <h2>How It Works</h2>
-      <div class="steps">
-        <div class="step">
-          <i class="fas fa-link" aria-label="Connect"></i>
-          <h4>Connect</h4>
-          <p>Integrate your brand, client, or agency in minutes.</p>
-        </div>
-        <div class="step">
-          <i class="fas fa-sliders-h" aria-label="Configure"></i>
-          <h4>Configure</h4>
-          <p>Customize workflows, bots, and dashboards for each tenant.</p>
-        </div>
-        <div class="step">
-          <i class="fas fa-bolt" aria-label="Automate"></i>
-          <h4>Automate</h4>
-          <p>Launch agentic automation across channels and brands.</p>
-        </div>
-        <div class="step">
-          <i class="fas fa-chart-bar" aria-label="Scale"></i>
-          <h4>Scale</h4>
-          <p>Grow with real-time analytics, security, and multi-tenant controls.</p>
-        </div>
-      </div>
-    </section>
-    <svg class="wave-divider" viewBox="0 0 1440 60" fill="none" xmlns="http://www.w3.org/2000/svg"><path fill="#0ea5e9" fill-opacity="0.12" d="M0,30 C360,60 1080,0 1440,30 L1440,60 L0,60 Z"></path></svg>
-    <section class="brands">
-      <h2>Trusted by Leading Brands</h2>
-      <div class="brands-logos">
-        <img src="https://upload.wikimedia.org/wikipedia/commons/4/44/Microsoft_logo.svg" alt="Microsoft" loading="lazy">
-        <img src="https://upload.wikimedia.org/wikipedia/commons/a/a6/Logo_NIKE.svg" alt="Nike" loading="lazy">
-        <img src="https://upload.wikimedia.org/wikipedia/commons/2/2f/Google_2015_logo.svg" alt="Google" loading="lazy">
-        <img src="https://upload.wikimedia.org/wikipedia/commons/0/08/Netflix_2015_logo.svg" alt="Netflix" loading="lazy">
-        <img src="https://upload.wikimedia.org/wikipedia/commons/5/51/IBM_logo.svg" alt="IBM" loading="lazy">
-      </div>
-    </section>
-    <svg class="wave-divider" viewBox="0 0 1440 60" fill="none" xmlns="http://www.w3.org/2000/svg"><path fill="#6366f1" fill-opacity="0.12" d="M0,30 C360,0 1080,60 1440,30 L1440,60 L0,60 Z"></path></svg>
-    <section class="testimonials">
-      <h2>What Our Users Say</h2>
-      <div class="testimonial">
-        <p>“Alphadome let us launch AI-powered services for every client—no dev team needed.”</p>
-        <span>- Maya, Agency Director</span>
-      </div>
-      <div class="testimonial">
-        <p>“The multi-tenant controls and analytics are a game changer for our enterprise.”</p>
-        <span>- Alex, CTO</span>
-      </div>
-      <div class="testimonial">
-        <p>“We automated onboarding, support, and marketing in days. The agentic workflows are magic.”</p>
-        <span>- Priya, Startup Founder</span>
-      </div>
-    </section>
-    <svg class="wave-divider" viewBox="0 0 1440 60" fill="none" xmlns="http://www.w3.org/2000/svg"><path fill="#38bdf8" fill-opacity="0.12" d="M0,30 C360,60 1080,0 1440,30 L1440,60 L0,60 Z"></path></svg>
-    <section class="glass pricing" id="pricing">
-      <h2>Pricing & Plans</h2>
-      <div class="pricing-table">
-        <div class="plan">
-          <h4>Monthly</h4>
-          <p>900 KES/tenant/month</p>
-          <ul>
-            <li>All features</li>
-            <li>Unlimited bots</li>
-            <li>Dashboard access</li>
-          </ul>
-          <a href="#get-started" class="cta-btn" aria-label="Start Monthly">Start Monthly</a>
-        </div>
-        <div class="plan">
-          <h4>One-Time</h4>
-          <p>100 KES/tenant (single payment)</p>
-          <ul>
-            <li>All features</li>
-            <li>Unlimited bots</li>
-            <li>Dashboard access</li>
-          </ul>
-          <a href="#get-started" class="cta-btn" aria-label="Start One-Time">Start One-Time</a>
-        </div>
-        <div class="plan">
-          <h4>Custom</h4>
-          <p>Contact for enterprise pricing</p>
-          <ul>
-            <li>Custom integrations</li>
-            <li>Advanced analytics</li>
-            <li>Priority support</li>
-          </ul>
-          <a href="mailto:info@alphadome.ai" class="cta-btn" aria-label="Contact Sales">Contact Sales</a>
-        </div>
-      </div>
-    </section>
-    <svg class="wave-divider" viewBox="0 0 1440 60" fill="none" xmlns="http://www.w3.org/2000/svg"><path fill="#0ea5e9" fill-opacity="0.12" d="M0,30 C360,60 1080,0 1440,30 L1440,60 L0,60 Z"></path></svg>
-    <section class="faq">
-      <h2>FAQ & Support</h2>
-      <div class="faq-list">
-        <div class="faq-item" onclick="this.classList.toggle('active')">
-          <strong>How do I onboard a new tenant?</strong>
-          <div class="answer">Use the dashboard to add a brand or client, configure their workflows, and launch automation instantly.</div>
-        </div>
-        <div class="faq-item" onclick="this.classList.toggle('active')">
-          <strong>Is my data secure?</strong>
-          <div class="answer">Yes, Alphadome uses per-tenant isolation, encryption, and enterprise-grade security controls.</div>
-        </div>
-        <div class="faq-item" onclick="this.classList.toggle('active')">
-          <strong>Can I customize bots and workflows?</strong>
-          <div class="answer">Absolutely! Each tenant can have unique bots, workflows, and dashboard views.</div>
-        </div>
-        <div class="faq-item" onclick="this.classList.toggle('active')">
-          <strong>How do I get support?</strong>
-          <div class="answer">Contact us via WhatsApp, Email, or Phone. See below for details.</div>
-        </div>
-      </div>
-      <div class="social-icons">
-        <a href="https://wa.me/254117604817" target="_blank" aria-label="WhatsApp"><i class="fab fa-whatsapp"></i></a>
-        <a href="mailto:info@alphadome.ai" aria-label="Email"><i class="fas fa-envelope"></i></a>
-        <a href="tel:+254743780542" aria-label="Phone"><i class="fas fa-phone"></i></a>
-      </div>
-    </section>
-    <section class="glass cta-final" id="get-started">
-      <h2>Get Started with Alphadome</h2>
-      <p>Unlock the power of agentic AI and multi-tenant automation for your business or agency.</p>
-      <a href="mailto:info@alphadome.ai" class="cta-btn cta-large" aria-label="Request a Demo">Request a Demo</a>
-    </section>
-  </main>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.155.0/build/three.min.js"></script>
-  <script>
-    // Simple Three.js 3D animated sphere
-    window.addEventListener('DOMContentLoaded', () => {
-      const container = document.getElementById('hero-3d');
-      if (!container || !window.THREE) return;
-      const scene = new THREE.Scene();
-      const camera = new THREE.PerspectiveCamera(60, container.offsetWidth/container.offsetHeight, 0.1, 1000);
-      const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
-      renderer.setClearColor(0x0f172a, 0); // transparent
-      renderer.setSize(container.offsetWidth, container.offsetHeight);
-      container.appendChild(renderer.domElement);
-      // Lighting
-      const light = new THREE.PointLight(0x38bdf8, 1.2, 100);
-      light.position.set(10, 10, 10);
-      scene.add(light);
-      // Sphere
-      const geometry = new THREE.SphereGeometry(1.5, 64, 64);
-      const material = new THREE.MeshPhysicalMaterial({
-        color: 0x38bdf8,
-        roughness: 0.2,
-        metalness: 0.7,
-        clearcoat: 1,
-        clearcoatRoughness: 0.1,
-        transmission: 0.7,
-        thickness: 0.5,
-        ior: 1.2,
-        reflectivity: 0.8,
-        transparent: true,
-        opacity: 0.95
-      });
-      const sphere = new THREE.Mesh(geometry, material);
-      scene.add(sphere);
-      camera.position.z = 5;
-      // Animation
-      function animate() {
-        requestAnimationFrame(animate);
-        sphere.rotation.y += 0.008;
-        sphere.rotation.x += 0.003;
-        renderer.render(scene, camera);
-      }
-      animate();
-      // Responsive
-      window.addEventListener('resize', () => {
-        renderer.setSize(container.offsetWidth, container.offsetHeight);
-        camera.aspect = container.offsetWidth/container.offsetHeight;
-        camera.updateProjectionMatrix();
-      });
-    });
-  </script>
-  <footer>
-    &copy; 2026 Alphadome. All rights reserved.<br>
-    <div class="social-icons">
-      <a href="https://wa.me/254117604817" target="_blank" aria-label="WhatsApp"><i class="fab fa-whatsapp"></i></a>
-      <a href="mailto:info@alphadome.ai" aria-label="Email"><i class="fas fa-envelope"></i></a>
-      <a href="tel:+254743780542" aria-label="Phone"><i class="fas fa-phone"></i></a>
     </div>
-    <div style="margin-top:1rem;">
-      <a href="#" style="color:#0ea5e9;">About</a> |
-      <a href="#" style="color:#0ea5e9;">Docs</a> |
-      <a href="#" style="color:#0ea5e9;">Privacy</a> |
-      <a href="#" style="color:#0ea5e9;">Terms</a>
+    <p style="text-align: center; color: var(--muted); font-size: 1rem; line-height: 1.7; max-width: 700px; margin: 0 auto;">
+      Alphadome combines AI, analytics, and modular APIs into a single operating layer that can be deployed per business model, per team, and per market.
+    </p>
+  </div>
+</section>
+
+<!-- CAPABILITIES -->
+<section class="section">
+  <div class="container">
+    <h2>Core Capacity Stack</h2>
+    <div class="capabilities-grid">
+      <div class="capability-pill">Campaign management and lead lifecycle orchestration</div>
+      <div class="capability-pill">Revenue visibility, KPI dashboards, and exception monitoring</div>
+      <div class="capability-pill">Project, cost, safety, and compliance control modules</div>
+      <div class="capability-pill">AI design generation, cloud rendering, and asset pipelines</div>
+      <div class="capability-pill">ETL, demand forecasting, anomaly detection, and traceability</div>
+      <div class="capability-pill">Webhook integration, fallback continuity, and simulation tools</div>
+      <div class="capability-pill">Modular APIs for fast integration into existing stacks</div>
+      <div class="capability-pill">Secure multi-tenant architecture for operator-grade delivery</div>
     </div>
-  </footer>
-  <script>
-    // FAQ accordion
-    document.querySelectorAll('.faq-item').forEach(item => {
-      item.addEventListener('click', () => {
-        item.classList.toggle('active');
-      });
-    });
-  </script>
+
+    <div class="capacity-matrix">
+      <div class="capacity-module">
+        <h4>Alpha 3.0 (Comms and Outreach)</h4>
+        <p>Campaigns, onboarding, revenue tracking, catalog workflows, admin tools, and continuity logic for WhatsApp-led growth operations.</p>
+        <span class="badge">Operational Core</span>
+      </div>
+      <div class="capacity-module">
+        <h4>Alpha Construction</h4>
+        <p>Project, workforce, cost, quality, safety, supply, and compliance workflows that reduce delivery risk and operational leakage.</p>
+        <span class="badge">High Adoption Fit</span>
+      </div>
+      <div class="capacity-module">
+        <h4>Alpha Architect</h4>
+        <p>AI-driven architectural design, cloud rendering, collaboration, and pipeline automation for faster creative and technical delivery.</p>
+        <span class="badge">Premium Service Upsell</span>
+      </div>
+      <div class="capacity-module">
+        <h4>KEMSA 3.0</h4>
+        <p>Healthcare supply chain analytics with forecasting, anomaly detection, and governance workflows for real-time visibility.</p>
+        <span class="badge">Data-Intensive Operations</span>
+      </div>
+    </div>
+
+    <div class="proof-grid">
+      <div class="proof-item">
+        <h4>Fastest Pilot Path</h4>
+        <p>Alpha 3.0 enables immediate deployment for outreach and lead conversion with multi-tenant controls.</p>
+      </div>
+      <div class="proof-item">
+        <h4>Execution Certainty</h4>
+        <p>Built-in fallback and monitoring patterns reduce downtime risk and preserve campaign continuity.</p>
+      </div>
+      <div class="proof-item">
+        <h4>Cross-Sector Reuse</h4>
+        <p>Core modules adapt across construction, healthcare supply, creative studios, and growth teams.</p>
+      </div>
+      <div class="proof-item">
+        <h4>Ownership Advantage</h4>
+        <p>Your system is designed as a long-term operating asset with clear extensibility and monetization paths.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- HOW IT WORKS -->
+<section class="section">
+  <div class="container">
+    <h2>How We Deploy in Weeks, Not Quarters</h2>
+    <div class="workflow">
+      <div class="workflow-step">
+        <div class="step-number">1</div>
+        <h3>Business Discovery</h3>
+        <p>We map your customer journey, current tools, bottlenecks, and immediate revenue goals.</p>
+      </div>
+      <div class="workflow-step">
+        <div class="step-number">2</div>
+        <h3>System Blueprint</h3>
+        <p>We design your module mix, integrations, KPI model, and ownership structure.</p>
+      </div>
+      <div class="workflow-step">
+        <div class="step-number">3</div>
+        <h3>Rapid Deployment</h3>
+        <p>We launch your workflows, dashboards, and automations on production-ready infrastructure with clear owners.</p>
+      </div>
+      <div class="workflow-step">
+        <div class="step-number">4</div>
+        <h3>Team Onboarding</h3>
+        <p>Your operators get practical playbooks for campaign execution, lead handling, and reporting.</p>
+      </div>
+      <div class="workflow-step">
+        <div class="step-number">5</div>
+        <h3>Optimization Loop</h3>
+        <p>We tune performance weekly using lead velocity, conversion rates, and operational bottleneck metrics.</p>
+      </div>
+      <div class="workflow-step">
+        <div class="step-number">6</div>
+        <h3>Scale and Monetize</h3>
+        <p>Expand to more products, segments, and tenants while protecting quality and compliance.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CO-OWNERSHIP EXPLAINED -->
+<section class="section">
+  <div class="container">
+    <h2>Ownership Model Built for Long-Term Leverage</h2>
+    <div class="co-ownership-body">
+      <h3>Your System, Your Leverage</h3>
+      <p>We build around your business model so your system becomes a compounding digital asset, not a one-off campaign tool.</p>
+      <p><strong>Stakeholders can be aligned through structured participation models</strong> tied to growth outcomes and recurring value creation.</p>
+      <p>You can package repeatable workflows, onboard partners faster, and create durable operating advantage as demand grows.</p>
+    </div>
+    <div class="ownership-points">
+      <div class="ownership-point">
+        <h4>You Control The Roadmap</h4>
+        <p>Majority shareholder. You set strategy and control operations.</p>
+      </div>
+      <div class="ownership-point">
+        <h4>Aligned Incentives</h4>
+        <p>Team members, partners, investors hold tokenized portions. Aligned incentives.</p>
+      </div>
+      <div class="ownership-point">
+        <h4>Programmable Revenue Logic</h4>
+        <p>Payments flow to shareholders based on ownership. No manual distribution.</p>
+      </div>
+      <div class="ownership-point">
+        <h4>Traceable Growth</h4>
+        <p>Blockchain ledger shows all transactions, stakeholder positions, and revenue flows.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- LIVE PORTFOLIO -->
+<section class="section">
+  <div class="container">
+    <h2>Platform Systems You Can Deploy</h2>
+    <p style="text-align: center; color: var(--muted); margin-bottom: 2rem; font-size: 0.95rem;">Built modules can be composed to match your exact workflow and market segment.</p>
+    <div class="portfolio-grid">
+      <div class="portfolio-item">
+        <h3>Alpha 3.0</h3>
+        <div class="domain">Comms & Outreach</div>
+        <p>Multi-tenant outreach automation with campaign control, lead journeys, revenue analytics, and continuity workflows.</p>
+        <a href="/portfolio-viewer.html?agent=alpha-3-0">View System →</a>
+      </div>
+      <div class="portfolio-item">
+        <h3>Alpha Architect</h3>
+        <div class="domain">AI Design & Rendering</div>
+        <p>AI-assisted design generation, 3D workflows, cloud rendering, asset lifecycle management, and pipeline automation.</p>
+        <a href="/portfolio-viewer.html?agent=alpha-architect">View System →</a>
+      </div>
+      <div class="portfolio-item">
+        <h3>KEMSA 3.0</h3>
+        <div class="domain">Healthcare Supply Chain</div>
+        <p>Supply chain intelligence with ETL operations, AI forecasting, anomaly detection, and traceable governance layers.</p>
+        <a href="/portfolio-viewer.html?agent=kemsa-3-0">View System →</a>
+      </div>
+      <div class="portfolio-item">
+        <h3>Alpha Professor</h3>
+        <div class="domain">Academic CRM</div>
+        <p>Academic and professional CRM workflows with outreach, onboarding, analytics, compliance checks, and payment flows.</p>
+        <a href="/portfolio-viewer.html?agent=alpha-professor-3-0">View System →</a>
+      </div>
+    </div>
+    <div style="text-align: center; margin-top: 3rem;">
+      <a href="/portfolio.html" class="btn btn-secondary">See Full Portfolio →</a>
+    </div>
+  </div>
+</section>
+
+<!-- FOR YOUR AUDIENCE -->
+<section class="section">
+  <div class="container">
+    <h2>Who Buys First and Why</h2>
+    <div class="audience-tabs">
+      <div class="audience-card">
+        <div class="icon">🏢</div>
+        <h3>SMEs and Multi-Branch Operators</h3>
+        <div class="pain">Challenge: Slow follow-up, inconsistent sales execution, weak reporting discipline</div>
+        <div class="message">Deploy Alpha 3.0 to centralize campaigns, leads, and revenue visibility with a practical daily operating cadence.</div>
+      </div>
+      <div class="audience-card">
+        <div class="icon">🚀</div>
+        <h3>Construction and Infrastructure Teams</h3>
+        <div class="pain">Challenge: Cost leakage, fragmented project visibility, compliance exposure</div>
+        <div class="message">Deploy Alpha Construction modules for project controls, workforce coordination, quality, safety, and compliance assurance.</div>
+      </div>
+      <div class="audience-card">
+        <div class="icon">💼</div>
+        <h3>Healthcare and Specialized Service Networks</h3>
+        <div class="pain">Challenge: Supply chain blind spots, poor forecasting, delayed decisions</div>
+        <div class="message">Deploy KEMSA 3.0 and related analytics modules for traceability, demand intelligence, and operational confidence.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER CTA -->
+<section class="footer-cta">
+  <div class="container">
+    <h2>Ready to Convert More Pipeline with Alphadome?</h2>
+    <p>Share your target market, your revenue bottleneck, and your deployment timeline. We will recommend the exact module stack and rollout sequence.</p>
+    <div class="buttons">
+      <a href="/discovery" class="btn btn-primary">Start Discovery</a>
+      <a href="https://wa.me/254786817637" class="btn btn-secondary">Chat on WhatsApp</a>
+    </div>
+  </div>
+</section>
+
 </body>
 </html>
