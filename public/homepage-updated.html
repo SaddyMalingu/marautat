@@ -46,6 +46,24 @@
       background: radial-gradient(circle at 50% 50%, rgba(255, 138, 0, 0.1) 0%, transparent 70%);
     }
 
+    .brand-logo-wrap {
+      width: 100%;
+      max-width: 260px;
+      margin: 0 auto 1.2rem;
+      border-radius: 1rem;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.32), 0 0 28px rgba(255, 138, 0, 0.24);
+      background: rgba(10, 22, 36, 0.75);
+    }
+
+    .brand-logo-wrap video {
+      display: block;
+      width: 100%;
+      height: auto;
+      object-fit: cover;
+    }
+
     .hero h1 {
       font-family: "Bebas Neue", sans-serif;
       font-size: clamp(2.5rem, 6vw, 4.5rem);
@@ -320,6 +338,83 @@
       letter-spacing: 0.05em;
     }
 
+    .sales-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1rem;
+      margin-top: 1.2rem;
+    }
+
+    .sales-card {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.13);
+      border-radius: 14px;
+      padding: 1.2rem;
+    }
+
+    .sales-card h3 {
+      color: var(--accent-2);
+      font-size: 1.1rem;
+      margin-bottom: 0.55rem;
+    }
+
+    .sales-card p {
+      color: var(--muted);
+      font-size: 0.93rem;
+      line-height: 1.65;
+      margin-bottom: 0.9rem;
+    }
+
+    .status-pill {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 0.18rem 0.6rem;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    .status-pill.live {
+      border-color: rgba(126, 249, 200, 0.5);
+      color: var(--mint);
+      background: rgba(126, 249, 200, 0.1);
+    }
+
+    .status-pill.upcoming {
+      border-color: rgba(255, 209, 102, 0.5);
+      color: var(--accent-2);
+      background: rgba(255, 209, 102, 0.12);
+    }
+
+    #floating-whatsapp {
+      position: fixed;
+      right: calc(16px + env(safe-area-inset-right, 0px));
+      bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+      z-index: 2147483000;
+      transition: transform 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transform: translateZ(0);
+      text-decoration: none;
+    }
+
+    #floating-whatsapp:hover {
+      transform: scale(1.08);
+    }
+
+    #floating-whatsapp img {
+      width: 60px;
+      height: 60px;
+      display: block;
+      border-radius: 50%;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28);
+      border: 1px solid rgba(255, 255, 255, 0.25);
+    }
+
     /* SECTION: CO-OWNERSHIP */
     .co-ownership {
       text-align: center;
@@ -517,6 +612,7 @@
       .grid-4, .workflow { grid-template-columns: 1fr; }
       .hero .cta-buttons { flex-direction: column; }
       .btn { width: 100%; }
+      #floating-whatsapp img { width: 56px; height: 56px; }
     }
   </style>
 </head>
@@ -525,6 +621,9 @@
 <!-- HERO -->
 <section class="hero">
   <div class="container">
+    <div class="brand-logo-wrap reveal">
+      <video src="/logo-bg.mp4" autoplay loop muted playsinline preload="auto" aria-label="Alphadome logo animation"></video>
+    </div>
     <div class="position-strip reveal">Built for Paid Pilots and Fast Production Rollout</div>
     <h1 class="reveal delay-1">Stop Buying Tools.<br/>Deploy a Revenue Operating System.</h1>
     <p class="subheading reveal delay-2">Alphadome turns sales, operations, design, and supply chain workflows into one modular AI system your team can run daily. Multi-tenant architecture, secure automation, and measurable conversion pipelines are already built.</p>
@@ -549,6 +648,37 @@
       <div class="outcome-item">
         <strong>Ownership By Design</strong>
         <span>Deploy as your internal operating asset instead of renting disconnected tools.</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SALES SURFACES -->
+<section class="section">
+  <div class="container">
+    <h2>Commerce and Conversion Surfaces</h2>
+    <div class="sales-grid">
+      <div class="sales-card">
+        <h3>Scan-to-Pay Checkout</h3>
+        <p>Instant QR scan-to-STK payment flow for merchants and customers, optimized for repeat purchases and reduced checkout friction.</p>
+        <span class="status-pill live">Live</span>
+        <div style="margin-top: 0.9rem;">
+          <a class="btn btn-secondary" href="/kassangas-merchant-portal">Merchant Portal</a>
+        </div>
+      </div>
+      <div class="sales-card">
+        <h3>Scan-to-Send Interactive Posters</h3>
+        <p>Scan-enabled poster journeys that route prospects directly into your sales portal, campaign funnel, or booking flow from physical media.</p>
+        <span class="status-pill upcoming">Next Build Slice</span>
+        <p style="margin-top: 0.8rem; margin-bottom: 0;">This is positioned for rollout after the current M-Pesa scan stack, so your outreach and offline campaigns connect directly to conversion surfaces.</p>
+      </div>
+      <div class="sales-card">
+        <h3>Client Fast Wallet Experience</h3>
+        <p>Consumer-side wallet and payment experience for faster repeats, lower abandonment, and cleaner payment journey continuity.</p>
+        <span class="status-pill live">Live</span>
+        <div style="margin-top: 0.9rem;">
+          <a class="btn btn-secondary" href="/kassangas-client-wallet">Open Client Wallet</a>
+        </div>
       </div>
     </div>
   </div>
@@ -579,6 +709,30 @@
     <p style="text-align: center; color: var(--muted); font-size: 1rem; line-height: 1.7; max-width: 700px; margin: 0 auto;">
       Alphadome combines AI, analytics, and modular APIs into a single operating layer that can be deployed per business model, per team, and per market.
     </p>
+  </div>
+</section>
+
+<!-- WRITER'S FLOW -->
+<section class="section">
+  <div class="container">
+    <h2>Writer's Flow and AI Content Generation</h2>
+    <div class="sales-grid">
+      <div class="sales-card">
+        <h3>Writer's Flow Engine</h3>
+        <p>Content and workflow automation layer used to generate campaign messaging, product descriptions, follow-up flows, and lead-nurture sequences across tenants.</p>
+      </div>
+      <div class="sales-card">
+        <h3>AI Content Studio</h3>
+        <p>Generate branded text assets, channel-adapted campaign copy, and conversion-focused scripts with retrieval-aware context from your business knowledge.</p>
+      </div>
+      <div class="sales-card">
+        <h3>Sales-Ready Delivery Loop</h3>
+        <p>Move from content generation to execution by pushing assets into outreach workflows, dashboards, and measured conversion pipelines.</p>
+      </div>
+    </div>
+    <div style="text-align:center; margin-top:1.2rem;">
+      <a class="btn btn-primary" href="/discovery">Request Writer's Flow Setup</a>
+    </div>
   </div>
 </section>
 
@@ -786,6 +940,11 @@
     </div>
   </div>
 </section>
+
+<!-- Floating WhatsApp Assistant -->
+<a href="https://wa.me/254786817637?text=Hello%20Alphadome%20Assistant%2C%20I%20want%20to%20launch%20a%20system%20for%20my%20business." target="_blank" rel="noopener" id="floating-whatsapp" title="Chat with Alphadome Assistant on WhatsApp" aria-label="Chat with Alphadome Assistant on WhatsApp">
+  <img src="/images/whatsapp-3d.png" alt="WhatsApp Assistant" />
+</a>
 
 </body>
 </html>
