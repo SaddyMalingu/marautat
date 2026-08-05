@@ -21,17 +21,138 @@
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
+    html {
+      scroll-behavior: smooth;
+      scroll-padding-top: 130px;
+    }
+
     body {
       font-family: "Space Grotesk", sans-serif;
       color: var(--text);
       background: linear-gradient(135deg, var(--bg-1) 0%, var(--bg-2) 100%);
       line-height: 1.6;
+      overflow-x: hidden;
     }
 
     .container {
       max-width: 1200px;
       margin: 0 auto;
       padding: 0 24px;
+    }
+
+    .site-topbar {
+      position: sticky;
+      top: 0;
+      z-index: 1200;
+      background: rgba(8, 20, 33, 0.95);
+      border-bottom: 1px solid rgba(255, 209, 102, 0.22);
+      backdrop-filter: blur(10px);
+      overflow: hidden;
+      height: 38px;
+      display: flex;
+      align-items: center;
+    }
+
+    .ticker {
+      width: 100%;
+      white-space: nowrap;
+      overflow: hidden;
+    }
+
+    .ticker-track {
+      display: inline-block;
+      min-width: 100%;
+      padding-left: 100%;
+      animation: ticker 22s linear infinite;
+      color: var(--accent-2);
+      font-size: 0.84rem;
+      letter-spacing: 0.03em;
+      font-weight: 600;
+    }
+
+    .ticker-track span {
+      margin-right: 2.2rem;
+    }
+
+    @keyframes ticker {
+      0% { transform: translateX(0); }
+      100% { transform: translateX(-100%); }
+    }
+
+    .site-nav {
+      position: sticky;
+      top: 38px;
+      z-index: 1190;
+      background: rgba(10, 22, 36, 0.92);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      backdrop-filter: blur(12px);
+    }
+
+    .nav-inner {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0.7rem 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+
+    .brand-mini {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.55rem;
+      text-decoration: none;
+      color: var(--text);
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      white-space: nowrap;
+    }
+
+    .brand-mini-video {
+      width: 34px;
+      height: 34px;
+      border-radius: 9px;
+      object-fit: cover;
+      border: 1px solid rgba(255, 255, 255, 0.25);
+    }
+
+    .nav-toggle {
+      display: none;
+    }
+
+    .nav-toggle-btn {
+      display: none;
+      color: var(--text);
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      border-radius: 8px;
+      padding: 0.36rem 0.58rem;
+      cursor: pointer;
+      font-size: 0.95rem;
+      user-select: none;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 0.8rem;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .nav-links a {
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 0.88rem;
+      font-weight: 600;
+      padding: 0.38rem 0.58rem;
+      border-radius: 8px;
+      transition: background 0.2s ease, color 0.2s ease;
+    }
+
+    .nav-links a:hover {
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.08);
     }
 
     /* HERO */
@@ -42,13 +163,13 @@
       justify-content: center;
       align-items: center;
       text-align: center;
-      padding: 60px 24px;
+      padding: 72px 24px 60px;
       background: radial-gradient(circle at 50% 50%, rgba(255, 138, 0, 0.1) 0%, transparent 70%);
     }
 
     .brand-logo-wrap {
       width: 100%;
-      max-width: 260px;
+      max-width: clamp(170px, 24vw, 280px);
       margin: 0 auto 1.2rem;
       border-radius: 1rem;
       overflow: hidden;
@@ -173,6 +294,7 @@
     .section {
       padding: 80px 24px;
       border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      scroll-margin-top: 130px;
     }
 
     .section h2 {
@@ -605,21 +727,106 @@
     }
 
     /* RESPONSIVE */
+    @media (max-width: 992px) {
+      .container { padding: 0 18px; }
+      .hero { min-height: auto; }
+      .portfolio-grid { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+      .outcome-grid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+    }
+
     @media (max-width: 768px) {
+      .site-topbar { height: 34px; }
+      .ticker-track { font-size: 0.78rem; animation-duration: 20s; }
+
+      .site-nav { top: 34px; }
+      .nav-inner { padding: 0.62rem 0.8rem; }
+      .nav-toggle-btn { display: inline-block; }
+      .nav-links {
+        display: none;
+        width: 100%;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.35rem;
+        padding-top: 0.5rem;
+      }
+      .nav-links a {
+        width: 100%;
+        text-align: left;
+        padding: 0.58rem 0.65rem;
+        background: rgba(255, 255, 255, 0.04);
+      }
+      .nav-toggle:checked + .nav-toggle-btn + .nav-links {
+        display: flex;
+      }
+
       .hero h1 { font-size: 2rem; }
       .hero .subheading { font-size: 1rem; }
       .section h2 { font-size: 1.8rem; }
       .grid-4, .workflow { grid-template-columns: 1fr; }
       .hero .cta-buttons { flex-direction: column; }
       .btn { width: 100%; }
+      .brand-logo-wrap {
+        max-width: 185px;
+        margin-bottom: 1rem;
+      }
+      .position-strip { font-size: 0.72rem; }
+      .section { padding: 64px 16px; }
       #floating-whatsapp img { width: 56px; height: 56px; }
+    }
+
+    @media (max-width: 480px) {
+      .nav-inner { padding-left: 0.65rem; padding-right: 0.65rem; }
+      .brand-mini { font-size: 0.9rem; }
+      .brand-mini-video { width: 30px; height: 30px; }
+      .hero { padding-top: 58px; }
+      .hero .subheading { margin-bottom: 1.6rem; }
+      .outcome-item strong { font-size: 1.02rem; }
+      .outcome-item span { font-size: 0.82rem; }
+      .portfolio-item,
+      .audience-card,
+      .co-ownership-body,
+      .card,
+      .capacity-module,
+      .sales-card {
+        padding: 1rem;
+      }
     }
   </style>
 </head>
 <body>
 
+<div class="site-topbar" aria-label="Latest release updates">
+  <div class="ticker">
+    <div class="ticker-track">
+      <span>Latest Release: Scan-to-Pay Checkout is live for merchant collections and fast customer payments.</span>
+      <span>Wallet Update: Merchant Portal and Client Wallet experiences are now available in the Alphadome commerce stack.</span>
+      <span>Coming Next: Scan-to-Send interactive posters that route prospects directly into your conversion portal.</span>
+    </div>
+  </div>
+</div>
+
+<nav class="site-nav" aria-label="Main site navigation">
+  <div class="nav-inner">
+    <a class="brand-mini" href="#home">
+      <video class="brand-mini-video" src="/logo-bg.mp4" autoplay loop muted playsinline preload="metadata" aria-label="Alphadome brand icon"></video>
+      <span>Alphadome</span>
+    </a>
+    <input type="checkbox" id="nav-toggle" class="nav-toggle" />
+    <label for="nav-toggle" class="nav-toggle-btn" aria-label="Toggle navigation menu">Menu</label>
+    <div class="nav-links">
+      <a href="#home">Home</a>
+      <a href="#commerce">Commerce</a>
+      <a href="#writers-flow">Writer's Flow</a>
+      <a href="#capabilities">Capabilities</a>
+      <a href="#portfolio">Portfolio</a>
+      <a href="#audience">Audience</a>
+      <a href="#contact">Contact</a>
+    </div>
+  </div>
+</nav>
+
 <!-- HERO -->
-<section class="hero">
+<section class="hero" id="home">
   <div class="container">
     <div class="brand-logo-wrap reveal">
       <video src="/logo-bg.mp4" autoplay loop muted playsinline preload="auto" aria-label="Alphadome logo animation"></video>
@@ -654,7 +861,7 @@
 </section>
 
 <!-- SALES SURFACES -->
-<section class="section">
+<section class="section" id="commerce">
   <div class="container">
     <h2>Commerce and Conversion Surfaces</h2>
     <div class="sales-grid">
@@ -713,7 +920,7 @@
 </section>
 
 <!-- WRITER'S FLOW -->
-<section class="section">
+<section class="section" id="writers-flow">
   <div class="container">
     <h2>Writer's Flow and AI Content Generation</h2>
     <div class="sales-grid">
@@ -737,7 +944,7 @@
 </section>
 
 <!-- CAPABILITIES -->
-<section class="section">
+<section class="section" id="capabilities">
   <div class="container">
     <h2>Core Capacity Stack</h2>
     <div class="capabilities-grid">
@@ -866,7 +1073,7 @@
 </section>
 
 <!-- LIVE PORTFOLIO -->
-<section class="section">
+<section class="section" id="portfolio">
   <div class="container">
     <h2>Platform Systems You Can Deploy</h2>
     <p style="text-align: center; color: var(--muted); margin-bottom: 2rem; font-size: 0.95rem;">Built modules can be composed to match your exact workflow and market segment.</p>
@@ -903,7 +1110,7 @@
 </section>
 
 <!-- FOR YOUR AUDIENCE -->
-<section class="section">
+<section class="section" id="audience">
   <div class="container">
     <h2>Who Buys First and Why</h2>
     <div class="audience-tabs">
@@ -930,7 +1137,7 @@
 </section>
 
 <!-- FOOTER CTA -->
-<section class="footer-cta">
+<section class="footer-cta" id="contact">
   <div class="container">
     <h2>Ready to Convert More Pipeline with Alphadome?</h2>
     <p>Share your target market, your revenue bottleneck, and your deployment timeline. We will recommend the exact module stack and rollout sequence.</p>
