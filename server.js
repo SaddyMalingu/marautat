@@ -6938,96 +6938,108 @@ app.get("/admin/api/pipeline/overview", adminAuth, async (req, res) => {
   }
 });
 
+async function runFollowupAutomation({ dryRun = false, maxToSend = 80, source = "manual" } = {}) {
+  const safeMaxToSend = Math.min(300, Math.max(1, parseInt(String(maxToSend || 80), 10)));
+  const now = Date.now();
+
+  const { data: sessions, error } = await supabase
+    .from("user_sessions")
+    .select("phone, updated_at, context")
+    .order("updated_at", { ascending: true })
+    .limit(3000);
+
+  if (error) throw new Error(error.message);
+
+  const sendQueue = [];
+  for (const row of sessions || []) {
+    const ctx = row.context && typeof row.context === "object" ? row.context : {};
+    const stage = String(ctx.lead_stage || "new_lead").toLowerCase();
+    const optedOut = Boolean(ctx.opt_out_followups);
+    const converted = stage === "converted" || Boolean(ctx.generation_access_unlocked);
+    if (optedOut || converted) continue;
+
+    const lastInboundAt = Date.parse(ctx.lead_last_inbound_at || row.updated_at || "") || 0;
+    const followupStep = Number(ctx.followup_step || 0);
+    const lastFollowupAt = Date.parse(ctx.last_followup_at || "") || 0;
+    const hoursSinceInbound = (now - lastInboundAt) / (1000 * 60 * 60);
+    const hoursSinceFollowup = lastFollowupAt ? (now - lastFollowupAt) / (1000 * 60 * 60) : Infinity;
+
+    // Cadence: 24h, 72h, 7d; stop after 3 nudges.
+    if (followupStep >= 3) continue;
+    const neededHours = followupStep === 0 ? 24 : followupStep === 1 ? 72 : 168;
+    if (hoursSinceInbound < neededHours || hoursSinceFollowup < neededHours) continue;
+
+    const intro = ctx.profession || ctx.business_type
+      ? `Still thinking about improving ${ctx.business_type || ctx.profession} workflows?`
+      : "Still interested in streamlining your business workflows?";
+
+    const message = [
+      "👋 Quick follow-up from Alphadome.",
+      intro,
+      "",
+      "We can help you automate WhatsApp conversations, follow-ups, and content workflows.",
+      "Starter plans begin at *KES 200/month* (credits-based).",
+      "",
+      "Reply with one challenge you're facing and we'll suggest a practical next step.",
+    ].join("\n");
+
+    sendQueue.push({ phone: row.phone, ctx, followupStep, message });
+    if (sendQueue.length >= safeMaxToSend) break;
+  }
+
+  if (dryRun) {
+    return {
+      ok: true,
+      source,
+      dry_run: true,
+      queued: sendQueue.length,
+      sample: sendQueue.slice(0, 10).map((item) => ({ phone: item.phone, followup_step: item.followupStep })),
+    };
+  }
+
+  let sent = 0;
+  let failed = 0;
+  const failures = [];
+
+  for (const item of sendQueue) {
+    try {
+      await sendMessage(item.phone, item.message);
+      sent += 1;
+      await mergeUserSessionContext(item.phone, {
+        followup_step: Number(item.followupStep || 0) + 1,
+        last_followup_at: new Date().toISOString(),
+        lead_stage: item.followupStep > 0 ? "reactivation" : (item.ctx.lead_stage || "dormant"),
+      });
+    } catch (err) {
+      failed += 1;
+      failures.push({ phone: item.phone, error: err.message });
+    }
+    await new Promise((resolve) => setTimeout(resolve, 350));
+  }
+
+  return {
+    ok: true,
+    source,
+    dry_run: false,
+    queued: sendQueue.length,
+    sent,
+    failed,
+    failures: failures.slice(0, 20),
+  };
+}
+
 // POST /admin/api/followups/run
 // Sends controlled follow-up nudges to dormant leads with stop rules.
 app.post("/admin/api/followups/run", adminAuth, async (req, res) => {
   try {
     const dryRun = Boolean(req.body?.dry_run);
-    const maxToSend = Math.min(300, Math.max(1, parseInt(req.body?.max_to_send || "80", 10)));
-    const now = Date.now();
-
-    const { data: sessions, error } = await supabase
-      .from("user_sessions")
-      .select("phone, updated_at, context")
-      .order("updated_at", { ascending: true })
-      .limit(3000);
-
-    if (error) throw new Error(error.message);
-
-    const sendQueue = [];
-    for (const row of sessions || []) {
-      const ctx = row.context && typeof row.context === "object" ? row.context : {};
-      const stage = String(ctx.lead_stage || "new_lead").toLowerCase();
-      const optedOut = Boolean(ctx.opt_out_followups);
-      const converted = stage === "converted" || Boolean(ctx.generation_access_unlocked);
-      if (optedOut || converted) continue;
-
-      const lastInboundAt = Date.parse(ctx.lead_last_inbound_at || row.updated_at || "") || 0;
-      const followupStep = Number(ctx.followup_step || 0);
-      const lastFollowupAt = Date.parse(ctx.last_followup_at || "") || 0;
-      const hoursSinceInbound = (now - lastInboundAt) / (1000 * 60 * 60);
-      const hoursSinceFollowup = lastFollowupAt ? (now - lastFollowupAt) / (1000 * 60 * 60) : Infinity;
-
-      // Cadence: 24h, 72h, 7d; stop after 3 nudges.
-      if (followupStep >= 3) continue;
-      const neededHours = followupStep === 0 ? 24 : followupStep === 1 ? 72 : 168;
-      if (hoursSinceInbound < neededHours || hoursSinceFollowup < neededHours) continue;
-
-      const intro = ctx.profession || ctx.business_type
-        ? `Still thinking about improving ${ctx.business_type || ctx.profession} workflows?`
-        : "Still interested in streamlining your business workflows?";
-
-      const message = [
-        "👋 Quick follow-up from Alphadome.",
-        intro,
-        "",
-        "We can help you automate WhatsApp conversations, follow-ups, and content workflows.",
-        "Starter plans begin at *KES 200/month* (credits-based).",
-        "",
-        "Reply with one challenge you're facing and we'll suggest a practical next step.",
-      ].join("\n");
-
-      sendQueue.push({ phone: row.phone, ctx, followupStep, message });
-      if (sendQueue.length >= maxToSend) break;
-    }
-
-    if (dryRun) {
-      return res.json({
-        ok: true,
-        dry_run: true,
-        queued: sendQueue.length,
-        sample: sendQueue.slice(0, 10).map((item) => ({ phone: item.phone, followup_step: item.followupStep })),
-      });
-    }
-
-    let sent = 0;
-    let failed = 0;
-    const failures = [];
-
-    for (const item of sendQueue) {
-      try {
-        await sendMessage(item.phone, item.message);
-        sent += 1;
-        await mergeUserSessionContext(item.phone, {
-          followup_step: Number(item.followupStep || 0) + 1,
-          last_followup_at: new Date().toISOString(),
-          lead_stage: item.followupStep > 0 ? "reactivation" : (item.ctx.lead_stage || "dormant"),
-        });
-      } catch (err) {
-        failed += 1;
-        failures.push({ phone: item.phone, error: err.message });
-      }
-      await new Promise((resolve) => setTimeout(resolve, 350));
-    }
-
-    return res.json({
-      ok: true,
-      dry_run: false,
-      queued: sendQueue.length,
-      sent,
-      failed,
-      failures: failures.slice(0, 20),
+    const maxToSend = parseInt(req.body?.max_to_send || "80", 10);
+    const payload = await runFollowupAutomation({
+      dryRun,
+      maxToSend,
+      source: "admin_endpoint",
     });
+    return res.json(payload);
   } catch (err) {
     log(`Followup automation error: ${err.message}`, "ERROR");
     return res.status(500).json({ ok: false, error: err.message });
@@ -12572,9 +12584,67 @@ app.get("/admin/api/wf/stats", adminAuth, async (req, res) => {
   }
 });
 
+let followupSchedulerTimer = null;
+let followupSchedulerRunning = false;
+
+function msUntilNextEatRun(hour = 8, minute = 0) {
+  // EAT is UTC+3 and does not use daylight saving.
+  const nowUtcMs = Date.now();
+  const eatOffsetMs = 3 * 60 * 60 * 1000;
+  const eatNow = new Date(nowUtcMs + eatOffsetMs);
+  const target = new Date(eatNow);
+  target.setUTCHours(hour, minute, 0, 0);
+  if (target.getTime() <= eatNow.getTime()) {
+    target.setUTCDate(target.getUTCDate() + 1);
+  }
+  return Math.max(1000, target.getTime() - eatNow.getTime());
+}
+
+function scheduleDailyFollowupAutomation() {
+  const enabled = String(process.env.FOLLOWUP_AUTOMATION_ENABLED || "true").toLowerCase() !== "false";
+  if (!enabled) {
+    log("Daily follow-up automation is disabled via FOLLOWUP_AUTOMATION_ENABLED=false", "SYSTEM");
+    return;
+  }
+
+  const hour = Math.min(23, Math.max(0, parseInt(process.env.FOLLOWUP_AUTOMATION_HOUR_EAT || "8", 10)));
+  const minute = Math.min(59, Math.max(0, parseInt(process.env.FOLLOWUP_AUTOMATION_MINUTE_EAT || "0", 10)));
+  const maxToSend = Math.min(300, Math.max(1, parseInt(process.env.FOLLOWUP_AUTOMATION_MAX_TO_SEND || "80", 10)));
+  const dryRun = String(process.env.FOLLOWUP_AUTOMATION_DRY_RUN || "false").toLowerCase() === "true";
+
+  const waitMs = msUntilNextEatRun(hour, minute);
+  const nextAt = new Date(Date.now() + waitMs).toISOString();
+  log(`Daily follow-up automation scheduled for ${nextAt} (EAT ${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")})`, "SYSTEM");
+
+  if (followupSchedulerTimer) clearTimeout(followupSchedulerTimer);
+  followupSchedulerTimer = setTimeout(async () => {
+    if (followupSchedulerRunning) {
+      log("Skipping scheduled follow-up run because previous run is still active", "WARN");
+      scheduleDailyFollowupAutomation();
+      return;
+    }
+
+    followupSchedulerRunning = true;
+    try {
+      const result = await runFollowupAutomation({
+        dryRun,
+        maxToSend,
+        source: "daily_scheduler",
+      });
+      log(`Daily follow-up automation result: queued=${result.queued || 0} sent=${result.sent || 0} failed=${result.failed || 0} dry_run=${Boolean(result.dry_run)}`, "SYSTEM");
+    } catch (err) {
+      log(`Daily follow-up automation failed: ${err.message}`, "ERROR");
+    } finally {
+      followupSchedulerRunning = false;
+      scheduleDailyFollowupAutomation();
+    }
+  }, waitMs);
+}
+
 app.listen(process.env.PORT, () => {
   log(`Server running on port ${process.env.PORT}`, "SYSTEM");
   console.log(`🚀 Server running on port ${process.env.PORT}`);
+  scheduleDailyFollowupAutomation();
 });
 
 // ===== Register /admin/test-email endpoint strictly after app initialization =====
