@@ -2181,6 +2181,151 @@ function determineAttributionSource(text = "", sessionContext = {}) {
   return "organic";
 }
 
+function detectGenerationIntent(text = "") {
+  return /\b(generate|create|design|poster|flyer|branding|brand image|graphic|social post|blog post|article)\b/i.test(String(text || ""));
+}
+
+function detectEscalationIntent(text = "") {
+  return /\b(human|agent|manager|support|real person|call me|talk to someone)\b/i.test(String(text || ""));
+}
+
+function extractLeadProfileSignals(text = "", existingContext = {}) {
+  const normalizedText = String(text || "").trim();
+  const lower = normalizedText.toLowerCase();
+  const patch = {};
+
+  const bizMatch = normalizedText.match(/\b(?:my business is|we run|we are|i run|i own)\s+([^,.\n]{3,80})/i);
+  if (bizMatch?.[1]) patch.business_type = bizMatch[1].trim();
+
+  const roleMatch = normalizedText.match(/\b(?:i am|i'm)\s+(a|an)?\s*([^,.\n]{2,50})/i);
+  if (roleMatch?.[2] && !/ready|interested|looking/.test(roleMatch[2].toLowerCase())) {
+    patch.profession = roleMatch[2].trim();
+  }
+
+  const challengePatterns = [
+    /challenge\s*(?:is|:)?\s*([^,.\n]{5,120})/i,
+    /problem\s*(?:is|:)?\s*([^,.\n]{5,120})/i,
+    /struggling\s+(?:with|to)\s+([^,.\n]{5,120})/i,
+    /slow(?:ed|ing)?\s+by\s+([^,.\n]{5,120})/i,
+  ];
+  for (const pattern of challengePatterns) {
+    const match = normalizedText.match(pattern);
+    if (match?.[1]) {
+      patch.main_challenge = match[1].trim();
+      break;
+    }
+  }
+
+  const budgetMatch = normalizedText.match(/\b(?:budget|can pay|afford)\s*(?:is|:)?\s*(?:kes|ksh|k)?\s*([0-9]{2,7})\b/i);
+  if (budgetMatch?.[1]) patch.budget_kes = Number(budgetMatch[1]);
+
+  const urgency = /\b(today|asap|urgent|immediately|this week)\b/i.test(lower)
+    ? "high"
+    : /\b(soon|later|next week)\b/i.test(lower)
+      ? "medium"
+      : existingContext.urgency || "normal";
+  patch.urgency = urgency;
+
+  return patch;
+}
+
+function computeLeadStage({ text = "", context = {}, hasActiveSubscription = false }) {
+  const lower = String(text || "").toLowerCase();
+  if (hasActiveSubscription) return "converted";
+  if (detectEscalationIntent(lower)) return "handoff";
+  if (/\b(not now|not interested|too expensive|later|no thanks)\b/i.test(lower)) return "objection";
+  if (detectGenerationIntent(lower)) return "offer_sent";
+
+  const hasProfile = Boolean(context.business_type || context.profession || context.main_challenge);
+  if (hasProfile) return "qualified";
+  if (/\b(hello|hi|hey|help|interested|want|need)\b/i.test(lower)) return "discovery";
+  return context.lead_stage || "new_lead";
+}
+
+function getNextBestAction({ leadStage = "new_lead", context = {}, hasActiveSubscription = false }) {
+  if (hasActiveSubscription) {
+    return "Deliver value immediately and upsell based on active usage credits.";
+  }
+
+  if (leadStage === "new_lead" || leadStage === "discovery") {
+    return "Ask one short discovery question about business type or biggest bottleneck.";
+  }
+
+  if (leadStage === "qualified") {
+    return "Give one practical workflow recommendation tied to their challenge and suggest the KES 200 starter subscription.";
+  }
+
+  if (leadStage === "offer_sent") {
+    return "Guide customer to payment: reply JOIN ALPHADOME to trigger M-Pesa STK, then explain activation after admin approval.";
+  }
+
+  if (leadStage === "objection") {
+    return "Handle objection with value-first response and offer low-risk starter path at KES 200/month credits model.";
+  }
+
+  if (leadStage === "handoff") {
+    return "Share support contacts and summarize customer need for human follow-up.";
+  }
+
+  return "Continue consultative conversation and move toward a clear next step.";
+}
+
+async function getGenerationSubscriptionStatus({ userId = null, phone = "" }) {
+  const normalizedPhone = normalizeKenyanPhone(phone || "");
+  const queries = [];
+
+  if (userId) {
+    queries.push(
+      supabase
+        .from("subscriptions")
+        .select("id, status, amount, created_at")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false })
+        .limit(30)
+    );
+  }
+
+  if (normalizedPhone) {
+    queries.push(
+      supabase
+        .from("subscriptions")
+        .select("id, status, amount, created_at")
+        .eq("phone", normalizedPhone)
+        .order("created_at", { ascending: false })
+        .limit(30)
+    );
+  }
+
+  if (!queries.length) {
+    return {
+      hasAnyPaymentAttempt: false,
+      hasActiveApprovedSubscription: false,
+      latestStatus: null,
+    };
+  }
+
+  const rows = [];
+  const results = await Promise.all(queries);
+  results.forEach((result) => {
+    if (!result.error && Array.isArray(result.data)) {
+      rows.push(...result.data);
+    }
+  });
+
+  const deduped = [...new Map(rows.map((row) => [row.id, row])).values()]
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+  const latest = deduped[0] || null;
+  const hasActiveApprovedSubscription = deduped.some((row) => String(row.status || "").toLowerCase() === "active");
+  const hasAnyPaymentAttempt = deduped.length > 0;
+
+  return {
+    hasAnyPaymentAttempt,
+    hasActiveApprovedSubscription,
+    latestStatus: latest ? String(latest.status || "").toLowerCase() : null,
+  };
+}
+
 async function mergeUserSessionContext(phone, patch = {}) {
   const { data: existing } = await supabase
     .from("user_sessions")
@@ -6710,6 +6855,185 @@ app.post("/admin/api/broadcast/re-engage", adminAuth, async (req, res) => {
   }
 });
 
+// GET /admin/api/pipeline/overview
+// Provides a stage-by-stage summary for lead pipeline and conversion health.
+app.get("/admin/api/pipeline/overview", adminAuth, async (req, res) => {
+  try {
+    const limit = Math.min(5000, Math.max(100, parseInt(req.query.limit || "2000", 10)));
+    const [sessionResp, subResp] = await Promise.all([
+      supabase
+        .from("user_sessions")
+        .select("phone, updated_at, context")
+        .order("updated_at", { ascending: false })
+        .limit(limit),
+      supabase
+        .from("subscriptions")
+        .select("phone, user_id, status, amount, created_at")
+        .order("created_at", { ascending: false })
+        .limit(limit),
+    ]);
+
+    if (sessionResp.error) throw new Error(sessionResp.error.message);
+    if (subResp.error) throw new Error(subResp.error.message);
+
+    const sessions = sessionResp.data || [];
+    const subscriptions = subResp.data || [];
+
+    const stageCounts = {
+      new_lead: 0,
+      discovery: 0,
+      qualified: 0,
+      offer_sent: 0,
+      objection: 0,
+      handoff: 0,
+      dormant: 0,
+      reactivation: 0,
+      converted: 0,
+    };
+
+    sessions.forEach((row) => {
+      const ctx = row.context && typeof row.context === "object" ? row.context : {};
+      const stage = String(ctx.lead_stage || "new_lead").toLowerCase();
+      if (!Object.prototype.hasOwnProperty.call(stageCounts, stage)) {
+        stageCounts.new_lead += 1;
+      } else {
+        stageCounts[stage] += 1;
+      }
+    });
+
+    const activeSubs = subscriptions.filter((s) => String(s.status || "").toLowerCase() === "active");
+    const pendingSubs = subscriptions.filter((s) => ["pending", "manual_pending_verification"].includes(String(s.status || "").toLowerCase()));
+    const grossRevenue = subscriptions
+      .filter((s) => ["active", "completed"].includes(String(s.status || "").toLowerCase()))
+      .reduce((sum, s) => sum + Number(s.amount || 0), 0);
+
+    const latestLeads = sessions.slice(0, 30).map((row) => {
+      const ctx = row.context && typeof row.context === "object" ? row.context : {};
+      return {
+        phone: row.phone,
+        stage: ctx.lead_stage || "new_lead",
+        profession: ctx.profession || null,
+        business_type: ctx.business_type || null,
+        challenge: ctx.main_challenge || null,
+        next_action: ctx.lead_next_action || null,
+        updated_at: row.updated_at,
+      };
+    });
+
+    return res.json({
+      ok: true,
+      generated_at: new Date().toISOString(),
+      totals: {
+        tracked_contacts: sessions.length,
+        active_subscriptions: activeSubs.length,
+        pending_subscriptions: pendingSubs.length,
+        gross_revenue_kes: Math.round(grossRevenue * 100) / 100,
+      },
+      stages: stageCounts,
+      latest_leads: latestLeads,
+    });
+  } catch (err) {
+    log(`Pipeline overview error: ${err.message}`, "ERROR");
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// POST /admin/api/followups/run
+// Sends controlled follow-up nudges to dormant leads with stop rules.
+app.post("/admin/api/followups/run", adminAuth, async (req, res) => {
+  try {
+    const dryRun = Boolean(req.body?.dry_run);
+    const maxToSend = Math.min(300, Math.max(1, parseInt(req.body?.max_to_send || "80", 10)));
+    const now = Date.now();
+
+    const { data: sessions, error } = await supabase
+      .from("user_sessions")
+      .select("phone, updated_at, context")
+      .order("updated_at", { ascending: true })
+      .limit(3000);
+
+    if (error) throw new Error(error.message);
+
+    const sendQueue = [];
+    for (const row of sessions || []) {
+      const ctx = row.context && typeof row.context === "object" ? row.context : {};
+      const stage = String(ctx.lead_stage || "new_lead").toLowerCase();
+      const optedOut = Boolean(ctx.opt_out_followups);
+      const converted = stage === "converted" || Boolean(ctx.generation_access_unlocked);
+      if (optedOut || converted) continue;
+
+      const lastInboundAt = Date.parse(ctx.lead_last_inbound_at || row.updated_at || "") || 0;
+      const followupStep = Number(ctx.followup_step || 0);
+      const lastFollowupAt = Date.parse(ctx.last_followup_at || "") || 0;
+      const hoursSinceInbound = (now - lastInboundAt) / (1000 * 60 * 60);
+      const hoursSinceFollowup = lastFollowupAt ? (now - lastFollowupAt) / (1000 * 60 * 60) : Infinity;
+
+      // Cadence: 24h, 72h, 7d; stop after 3 nudges.
+      if (followupStep >= 3) continue;
+      const neededHours = followupStep === 0 ? 24 : followupStep === 1 ? 72 : 168;
+      if (hoursSinceInbound < neededHours || hoursSinceFollowup < neededHours) continue;
+
+      const intro = ctx.profession || ctx.business_type
+        ? `Still thinking about improving ${ctx.business_type || ctx.profession} workflows?`
+        : "Still interested in streamlining your business workflows?";
+
+      const message = [
+        "👋 Quick follow-up from Alphadome.",
+        intro,
+        "",
+        "We can help you automate WhatsApp conversations, follow-ups, and content workflows.",
+        "Starter plans begin at *KES 200/month* (credits-based).",
+        "",
+        "Reply with one challenge you're facing and we'll suggest a practical next step.",
+      ].join("\n");
+
+      sendQueue.push({ phone: row.phone, ctx, followupStep, message });
+      if (sendQueue.length >= maxToSend) break;
+    }
+
+    if (dryRun) {
+      return res.json({
+        ok: true,
+        dry_run: true,
+        queued: sendQueue.length,
+        sample: sendQueue.slice(0, 10).map((item) => ({ phone: item.phone, followup_step: item.followupStep })),
+      });
+    }
+
+    let sent = 0;
+    let failed = 0;
+    const failures = [];
+
+    for (const item of sendQueue) {
+      try {
+        await sendMessage(item.phone, item.message);
+        sent += 1;
+        await mergeUserSessionContext(item.phone, {
+          followup_step: Number(item.followupStep || 0) + 1,
+          last_followup_at: new Date().toISOString(),
+          lead_stage: item.followupStep > 0 ? "reactivation" : (item.ctx.lead_stage || "dormant"),
+        });
+      } catch (err) {
+        failed += 1;
+        failures.push({ phone: item.phone, error: err.message });
+      }
+      await new Promise((resolve) => setTimeout(resolve, 350));
+    }
+
+    return res.json({
+      ok: true,
+      dry_run: false,
+      queued: sendQueue.length,
+      sent,
+      failed,
+      failures: failures.slice(0, 20),
+    });
+  } catch (err) {
+    log(`Followup automation error: ${err.message}`, "ERROR");
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 app.get("/admin/api/support/inbox", adminAuth, async (req, res) => {
   try {
     const limit = Math.min(100, Math.max(5, parseInt(req.query.limit || "40", 10)));
@@ -7889,6 +8213,88 @@ app.post("/webhook", loadTenantContext, async (req, res) => {
       catalogMatches,
     });
 
+    // STEP 3c: Runtime lead intelligence (state, profile, and conversion gating)
+    const { data: liveSession } = await supabase
+      .from("user_sessions")
+      .select("context, updated_at")
+      .eq("phone", from)
+      .maybeSingle();
+
+    const liveContext = liveSession?.context && typeof liveSession.context === "object"
+      ? liveSession.context
+      : {};
+
+    const subscriptionStatus = await getGenerationSubscriptionStatus({
+      userId: userData.id,
+      phone: from,
+    });
+
+    const profilePatch = extractLeadProfileSignals(text, liveContext);
+    const nextStage = computeLeadStage({
+      text,
+      context: { ...liveContext, ...profilePatch },
+      hasActiveSubscription: subscriptionStatus.hasActiveApprovedSubscription,
+    });
+
+    const nextAction = getNextBestAction({
+      leadStage: nextStage,
+      context: { ...liveContext, ...profilePatch },
+      hasActiveSubscription: subscriptionStatus.hasActiveApprovedSubscription,
+    });
+
+    await mergeUserSessionContext(from, {
+      ...profilePatch,
+      lead_stage: nextStage,
+      lead_next_action: nextAction,
+      lead_last_inbound_at: new Date().toISOString(),
+      lead_inbound_count: Number(liveContext.lead_inbound_count || 0) + 1,
+      generation_access_unlocked: subscriptionStatus.hasActiveApprovedSubscription,
+    });
+
+    // Hard gate for generation tasks until payment is active and admin-approved.
+    if (detectGenerationIntent(text) && !subscriptionStatus.hasActiveApprovedSubscription) {
+      const gateMessage = [
+        "⚡ Great request. We can handle that for you.",
+        "",
+        "Generation tasks (blog posts, posters/branding images, and premium content assets) are unlocked after subscription activation.",
+        "",
+        "Plans start from *KES 200/month* (credits-based).",
+        "To activate, reply *JOIN ALPHADOME* and complete M-Pesa payment. Once admin approves your subscription, generation starts immediately.",
+        "",
+        "You can still ask strategy and social-posting tips here for free.",
+      ].join("\n");
+
+      await sendMessage(from, gateMessage, getDecryptedCredentials(req.tenant));
+      await supabase.from("conversations").insert([
+        {
+          brand_id: brandId,
+          user_id: userData.id,
+          direction: "outgoing",
+          message_text: gateMessage,
+          llm_used: false,
+          llm_reason: "generation_payment_gate",
+          raw_payload: {
+            reply_type: "text",
+            llm_used: false,
+            reason: "generation_payment_gate",
+            lead_stage: nextStage,
+          },
+          created_at: new Date().toISOString(),
+        },
+      ]);
+      return res.sendStatus(200);
+    }
+
+    const leadCoachContext = [
+      `Lead stage: ${nextStage}`,
+      `Next best action: ${nextAction}`,
+      `Generation access unlocked: ${subscriptionStatus.hasActiveApprovedSubscription ? "yes" : "no"}`,
+      "Pricing guidance for clients: starter subscription starts at KES 200/month and uses credits.",
+      "Do not share internal cost structure or internal-only fulfillment details.",
+    ].join("\n");
+
+    const dbContextWithLead = `${dbContext}\n\n${leadCoachContext}`.trim();
+
  // ---------- INSERT START: Join Alphadome / STK flow ----------
     // detect join command (case-insensitive)
    // ---------- UPDATED START: Join Alphadome / STK + level logic ----------
@@ -8618,7 +9024,7 @@ if (text.match(/^2547\d{7}$/) || text.toLowerCase() === "same") {
       trainingData,
       contextMessages,
       catalogMatches,
-      dbContext
+      dbContextWithLead
     );
     const creds = getDecryptedCredentials(req.tenant);
     const replyMeta = typeof reply === "object" ? reply.meta : null;

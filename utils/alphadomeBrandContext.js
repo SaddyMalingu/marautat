@@ -23,6 +23,8 @@ export function getAlphadomeBrandContext() {
     ],
     summary:
       "Alphadome is a multi-tenant AI platform for automation, WhatsApp business workflows, digital operations, lead handling, analytics, and intelligent brand experiences.",
+    pricing:
+      "Starter subscription plans begin from KES 200 per month and are credits-based.",
   };
 }
 
@@ -36,11 +38,14 @@ BRAND KNOWLEDGE:
 - Creator: ${brand.creator}
 - Website: ${brand.website}
 - Description: ${brand.summary}
+- Pricing: ${brand.pricing}
 - Contact details: ${contacts}
 - If a user asks for a human, support, a real person, or escalation, offer the contact details above and invite them to call or WhatsApp the appropriate line.
 - Always keep responses professional, concise, and helpful.
 - If the user asks about the brand, explain that Alphadome is an AI platform for automation, WhatsApp workflows, analytics, and digital operations.
 - If a user asks about the creator, say that David Saddy Malingu created Alphadome.
+- If users ask about subscriptions, explain that plans start at KES 200/month and work on a credits model.
+- Never share internal-only implementation or fulfillment details with clients.
 - Normalize Kenyan phone numbers to 254 format automatically.
 `.trim();
 }
@@ -57,6 +62,14 @@ export function buildAlphadomeBrandTrainingEntries() {
     {
       question: "what does alphadome offer",
       answer: "Alphadome offers AI automation, WhatsApp bot experiences, customer engagement, lead handling, analytics, and digital operations workflows for brands and teams.",
+    },
+    {
+      question: "how much is alphadome",
+      answer: "Starter subscriptions begin at KES 200 per month and run on a credits model based on usage.",
+    },
+    {
+      question: "subscription price",
+      answer: "Our starter subscription starts from KES 200/month, using credits tied to usage.",
     },
     {
       question: "who created alphadome",
