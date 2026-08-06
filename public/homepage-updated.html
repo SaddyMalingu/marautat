@@ -174,7 +174,8 @@
 
     .brand-logo-wrap {
       width: 100%;
-      max-width: clamp(128px, 16vw, 205px);
+      max-width: clamp(108px, 12vw, 172px);
+      aspect-ratio: 1 / 1;
       margin: 0 auto 1.2rem;
       border-radius: 1rem;
       overflow: hidden;
@@ -186,7 +187,7 @@
     .brand-logo-wrap video {
       display: block;
       width: 100%;
-      height: auto;
+      height: 100%;
       object-fit: cover;
     }
 
@@ -300,8 +301,10 @@
       font-family: "Bebas Neue", sans-serif;
       font-size: clamp(2rem, 4.2vw, 3.8rem);
       color: #dff4ff;
+      width: 100%;
       letter-spacing: 0.08em;
       text-transform: uppercase;
+      text-align: center;
       text-shadow: 0 0 12px rgba(95, 172, 255, 0.95), 0 0 28px rgba(59, 131, 255, 0.8), 0 0 52px rgba(39, 108, 255, 0.55);
       animation: heroGlowBreath 4.2s ease-in-out infinite;
       transform-origin: center;
@@ -324,19 +327,21 @@
 
     .generated-video-wrap p {
       color: var(--muted);
-      margin: 0;
+      margin: 0 auto;
       font-size: 0.95rem;
       line-height: 1.65;
       padding: 0 24px 1rem;
       max-width: 900px;
+      text-align: center;
     }
 
     .generated-video-player {
       width: 100%;
       max-width: none;
       margin: 0 auto;
-      height: min(78vh, 72vw);
-      min-height: 360px;
+      height: clamp(320px, 52vw, 620px);
+      max-height: 68vh;
+      min-height: 300px;
       border-radius: 0;
       overflow: hidden;
       border: 1px solid rgba(129, 190, 255, 0.36);
@@ -933,7 +938,7 @@
       .hero .cta-buttons { flex-direction: column; }
       .btn { width: 100%; }
       .brand-logo-wrap {
-        max-width: 140px;
+        max-width: 128px;
         margin-bottom: 1rem;
       }
       .position-strip { font-size: 0.72rem; }
@@ -1014,7 +1019,7 @@
         padding: 1rem;
       }
       .brand-logo-wrap {
-        max-width: 124px;
+        max-width: 112px;
       }
     }
   </style>
