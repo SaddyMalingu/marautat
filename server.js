@@ -11062,6 +11062,8 @@ async function generateReply(
   dbContext = ""
 ) {
   const creds = getDecryptedCredentials(tenant);
+  const brandTrainingData = buildAlphadomeBrandTrainingEntries();
+  const combinedTrainingData = [...brandTrainingData, ...(trainingData || [])];
   const systemMessage = {
     role: "system",
     content: getSystemPrompt(tenant, templates || [], combinedTrainingData || []),
@@ -11104,9 +11106,6 @@ async function generateReply(
       }
     }
   }
-
-  const brandTrainingData = buildAlphadomeBrandTrainingEntries();
-  const combinedTrainingData = [...brandTrainingData, ...(trainingData || [])];
 
   // 0️⃣b Try tenant training data before AI
   const trainingReply = findTrainingAnswer(combinedTrainingData, userMessage);
