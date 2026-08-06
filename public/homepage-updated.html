@@ -174,7 +174,7 @@
 
     .brand-logo-wrap {
       width: 100%;
-      max-width: clamp(170px, 24vw, 280px);
+      max-width: clamp(128px, 16vw, 205px);
       margin: 0 auto 1.2rem;
       border-radius: 1rem;
       overflow: hidden;
@@ -492,6 +492,45 @@
       margin-bottom: 0.9rem;
     }
 
+    .section-visual-grid {
+      margin-top: 1.3rem;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.95rem;
+    }
+
+    .visual-card {
+      position: relative;
+      border-radius: 14px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      background: rgba(255, 255, 255, 0.03);
+      min-height: 180px;
+    }
+
+    .visual-card img {
+      width: 100%;
+      height: 100%;
+      min-height: 180px;
+      object-fit: cover;
+      display: block;
+      filter: saturate(1.06) contrast(1.02);
+    }
+
+    .visual-card .visual-label {
+      position: absolute;
+      left: 0.7rem;
+      bottom: 0.7rem;
+      display: inline-block;
+      background: rgba(8, 20, 33, 0.86);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: var(--text);
+      border-radius: 999px;
+      padding: 0.25rem 0.55rem;
+      font-size: 0.74rem;
+      letter-spacing: 0.03em;
+    }
+
     .status-pill {
       display: inline-block;
       border-radius: 999px;
@@ -795,7 +834,7 @@
       .hero .cta-buttons { flex-direction: column; }
       .btn { width: 100%; }
       .brand-logo-wrap {
-        max-width: 185px;
+        max-width: 140px;
         margin-bottom: 1rem;
       }
       .position-strip { font-size: 0.72rem; }
@@ -808,6 +847,14 @@
       .audience-card,
       .ownership-point {
         border-radius: 12px;
+      }
+      .section-visual-grid {
+        grid-template-columns: 1fr;
+        gap: 0.75rem;
+      }
+      .visual-card,
+      .visual-card img {
+        min-height: 160px;
       }
       #floating-whatsapp img { width: 56px; height: 56px; }
     }
@@ -842,6 +889,9 @@
       .capacity-module,
       .sales-card {
         padding: 1rem;
+      }
+      .brand-logo-wrap {
+        max-width: 124px;
       }
     }
   </style>
@@ -941,6 +991,16 @@
         </div>
       </div>
     </div>
+    <div class="section-visual-grid">
+      <figure class="visual-card">
+        <img src="/images/site/commerce-scan-pay.png" alt="Scan-to-pay checkout experience" loading="lazy" />
+        <span class="visual-label">Scan-to-Pay Live</span>
+      </figure>
+      <figure class="visual-card">
+        <img src="/images/site/interactive-poster-scan-portal.png" alt="Interactive poster scan-to-portal journey" loading="lazy" />
+        <span class="visual-label">Scan-to-Send Next</span>
+      </figure>
+    </div>
   </div>
 </section>
 
@@ -992,6 +1052,16 @@
     </div>
     <div style="text-align:center; margin-top:1.2rem;">
       <a class="btn btn-primary" href="/discovery">Request Writer's Flow Setup</a>
+    </div>
+    <div class="section-visual-grid">
+      <figure class="visual-card">
+        <img src="/images/site/writers-flow-content-studio.png" alt="Writer's Flow AI content studio" loading="lazy" />
+        <span class="visual-label">AI Content Studio</span>
+      </figure>
+      <figure class="visual-card">
+        <img src="/images/site/multi-tenant-operations-dashboard.png" alt="Multi-tenant operations dashboard" loading="lazy" />
+        <span class="visual-label">Execution Dashboard</span>
+      </figure>
     </div>
   </div>
 </section>
@@ -1051,6 +1121,16 @@
         <h4>Ownership Advantage</h4>
         <p>Your system is designed as a long-term operating asset with clear extensibility and monetization paths.</p>
       </div>
+    </div>
+    <div class="section-visual-grid">
+      <figure class="visual-card">
+        <img src="/images/site/supply-chain-analytics-visual.png" alt="Supply chain analytics and forecasting" loading="lazy" />
+        <span class="visual-label">Supply Intelligence</span>
+      </figure>
+      <figure class="visual-card">
+        <img src="/images/site/multi-tenant-operations-dashboard.png" alt="Cross-module analytics dashboard" loading="lazy" />
+        <span class="visual-label">Multi-Tenant Operations</span>
+      </figure>
     </div>
   </div>
 </section>

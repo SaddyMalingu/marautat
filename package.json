@@ -6,6 +6,12 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
+    "start:kernel": "npm --prefix alphadome-kernel start",
+    "proof:isolation": "npm --prefix alphadome-kernel run proof:isolation",
+    "proof:isolation:strict": "npm --prefix alphadome-kernel run proof:isolation:strict",
+    "proof:isolation:live": "npm --prefix alphadome-kernel run proof:isolation:live",
+    "proof:isolation:live:strict": "npm --prefix alphadome-kernel run proof:isolation:live:strict",
+    "proof:isolation:live:auto": "npm --prefix alphadome-kernel run proof:isolation:live:auto",
     "dev": "nodemon server.js",
     "test": "echo \"Error: no test specified\" && exit 1",
     "campaign:send": "node sendTemplate.js",
@@ -37,7 +43,6 @@
   "license": "ISC",
   "dependencies": {
     "@supabase/supabase-js": "^2.76.1",
-    "xlsx": "^0.18.5",
     "autoprefixer": "^10.4.24",
     "axios": "^1.12.2",
     "body-parser": "^2.2.0",
@@ -56,7 +61,9 @@
     "nodemailer": "^8.0.1",
     "openai": "^6.3.0",
     "postcss": "^8.5.6",
-    "three": "^0.182.0"
+    "replicate": "^1.4.0",
+    "three": "^0.182.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "nodemon": "^3.1.10",
