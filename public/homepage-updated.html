@@ -21,6 +21,11 @@
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
+    img, video {
+      max-width: 100%;
+      height: auto;
+    }
+
     html {
       scroll-behavior: smooth;
       scroll-padding-top: 130px;
@@ -292,7 +297,7 @@
 
     /* SECTION: THE 3.0 MODEL */
     .section {
-      padding: 80px 24px;
+      padding: clamp(56px, 8vw, 84px) 24px;
       border-bottom: 1px solid rgba(255, 255, 255, 0.05);
       scroll-margin-top: 130px;
     }
@@ -316,7 +321,7 @@
       background: var(--panel);
       border: 1px solid rgba(255, 255, 255, 0.1);
       border-radius: 16px;
-      padding: 2rem;
+      padding: clamp(1rem, 2.6vw, 2rem);
       transition: all 0.3s ease;
     }
 
@@ -349,7 +354,7 @@
       background: rgba(15, 23, 42, 0.5);
       border: 1px solid rgba(255, 209, 102, 0.2);
       border-radius: 12px;
-      padding: 1.8rem;
+      padding: clamp(1rem, 2.2vw, 1.8rem);
       text-align: center;
     }
 
@@ -433,7 +438,7 @@
       background: rgba(255, 255, 255, 0.03);
       border: 1px solid rgba(255, 255, 255, 0.12);
       border-radius: 14px;
-      padding: 1.2rem;
+      padding: clamp(1rem, 2vw, 1.2rem);
     }
 
     .capacity-module h4 {
@@ -471,7 +476,7 @@
       background: rgba(255, 255, 255, 0.03);
       border: 1px solid rgba(255, 255, 255, 0.13);
       border-radius: 14px;
-      padding: 1.2rem;
+      padding: clamp(1rem, 2vw, 1.2rem);
     }
 
     .sales-card h3 {
@@ -548,7 +553,7 @@
       background: rgba(126, 249, 200, 0.08);
       border: 1px solid rgba(126, 249, 200, 0.3);
       border-radius: 16px;
-      padding: 3rem 2rem;
+      padding: clamp(1.2rem, 4vw, 3rem) clamp(1rem, 3vw, 2rem);
       margin-bottom: 2rem;
     }
 
@@ -601,7 +606,7 @@
       background: var(--panel);
       border: 1px solid rgba(255, 255, 255, 0.1);
       border-radius: 14px;
-      padding: 2rem;
+      padding: clamp(1rem, 2.5vw, 2rem);
       transition: all 0.3s ease;
     }
 
@@ -651,7 +656,7 @@
       background: var(--panel);
       border: 1px solid rgba(255, 255, 255, 0.1);
       border-radius: 16px;
-      padding: 2.5rem;
+      padding: clamp(1rem, 3vw, 2.5rem);
       transition: all 0.3s ease;
     }
 
@@ -727,9 +732,22 @@
     }
 
     /* RESPONSIVE */
-    @media (max-width: 992px) {
+    @media (max-width: 1100px) {
       .container { padding: 0 18px; }
       .hero { min-height: auto; }
+      .grid-4,
+      .sales-grid,
+      .capacity-matrix,
+      .proof-grid,
+      .portfolio-grid,
+      .audience-tabs,
+      .workflow,
+      .ownership-points {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .capabilities-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
       .portfolio-grid { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
       .outcome-grid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
     }
@@ -759,10 +777,21 @@
         display: flex;
       }
 
-      .hero h1 { font-size: 2rem; }
+      .hero h1 { font-size: clamp(1.8rem, 10vw, 2.3rem); }
       .hero .subheading { font-size: 1rem; }
       .section h2 { font-size: 1.8rem; }
-      .grid-4, .workflow { grid-template-columns: 1fr; }
+      .grid-4,
+      .workflow,
+      .sales-grid,
+      .capacity-matrix,
+      .proof-grid,
+      .portfolio-grid,
+      .audience-tabs,
+      .ownership-points,
+      .capabilities-grid,
+      .outcome-grid {
+        grid-template-columns: 1fr;
+      }
       .hero .cta-buttons { flex-direction: column; }
       .btn { width: 100%; }
       .brand-logo-wrap {
@@ -771,6 +800,15 @@
       }
       .position-strip { font-size: 0.72rem; }
       .section { padding: 64px 16px; }
+      .workflow-step,
+      .sales-card,
+      .capacity-module,
+      .card,
+      .portfolio-item,
+      .audience-card,
+      .ownership-point {
+        border-radius: 12px;
+      }
       #floating-whatsapp img { width: 56px; height: 56px; }
     }
 
@@ -782,6 +820,21 @@
       .hero .subheading { margin-bottom: 1.6rem; }
       .outcome-item strong { font-size: 1.02rem; }
       .outcome-item span { font-size: 0.82rem; }
+      .hero .cta-buttons {
+        width: 100%;
+        gap: 0.65rem;
+      }
+      .btn {
+        font-size: 0.93rem;
+        padding: 12px 16px;
+      }
+      .co-ownership-body p,
+      .card p,
+      .sales-card p,
+      .portfolio-item p,
+      .audience-card .message {
+        font-size: 0.92rem;
+      }
       .portfolio-item,
       .audience-card,
       .co-ownership-body,
