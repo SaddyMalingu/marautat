@@ -262,6 +262,83 @@
       line-height: 1.4;
     }
 
+    .generated-video-section {
+      padding: 22px 24px 58px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .generated-video-wrap {
+      max-width: 1040px;
+      margin: 0 auto;
+      background: rgba(9, 17, 28, 0.88);
+      border: 1px solid rgba(255, 209, 102, 0.25);
+      border-radius: 18px;
+      padding: clamp(1rem, 2vw, 1.6rem);
+      box-shadow: 0 18px 42px rgba(0, 0, 0, 0.28);
+    }
+
+    .generated-video-headline {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-bottom: 0.8rem;
+      flex-wrap: wrap;
+    }
+
+    .generated-video-headline h3 {
+      font-size: clamp(1.15rem, 2.2vw, 1.5rem);
+      color: var(--accent-2);
+      letter-spacing: 0.02em;
+    }
+
+    .generated-video-chip {
+      font-size: 0.77rem;
+      padding: 0.38rem 0.7rem;
+      border-radius: 999px;
+      border: 1px solid rgba(126, 249, 200, 0.42);
+      color: var(--mint);
+      background: rgba(126, 249, 200, 0.08);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-weight: 700;
+    }
+
+    .generated-video-wrap p {
+      color: var(--muted);
+      margin-bottom: 1rem;
+      font-size: 0.95rem;
+      line-height: 1.65;
+    }
+
+    .generated-video-player {
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      border-radius: 14px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: #02070d;
+      position: relative;
+    }
+
+    .generated-video-player video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      background: #02070d;
+    }
+
+    .generated-video-meta {
+      margin-top: 0.8rem;
+      color: var(--muted);
+      font-size: 0.85rem;
+      display: flex;
+      justify-content: space-between;
+      gap: 0.8rem;
+      flex-wrap: wrap;
+    }
+
     .btn {
       padding: 14px 28px;
       border: none;
@@ -963,6 +1040,26 @@
   </div>
 </section>
 
+<section class="generated-video-section" aria-label="Examples of generated Alphadome videos">
+  <div class="generated-video-wrap reveal">
+    <div class="generated-video-headline">
+      <h3>Generated Video Showcase</h3>
+      <span class="generated-video-chip">Muted • Shuffled • Looping</span>
+    </div>
+    <p>
+      Preview the style of branded motion content Alphadome can produce for campaigns, offers, and product storytelling.
+      The gallery shuffles through multiple generated clips automatically.
+    </p>
+    <div class="generated-video-player">
+      <video id="alphadome-generated-video" autoplay muted playsinline preload="metadata" aria-label="Autoplaying shuffled Alphadome generated video showcase"></video>
+    </div>
+    <div class="generated-video-meta">
+      <span>Auto-rotation keeps examples fresh for returning visitors.</span>
+      <span id="generated-video-index">Video 1</span>
+    </div>
+  </div>
+</section>
+
 <!-- SALES SURFACES -->
 <section class="section" id="commerce">
   <div class="container">
@@ -1285,6 +1382,71 @@
 <a href="https://wa.me/254786817637?text=Hello%20Alphadome%20Assistant%2C%20I%20want%20to%20launch%20a%20system%20for%20my%20business." target="_blank" rel="noopener" id="floating-whatsapp" title="Chat with Alphadome Assistant on WhatsApp" aria-label="Chat with Alphadome Assistant on WhatsApp">
   <img src="/images/whatsapp-3d.png" alt="WhatsApp Assistant" />
 </a>
+
+<script>
+  (() => {
+    const player = document.getElementById("alphadome-generated-video");
+    const meta = document.getElementById("generated-video-index");
+    if (!player) return;
+
+    const base = "/media/";
+    const clips = [
+      "tmp8vk_rsaa.mp4",
+      "tmp2xi9e6m3.mp4",
+      "tmpslvqv0fq.mp4",
+      "replicate-prediction-hht8dab5ehrmw0czjfvvbjhdt0.mp4",
+      "tmp1yswhpab.mp4",
+      "tmpkqt8flll.mp4",
+      "tmppusnn9_1.mp4",
+      "tmp5_0ryzre.mp4",
+      "tmpd2thisy1.mp4",
+    ].map((name) => `${base}${name}`);
+
+    let pool = [];
+    let index = 0;
+    let shuffleTimer = null;
+
+    function reshuffle() {
+      pool = [...clips]
+        .map((item) => ({ item, sort: Math.random() }))
+        .sort((a, b) => a.sort - b.sort)
+        .map((entry) => entry.item);
+      index = 0;
+    }
+
+    function playCurrent() {
+      if (!pool.length) reshuffle();
+      const src = pool[index % pool.length];
+      player.src = src;
+      player.muted = true;
+      player.play().catch(() => {});
+      if (meta) {
+        meta.textContent = `Video ${index + 1} of ${pool.length}`;
+      }
+    }
+
+    function nextVideo() {
+      index += 1;
+      if (index >= pool.length) {
+        reshuffle();
+      }
+      playCurrent();
+    }
+
+    reshuffle();
+    playCurrent();
+
+    // Natural loop path when clip ends.
+    player.addEventListener("ended", nextVideo);
+
+    // Safety rotation in case some clips are very long.
+    shuffleTimer = setInterval(nextVideo, 24000);
+
+    window.addEventListener("beforeunload", () => {
+      if (shuffleTimer) clearInterval(shuffleTimer);
+    });
+  })();
+</script>
 
 </body>
 </html>
