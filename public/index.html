@@ -313,7 +313,9 @@
 
     .generated-video-player {
       width: 100%;
-      aspect-ratio: 16 / 9;
+      max-width: 1080px;
+      margin: 0 auto;
+      height: clamp(240px, 58vw, 640px);
       border-radius: 14px;
       overflow: hidden;
       border: 1px solid rgba(255, 255, 255, 0.12);
@@ -337,6 +339,14 @@
       justify-content: space-between;
       gap: 0.8rem;
       flex-wrap: wrap;
+    }
+
+    .generated-video-status {
+      margin-top: 0.65rem;
+      color: var(--muted);
+      font-size: 0.82rem;
+      text-align: center;
+      min-height: 1.2em;
     }
 
     .btn {
@@ -929,6 +939,24 @@
         grid-template-columns: 1fr;
         gap: 0.75rem;
       }
+
+      .generated-video-section {
+        padding: 12px 12px 40px;
+      }
+
+      .generated-video-wrap {
+        padding: 0.9rem;
+      }
+
+      .generated-video-player {
+        height: min(64vh, 66vw);
+      }
+
+      .generated-video-player video {
+        object-fit: contain;
+        background: #000;
+      }
+
       .visual-card,
       .visual-card img {
         min-height: 160px;
@@ -1057,6 +1085,7 @@
       <span>Auto-rotation keeps examples fresh for returning visitors.</span>
       <span id="generated-video-index">Video 1</span>
     </div>
+    <div id="generated-video-status" class="generated-video-status"></div>
   </div>
 </section>
 
@@ -1384,13 +1413,13 @@
 </a>
 
 <script>
-  (() => {
+  (async () => {
     const player = document.getElementById("alphadome-generated-video");
     const meta = document.getElementById("generated-video-index");
+    const status = document.getElementById("generated-video-status");
     if (!player) return;
 
-    const base = "/media/";
-    const clips = [
+    const clipNames = [
       "tmp8vk_rsaa.mp4",
       "tmp2xi9e6m3.mp4",
       "tmpslvqv0fq.mp4",
@@ -1400,11 +1429,43 @@
       "tmppusnn9_1.mp4",
       "tmp5_0ryzre.mp4",
       "tmpd2thisy1.mp4",
-    ].map((name) => `${base}${name}`);
+    ];
+
+    const baseCandidates = ["/media/", "/public/media/", "media/"];
+
+    async function resolveMediaBase() {
+      for (const candidate of baseCandidates) {
+        try {
+          const probe = await fetch(`${candidate}${clipNames[0]}`, { method: "HEAD" });
+          if (probe.ok) {
+            return candidate;
+          }
+        } catch (_) {
+          // Ignore and continue to the next candidate.
+        }
+      }
+      return "/media/";
+    }
+
+    const mediaBase = await resolveMediaBase();
+    const clips = clipNames.map((name) => `${mediaBase}${name}`);
 
     let pool = [];
     let index = 0;
+    let failCount = 0;
     let shuffleTimer = null;
+    let loadTimeout = null;
+
+    player.muted = true;
+    player.autoplay = true;
+    player.playsInline = true;
+    player.loop = false;
+    player.setAttribute("playsinline", "");
+    player.setAttribute("webkit-playsinline", "");
+
+    function setStatus(message) {
+      if (status) status.textContent = message;
+    }
 
     function reshuffle() {
       pool = [...clips]
@@ -1414,35 +1475,75 @@
       index = 0;
     }
 
+    function clearLoadTimeout() {
+      if (loadTimeout) {
+        clearTimeout(loadTimeout);
+        loadTimeout = null;
+      }
+    }
+
     function playCurrent() {
       if (!pool.length) reshuffle();
       const src = pool[index % pool.length];
       player.src = src;
-      player.muted = true;
-      player.play().catch(() => {});
+      player.load();
+
+      clearLoadTimeout();
+      loadTimeout = setTimeout(() => {
+        nextVideo("load-timeout");
+      }, 5000);
+
+      player.play().catch(() => {
+        player.controls = true;
+        setStatus("Tap play to start video preview on this device.");
+      });
+
       if (meta) {
         meta.textContent = `Video ${index + 1} of ${pool.length}`;
       }
+      setStatus("");
     }
 
-    function nextVideo() {
+    function nextVideo(reason) {
       index += 1;
       if (index >= pool.length) {
         reshuffle();
       }
+
+      if (reason === "error" || reason === "load-timeout") {
+        failCount += 1;
+        if (failCount >= clips.length * 2) {
+          clearLoadTimeout();
+          setStatus("Videos are loading slowly. Refresh once deployment cache finishes.");
+          return;
+        }
+      }
+
       playCurrent();
     }
 
     reshuffle();
     playCurrent();
 
-    // Natural loop path when clip ends.
-    player.addEventListener("ended", nextVideo);
+    player.addEventListener("loadeddata", () => {
+      failCount = 0;
+      clearLoadTimeout();
+    });
 
-    // Safety rotation in case some clips are very long.
-    shuffleTimer = setInterval(nextVideo, 24000);
+    player.addEventListener("error", () => {
+      nextVideo("error");
+    });
+
+    player.addEventListener("ended", () => {
+      nextVideo("ended");
+    });
+
+    shuffleTimer = setInterval(() => {
+      nextVideo("timer");
+    }, 24000);
 
     window.addEventListener("beforeunload", () => {
+      clearLoadTimeout();
       if (shuffleTimer) clearInterval(shuffleTimer);
     });
   })();
