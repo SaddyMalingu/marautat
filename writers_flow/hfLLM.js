@@ -31,6 +31,10 @@ export function getHuggingFaceLLMConfig() {
 
 
 export async function hfChatCompletion({ prompt, max_tokens = 700, temperature = 0.8 }) {
+  if (!HF_API_KEY) {
+    throw new Error('HF_API_KEY_WRITERS_FLOW/HF_API_KEY is not configured');
+  }
+
   const headers = {
     'Authorization': `Bearer ${HF_API_KEY}`,
     'Content-Type': 'application/json',

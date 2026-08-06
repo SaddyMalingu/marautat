@@ -57,6 +57,75 @@ const OUTREACH_TONES = {
   employment: 'proactive, skills-forward, enthusiastic job/collaboration inquiry',
 };
 
+function buildFallbackQualification(lead) {
+  const title = String(lead?.title || '');
+  const snippet = String(lead?.snippet || '');
+  const industry = String(lead?.industry || '');
+  const source = `${title} ${snippet} ${industry}`.toLowerCase();
+  const signalTerms = ['automation', 'ai', 'digital', 'whatsapp', 'growth', 'sales', 'commerce', 'operations'];
+
+  let score = 30;
+  if (lead?.email) score += 22;
+  if (lead?.phone) score += 12;
+  if (lead?.url) score += 8;
+  if (snippet.length > 80) score += 8;
+  for (const term of signalTerms) {
+    if (source.includes(term)) score += 4;
+  }
+  score = Math.max(0, Math.min(100, score));
+
+  const shouldSkip = score < 35;
+  const outreachType = lead?.outreachType || 'pitch';
+  const orgName = lead?.org_name || lead?.title || null;
+
+  return {
+    ...lead,
+    relevance_score: score,
+    should_skip: shouldSkip,
+    skip_reason: shouldSkip ? 'Heuristic qualification score too low' : null,
+    outreach_type: outreachType,
+    org_name: orgName,
+    contact_name: lead?.contact_name || null,
+    industry: lead?.industry || null,
+    country: lead?.country || null,
+    why_relevant: shouldSkip ? null : 'Matches digital growth and automation profile based on available lead metadata.',
+    llm_provider: 'fallback',
+  };
+}
+
+function buildFallbackOutreach(lead) {
+  const outreachType = lead?.outreach_type || 'pitch';
+  const org = lead?.org_name || lead?.title || 'your team';
+  const contact = lead?.contact_name || 'Team';
+  const industry = lead?.industry || 'your sector';
+
+  const subjectByType = {
+    pitch: `Helping ${org} streamline growth on WhatsApp`,
+    proposal: `Proposal: practical WhatsApp automation for ${org}`,
+    partnership: `Partnership idea for ${org}`,
+    employment: `Collaboration opportunity with ${org}`,
+  };
+
+  const subject = subjectByType[outreachType] || `Hello ${org}`;
+  const body = [
+    `Hi ${contact},`,
+    '',
+    `I came across ${org} and thought it could be a strong fit for Alphadome's WhatsApp-first automation approach for ${industry}.`,
+    'We help teams reduce manual follow-up, improve response speed, and convert more customer conversations into orders or qualified sales calls.',
+    '',
+    'If useful, I can share a short, tailored walkthrough of how this could work for your current workflow this week.',
+    '',
+    'Learn more at https://alphadome.onrender.com/ or chat with us on WhatsApp: +254786817637 (https://wa.me/254786817637)',
+  ].join('\n');
+
+  return {
+    subject,
+    body,
+    quality_score: 62,
+    llm_provider: 'fallback',
+  };
+}
+
 // ──────────────────────────────────────────────
 // STEP 1: Qualify a lead (score + enrich)
 // ──────────────────────────────────────────────
@@ -152,7 +221,7 @@ Industry hint: ${lead.industry || 'unknown'}
   }
   // If neither provider worked
   console.error(`[Qualifier] Error qualifying lead ${lead.url}: ${lastErr?.message || 'No LLM provider available'}`);
-  return { ...lead, relevance_score: 0, should_skip: true, skip_reason: 'AI qualification failed: No LLM provider available' };
+  return buildFallbackQualification(lead);
 }
 
 // ──────────────────────────────────────────────
@@ -245,7 +314,7 @@ Respond in JSON only:
     }
   }
   console.error(`[Generator] Error generating outreach for ${lead.url}: ${lastErr?.message || 'No LLM provider available'}`);
-  return { subject: 'Hello from Alphadome', body: '', quality_score: 0 };
+  return buildFallbackOutreach(lead);
 }
 
 // ──────────────────────────────────────────────

@@ -27,6 +27,7 @@ import { log } from "./utils/logger.js";
 import { sendMessage, sendImage, sendInteractiveList } from "./utils/messenger.js";
 import { startHealthMonitor, runHealthCheck, incrementErrorCount } from "./utils/healthMonitor.js";
 import { buildAlphadomeBrandPromptBlock, buildAlphadomeBrandTrainingEntries, normalizeKenyanPhone } from "./utils/alphadomeBrandContext.js";
+import { isStopCommand } from "./writers_flow/intentHandler.js";
 
 const app = express();
 app.use(express.json({
@@ -8479,6 +8480,25 @@ app.post("/webhook", loadTenantContext, async (req, res) => {
   // NOTE for System Update; Find a way of handling different formats (text, graphics - videos, audio, and images.)
   if (!text) return res.sendStatus(200);
 
+  // === NLP STOP INTENT FOR WRITER'S FLOW ===
+  if (isStopCommand(text)) {
+    try {
+      const wf = await import('./writers_flow/orchestrator.js');
+      const isActive = typeof wf.isRunActive === 'function' ? wf.isRunActive() : false;
+      if (typeof wf.requestStop === 'function') {
+        wf.requestStop();
+      }
+      if (isActive) {
+        await sendMessage(from, "⏹️ Writer's Flow stop requested. It will halt shortly.");
+      } else {
+        await sendMessage(from, "✅ Stop intent received. No active Writer's Flow run was in progress.");
+      }
+    } catch (err) {
+      await sendMessage(from, `⚠️ Stop request could not be applied: ${err.message}`);
+    }
+    return res.sendStatus(200);
+  }
+
   // === CONTEXT-AWARE INTENT DETECTION FOR WRITER'S FLOW ===
   // Use compromise NLP for robust intent detection and entity extraction
   const doc = nlp(text);
@@ -8526,8 +8546,6 @@ app.post("/webhook", loadTenantContext, async (req, res) => {
   if (hasIntent) {
     // Compose keywords/context for orchestrator
     let keywords = [];
-    let context = text;
-    if (quantity) keywords.push(quantity.toString());
     if (sector) keywords.push(sector);
     if (keywords.length === 0) keywords = text.split(' ').filter(w => w.length > 2);
 
@@ -8537,13 +8555,15 @@ app.post("/webhook", loadTenantContext, async (req, res) => {
       const writersFlow = writersFlowModule.default || writersFlowModule;
       const result = await writersFlow({
         keywords,
-        userId: userData?.id || null,
-        fromEmail: process.env.SMTP_USER,
-        context,
+        userCommand: text,
         quantity,
         sector,
+        targetCount: Number.isFinite(quantity) && quantity > 0 ? quantity : undefined,
+        channels: ['email'],
       });
-      await sendMessage(from, `✅ Writer's Flow completed. Opportunities contacted: ${result.sent}`);
+      const sentCount = result?.outreach_sent ?? result?.sent ?? 0;
+      const failedCount = result?.outreach_failed ?? result?.failed ?? 0;
+      await sendMessage(from, `✅ Writer's Flow completed. Outreach sent: ${sentCount}. Failed: ${failedCount}.`);
     } catch (err) {
       await sendMessage(from, `⚠️ Writer's Flow failed: ${err.message}`);
     }
@@ -12948,6 +12968,27 @@ app.post("/admin/api/wf/campaigns/:id/run", adminAuth, async (req, res) => {
       });
     }).catch(err => {
       log(`[WF] Failed to import orchestrator: ${err.message}`, "ERROR");
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Stop active Writer's Flow run (NLP/ops interruption)
+app.post("/admin/api/wf/stop", adminAuth, async (req, res) => {
+  try {
+    const wf = await import("./writers_flow/orchestrator.js");
+    const isActive = typeof wf.isRunActive === "function" ? wf.isRunActive() : false;
+    if (typeof wf.requestStop === "function") {
+      wf.requestStop();
+    }
+    res.json({
+      ok: true,
+      stop_requested: true,
+      was_active: isActive,
+      message: isActive
+        ? "Writer's Flow stop request accepted"
+        : "Stop request accepted (no active run)",
     });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
