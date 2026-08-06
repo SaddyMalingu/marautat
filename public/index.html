@@ -275,6 +275,7 @@
       border-radius: 18px;
       padding: clamp(1rem, 2vw, 1.6rem);
       box-shadow: 0 18px 42px rgba(0, 0, 0, 0.28);
+      opacity: 1;
     }
 
     .generated-video-headline {
@@ -1069,7 +1070,7 @@
 </section>
 
 <section class="generated-video-section" aria-label="Examples of generated Alphadome videos">
-  <div class="generated-video-wrap reveal">
+  <div class="generated-video-wrap">
     <div class="generated-video-headline">
       <h3>Generated Video Showcase</h3>
       <span class="generated-video-chip">Muted • Shuffled • Looping</span>
@@ -1413,42 +1414,24 @@
 </a>
 
 <script>
-  (async () => {
+  (() => {
     const player = document.getElementById("alphadome-generated-video");
     const meta = document.getElementById("generated-video-index");
     const status = document.getElementById("generated-video-status");
     if (!player) return;
 
-    const clipNames = [
-      "tmp8vk_rsaa.mp4",
-      "tmp2xi9e6m3.mp4",
-      "tmpslvqv0fq.mp4",
-      "replicate-prediction-hht8dab5ehrmw0czjfvvbjhdt0.mp4",
-      "tmp1yswhpab.mp4",
-      "tmpkqt8flll.mp4",
-      "tmppusnn9_1.mp4",
-      "tmp5_0ryzre.mp4",
-      "tmpd2thisy1.mp4",
+    const clips = [
+      "/media/tmp8vk_rsaa.mp4",
+      "/media/tmp2xi9e6m3.mp4",
+      "/media/tmpslvqv0fq.mp4",
+      "/media/replicate-prediction-hht8dab5ehrmw0czjfvvbjhdt0.mp4",
+      "/media/tmp1yswhpab.mp4",
+      "/media/tmpkqt8flll.mp4",
+      "/media/tmppusnn9_1.mp4",
+      "/media/tmp5_0ryzre.mp4",
+      "/media/tmpd2thisy1.mp4",
     ];
 
-    const baseCandidates = ["/media/", "/public/media/", "media/"];
-
-    async function resolveMediaBase() {
-      for (const candidate of baseCandidates) {
-        try {
-          const probe = await fetch(`${candidate}${clipNames[0]}`, { method: "HEAD" });
-          if (probe.ok) {
-            return candidate;
-          }
-        } catch (_) {
-          // Ignore and continue to the next candidate.
-        }
-      }
-      return "/media/";
-    }
-
-    const mediaBase = await resolveMediaBase();
-    const clips = clipNames.map((name) => `${mediaBase}${name}`);
 
     let pool = [];
     let index = 0;
@@ -1548,6 +1531,7 @@
     });
   })();
 </script>
+
 
 </body>
 </html>
