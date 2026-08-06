@@ -35,8 +35,7 @@
             justify-content: center;
             gap: 2rem;
         }
-        <style>
-            body {
+        body {
                 font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
                 background: linear-gradient(135deg, #f8fafc 0%, #e0e7ef 100%);
                 color: #1e293b;
@@ -405,5 +404,31 @@
     <footer>
         &copy; 2026 Alphadome. All rights reserved.
     </footer>
+    <script>
+      (() => {
+        try {
+          const storageKey = "alphadomeVisitorId";
+          const existing = localStorage.getItem(storageKey) || sessionStorage.getItem(storageKey);
+          const visitorId = existing || `alphadome-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+          if (!existing) {
+            localStorage.setItem(storageKey, visitorId);
+          }
+          sessionStorage.setItem(storageKey, visitorId);
+
+          fetch("/api/kassangas/track-visit", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              portal: "alphadome_landing",
+              visitorId,
+              path: window.location.pathname + window.location.search,
+              ref: document.referrer || "",
+            }),
+          }).catch(() => {});
+        } catch (err) {
+          console.warn("Alphadome visitor analytics failed", err);
+        }
+      })();
+    </script>
 </body>
 </html>

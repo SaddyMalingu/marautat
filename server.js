@@ -26,6 +26,7 @@ import OpenAI from "openai";
 import { log } from "./utils/logger.js";
 import { sendMessage, sendImage, sendInteractiveList } from "./utils/messenger.js";
 import { startHealthMonitor, runHealthCheck, incrementErrorCount } from "./utils/healthMonitor.js";
+import { buildAlphadomeBrandPromptBlock, buildAlphadomeBrandTrainingEntries, normalizeKenyanPhone } from "./utils/alphadomeBrandContext.js";
 
 const app = express();
 app.use(express.json({
@@ -5078,6 +5079,24 @@ function buildTrainingContext(trainingData = []) {
   return sections.join('\n\n---\n\n').trim();
 }
 
+function getHumanEscalationReply(message = "") {
+  const text = String(message || "").trim();
+  if (!text) return null;
+
+  const lower = text.toLowerCase();
+  const escalationPatterns = [
+    /\b(human|agent|manager|support team|customer support|customer service|real person|someone|speak to someone|talk to a person)\b/i,
+    /\b(contact|reach|call|whatsapp)\b.*\b(support|human|agent)\b/i,
+    /\b(i need help|please help|can you help me|need assistance)\b/i,
+  ];
+
+  if (!escalationPatterns.some((pattern) => pattern.test(lower))) return null;
+
+  const callNumber = `+${normalizeKenyanPhone("0743780542")}`;
+  const whatsappNumber = `+${normalizeKenyanPhone("0117604817")}`;
+  return `For direct support, please call ${callNumber} or WhatsApp ${whatsappNumber}. You can also visit https://alphadome.onrender.com/.`;
+}
+
 function getSystemPrompt(tenant = null, templates = [], trainingData = []) {
   const brandName = tenant?.client_name || "Alphadome";
   const isAlphadomeBrand = /alphadome/i.test(String(brandName));
@@ -5124,9 +5143,10 @@ ALPHADOME CONSULTATIVE STYLE:
 
   const trainingContext = buildTrainingContext(trainingData);
   const styleBlock = consultativeStyle ? `\n\n${consultativeStyle}` : "";
+  const brandContextBlock = isAlphadomeBrand ? `\n\n${buildAlphadomeBrandPromptBlock()}` : "";
   const trainingBlock = trainingContext 
-    ? `\n\n${guardrails}${styleBlock}\n\n---\n\nKNOWLEDGE BASE:\n\n${trainingContext}` 
-    : `\n\n${guardrails}${styleBlock}`;
+    ? `\n\n${guardrails}${styleBlock}${brandContextBlock}\n\n---\n\nKNOWLEDGE BASE:\n\n${trainingContext}` 
+    : `\n\n${guardrails}${styleBlock}${brandContextBlock}`;
 
   return `${basePrompt}${trainingBlock}`.trim();
 }
@@ -7960,11 +7980,14 @@ if (text.toUpperCase().includes("COD") || text.match(/cash.*delivery|cod|cash_on
 // Handle Contact Support button
 if (text.toUpperCase().includes("SUPPORT") || text.match(/contact.*support|support_team/i)) {
   try {
+    const callNumber = `+${normalizeKenyanPhone("0743780542")}`;
+    const whatsappNumber = `+${normalizeKenyanPhone("0117604817")}`;
     await sendMessage(
       from,
       `📞 *Alphadome Support Team*\n\n` +
       `We're here to help!\n\n` +
-      `☎️ Call: *+254117604817* or *+254743780542*\n` +
+      `☎️ Call: *${callNumber}*\n` +
+      `💬 WhatsApp: *${whatsappNumber}*\n` +
       `📧 Email: support@alphadome.com\n` +
       `⏰ Hours: Mon-Fri, 8AM-6PM EAT\n\n` +
       `💬 Or continue here - what's your issue?`
@@ -11041,7 +11064,7 @@ async function generateReply(
   const creds = getDecryptedCredentials(tenant);
   const systemMessage = {
     role: "system",
-    content: getSystemPrompt(tenant, templates || [], trainingData || []),
+    content: getSystemPrompt(tenant, templates || [], combinedTrainingData || []),
   };
 
   log(
@@ -11050,6 +11073,16 @@ async function generateReply(
   );
 
   const isGreeting = isGreetingMessage(userMessage);
+  const escalationReply = getHumanEscalationReply(userMessage);
+  if (escalationReply) {
+    log("Human escalation detected → returning support reply", "SYSTEM");
+    return {
+      type: "text",
+      text: escalationReply,
+      meta: { llm_used: false, reason: "human_escalation" },
+    };
+  }
+
   if (isGreeting) {
     log("Greeting detected → routing to LLM", "SYSTEM");
   } else {
@@ -11072,8 +11105,11 @@ async function generateReply(
     }
   }
 
+  const brandTrainingData = buildAlphadomeBrandTrainingEntries();
+  const combinedTrainingData = [...brandTrainingData, ...(trainingData || [])];
+
   // 0️⃣b Try tenant training data before AI
-  const trainingReply = findTrainingAnswer(trainingData || [], userMessage);
+  const trainingReply = findTrainingAnswer(combinedTrainingData, userMessage);
   if (trainingReply) {
     log("✓ Training data match", "AI");
     return {
