@@ -6938,8 +6938,18 @@ app.get("/admin/api/pipeline/overview", adminAuth, async (req, res) => {
   }
 });
 
-async function runFollowupAutomation({ dryRun = false, maxToSend = 80, source = "manual" } = {}) {
+async function runFollowupAutomation({
+  dryRun = false,
+  maxToSend = 80,
+  source = "manual",
+  minHoursBetweenTouches = 24,
+  cadenceHours = [24, 72, 168],
+} = {}) {
   const safeMaxToSend = Math.min(300, Math.max(1, parseInt(String(maxToSend || 80), 10)));
+  const safeMinHours = Math.max(1, Number(minHoursBetweenTouches || 24));
+  const step0 = Math.max(safeMinHours, Number(cadenceHours?.[0] || 24));
+  const step1 = Math.max(safeMinHours, Number(cadenceHours?.[1] || 72));
+  const step2 = Math.max(safeMinHours, Number(cadenceHours?.[2] || 168));
   const now = Date.now();
 
   const { data: sessions, error } = await supabase
@@ -6964,9 +6974,9 @@ async function runFollowupAutomation({ dryRun = false, maxToSend = 80, source = 
     const hoursSinceInbound = (now - lastInboundAt) / (1000 * 60 * 60);
     const hoursSinceFollowup = lastFollowupAt ? (now - lastFollowupAt) / (1000 * 60 * 60) : Infinity;
 
-    // Cadence: 24h, 72h, 7d; stop after 3 nudges.
+    // Cadence: configurable, with hard minimum cooldown to prevent over-contact.
     if (followupStep >= 3) continue;
-    const neededHours = followupStep === 0 ? 24 : followupStep === 1 ? 72 : 168;
+    const neededHours = followupStep === 0 ? step0 : followupStep === 1 ? step1 : step2;
     if (hoursSinceInbound < neededHours || hoursSinceFollowup < neededHours) continue;
 
     const intro = ctx.profession || ctx.business_type
@@ -7024,6 +7034,8 @@ async function runFollowupAutomation({ dryRun = false, maxToSend = 80, source = 
     queued: sendQueue.length,
     sent,
     failed,
+    min_hours_between_touches: safeMinHours,
+    cadence_hours: [step0, step1, step2],
     failures: failures.slice(0, 20),
   };
 }
@@ -7034,9 +7046,11 @@ app.post("/admin/api/followups/run", adminAuth, async (req, res) => {
   try {
     const dryRun = Boolean(req.body?.dry_run);
     const maxToSend = parseInt(req.body?.max_to_send || "80", 10);
+    const minHoursBetweenTouches = parseInt(req.body?.min_hours_between_touches || "24", 10);
     const payload = await runFollowupAutomation({
       dryRun,
       maxToSend,
+      minHoursBetweenTouches,
       source: "admin_endpoint",
     });
     return res.json(payload);
@@ -12629,6 +12643,7 @@ function scheduleDailyFollowupAutomation() {
       const result = await runFollowupAutomation({
         dryRun,
         maxToSend,
+        minHoursBetweenTouches: parseInt(process.env.FOLLOWUP_AUTOMATION_MIN_HOURS_BETWEEN_TOUCHES || "24", 10),
         source: "daily_scheduler",
       });
       log(`Daily follow-up automation result: queued=${result.queued || 0} sent=${result.sent || 0} failed=${result.failed || 0} dry_run=${Boolean(result.dry_run)}`, "SYSTEM");
@@ -12641,10 +12656,60 @@ function scheduleDailyFollowupAutomation() {
   }, waitMs);
 }
 
+function scheduleIntervalFollowupAutomation() {
+  const enabled = String(process.env.FOLLOWUP_AUTOMATION_ENABLED || "true").toLowerCase() !== "false";
+  if (!enabled) {
+    log("Interval follow-up automation is disabled via FOLLOWUP_AUTOMATION_ENABLED=false", "SYSTEM");
+    return;
+  }
+
+  const intervalMinutes = Math.max(5, parseInt(process.env.FOLLOWUP_AUTOMATION_INTERVAL_MINUTES || "13", 10));
+  const maxToSend = Math.min(30, Math.max(1, parseInt(process.env.FOLLOWUP_AUTOMATION_INTERVAL_BATCH_SIZE || "1", 10)));
+  const dryRun = String(process.env.FOLLOWUP_AUTOMATION_DRY_RUN || "false").toLowerCase() === "true";
+  const minHoursBetweenTouches = Math.max(24, parseInt(process.env.FOLLOWUP_AUTOMATION_MIN_HOURS_BETWEEN_TOUCHES || "24", 10));
+  const waitMs = intervalMinutes * 60 * 1000;
+
+  log(`Interval follow-up automation scheduled every ${intervalMinutes} minutes (batch=${maxToSend}, cooldown=${minHoursBetweenTouches}h, dry_run=${dryRun})`, "SYSTEM");
+
+  if (followupSchedulerTimer) clearTimeout(followupSchedulerTimer);
+  followupSchedulerTimer = setTimeout(async () => {
+    if (followupSchedulerRunning) {
+      log("Skipping interval follow-up run because previous run is still active", "WARN");
+      scheduleIntervalFollowupAutomation();
+      return;
+    }
+
+    followupSchedulerRunning = true;
+    try {
+      const result = await runFollowupAutomation({
+        dryRun,
+        maxToSend,
+        minHoursBetweenTouches,
+        source: "interval_scheduler",
+      });
+      log(`Interval follow-up result: queued=${result.queued || 0} sent=${result.sent || 0} failed=${result.failed || 0} dry_run=${Boolean(result.dry_run)}`, "SYSTEM");
+    } catch (err) {
+      log(`Interval follow-up automation failed: ${err.message}`, "ERROR");
+    } finally {
+      followupSchedulerRunning = false;
+      scheduleIntervalFollowupAutomation();
+    }
+  }, waitMs);
+}
+
+function scheduleFollowupAutomationFromEnv() {
+  const mode = String(process.env.FOLLOWUP_AUTOMATION_MODE || "daily").toLowerCase();
+  if (mode === "interval") {
+    scheduleIntervalFollowupAutomation();
+    return;
+  }
+  scheduleDailyFollowupAutomation();
+}
+
 app.listen(process.env.PORT, () => {
   log(`Server running on port ${process.env.PORT}`, "SYSTEM");
   console.log(`🚀 Server running on port ${process.env.PORT}`);
-  scheduleDailyFollowupAutomation();
+  scheduleFollowupAutomationFromEnv();
 });
 
 // ===== Register /admin/test-email endpoint strictly after app initialization =====
