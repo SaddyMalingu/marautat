@@ -6632,6 +6632,84 @@ app.get("/admin/api/templates/ops", adminAuth, async (req, res) => {
   }
 });
 
+// POST /admin/api/broadcast/re-engage
+// Fires a warm re-engagement message to every contact that has ever texted the bot.
+// Requires x-admin-key header. Optional body: { message, dry_run }
+app.post("/admin/api/broadcast/re-engage", adminAuth, async (req, res) => {
+  try {
+    const dryRun = Boolean(req.body?.dry_run);
+    const callNumber = `+${normalizeKenyanPhone("0743780542")}`;
+    const customMessage = req.body?.message;
+    const message = customMessage || [
+      "👋 Hi, this is Alphadome.",
+      "",
+      "You've chatted with us before — thank you for that.",
+      "",
+      "We're reaching out because we're helping businesses set up practical AI workflows fast: WhatsApp automation, lead follow-up, and M-Pesa-ready sales flows.",
+      "",
+      "No pressure. Just reply with:",
+      "- Your business or profession",
+      "- One challenge slowing you down right now",
+      "",
+      "We'll share a quick, tailored workflow idea you can start using immediately. 🚀",
+      "",
+      `Or call David directly: ${callNumber}`,
+      "Website: https://alphadome.onrender.com",
+    ].join("\n");
+
+    // Collect all unique phone numbers from user_sessions (everyone who ever texted the bot)
+    const { data: sessions, error: sessErr } = await supabase
+      .from("user_sessions")
+      .select("phone")
+      .limit(2000);
+
+    if (sessErr) throw new Error(`user_sessions lookup failed: ${sessErr.message}`);
+
+    // Deduplicate and normalize
+    const ALPHADOME_MAIN = normalizeKenyanPhone("0786817637");
+    const phones = [
+      ...new Set(
+        (sessions || [])
+          .map((r) => normalizeKenyanPhone(r.phone))
+          .filter((p) => p && p.length >= 10 && p !== ALPHADOME_MAIN)
+      ),
+    ];
+
+    if (!phones.length) {
+      return res.json({ ok: true, dry_run: dryRun, sent: 0, failed: 0, total: 0, note: "No contacts found in user_sessions." });
+    }
+
+    log(`Re-engage broadcast: ${phones.length} unique contacts${dryRun ? " (dry run)" : ""}`, "SYSTEM");
+
+    if (dryRun) {
+      return res.json({ ok: true, dry_run: true, total: phones.length, phones: phones.slice(0, 10), message });
+    }
+
+    let sent = 0;
+    let failed = 0;
+    const errors = [];
+
+    for (const phone of phones) {
+      try {
+        await sendMessage(phone, message);
+        sent++;
+      } catch (err) {
+        failed++;
+        errors.push({ phone, error: err.message });
+        log(`Re-engage send failed to ${phone}: ${err.message}`, "WARN");
+      }
+      // 400ms gap — respects WhatsApp rate limits
+      await new Promise((r) => setTimeout(r, 400));
+    }
+
+    log(`Re-engage broadcast complete: ${sent} sent, ${failed} failed`, "SYSTEM");
+    return res.json({ ok: true, dry_run: false, sent, failed, total: phones.length, errors: errors.slice(0, 10) });
+  } catch (err) {
+    log(`Re-engage broadcast error: ${err.message}`, "ERROR");
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 app.get("/admin/api/support/inbox", adminAuth, async (req, res) => {
   try {
     const limit = Math.min(100, Math.max(5, parseInt(req.query.limit || "40", 10)));
