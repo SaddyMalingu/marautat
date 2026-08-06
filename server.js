@@ -5822,6 +5822,134 @@ async function sendTemplateDirect(to, templateName = "alphadome", languageCode =
   return response.data || null;
 }
 
+async function resolveCampaignBrandAndTenant() {
+  let brandId = DEFAULT_BRAND_ID;
+  let botTenantId = null;
+  const phoneNumberId = String(process.env.PHONE_NUMBER_ID || "").trim();
+
+  if (phoneNumberId) {
+    try {
+      const { data: tenantRows, error: tenantErr } = await supabase
+        .from("bot_tenants")
+        .select("id, brand_id")
+        .eq("whatsapp_phone_number_id", phoneNumberId)
+        .order("updated_at", { ascending: false })
+        .limit(1);
+
+      if (tenantErr) throw tenantErr;
+
+      const tenant = Array.isArray(tenantRows) && tenantRows.length ? tenantRows[0] : null;
+      if (tenant?.brand_id) brandId = tenant.brand_id;
+      if (tenant?.id) botTenantId = tenant.id;
+    } catch (err) {
+      log(`Campaign tenant resolution warning: ${err.message}`, "WARN");
+    }
+  }
+
+  if (!brandId) {
+    try {
+      const { data: brandData, error: brandErr } = await supabase
+        .from("brands")
+        .select("id")
+        .eq("is_platform_owner", true)
+        .limit(1)
+        .single();
+
+      if (!brandErr && brandData?.id) {
+        brandId = brandData.id;
+      }
+    } catch {
+      brandId = DEFAULT_BRAND_ID;
+    }
+  }
+
+  return {
+    brandId: brandId || DEFAULT_BRAND_ID,
+    botTenantId,
+  };
+}
+
+async function findOrCreateUserByPhone(phone) {
+  const normalized = normalizeCampaignPhone(phone);
+  if (!normalized) return null;
+
+  const candidates = [...new Set(buildPhoneCandidates(normalized).concat([normalized]))];
+  let user = null;
+
+  try {
+    const { data: users, error: userErr } = await supabase
+      .from("users")
+      .select("id, phone")
+      .in("phone", candidates)
+      .limit(1);
+
+    if (userErr) throw userErr;
+    user = Array.isArray(users) && users.length ? users[0] : null;
+  } catch (err) {
+    log(`User lookup warning for ${normalized}: ${err.message}`, "WARN");
+  }
+
+  if (user?.id) return user;
+
+  try {
+    const { data: newUser, error: createErr } = await supabase
+      .from("users")
+      .insert([{ phone: normalized, full_name: "Unknown User" }])
+      .select("id, phone")
+      .single();
+
+    if (createErr) throw createErr;
+    return newUser;
+  } catch (err) {
+    log(`User creation warning for ${normalized}: ${err.message}`, "WARN");
+    return null;
+  }
+}
+
+async function writeCampaignConversationAudit({
+  brandId,
+  userId,
+  phone,
+  runId,
+  audience,
+  template,
+  language,
+  whatsappMessageId,
+  status,
+  error,
+}) {
+  const payload = {
+    event_type: "campaign_template_send",
+    campaign_run_id: runId,
+    campaign_audience: audience,
+    campaign_template_name: template,
+    campaign_language: language,
+    campaign_phone: phone,
+    whatsapp_status: status,
+    whatsapp_status_at: new Date().toISOString(),
+  };
+
+  if (error) payload.error = error;
+
+  const { error: auditErr } = await supabase.from("conversations").insert([
+    {
+      brand_id: brandId,
+      user_id: userId,
+      direction: "outgoing",
+      message_text: `TEMPLATE:${template} [${status}]`,
+      whatsapp_message_id: whatsappMessageId || null,
+      raw_payload: payload,
+      llm_used: false,
+      llm_reason: "campaign_outbound_audit",
+      created_at: new Date().toISOString(),
+    },
+  ]);
+
+  if (auditErr) {
+    log(`Campaign outbound audit insert warning: ${auditErr.message}`, "WARN");
+  }
+}
+
 async function fetchTemplateDefinition(templateName = "alphadome") {
   const phoneNumberId = process.env.PHONE_NUMBER_ID;
   const token = process.env.WHATSAPP_TOKEN;
@@ -6532,6 +6660,200 @@ app.get("/admin/api/campaign/history", adminAuth, async (req, res) => {
   } catch (err) {
     log(`Admin campaign history error: ${err.message}`, "ERROR");
     return res.status(500).json({ error: err.message, history: [], last_run: null, filtered_count: 0, total_count: 0 });
+  }
+});
+
+app.get("/admin/api/campaign/proof", adminAuth, async (req, res) => {
+  try {
+    const runId = String(req.query.run_id || "").trim();
+    const limit = Math.min(1000, Math.max(1, parseInt(req.query.limit || "250", 10)));
+    if (!runId) {
+      return res.status(400).json({ error: "run_id is required" });
+    }
+
+    const historyResult = await readCampaignHistory({ limit: 500 });
+    const run = (historyResult.items || []).find((item) => String(item.run_id || "") === runId) || null;
+    if (!run) {
+      return res.status(404).json({ error: `Run not found: ${runId}` });
+    }
+
+    const runTs = parseIsoDate(run.ran_at || 0) || Date.now();
+    const sinceIso = new Date(runTs - (24 * 60 * 60 * 1000)).toISOString();
+    const { data: convRows, error: convErr } = await supabase
+      .from("conversations")
+      .select("id, user_id, message_text, whatsapp_message_id, raw_payload, created_at")
+      .eq("direction", "outgoing")
+      .gte("created_at", sinceIso)
+      .order("created_at", { ascending: true })
+      .limit(5000);
+
+    if (convErr) throw convErr;
+
+    const runRows = (convRows || []).filter((row) => {
+      const raw = row.raw_payload && typeof row.raw_payload === "object" ? row.raw_payload : {};
+      return String(raw.campaign_run_id || "") === runId;
+    });
+
+    const runMessageIds = new Set(runRows.map((row) => row.whatsapp_message_id).filter(Boolean));
+    const statusOnlyRows = (convRows || []).filter((row) => {
+      const raw = row.raw_payload && typeof row.raw_payload === "object" ? row.raw_payload : {};
+      if (String(raw.event_type || "") !== "whatsapp_status") return false;
+      return Boolean(row.whatsapp_message_id && runMessageIds.has(row.whatsapp_message_id));
+    });
+
+    const evidenceRows = [...runRows, ...statusOnlyRows];
+    const userIds = [...new Set(evidenceRows.map((row) => row.user_id).filter(Boolean))];
+    const { data: userRows, error: userErr } = userIds.length
+      ? await supabase.from("users").select("id, phone, full_name").in("id", userIds)
+      : { data: [], error: null };
+    if (userErr) throw userErr;
+    const userMap = new Map((userRows || []).map((user) => [user.id, user]));
+
+    const proofByMessage = new Map();
+    const proofByPhone = new Map();
+
+    const resolveProofRecord = (row) => {
+      const raw = row.raw_payload && typeof row.raw_payload === "object" ? row.raw_payload : {};
+      const campaignPhone = normalizeCampaignPhone(raw.campaign_phone || "");
+      const userPhone = normalizeCampaignPhone(userMap.get(row.user_id)?.phone || "");
+      const wmId = row.whatsapp_message_id || null;
+      const phoneKey = campaignPhone || userPhone || null;
+      const mapKey = wmId || phoneKey || row.id;
+
+      const existing = proofByMessage.get(mapKey) || proofByPhone.get(phoneKey || "");
+      if (existing) return existing;
+
+      const created = {
+        run_id: runId,
+        phone: phoneKey,
+        user_name: userMap.get(row.user_id)?.full_name || "Unknown",
+        user_id: row.user_id || null,
+        template: raw.campaign_template_name || run.template || null,
+        audience: raw.campaign_audience || run.audience || null,
+        whatsapp_message_id: wmId,
+        api_status: null,
+        latest_status: "unknown",
+        latest_status_at: row.created_at || null,
+        status_history: [],
+        first_logged_at: row.created_at || null,
+        last_updated_at: row.created_at || null,
+      };
+
+      proofByMessage.set(mapKey, created);
+      if (phoneKey) proofByPhone.set(phoneKey, created);
+      return created;
+    };
+
+    for (const row of evidenceRows) {
+      const raw = row.raw_payload && typeof row.raw_payload === "object" ? row.raw_payload : {};
+      const rec = resolveProofRecord(row);
+
+      if (row.whatsapp_message_id && !rec.whatsapp_message_id) {
+        rec.whatsapp_message_id = row.whatsapp_message_id;
+      }
+      if (!rec.phone) {
+        rec.phone = normalizeCampaignPhone(raw.campaign_phone || userMap.get(row.user_id)?.phone || "");
+      }
+      if (!rec.user_id && row.user_id) rec.user_id = row.user_id;
+      if (!rec.user_name || rec.user_name === "Unknown") {
+        rec.user_name = userMap.get(row.user_id)?.full_name || rec.user_name;
+      }
+      rec.template = rec.template || raw.campaign_template_name || run.template || null;
+      rec.audience = rec.audience || raw.campaign_audience || run.audience || null;
+
+      if (raw.event_type === "campaign_template_send") {
+        rec.api_status = String(raw.whatsapp_status || "api_accepted").toLowerCase();
+      }
+
+      const explicitStatus = String(raw.whatsapp_status || "").toLowerCase();
+      const statusAt = raw.whatsapp_status_at || row.created_at || null;
+      if (explicitStatus) {
+        rec.latest_status = explicitStatus;
+        rec.latest_status_at = statusAt;
+      }
+
+      const history = Array.isArray(raw.whatsapp_status_history) ? raw.whatsapp_status_history : [];
+      for (const item of history) {
+        const status = String(item?.status || "").toLowerCase();
+        const timestamp = item?.timestamp || row.created_at || null;
+        if (!status) continue;
+        rec.status_history.push({ status, timestamp });
+      }
+
+      if (raw.event_type === "whatsapp_status") {
+        const status = String(raw.whatsapp_status || raw.whatsapp_status_event?.status || "").toLowerCase();
+        const timestamp = raw.whatsapp_status_at || raw.whatsapp_status_event?.timestamp || row.created_at || null;
+        if (status) {
+          rec.status_history.push({ status, timestamp });
+          rec.latest_status = status;
+          rec.latest_status_at = timestamp;
+        }
+      }
+
+      rec.first_logged_at = rec.first_logged_at && row.created_at
+        ? (parseIsoDate(row.created_at) < parseIsoDate(rec.first_logged_at) ? row.created_at : rec.first_logged_at)
+        : (rec.first_logged_at || row.created_at || null);
+      rec.last_updated_at = rec.last_updated_at && row.created_at
+        ? (parseIsoDate(row.created_at) > parseIsoDate(rec.last_updated_at) ? row.created_at : rec.last_updated_at)
+        : (rec.last_updated_at || row.created_at || null);
+    }
+
+    const rows = [...new Set([...proofByMessage.values(), ...proofByPhone.values()])]
+      .map((item) => {
+        const dedupedHistory = [...new Map(
+          (item.status_history || []).map((entry) => [
+            `${entry.status}|${entry.timestamp || ""}`,
+            { status: entry.status, timestamp: entry.timestamp || null },
+          ])
+        ).values()].sort((a, b) => parseIsoDate(a.timestamp || 0) - parseIsoDate(b.timestamp || 0));
+        const latest = dedupedHistory.length ? dedupedHistory[dedupedHistory.length - 1] : null;
+        const latestStatus = latest?.status || item.latest_status || item.api_status || "unknown";
+        const latestAt = latest?.timestamp || item.latest_status_at || item.last_updated_at || item.first_logged_at || null;
+        const category = ["read", "delivered", "sent", "failed"].includes(latestStatus)
+          ? latestStatus
+          : (item.api_status === "api_failed" ? "api_failed" : "pending_status");
+        return {
+          ...item,
+          latest_status: latestStatus,
+          latest_status_at: latestAt,
+          status_category: category,
+          status_history: dedupedHistory.slice(-20),
+        };
+      })
+      .sort((a, b) => parseIsoDate(b.last_updated_at || b.latest_status_at || 0) - parseIsoDate(a.last_updated_at || a.latest_status_at || 0))
+      .slice(0, limit);
+
+    const counts = {
+      targets: Number(run.total || 0),
+      rows: rows.length,
+      api_accepted: rows.filter((item) => item.api_status === "api_accepted").length,
+      api_failed: rows.filter((item) => item.api_status === "api_failed").length,
+      sent: rows.filter((item) => item.latest_status === "sent").length,
+      delivered: rows.filter((item) => item.latest_status === "delivered").length,
+      read: rows.filter((item) => item.latest_status === "read").length,
+      failed: rows.filter((item) => item.latest_status === "failed" || item.status_category === "api_failed").length,
+      pending_status: rows.filter((item) => item.status_category === "pending_status").length,
+    };
+
+    return res.json({
+      ok: true,
+      run: {
+        run_id: run.run_id,
+        ran_at: run.ran_at,
+        status: run.status,
+        audience: run.audience,
+        template: run.template,
+        language: run.language,
+        total: Number(run.total || 0),
+        success: Number(run.success || 0),
+        failed: Number(run.failed || 0),
+      },
+      summary: counts,
+      rows,
+    });
+  } catch (err) {
+    log(`Admin campaign proof error: ${err.message}`, "ERROR");
+    return res.status(500).json({ error: err.message, rows: [], summary: null });
   }
 });
 
@@ -7453,20 +7775,47 @@ app.post("/admin/api/campaign/send-template", adminAuth, async (req, res) => {
       });
     }
 
+    const campaignContext = await resolveCampaignBrandAndTenant();
     let success = 0;
     let failed = 0;
     const errors = [];
 
     for (let i = 0; i < leads.length; i += 1) {
       const lead = leads[i];
+      const user = await findOrCreateUserByPhone(lead.phone);
       try {
-        await sendTemplateDirect(lead.phone, template, language);
+        const sendResponse = await sendTemplateDirect(lead.phone, template, language);
+        const waMessageId = sendResponse?.messages?.[0]?.id || null;
         success += 1;
+        await writeCampaignConversationAudit({
+          brandId: campaignContext.brandId,
+          userId: user?.id || null,
+          phone: lead.phone,
+          runId,
+          audience,
+          template,
+          language,
+          whatsappMessageId: waMessageId,
+          status: "api_accepted",
+        });
       } catch (err) {
         failed += 1;
+        const errorPayload = err?.response?.data || err.message;
         errors.push({
           phone: lead.phone,
-          error: err?.response?.data || err.message,
+          error: errorPayload,
+        });
+        await writeCampaignConversationAudit({
+          brandId: campaignContext.brandId,
+          userId: user?.id || null,
+          phone: lead.phone,
+          runId,
+          audience,
+          template,
+          language,
+          whatsappMessageId: null,
+          status: "api_failed",
+          error: errorPayload,
         });
       }
       if (i < leads.length - 1 && delayMs > 0) {
@@ -7967,6 +8316,121 @@ app.post("/webhook", loadTenantContext, async (req, res) => {
   if (!body.object) {
     log("Webhook received non-message event", "DEBUG");
     return res.sendStatus(404);
+  }
+
+  const statusPayload = body.entry?.[0]?.changes?.[0]?.value;
+  const statuses = Array.isArray(statusPayload?.statuses) ? statusPayload.statuses : [];
+  if (statuses.length) {
+    const statusDestNumber =
+      statusPayload?.metadata?.display_phone_number ||
+      statusPayload?.metadata?.phone_number_id ||
+      null;
+
+    let statusBrandId = DEFAULT_BRAND_ID;
+    if (statusDestNumber) {
+      try {
+        const tenantForStatus = await findTenantByPhone(statusDestNumber, false);
+        if (tenantForStatus?.brand_id) statusBrandId = tenantForStatus.brand_id;
+      } catch (err) {
+        log(`Status tenant resolution warning: ${err.message}`, "WARN");
+      }
+    }
+
+    for (const statusItem of statuses) {
+      const waMessageId = statusItem?.id || null;
+      const statusCode = String(statusItem?.status || "unknown").toLowerCase();
+      const recipientPhone = normalizeCampaignPhone(statusItem?.recipient_id || "");
+      const statusAt = statusItem?.timestamp
+        ? new Date(Number(statusItem.timestamp) * 1000).toISOString()
+        : new Date().toISOString();
+
+      const statusSnapshot = {
+        status: statusCode,
+        timestamp: statusAt,
+        received_at: new Date().toISOString(),
+        recipient_id: statusItem?.recipient_id || null,
+        conversation: statusItem?.conversation || null,
+        pricing: statusItem?.pricing || null,
+        errors: statusItem?.errors || null,
+      };
+
+      let updatedExisting = false;
+      if (waMessageId) {
+        try {
+          const { data: existingRows, error: selectErr } = await supabase
+            .from("conversations")
+            .select("id, message_text, raw_payload")
+            .eq("whatsapp_message_id", waMessageId)
+            .order("created_at", { ascending: false })
+            .limit(1);
+
+          if (selectErr) throw selectErr;
+
+          const existing = Array.isArray(existingRows) && existingRows.length ? existingRows[0] : null;
+          if (existing?.id) {
+            const currentPayload = existing.raw_payload && typeof existing.raw_payload === "object"
+              ? existing.raw_payload
+              : {};
+            const history = Array.isArray(currentPayload.whatsapp_status_history)
+              ? currentPayload.whatsapp_status_history
+              : [];
+            const nextPayload = {
+              ...currentPayload,
+              whatsapp_status: statusCode,
+              whatsapp_status_at: statusAt,
+              whatsapp_status_event: statusItem,
+              whatsapp_status_history: [...history, statusSnapshot].slice(-20),
+            };
+
+            const templateName = currentPayload.campaign_template_name || null;
+            const nextMessageText = templateName
+              ? `TEMPLATE:${templateName} [${statusCode}]`
+              : existing.message_text || `WHATSAPP_STATUS:${statusCode}`;
+
+            const { error: updateErr } = await supabase
+              .from("conversations")
+              .update({
+                message_text: nextMessageText,
+                raw_payload: nextPayload,
+              })
+              .eq("id", existing.id);
+
+            if (updateErr) throw updateErr;
+            updatedExisting = true;
+          }
+        } catch (err) {
+          log(`Status update warning for ${waMessageId}: ${err.message}`, "WARN");
+        }
+      }
+
+      if (!updatedExisting) {
+        const user = recipientPhone ? await findOrCreateUserByPhone(recipientPhone) : null;
+        const { error: insertStatusErr } = await supabase.from("conversations").insert([
+          {
+            brand_id: statusBrandId,
+            user_id: user?.id || null,
+            direction: "outgoing",
+            message_text: `WHATSAPP_STATUS:${statusCode}`,
+            whatsapp_message_id: waMessageId,
+            raw_payload: {
+              event_type: "whatsapp_status",
+              whatsapp_status: statusCode,
+              whatsapp_status_at: statusAt,
+              whatsapp_status_event: statusItem,
+              whatsapp_status_history: [statusSnapshot],
+              metadata: statusPayload?.metadata || null,
+            },
+            llm_used: false,
+            llm_reason: "campaign_delivery_status",
+            created_at: new Date().toISOString(),
+          },
+        ]);
+
+        if (insertStatusErr) {
+          log(`Status insert warning for ${waMessageId || "unknown"}: ${insertStatusErr.message}`, "WARN");
+        }
+      }
+    }
   }
 
   const message = body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];

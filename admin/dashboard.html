@@ -281,6 +281,31 @@
     .run-status.partial { background: rgba(250,204,21,0.2); color: #fde68a; }
     .run-status.failed { background: rgba(248,113,113,0.2); color: #fca5a5; }
     .run-status.dry_run { background: rgba(59,130,246,0.2); color: #93c5fd; }
+    .campaign-history-item.selected { border-color: rgba(56,189,248,0.55); box-shadow: 0 0 0 1px rgba(56,189,248,0.22) inset; }
+    .campaign-proof-panel { margin-top: 14px; background: linear-gradient(165deg, rgba(9, 27, 54, 0.72) 0%, rgba(17, 22, 39, 0.88) 100%); border: 1px solid rgba(88, 130, 193, 0.35); border-radius: 14px; padding: 14px; }
+    .campaign-proof-toolbar { display: grid; grid-template-columns: 1.4fr 1fr auto auto; gap: 8px; margin-bottom: 10px; }
+    .campaign-proof-toolbar .form-control,
+    .campaign-proof-toolbar .form-select { background: rgba(16, 24, 40, 0.7); border-color: rgba(120,144,196,0.28); color: #e8edf7; }
+    .campaign-proof-toolbar .form-control::placeholder { color: #9fb1d1; }
+    .campaign-proof-table td code { font-size: 0.73rem; color: #d7e6ff; }
+    .proof-row-actions { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+    .proof-row-actions .btn { line-height: 1.1; }
+    .campaign-proof-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; margin-bottom: 10px; }
+    .campaign-proof-metric { background: rgba(255,255,255,0.03); border: 1px solid rgba(120,144,196,0.16); border-radius: 10px; padding: 8px 10px; }
+    .campaign-proof-metric .label { font-size: 0.72rem; color: #aeb9d2; }
+    .campaign-proof-metric .value { font-size: 1.04rem; font-weight: 700; color: #f8fafc; }
+    .campaign-proof-table-wrap { max-height: 320px; overflow: auto; border-radius: 10px; border: 1px solid rgba(120,144,196,0.16); }
+    .campaign-proof-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
+    .campaign-proof-table th, .campaign-proof-table td { padding: 9px 8px; border-bottom: 1px solid rgba(120,144,196,0.12); text-align: left; vertical-align: top; }
+    .campaign-proof-table th { position: sticky; top: 0; z-index: 1; background: rgba(13, 18, 33, 0.97); }
+    .proof-status-pill { display: inline-flex; border-radius: 999px; padding: 2px 8px; font-size: 0.72rem; font-weight: 700; }
+    .proof-status-pill.read { background: rgba(34,197,94,0.2); color: #86efac; }
+    .proof-status-pill.delivered { background: rgba(56,189,248,0.2); color: #7dd3fc; }
+    .proof-status-pill.sent { background: rgba(59,130,246,0.2); color: #93c5fd; }
+    .proof-status-pill.failed { background: rgba(248,113,113,0.2); color: #fca5a5; }
+    .proof-status-pill.api_failed { background: rgba(248,113,113,0.2); color: #fca5a5; }
+    .proof-status-pill.pending_status { background: rgba(250,204,21,0.2); color: #fde68a; }
+    .proof-status-pill.unknown { background: rgba(148,163,184,0.2); color: #cbd5e1; }
     .control-tower-grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 14px; }
     .control-tower-card { background: rgba(255,255,255,0.03); border: 1px solid rgba(120,144,196,0.22); border-radius: 14px; padding: 14px; }
     .control-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
@@ -322,6 +347,8 @@
       .control-tower-grid { grid-template-columns: 1fr; }
       .suite-grid { grid-template-columns: 1fr; }
       .mini-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .campaign-proof-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .campaign-proof-toolbar { grid-template-columns: 1fr 1fr; }
     }
   </style>
 </head>
@@ -1276,6 +1303,52 @@
           </div>
           <div id="campaignLastRun" class="small text-muted">Loading campaign history...</div>
           <div id="campaignHistoryList" class="campaign-history-list"></div>
+          <div class="campaign-proof-panel">
+            <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap mb-2">
+              <h6 class="mb-0"><i class="fa-solid fa-shield-check"></i> Delivery Proof</h6>
+              <button class="btn btn-sm btn-outline-info" id="campaignProofRefreshBtn" type="button">Refresh Proof</button>
+            </div>
+            <div class="small text-muted mb-2" id="campaignProofSummary">Select a run from history to load recipient-level proof.</div>
+            <div class="campaign-proof-toolbar">
+              <input class="form-control form-control-sm" id="campaignProofSearch" placeholder="Search phone, recipient, message id" />
+              <select class="form-select form-select-sm" id="campaignProofStatusFilter">
+                <option value="all">All statuses</option>
+                <option value="read">Read</option>
+                <option value="delivered">Delivered</option>
+                <option value="sent">Sent</option>
+                <option value="failed">Failed</option>
+                <option value="api_failed">API Failed</option>
+                <option value="pending_status">Pending</option>
+              </select>
+              <button class="btn btn-sm btn-outline-secondary" id="campaignProofCopyRunBtn" type="button">Copy Run ID</button>
+              <button class="btn btn-sm btn-outline-success" id="campaignProofExportBtn" type="button">Export Proof CSV</button>
+            </div>
+            <div class="campaign-proof-grid" id="campaignProofMetrics">
+              <div class="campaign-proof-metric"><div class="label">Targets</div><div class="value" id="proofTargets">--</div></div>
+              <div class="campaign-proof-metric"><div class="label">API Accepted</div><div class="value" id="proofAccepted">--</div></div>
+              <div class="campaign-proof-metric"><div class="label">Delivered</div><div class="value" id="proofDelivered">--</div></div>
+              <div class="campaign-proof-metric"><div class="label">Read</div><div class="value" id="proofRead">--</div></div>
+              <div class="campaign-proof-metric"><div class="label">Failed</div><div class="value" id="proofFailed">--</div></div>
+              <div class="campaign-proof-metric"><div class="label">Pending Status</div><div class="value" id="proofPending">--</div></div>
+            </div>
+            <div class="campaign-proof-table-wrap">
+              <table class="campaign-proof-table">
+                <thead>
+                  <tr>
+                    <th>Recipient</th>
+                    <th>Latest Status</th>
+                    <th>Template</th>
+                    <th>Message ID</th>
+                    <th>Last Update</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="campaignProofTableBody">
+                  <tr><td colspan="6" class="text-muted">No proof loaded yet.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
         <section class="card p-4 mt-4 border-warning shadow-sm" style="background:rgba(24,28,47,0.97);">
           <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
@@ -1561,6 +1634,8 @@
       tenants: [],
       campaignHistory: { last_run: null, history: [] },
       campaignFilters: { from: '', to: '', audience: '', template: '', status: '' },
+      campaignProof: { run_id: '', payload: null },
+      campaignProofUi: { search: '', status: 'all', filteredRows: [] },
       lastHealth: null,
       lastErrors: null,
       lastUpdateAt: null,
@@ -1796,6 +1871,184 @@
       return 'failed';
     }
 
+    function statusClassFromProof(status) {
+      const normalized = String(status || '').toLowerCase();
+      if (['read', 'delivered', 'sent', 'failed', 'api_failed', 'pending_status'].includes(normalized)) {
+        return normalized;
+      }
+      return 'unknown';
+    }
+
+    function renderCampaignProof(payload) {
+      const summaryEl = document.getElementById('campaignProofSummary');
+      const tbody = document.getElementById('campaignProofTableBody');
+      const searchEl = document.getElementById('campaignProofSearch');
+      const statusFilterEl = document.getElementById('campaignProofStatusFilter');
+      const targetsEl = document.getElementById('proofTargets');
+      const acceptedEl = document.getElementById('proofAccepted');
+      const deliveredEl = document.getElementById('proofDelivered');
+      const readEl = document.getElementById('proofRead');
+      const failedEl = document.getElementById('proofFailed');
+      const pendingEl = document.getElementById('proofPending');
+      if (!summaryEl || !tbody) return;
+
+      const resetMetrics = () => {
+        if (targetsEl) targetsEl.textContent = '--';
+        if (acceptedEl) acceptedEl.textContent = '--';
+        if (deliveredEl) deliveredEl.textContent = '--';
+        if (readEl) readEl.textContent = '--';
+        if (failedEl) failedEl.textContent = '--';
+        if (pendingEl) pendingEl.textContent = '--';
+      };
+
+      if (searchEl && searchEl.value !== dashboardOpsState.campaignProofUi.search) {
+        dashboardOpsState.campaignProofUi.search = searchEl.value || '';
+      }
+      if (statusFilterEl && statusFilterEl.value !== dashboardOpsState.campaignProofUi.status) {
+        dashboardOpsState.campaignProofUi.status = statusFilterEl.value || 'all';
+      }
+
+      if (!payload || !payload.ok) {
+        summaryEl.textContent = payload?.error || 'Proof unavailable for selected run.';
+        tbody.innerHTML = '<tr><td colspan="6" class="text-muted">No recipient proof available.</td></tr>';
+        dashboardOpsState.campaignProofUi.filteredRows = [];
+        resetMetrics();
+        return;
+      }
+
+      const run = payload.run || {};
+      const summary = payload.summary || {};
+      const rows = Array.isArray(payload.rows) ? payload.rows : [];
+      const search = String(dashboardOpsState.campaignProofUi.search || '').trim().toLowerCase();
+      const statusFilter = String(dashboardOpsState.campaignProofUi.status || 'all').toLowerCase();
+      const filteredRows = rows.filter((row) => {
+        const rowStatus = String(row.status_category || row.latest_status || '').toLowerCase();
+        if (statusFilter !== 'all' && rowStatus !== statusFilter) return false;
+        if (!search) return true;
+        const haystack = `${row.phone || ''} ${row.user_name || ''} ${row.whatsapp_message_id || ''} ${row.template || ''}`.toLowerCase();
+        return haystack.includes(search);
+      });
+      dashboardOpsState.campaignProofUi.filteredRows = filteredRows;
+      summaryEl.textContent = `Run ${run.run_id || 'unknown'} • ${run.template || 'template'} • ${run.audience || 'audience'} • ${new Date(run.ran_at || Date.now()).toLocaleString()} • Showing ${filteredRows.length}/${rows.length}`;
+
+      if (targetsEl) targetsEl.textContent = String(Number(summary.targets || rows.length || 0));
+      if (acceptedEl) acceptedEl.textContent = String(Number(summary.api_accepted || 0));
+      if (deliveredEl) deliveredEl.textContent = String(Number(summary.delivered || 0));
+      if (readEl) readEl.textContent = String(Number(summary.read || 0));
+      if (failedEl) failedEl.textContent = String(Number(summary.failed || 0));
+      if (pendingEl) pendingEl.textContent = String(Number(summary.pending_status || 0));
+
+      if (!filteredRows.length) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-muted">No rows match your current proof filters.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = filteredRows.map((row) => {
+        const recipient = row.phone || row.user_name || 'Unknown';
+        const statusText = row.latest_status || row.status_category || 'unknown';
+        const statusClass = statusClassFromProof(row.status_category || row.latest_status);
+        const timeline = Array.isArray(row.status_history) && row.status_history.length
+          ? row.status_history.map((item) => `${item.status}${item.timestamp ? ` @ ${new Date(item.timestamp).toLocaleTimeString()}` : ''}`).join(' -> ')
+          : 'No status timeline yet';
+        const phone = row.phone || '';
+        return `
+          <tr>
+            <td>
+              <div class="fw-semibold">${escapeHtml(recipient)}</div>
+              <div class="small text-muted">${escapeHtml(row.user_name || '')}</div>
+            </td>
+            <td>
+              <span class="proof-status-pill ${statusClass}">${escapeHtml(statusText)}</span>
+              <div class="small text-muted mt-1">${escapeHtml(timeline)}</div>
+            </td>
+            <td>${escapeHtml(row.template || run.template || 'n/a')}</td>
+            <td><code>${escapeHtml(row.whatsapp_message_id || 'n/a')}</code></td>
+            <td>${row.latest_status_at ? new Date(row.latest_status_at).toLocaleString() : 'n/a'}</td>
+            <td>
+              <div class="proof-row-actions">
+                ${phone ? `<a class="btn btn-sm btn-outline-light" href="${buildWaLink(phone)}" target="_blank" rel="noreferrer">Open</a>` : ''}
+                ${phone ? `<a class="btn btn-sm btn-outline-warning" href="${buildWaLink(phone, 'Hi, quick follow-up regarding my previous WhatsApp message. Let me know if you would like help getting started.')}" target="_blank" rel="noreferrer">Follow-up</a>` : ''}
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function refreshCampaignProofViewFromUi() {
+      const payload = dashboardOpsState.campaignProof?.payload || null;
+      renderCampaignProof(payload);
+    }
+
+    function exportCampaignProofCsv() {
+      const runId = dashboardOpsState.campaignProof?.run_id || '';
+      const payload = dashboardOpsState.campaignProof?.payload || null;
+      const rows = Array.isArray(dashboardOpsState.campaignProofUi.filteredRows)
+        ? dashboardOpsState.campaignProofUi.filteredRows
+        : [];
+      if (!runId || !payload?.ok) {
+        showAlert('Campaign Proof', 'No loaded proof to export.', 'warning');
+        return;
+      }
+      if (!rows.length) {
+        showAlert('Campaign Proof', 'No rows match current proof filters.', 'warning');
+        return;
+      }
+
+      const headers = ['run_id', 'phone', 'user_name', 'latest_status', 'status_category', 'template', 'whatsapp_message_id', 'latest_status_at', 'status_timeline'];
+      const escapeCsv = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+      const csvRows = [
+        headers,
+        ...rows.map((row) => [
+          runId,
+          row.phone || '',
+          row.user_name || '',
+          row.latest_status || '',
+          row.status_category || '',
+          row.template || '',
+          row.whatsapp_message_id || '',
+          row.latest_status_at || '',
+          Array.isArray(row.status_history) ? row.status_history.map((item) => `${item.status}@${item.timestamp || ''}`).join(' -> ') : '',
+        ]),
+      ].map((line) => line.map(escapeCsv).join(',')).join('\n');
+
+      const blob = new Blob([csvRows], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `campaign-proof-${runId}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      showAlert('Campaign Proof', `Exported ${rows.length} row(s).`, 'success');
+    }
+
+    async function loadCampaignProof(runId, options = {}) {
+      const silent = Boolean(options.silent);
+      const selectedRunId = String(runId || '').trim();
+      if (!selectedRunId) {
+        dashboardOpsState.campaignProof = { run_id: '', payload: null };
+        renderCampaignProof(null);
+        return null;
+      }
+      dashboardOpsState.campaignProof.run_id = selectedRunId;
+      try {
+        const payload = await fetchJsonOrThrow(`/admin/api/campaign/proof?run_id=${encodeURIComponent(selectedRunId)}&limit=400`);
+        dashboardOpsState.campaignProof = { run_id: selectedRunId, payload };
+        renderCampaignProof(payload);
+        return payload;
+      } catch (error) {
+        const fallback = { ok: false, error: error.message || 'Failed to load campaign proof.' };
+        dashboardOpsState.campaignProof = { run_id: selectedRunId, payload: fallback };
+        renderCampaignProof(fallback);
+        if (!silent) {
+          showAlert('Campaign Proof', fallback.error, 'warning');
+        }
+        return null;
+      }
+    }
+
     function renderCampaignHistory(payload) {
       const container = document.getElementById('campaignHistoryList');
       const summary = document.getElementById('campaignLastRun');
@@ -1828,17 +2081,20 @@
 
       if (!history.length) {
         container.innerHTML = '<div class="ops-empty">No campaign history available yet.</div>';
+        renderCampaignProof(null);
         return;
       }
 
       container.innerHTML = history.slice(0, 20).map((run) => {
         const runClass = statusClassFromRun(run.status);
+        const isSelected = String(dashboardOpsState.campaignProof?.run_id || '') === String(run.run_id || '');
         return `
-          <div class="campaign-history-item">
+          <div class="campaign-history-item ${isSelected ? 'selected' : ''}">
             <div class="d-flex flex-wrap align-items-center gap-2">
               <span class="run-status ${runClass}">${escapeHtml(run.status || 'unknown')}</span>
               <strong>${escapeHtml(run.template || 'template')}</strong>
               <span class="small text-secondary">${escapeHtml(run.audience || 'audience')}</span>
+              <button class="btn btn-sm btn-outline-info ms-auto view-campaign-proof" type="button" data-run-id="${escapeHtml(run.run_id || '')}">View Proof</button>
             </div>
             <div class="meta">${new Date(run.ran_at || Date.now()).toLocaleString()} • Total: ${Number(run.total || 0)} • Success: ${Number(run.success || 0)} • Failed: ${Number(run.failed || 0)}</div>
           </div>
@@ -2628,6 +2884,10 @@
         `/admin/api/campaign/history${query}`,
       ], { last_run: null, history: [], total_count: 0, filtered_count: 0 });
       renderCampaignHistory(payload || { last_run: null, history: [] });
+      const proofRunId = dashboardOpsState.campaignProof?.run_id || payload?.last_run?.run_id || '';
+      if (proofRunId) {
+        await loadCampaignProof(proofRunId, { silent: true });
+      }
       return payload;
     }
 
@@ -2657,6 +2917,10 @@
         renderSystemStatus(health, errors, ops);
         renderOpsOverview(ops);
         renderCampaignHistory(campaignHistory);
+        const proofRunId = dashboardOpsState.campaignProof?.run_id || campaignHistory?.last_run?.run_id || '';
+        if (proofRunId) {
+          await loadCampaignProof(proofRunId, { silent: true });
+        }
         const snapshot = await loadCampaignSnapshot();
         updateRunbook(ops, snapshot, health, errors);
         await Promise.all([loadAuditFeed(), loadTenantRisk(), loadPolicies(), loadAdminActionTrail(), loadOperationsSuite()]);
@@ -2702,6 +2966,12 @@
       const campaignFilterApply = document.getElementById('campaignFilterApply');
       const campaignFilterClear = document.getElementById('campaignFilterClear');
       const campaignHistoryExportBtn = document.getElementById('campaignHistoryExportBtn');
+      const campaignProofRefreshBtn = document.getElementById('campaignProofRefreshBtn');
+      const campaignProofSearch = document.getElementById('campaignProofSearch');
+      const campaignProofStatusFilter = document.getElementById('campaignProofStatusFilter');
+      const campaignProofExportBtn = document.getElementById('campaignProofExportBtn');
+      const campaignProofCopyRunBtn = document.getElementById('campaignProofCopyRunBtn');
+      const campaignHistoryList = document.getElementById('campaignHistoryList');
       const campaignFilterTemplate = document.getElementById('campaignFilterTemplate');
       const toggleAutoRefreshBtn = document.getElementById('toggleAutoRefreshBtn');
       const autoRefreshInterval = document.getElementById('autoRefreshInterval');
@@ -2768,6 +3038,65 @@
       if (campaignHistoryExportBtn && !campaignHistoryExportBtn.dataset.bound) {
         campaignHistoryExportBtn.dataset.bound = 'true';
         campaignHistoryExportBtn.addEventListener('click', exportCampaignHistoryCsv);
+      }
+      if (campaignProofRefreshBtn && !campaignProofRefreshBtn.dataset.bound) {
+        campaignProofRefreshBtn.dataset.bound = 'true';
+        campaignProofRefreshBtn.addEventListener('click', () => {
+          const runId = dashboardOpsState.campaignProof?.run_id || dashboardOpsState.campaignHistory?.last_run?.run_id || '';
+          if (!runId) {
+            showAlert('Campaign Proof', 'Select a campaign run first.', 'warning');
+            return;
+          }
+          loadCampaignProof(runId, { silent: false });
+        });
+      }
+      if (campaignProofSearch && !campaignProofSearch.dataset.bound) {
+        campaignProofSearch.dataset.bound = 'true';
+        campaignProofSearch.addEventListener('input', () => {
+          dashboardOpsState.campaignProofUi.search = campaignProofSearch.value || '';
+          refreshCampaignProofViewFromUi();
+        });
+      }
+      if (campaignProofStatusFilter && !campaignProofStatusFilter.dataset.bound) {
+        campaignProofStatusFilter.dataset.bound = 'true';
+        campaignProofStatusFilter.addEventListener('change', () => {
+          dashboardOpsState.campaignProofUi.status = campaignProofStatusFilter.value || 'all';
+          refreshCampaignProofViewFromUi();
+        });
+      }
+      if (campaignProofExportBtn && !campaignProofExportBtn.dataset.bound) {
+        campaignProofExportBtn.dataset.bound = 'true';
+        campaignProofExportBtn.addEventListener('click', exportCampaignProofCsv);
+      }
+      if (campaignProofCopyRunBtn && !campaignProofCopyRunBtn.dataset.bound) {
+        campaignProofCopyRunBtn.dataset.bound = 'true';
+        campaignProofCopyRunBtn.addEventListener('click', async () => {
+          const runId = dashboardOpsState.campaignProof?.run_id || '';
+          if (!runId) {
+            showAlert('Campaign Proof', 'No run selected.', 'warning');
+            return;
+          }
+          try {
+            await navigator.clipboard.writeText(runId);
+            showAlert('Campaign Proof', 'Run ID copied to clipboard.', 'success');
+          } catch (error) {
+            showAlert('Campaign Proof', 'Clipboard unavailable in this browser session.', 'warning');
+          }
+        });
+      }
+      if (campaignHistoryList && !campaignHistoryList.dataset.bound) {
+        campaignHistoryList.dataset.bound = 'true';
+        campaignHistoryList.addEventListener('click', (event) => {
+          const button = event.target?.closest?.('.view-campaign-proof');
+          if (!button) return;
+          const runId = button.getAttribute('data-run-id') || '';
+          if (!runId) return;
+          loadCampaignProof(runId, { silent: false });
+          const items = campaignHistoryList.querySelectorAll('.campaign-history-item');
+          items.forEach((node) => node.classList.remove('selected'));
+          const card = button.closest('.campaign-history-item');
+          if (card) card.classList.add('selected');
+        });
       }
       if (campaignFilterTemplate && !campaignFilterTemplate.dataset.bound) {
         campaignFilterTemplate.dataset.bound = 'true';
@@ -3152,6 +3481,9 @@
         renderCampaignResult(data);
         showAlert('Bulk Campaign', payload.dry_run ? 'Dry run generated successfully.' : 'Campaign job completed successfully.', 'success');
         loadCampaignHistory();
+        if (data?.run_id) {
+          loadCampaignProof(data.run_id, { silent: true });
+        }
         loadAdminActionTrail();
         if (!payload.dry_run) {
           updateDashboardCards();
