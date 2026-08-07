@@ -14,6 +14,99 @@ import * as cheerio from 'cheerio';
 
 const EMAIL_REGEX = /[\w.+%-]+@[a-z0-9.-]+\.[a-z]{2,}/gi;
 const PHONE_REGEX = /(?:\+?\d{1,3}[\s-])?(?:\(?\d{2,4}\)?[\s.-]){2,4}\d{3,6}/g;
+const EMAIL_REGEX_SINGLE = /[\w.+%-]+@[a-z0-9.-]+\.[a-z]{2,}/i;
+
+const BLOCKED_HOST_PATTERNS = [
+  'ncbi.nlm.nih.gov',
+  'pubmed.ncbi.nlm.nih.gov',
+  'wikipedia.org',
+  'arxiv.org',
+  'researchgate.net',
+];
+
+const NEGATIVE_RESULT_TERMS = [
+  'journal', 'article', 'study', 'paper', 'pdf', 'whitepaper', 'wikipedia', 'syllabus',
+  'course', 'tutorial', 'documentation', 'handbook', 'legislation', 'policy', 'guidelines',
+  'pubmed', 'nih', 'dataset', 'review', 'grant abstract'
+];
+
+const POSITIVE_RESULT_TERMS = [
+  'request for proposal', 'rfp', 'tender', 'procurement', 'vendor', 'partner', 'implementation',
+  'digital transformation', 'automation', 'platform', 'software', 'solution', 'outsourcing',
+  'seeking', 'looking for', 'hiring', 'contact us', 'book demo', 'enterprise'
+];
+
+function safeUrlHost(rawUrl = '') {
+  try {
+    return new URL(rawUrl).hostname.toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+function safeUrlPath(rawUrl = '') {
+  try {
+    return new URL(rawUrl).pathname.toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+function isBlockedHost(rawUrl = '') {
+  const host = safeUrlHost(rawUrl);
+  if (!host) return true;
+  return BLOCKED_HOST_PATTERNS.some((blocked) => host === blocked || host.endsWith(`.${blocked}`));
+}
+
+function hasBadPath(rawUrl = '') {
+  const path = safeUrlPath(rawUrl);
+  return /\.(pdf|doc|docx|ppt|pptx|xls|xlsx|zip|rar)$/i.test(path);
+}
+
+function scoreOpportunityCandidate(result, querySpec = {}) {
+  const text = `${result?.title || ''} ${result?.snippet || ''} ${result?.url || ''}`.toLowerCase();
+  const host = safeUrlHost(result?.url || '');
+
+  let score = 45;
+  let positiveMatches = 0;
+  let negativeMatches = 0;
+
+  for (const term of POSITIVE_RESULT_TERMS) {
+    if (text.includes(term)) {
+      positiveMatches += 1;
+      score += 8;
+    }
+  }
+
+  for (const term of NEGATIVE_RESULT_TERMS) {
+    if (text.includes(term)) {
+      negativeMatches += 1;
+      score -= 12;
+    }
+  }
+
+  if (isBlockedHost(result?.url || '')) score -= 45;
+  if (hasBadPath(result?.url || '')) score -= 25;
+
+  if (/\.gov$/i.test(host) || /\.edu$/i.test(host)) {
+    score -= 20;
+  }
+
+  if (result?.snippet && EMAIL_REGEX_SINGLE.test(result.snippet)) {
+    score += 20;
+  }
+
+  if (querySpec?.industry && text.includes(String(querySpec.industry).toLowerCase())) {
+    score += 10;
+  }
+
+  const normalized = Math.max(0, Math.min(100, score));
+  return {
+    score: normalized,
+    positiveMatches,
+    negativeMatches,
+  };
+}
 
 // ──────────────────────────────────────────────
 // Search Providers
@@ -330,10 +423,10 @@ async function tryFetchContactPage(baseUrl) {
 function buildQueries(keywords = [], industries = [], outreachTypes = ['pitch'], industryPlan = []) {
   const queries = [];
   const typeHints = {
-    pitch: 'contact email site',
-    proposal: 'RFP proposal contact email',
-    partnership: 'partnership collaboration contact',
-    employment: 'hiring careers contact email',
+    pitch: ['digital transformation services', 'book demo', 'contact us'],
+    proposal: ['RFP', 'procurement software vendor', 'implementation partner'],
+    partnership: ['strategic partnership', 'technology alliance', 'channel partner'],
+    employment: ['hiring growth team', 'careers business development', 'collaboration inquiry'],
   };
   const baseKeywords = keywords.slice(0, 3).join(' ');
 
@@ -347,14 +440,16 @@ function buildQueries(keywords = [], industries = [], outreachTypes = ['pitch'],
   for (const planned of plannedIndustries) {
     const industry = planned.industry;
     for (const type of outreachTypes) {
-      const hint = typeHints[type] || 'contact email';
-      const parts = [baseKeywords, industry, hint].filter(Boolean);
-      queries.push({
-        query: parts.join(' '),
-        industry,
-        outreachType: type,
-        priority: planned.priority,
-      });
+      const hints = typeHints[type] || ['contact us', 'vendor'];
+      for (const hint of hints.slice(0, 2)) {
+        const parts = [baseKeywords, industry, hint].filter(Boolean);
+        queries.push({
+          query: parts.join(' '),
+          industry,
+          outreachType: type,
+          priority: planned.priority,
+        });
+      }
     }
   }
 
@@ -367,7 +462,7 @@ function buildQueries(keywords = [], industries = [], outreachTypes = ['pitch'],
     deduped.push(item);
   }
 
-  return deduped.slice(0, 12);
+  return deduped.slice(0, 16);
 }
 
 // ──────────────────────────────────────────────
@@ -408,9 +503,10 @@ export default async function scrapeLeads({
 
   const queries = buildQueries(keywords, industries, outreachTypes, industryPlan);
   const seen = new Set();
+  const hostCount = new Map();
   const leads = [];
   const scrapeStart = Date.now();
-  const maxPages = 10; // Prevent infinite loops (10 pages x 10 results = 100 per query max)
+  const maxPages = 4; // Keep cycles focused and fast.
   for (const querySpec of queries) {
     let page = 0;
     let foundOnQuery = 0;
@@ -418,22 +514,53 @@ export default async function scrapeLeads({
       let results = [];
       try {
         console.log(`[Scraper] Running query: "${querySpec.query}" (industry=${querySpec.industry}, outreachType=${querySpec.outreachType}, page=${page})`);
-        // For SerpAPI, use 'start' param for pagination (10, 20, ...)
-        results = await searchSerp(querySpec.query, 10, page * 10);
+        // Prefer configured provider chain, not only SerpAPI.
+        if (process.env.SERPAPI_KEY) {
+          results = await searchSerp(querySpec.query, 10, page * 10);
+        } else {
+          results = await runSearch(querySpec.query, 10);
+        }
         console.log(`[Scraper] Query results for "${querySpec.query}" page ${page}: ${results.length}`);
       } catch (err) {
         console.error(`[Scraper] Search failed for "${querySpec.query}" page ${page}: ${err.message}`);
         break;
       }
       if (!results.length) break;
-      for (const r of results) {
+
+      const ranked = results
+        .map((r) => ({
+          ...r,
+          _opportunity: scoreOpportunityCandidate(r, querySpec),
+        }))
+        .filter((r) => r._opportunity.score >= 40)
+        .sort((a, b) => b._opportunity.score - a._opportunity.score);
+
+      if (!ranked.length) {
+        console.log(`[Scraper] No high-intent results for query "${querySpec.query}" page ${page}.`);
+      }
+
+      for (const r of ranked) {
         if (leads.length >= targetCount) break;
         if (!r.url || seen.has(r.url)) {
           if (!r.url) console.log(`[Scraper] Skipping result with missing URL.`);
           else console.log(`[Scraper] Skipping duplicate URL: ${r.url}`);
           continue;
         }
+
+        if (isBlockedHost(r.url) || hasBadPath(r.url)) {
+          console.log(`[Scraper] Skipping low-value source: ${r.url}`);
+          continue;
+        }
+
+        const host = safeUrlHost(r.url);
+        const perHost = hostCount.get(host) || 0;
+        if (perHost >= 2) {
+          console.log(`[Scraper] Host cap reached for ${host}, skipping ${r.url}`);
+          continue;
+        }
+
         seen.add(r.url);
+        hostCount.set(host, perHost + 1);
 
         // Try quick email extract from snippet first
         const snippetEmails = (r.snippet.match(EMAIL_REGEX) || []).filter(
@@ -490,6 +617,9 @@ export default async function scrapeLeads({
           sourceQuery: querySpec.query,
           industry: querySpec.industry || industries[0] || null,
           outreachType: querySpec.outreachType || outreachTypes[0] || 'pitch',
+          opportunity_score: r._opportunity?.score || 0,
+          opportunity_positive_signals: r._opportunity?.positiveMatches || 0,
+          opportunity_negative_signals: r._opportunity?.negativeMatches || 0,
         });
         foundOnQuery++;
       }
