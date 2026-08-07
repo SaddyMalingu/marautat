@@ -176,10 +176,14 @@ const circuitBreaker = {
   openMs: 5 * 60 * 1000, // 5 min
 };
 
+function isBreakerOpen() {
+  return circuitBreaker.openUntil > Date.now();
+}
+
 async function extractContactsFromPage(url, maxRetries = 3) {
   // Circuit breaker: if open, skip
   const now = Date.now();
-  if (circuitBreaker.openUntil > now) {
+  if (isBreakerOpen()) {
     console.log(`[Scraper] [Breaker] SKIP ${url} (breaker open until ${new Date(circuitBreaker.openUntil).toISOString()})`);
     return { emails: [], phones: [] };
   }
@@ -295,11 +299,19 @@ async function tryFetchContactPage(baseUrl) {
   let result = await extractContactsFromPage(baseUrl, 3);
   if (result.emails.length > 0 || result.phones.length > 0) return result;
 
+  // If breaker opened on main page fetch, do not spam all contact subpaths.
+  if (isBreakerOpen()) {
+    return { emails: [], phones: [] };
+  }
+
   // Try expanded set of subpages
   const contactPaths = [
     '/contact', '/contact-us', '/about', '/about-us', '/team', '/staff', '/directory', '/leadership', '/support', '/help', '/people', '/our-team', '/who-we-are', '/company', '/organization', '/board', '/executives', '/management', '/faculty', '/employees', '/personnel', '/members', '/partners', '/advisors', '/committee', '/trustees', '/officers', '/admin', '/administration', '/info', '/information', '/reach-us', '/get-in-touch', '/connect', '/connections', '/community', '/resources', '/departments', '/division', '/sections', '/units', '/services', '/locations', '/branches', '/offices', '/contacts', '/contactus', '/contactus.html', '/contact.html', '/aboutus', '/aboutus.html', '/team.html', '/staff.html', '/directory.html', '/leadership.html', '/support.html', '/help.html', '/people.html', '/our-team.html', '/who-we-are.html', '/company.html', '/organization.html', '/board.html', '/executives.html', '/management.html', '/faculty.html', '/employees.html', '/personnel.html', '/members.html', '/partners.html', '/advisors.html', '/committee.html', '/trustees.html', '/officers.html', '/admin.html', '/administration.html', '/info.html', '/information.html', '/reach-us.html', '/get-in-touch.html', '/connect.html', '/connections.html', '/community.html', '/resources.html', '/departments.html', '/division.html', '/sections.html', '/units.html', '/services.html', '/locations.html', '/branches.html', '/offices.html', '/contacts.html'
   ];
   for (const path of contactPaths) {
+    if (isBreakerOpen()) {
+      return { emails: [], phones: [] };
+    }
     try {
       const url = new URL(path, baseUrl).toString();
       const subResult = await extractContactsFromPage(url, 2);

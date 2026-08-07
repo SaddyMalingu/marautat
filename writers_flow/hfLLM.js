@@ -20,6 +20,18 @@ const HF_API_KEY_MASKED = HF_API_KEY ? HF_API_KEY.slice(0, 6) + '...' + HF_API_K
 console.log(`[HF-LLM] Using Hugging Face model fallback list: ${CLEANED_HF_MODELS.join(', ')}`);
 console.log(`[HF-LLM] Using Hugging Face API key: ${HF_API_KEY_MASKED}`);
 
+const hfNetworkBreaker = {
+  failures: 0,
+  threshold: 3,
+  cooldownMs: 10 * 60 * 1000,
+  openUntil: 0,
+};
+
+function isNetworkUnreachableError(err) {
+  const msg = String(err?.message || '').toLowerCase();
+  return msg.includes('enotfound') || msg.includes('econnreset') || msg.includes('etimedout') || msg.includes('fetch failed');
+}
+
 export function getHuggingFaceLLMConfig() {
   return {
     provider: 'huggingface',
@@ -33,6 +45,11 @@ export function getHuggingFaceLLMConfig() {
 export async function hfChatCompletion({ prompt, max_tokens = 700, temperature = 0.8 }) {
   if (!HF_API_KEY) {
     throw new Error('HF_API_KEY_WRITERS_FLOW/HF_API_KEY is not configured');
+  }
+
+  const now = Date.now();
+  if (hfNetworkBreaker.openUntil > now) {
+    throw new Error(`Hugging Face temporarily disabled until ${new Date(hfNetworkBreaker.openUntil).toISOString()} due to repeated network failures`);
   }
 
   const headers = {
@@ -97,9 +114,23 @@ export async function hfChatCompletion({ prompt, max_tokens = 700, temperature =
       const msg = `[HF-LLM] Model ${model} failed: ${err.message}`;
       attemptLog.push({ model, status: 'error', error: err.message });
       console.warn(msg);
+
+      if (isNetworkUnreachableError(err)) {
+        hfNetworkBreaker.failures += 1;
+        if (hfNetworkBreaker.failures >= hfNetworkBreaker.threshold) {
+          hfNetworkBreaker.openUntil = Date.now() + hfNetworkBreaker.cooldownMs;
+          console.warn(`[HF-LLM] Network breaker OPEN: skipping HF calls until ${new Date(hfNetworkBreaker.openUntil).toISOString()}`);
+          break;
+        }
+      }
       continue;
     }
   }
+
+  if (lastErr && !isNetworkUnreachableError(lastErr)) {
+    hfNetworkBreaker.failures = 0;
+  }
+
   console.error('[HF-LLM] All model attempts failed. Fallback summary:', attemptLog);
   throw lastErr || new Error('All Hugging Face models failed');
 }

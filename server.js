@@ -8549,24 +8549,28 @@ app.post("/webhook", loadTenantContext, async (req, res) => {
     if (sector) keywords.push(sector);
     if (keywords.length === 0) keywords = text.split(' ').filter(w => w.length > 2);
 
-    try {
-      await sendMessage(from, '⏳ Processing your request with Writer\'s Flow...');
-      const writersFlowModule = await import('./writers_flow/orchestrator.js');
-      const writersFlow = writersFlowModule.default || writersFlowModule;
-      const result = await writersFlow({
-        keywords,
-        userCommand: text,
-        quantity,
-        sector,
-        targetCount: Number.isFinite(quantity) && quantity > 0 ? quantity : undefined,
-        channels: ['email'],
-      });
-      const sentCount = result?.outreach_sent ?? result?.sent ?? 0;
-      const failedCount = result?.outreach_failed ?? result?.failed ?? 0;
-      await sendMessage(from, `✅ Writer's Flow completed. Outreach sent: ${sentCount}. Failed: ${failedCount}.`);
-    } catch (err) {
-      await sendMessage(from, `⚠️ Writer's Flow failed: ${err.message}`);
-    }
+    // Important: acknowledge webhook quickly to avoid Meta retries and duplicate processing.
+    setImmediate(async () => {
+      try {
+        await sendMessage(from, '⏳ Processing your request with Writer\'s Flow...');
+        const writersFlowModule = await import('./writers_flow/orchestrator.js');
+        const writersFlow = writersFlowModule.default || writersFlowModule;
+        const result = await writersFlow({
+          keywords,
+          userCommand: text,
+          quantity,
+          sector,
+          targetCount: Number.isFinite(quantity) && quantity > 0 ? quantity : undefined,
+          channels: ['email'],
+        });
+        const sentCount = result?.outreach_sent ?? result?.sent ?? 0;
+        const failedCount = result?.outreach_failed ?? result?.failed ?? 0;
+        await sendMessage(from, `✅ Writer's Flow completed. Outreach sent: ${sentCount}. Failed: ${failedCount}.`);
+      } catch (err) {
+        log(`[WF] Async webhook flow failed: ${err.message}`, 'ERROR');
+        await sendMessage(from, `⚠️ Writer's Flow failed: ${err.message}`);
+      }
+    });
     return res.sendStatus(200);
   }
 
