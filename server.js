@@ -355,6 +355,191 @@ const supabase = createClient(
   process.env.SB_SERVICE_ROLE_KEY
 );
 
+// ===== PROSPECT DEMO: Ventura Quote-to-Order Scaffold =====
+const venturaDemoStore = {
+  quotes: new Map(),
+};
+
+function venturaBuildIssues(quoteLines = []) {
+  const issues = [];
+  quoteLines.forEach((line, idx) => {
+    const row = idx + 1;
+    if (!line || typeof line !== "object") {
+      issues.push({ row, code: "INVALID_LINE", message: "Quote line must be an object" });
+      return;
+    }
+    if (!line.sku) issues.push({ row, code: "MISSING_SKU", message: "SKU is required" });
+    if (!(Number(line.qty) > 0)) issues.push({ row, code: "INVALID_QTY", message: "Quantity must be greater than zero" });
+    if (!(Number(line.unit_price) >= 0)) issues.push({ row, code: "INVALID_UNIT_PRICE", message: "Unit price must be provided" });
+    if (!line.delivery_date) issues.push({ row, code: "MISSING_DELIVERY_DATE", message: "Delivery date is required" });
+  });
+  return issues;
+}
+
+function venturaComputeRiskAndCompleteness(issues = [], quoteLines = []) {
+  const checksPerLine = 4;
+  const totalChecks = Math.max(1, quoteLines.length * checksPerLine);
+  const failedChecks = issues.length;
+  const completeness = Math.max(0, Math.round(((totalChecks - failedChecks) / totalChecks) * 100));
+
+  let risk = "low";
+  if (completeness < 90 || failedChecks >= 2) risk = "medium";
+  if (completeness < 70 || failedChecks >= 4) risk = "high";
+
+  return { completeness_score: completeness, risk_level: risk };
+}
+
+function venturaBuildQuoteState(payload) {
+  const quoteLines = Array.isArray(payload?.quote_lines) ? payload.quote_lines : [];
+  const issues = venturaBuildIssues(quoteLines);
+  const metrics = venturaComputeRiskAndCompleteness(issues, quoteLines);
+  const status = issues.length ? "needs_review" : "triaged";
+  const totals = quoteLines.reduce((acc, line) => {
+    const qty = Number(line?.qty || 0);
+    const price = Number(line?.unit_price || 0);
+    return acc + qty * price;
+  }, 0);
+
+  return {
+    quote_id: `vq_${crypto.randomUUID()}`,
+    source: payload?.source || "manual",
+    customer: payload?.customer || {},
+    quote_lines: quoteLines,
+    status,
+    issues,
+    ...metrics,
+    total_value: totals,
+    history: [
+      { at: new Date().toISOString(), action: "imported", status },
+    ],
+    followup: null,
+    approved_by: null,
+    approval_notes: null,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+}
+
+function venturaRecordHistory(quote, action, status, metadata = null) {
+  quote.history.push({
+    at: new Date().toISOString(),
+    action,
+    status,
+    metadata,
+  });
+  quote.updated_at = new Date().toISOString();
+}
+
+app.get('/prospect/ventura-demo', (req, res) => {
+  res.sendFile(path.join(publicDir, 'prospect-ventura-demo.html'));
+});
+
+app.post('/api/prospect/ventura/quotes/import', (req, res) => {
+  try {
+    const body = req.body || {};
+    if (!Array.isArray(body.quote_lines) || body.quote_lines.length === 0) {
+      return res.status(400).json({ error: 'quote_lines[] is required' });
+    }
+
+    const quote = venturaBuildQuoteState(body);
+    venturaDemoStore.quotes.set(quote.quote_id, quote);
+
+    return res.json({
+      quote_id: quote.quote_id,
+      status: quote.status,
+      completeness_score: quote.completeness_score,
+      risk_level: quote.risk_level,
+      issues: quote.issues,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/prospect/ventura/quotes/:id/validate', (req, res) => {
+  const quote = venturaDemoStore.quotes.get(req.params.id);
+  if (!quote) return res.status(404).json({ error: 'Quote not found' });
+
+  quote.issues = venturaBuildIssues(quote.quote_lines);
+  const metrics = venturaComputeRiskAndCompleteness(quote.issues, quote.quote_lines);
+  quote.completeness_score = metrics.completeness_score;
+  quote.risk_level = metrics.risk_level;
+  quote.status = quote.issues.length ? 'needs_review' : 'triaged';
+  venturaRecordHistory(quote, 'validated', quote.status, { issue_count: quote.issues.length });
+
+  return res.json({
+    quote_id: quote.quote_id,
+    status: quote.status,
+    issues: quote.issues,
+    completeness_score: quote.completeness_score,
+    risk_level: quote.risk_level,
+  });
+});
+
+app.post('/api/prospect/ventura/quotes/:id/approve', (req, res) => {
+  const quote = venturaDemoStore.quotes.get(req.params.id);
+  if (!quote) return res.status(404).json({ error: 'Quote not found' });
+
+  const approver = String(req.body?.approver || '').trim();
+  if (!approver) return res.status(400).json({ error: 'approver is required' });
+
+  quote.approved_by = approver;
+  quote.approval_notes = req.body?.notes || null;
+  quote.status = quote.issues.length ? 'approved_with_exceptions' : 'order_ready';
+  venturaRecordHistory(quote, 'approved', quote.status, { approver });
+
+  return res.json({
+    quote_id: quote.quote_id,
+    status: quote.status,
+    approved_by: quote.approved_by,
+    completeness_score: quote.completeness_score,
+    issue_count: quote.issues.length,
+  });
+});
+
+app.post('/api/prospect/ventura/quotes/:id/followup', (req, res) => {
+  const quote = venturaDemoStore.quotes.get(req.params.id);
+  if (!quote) return res.status(404).json({ error: 'Quote not found' });
+
+  const channel = String(req.body?.channel || '').toLowerCase();
+  if (!['whatsapp', 'email'].includes(channel)) {
+    return res.status(400).json({ error: 'channel must be whatsapp or email' });
+  }
+
+  const missingFields = Array.isArray(req.body?.missing_fields) ? req.body.missing_fields : [];
+  quote.followup = {
+    channel,
+    missing_fields: missingFields,
+    sent_at: new Date().toISOString(),
+  };
+  quote.status = 'followup_sent';
+  venturaRecordHistory(quote, 'followup_sent', quote.status, quote.followup);
+
+  return res.json({ quote_id: quote.quote_id, status: quote.status, followup: quote.followup });
+});
+
+app.get('/api/prospect/ventura/quotes/:id', (req, res) => {
+  const quote = venturaDemoStore.quotes.get(req.params.id);
+  if (!quote) return res.status(404).json({ error: 'Quote not found' });
+  return res.json(quote);
+});
+
+app.get('/api/prospect/ventura/dashboard', (req, res) => {
+  const allQuotes = Array.from(venturaDemoStore.quotes.values());
+  const summary = {
+    total_quotes: allQuotes.length,
+    needs_review: allQuotes.filter((q) => q.status === 'needs_review').length,
+    followup_sent: allQuotes.filter((q) => q.status === 'followup_sent').length,
+    order_ready: allQuotes.filter((q) => q.status === 'order_ready').length,
+    approved_with_exceptions: allQuotes.filter((q) => q.status === 'approved_with_exceptions').length,
+    avg_completeness_score: allQuotes.length
+      ? Math.round(allQuotes.reduce((acc, q) => acc + Number(q.completeness_score || 0), 0) / allQuotes.length)
+      : 0,
+  };
+
+  return res.json({ summary, quotes: allQuotes.slice(-20).reverse() });
+});
+
 // ===== ADMIN: ADD AGENT/TENANT API =====
 // POST /admin/agents - Add a new agent/tenant
 app.post('/admin/agents', tenantDashboardAuth, async (req, res) => {
@@ -8856,6 +9041,82 @@ if (text.trim().toUpperCase().startsWith("JOIN ALPHADOME") || text.trim().toUppe
   } catch (err) {
     log(`Failed to start Join Alphadome flow for ${from}: ${err.message}`, "ERROR");
     await sendMessage(from, "⚠️ Something went wrong. Please try again later.");
+    return res.sendStatus(200);
+  }
+}
+
+// 🎯 PAYMENT PROMPT HANDLER - Initiate STK when user is ready to pay
+// Keywords: "prompt", "pay now", "send stk", "stk push", "ready to pay", etc.
+if (text.match(/prompt|pay\s+now|send\s+stk|stk\s+push|ready\s+to\s+pay|initiate.*payment/i)) {
+  try {
+    const { data: sessionData } = await supabase
+      .from("user_sessions")
+      .select("context")
+      .eq("phone", from)
+      .maybeSingle();
+
+    const context = sessionData?.context && typeof sessionData.context === "object" ? sessionData.context : {};
+    
+    // Try to extract phone number from the message (e.g., "0743780542.. prompt me here")
+    const phoneFromMsg = text.match(/(\+?254|0)(7\d{8}|\d{9})/)?.[0];
+    let paymentPhone = phoneFromMsg;
+    
+    // If no phone in message, use context or default to sender's phone
+    if (!paymentPhone) {
+      paymentPhone = context.payment_phone;
+    }
+    
+    if (!paymentPhone) {
+      paymentPhone = from.startsWith("254") ? from : "254" + from.slice(1);
+    }
+    
+    // Normalize phone number
+    if (paymentPhone.startsWith("0")) paymentPhone = "254" + paymentPhone.slice(1);
+    if (paymentPhone.startsWith("+")) paymentPhone = paymentPhone.replace(/^\+/, "");
+    
+    const amount = context.payment_amount || context.selected_amount || context.amount;
+    const accountRef = context.plan_type || context.product_sku || "Alphadome subscription";
+    
+    if (amount && amount > 0) {
+      // Log the payment initiation
+      log(`🎯 PAYMENT_PROMPT_DETECTED from ${from}: amount=KES ${amount}, phone=${paymentPhone}`, "PAYMENT");
+      
+      // Trigger STK push immediately
+      try {
+        const stkResp = await initiateStkPush({
+          phone: paymentPhone,
+          amount: Math.round(amount),
+          accountRef: accountRef,
+          transactionDesc: `Alphadome ${accountRef} payment`,
+        });
+
+        if (stkResp?.CheckoutRequestID) {
+          // Store checkout ID for callback matching
+          await mergeUserSessionContext(from, {
+            mpesa_checkout_request_id: stkResp.CheckoutRequestID,
+            payment_initiated_at: new Date().toISOString(),
+            payment_phone: paymentPhone,
+            payment_amount: amount,
+          });
+
+          log(`✅ PAYMENT_PROMPT_STK_SENT: CheckoutID=${stkResp.CheckoutRequestID}, Phone=${paymentPhone}, Amount=KES ${amount}`, "PAYMENT");
+          
+          await sendMessage(
+            from,
+            `✅ *M-Pesa STK Prompt Sent!*\n\n📱 A payment prompt has been sent to *${paymentPhone}*.\n💳 Please check your phone and enter your *M-Pesa PIN* to complete the payment of *KES ${amount}*.\n\n⏱️ If you don't receive the prompt within 30 seconds, reply *RETRY*.`
+          );
+        }
+      } catch (stkErr) {
+        log(`❌ PAYMENT_PROMPT_STK_FAILED: ${stkErr.message}`, "PAYMENT");
+        await sendMessage(from, `⚠️ Payment prompt failed: ${stkErr.message || "Please try again or contact support at +254117604817."}`);
+      }
+    } else {
+      await sendMessage(from, `⚠️ No payment amount found. Please start with *JOIN ALPHADOME* or *BUY <SKU>* first.`);
+    }
+    return res.sendStatus(200);
+  } catch (err) {
+    log(`Error handling payment prompt: ${err.message}`, "ERROR");
+    await sendMessage(from, "⚠️ Payment initialization failed. Please try again or contact support.");
     return res.sendStatus(200);
   }
 }
