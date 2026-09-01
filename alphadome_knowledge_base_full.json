@@ -1,13 +1,274 @@
 {
   "alphadome": {
+    "founder_message": {
+      "from": "David Saddy Malingu, Founder and CEO",
+      "date": "24 months into Alphadome journey (started August 5, 2024)",
+      "message": "24 months ago, I collected this Afrika-shaped piece of rock, and promised to make it the most valuable rock in the world – increasing its value from zero to millions if not billions. How was I to achieve this miracle? By turning it into a digital asset that helps Afrikan brands and professionals to build their dreams, realize their visions, missions, goals, and ambitions. That's how Alphadome was born. 24 months down the line, we now have a fully fledged system that leverages automations and intelligent algorithms to research market opportunities, generate relevant branding content, utilize multiple communication channels to match brands with identified opportunities, convert leads to sales, and build information systems that set businesses in a path of scalable growth. Think of Alphadome as a network of dedicated digital employees handling your performance needs proactively, innovatively, and profitably. Now, the value of our Afrika rock grows with every brand we onboard, and every solution we deliver to these brands."
+    },
     "core_purpose": "Alphadome is a modular, AI- and blockchain-powered ecosystem designed to facilitate success in the digital age through systems that automate, optimize, and secure business, creative, industrial, and research operations. It serves brands, professionals, and organizations through agentic automation, digital asset creation and management (NFTs), and intelligent orchestration. The system is designed to understand users and develop systems and assets that enhance their capacity to leverage top-notch tech and thrive.",
+    "mission": "To empower Afrikan brands, professionals, and organizations with intelligent, modular systems that automate growth, optimize operations, and unlock digital-era value through AI agents, blockchain tokenization, and scalable information systems.",
+    "alpha_1_squad": {
+      "overview": "Alphadome's Alpha 1 squad is the core cohort of the first 1000 clients onboarded over the next 24 months, receiving priority focus, resources, and strategic support.",
+      "onboarding_period": "24 months from launch",
+      "client_target": 1000,
+      "priority_benefits": [
+        "Priority access to new 3.0 systems, agents, and NFTs",
+        "Custom system design and AI agent development (Building Plans 3.0, Intra Africa Journal Hub, KEMSA 3.0, etc.)",
+        "Physical robot/digital kiosk design and deployment (Alpha Bot Avatar designs)",
+        "Blockchain crowdfunding support for brand-specific 3.0 assets",
+        "Dedicated support team and revenue optimization services",
+        "Early access to tokenization and equity ownership models"
+      ],
+      "outcome": "Each Alpha 1 client will have a custom digital ecosystem with AI agents, 3.0 information systems, branded NFTs, and physical embodiments (robots/digital kiosks) to drive their digital growth journey."
+    },
+    "pricing_model": {
+      "founder_package": {
+        "name": "Founder's Package",
+        "monthly_cost": "1,000 KES",
+        "currency": "Kenyan Shilling",
+        "description": "Entry-level package for emerging brands and professionals launching on Alphadome."
+      },
+      "payment_options": [
+        {
+          "method": "M-Pesa STK Push",
+          "trigger": "Automatic monthly",
+          "description": "Client receives STK push prompt via M-Pesa to confirm payment. Client can choose M-Pesa as preferred payment method at any point of interaction with the system."
+        },
+        {
+          "method": "Bank Transfer",
+          "trigger": "Manual or scheduled",
+          "description": "Direct bank transfer option available for clients preferring traditional banking."
+        },
+        {
+          "method": "Other Payment Gateways",
+          "trigger": "Flexible",
+          "description": "Multiple payment options available; client chooses regardless of point of interaction with the system."
+        }
+      ],
+      "note": "Payment method selection is client-driven and can be configured at any interaction point with the Alphadome system."
+    },
     "unique_value_propositions": [
       "Agentic Automation: Specialized AI agents automate critical decisions and workflows.",
       "Context Awareness: Multi-tenant, context-propagating middleware ensures personalized, secure automation.",
       "Tokenization: All assets and agents can be minted as NFTs, supporting flexible ownership and monetization.",
       "Modularity: Each subsystem is independently deployable, extensible, and API-driven.",
-      "Security & Compliance: Enterprise-grade protocols, auditability, and privacy by design."
+      "Security & Compliance: Enterprise-grade protocols, auditability, and privacy by design.",
+      "3.0 Systems: Custom information systems built for each brand (Building Plans 3.0, Intra Africa Journal Hub, KEMSA 3.0, etc.)",
+      "Physical Embodiment: AI agents transformed into branded robots and digital kiosks via blockchain crowdfunding."
     ],
+    "systems_3_0_overview": {
+      "definition": "3.0 Systems are custom-built, brand-specific information systems and AI agent ecosystems that solve unique operational challenges for Alphadome clients.",
+      "components": [
+        "Information Systems: Databases, dashboards, and automation workflows tailored to client needs",
+        "AI Agents: Software agents fine-tuned to brand personality and business processes",
+        "NFTs & Digital Assets: Tokenized representations of the system and agents for ownership and monetization",
+        "Physical Embodiments: Robots and digital kiosks (designed via the Alpha Bot Avatar system) representing the 3.0 system in the physical world"
+      ],
+      "examples": [
+        {
+          "name": "Building Plans 3.0 (AI Architect)",
+          "purpose": "AI-driven architectural design, 3D modeling, and cloud rendering for construction and design firms",
+          "components": ["AI design generation", "Cloud rendering", "Asset management", "Client collaboration tools"]
+        },
+        {
+          "name": "Intra Africa Journal Hub",
+          "purpose": "Research journal aggregation, manuscript submission, peer review, and publication management for African researchers and institutions",
+          "components": ["Journal aggregation", "Submission workflow", "Peer review system", "Publication platform", "Payment processing", "Analytics dashboard"]
+        },
+        {
+          "name": "KEMSA 3.0",
+          "purpose": "Healthcare supply chain transformation, real-time inventory tracking, demand forecasting, and blockchain traceability",
+          "components": ["Real-time dashboards", "Demand forecasting", "Anomaly detection", "Blockchain traceability", "Integration with healthcare systems"]
+        }
+      ],
+      "client_asset_structure": "Each Alphadome client's asset portfolio follows a dedicated folder structure containing: 3.0 Ecosystems (information systems and workflows), AI Agents (brand-specific automation agents), NFTs (digital asset representations), and Collectibles (branded digital items for monetization and marketing).",
+      "development_process": "Alphadome works with each Alpha 1 client to design and build a custom 3.0 system that integrates with their brand, operations, and growth strategy. The system is AI-powered, blockchain-supported, and progressively embodied in physical form."
+    },
+    "alpha_bot_avatar_system": {
+      "definition": "The Alpha Bot Avatar system is an AI-enabled platform allowing Alphadome clients to design, customize, and manufacture branded physical robots and digital kiosks that embody their 3.0 systems.",
+      "purpose": "Transform AI agents and information systems into tangible, customer-facing brand experiences through branded robots and digital kiosks deployed at customer touchpoints.",
+      "design_process": "Clients collaborate with Alphadome's design team using AI-enabled tools to create unique avatar designs reflecting their brand personality. Each avatar is fine-tuned for its intended role (e.g., front desk assistant, customer support, inventory management).",
+      "key_design_principle": "Every Avatar must carry the Afrika rock emblem, symbolizing that it is a hardware extension of Alphadome, the digital Afrika asset.",
+      "production_designs": [
+        {
+          "name": "Shape Shifter",
+          "role": "Front desk assistant series; versatile humanoid with morphable design elements",
+          "status": "Rolled out for production"
+        },
+        {
+          "name": "Tumbler",
+          "role": "Compact, mobile assistant for retail and service environments",
+          "status": "Rolled out for production"
+        },
+        {
+          "name": "Titan",
+          "role": "Large-scale industrial assistant for warehouses and logistics",
+          "status": "Rolled out for production"
+        },
+        {
+          "name": "Black Panther",
+          "role": "Sleek, high-performance assistant for premium brand experiences",
+          "status": "Rolled out for production"
+        },
+        {
+          "name": "Chaos",
+          "role": "Dynamic, adaptive assistant for rapidly changing environments",
+          "status": "Rolled out for production"
+        },
+        {
+          "name": "Atlas",
+          "role": "Heavy-duty assistant for complex operational tasks",
+          "status": "Rolled out for production"
+        },
+        {
+          "name": "Hunter",
+          "role": "Specialized assistant for targeted customer engagement and lead tracking",
+          "status": "Rolled out for production"
+        },
+        {
+          "name": "Alien Shell",
+          "role": "Innovative, futuristic design for forward-thinking brands",
+          "status": "Rolled out for production"
+        }
+      ],
+      "customization": "Each Avatar is customizable in appearance, personality, and behavior to match the client's brand identity and operational needs. AI fine-tuning ensures the avatar reflects the client's unique value proposition.",
+      "timeline": "Each Alpha 1 client will have the opportunity to participate in designing their custom 3.0 Agent (physical robot/digital kiosk) during their 24-month engagement period."
+    },
+    "blockchain_crowdfunding_model": {
+      "overview": "Alphadome uses a blockchain-based crowdfunding model to fund the development and deployment of 3.0 Systems, AI Agents, NFTs, and physical robots for client brands.",
+      "mechanism": "Users can purchase equity shares of specific 3.0 assets, granting them proportional ownership and revenue participation rights.",
+      "example_funding_flow": "Users who purchase shares of Intra Africa Journal Hub 3.0 fund the creation of the publishing system, AI publishing agent, and branded NFTs. In return, share holders own proportional equity in the system and receive corresponding revenue from its operations.",
+      "revenue_sharing": "Revenue generated by 3.0 assets (subscription fees, transaction commissions, API usage, NFT sales) is distributed to shareholders based on their ownership percentage.",
+      "benefits": [
+        "Democratic value creation: Users participate in building systems they believe in",
+        "Decentralized funding: 3.0 development is funded by community investment, not debt or dilutive equity",
+        "Aligned incentives: Shareholders and Alphadome are aligned to maximize system value and adoption",
+        "Transparency: Blockchain ensures transparent tracking of ownership, revenue, and payouts",
+        "Scalability: Successful 3.0 systems attract investment and resources for rapid scaling"
+      ],
+      "implementation": "Blockchain smart contracts manage share issuance, ownership tracking, revenue collection, and automated payouts. Alphadome facilitates the crowdfunding campaigns and manages system governance."
+    },
+    "client_portfolio": {
+      "overview": "Alphadome has built custom 3.0 systems and AI agents for diverse client brands across sectors including retail, fashion, pharmaceuticals, events, technology, hospitality, education, and professional services.",
+      "portfolio_structure": "Each Alphadome client receives a dedicated digital asset folder with the following structure: 3.0 Ecosystems (information systems and automation workflows), AI Agents (brand-specific AI assistants and automation), NFTs (tokenized brand assets for sales and marketing), and Collectibles (branded digital items for community engagement).",
+      "example_clients": [
+        "Aboosto (e-commerce and multi-channel sales)",
+        "Agent Purity, Agent Saleh, Agent Tekla (specialized service agents)",
+        "Anupi Fashions (fashion e-commerce and inventory)",
+        "Baus Optical (retail and customer engagement)",
+        "Beauty Square (beauty retail and services)",
+        "Bijo Gas & Accessories (industrial supplies and distribution)",
+        "Building Plans / AI Architect (construction and architectural design)",
+        "Coach Dawn, Coach Peter (professional coaching and services)",
+        "Craydel Africa Travel (travel and tourism services)",
+        "Dr. Cindy, Dr. Sabu Abraham, Dr. Sally Freeman (healthcare professionals)",
+        "Ebrahim Electronics (electronics retail and support)",
+        "Kam Pharmacy (pharmaceutical retail and services)",
+        "Malingu Contractor (construction and project management)",
+        "Malingu Global Supplies (wholesale and distribution)",
+        "Mavazi Afrika (fashion and lifestyle)",
+        "Nila Pharmaceuticals (pharmaceutical sales and services)",
+        "Penda Health (healthcare services and engagement)",
+        "PATMAG School Uniform (education and retail)",
+        "The Branch Restaurant, The Curve, The Peach (hospitality and dining)",
+        "Urban Craft (artisan and creative services)",
+        "Vet Martin (veterinary services)",
+        "And 20+ more active brands across various sectors"
+      ],
+      "agent_specializations": [
+        "Sales automation and lead conversion",
+        "Customer support and WhatsApp engagement",
+        "Inventory and supply chain management",
+        "Payment processing and transaction handling",
+        "Social listening and market intelligence",
+        "Content generation and brand storytelling",
+        "Appointment scheduling and booking",
+        "Analytics and performance reporting",
+        "Compliance and regulatory management"
+      ],
+      "revenue_model": "Alphadome charges subscription fees for 3.0 systems, transaction commissions on sales, and licensing fees for AI agents. Clients benefit from automated growth, reduced operational costs, and diversified revenue through NFT sales."
+    },
+    "client_onboarding_flow": {
+      "phase_1_discovery": {
+        "title": "Discovery & Qualification",
+        "steps": [
+          "Prospect completes Alphadome inquiry form or WhatsApp conversation",
+          "Alphadome team qualifies fit for Alpha 1 squad or standard client program",
+          "Initial consultation to understand brand, goals, and operational challenges",
+          "Define 3.0 system scope and potential AI agent applications"
+        ],
+        "outcome": "Signed onboarding agreement and project charter"
+      },
+      "phase_2_system_design": {
+        "title": "System Design & Customization",
+        "steps": [
+          "Alphadome team designs custom 3.0 system architecture for the brand",
+          "Identify primary and secondary information systems needed (e.g., CRM, inventory, catalog)",
+          "Design AI agent personalities and roles aligned with brand identity",
+          "Plan avatar/physical robot design (if applicable for Alpha 1 clients)",
+          "Define blockchain crowdfunding campaign for system and NFT monetization"
+        ],
+        "outcome": "Detailed system design document and implementation roadmap"
+      },
+      "phase_3_implementation": {
+        "title": "Implementation & Deployment",
+        "steps": [
+          "Build core 3.0 information system (database, dashboards, workflows)",
+          "Develop and train brand-specific AI agents",
+          "Integrate with client's existing systems (CRM, inventory, payment gateways)",
+          "Set up WhatsApp Business integration for customer engagement",
+          "Configure analytics and performance tracking",
+          "Deploy in staging environment for testing and refinement"
+        ],
+        "outcome": "Fully functional 3.0 system in staging, ready for UAT"
+      },
+      "phase_4_avatar_design": {
+        "title": "Avatar Design & Prototyping (Alpha 1 clients)",
+        "steps": [
+          "Collaborate with client on Avatar Universe design (using Alphadome's AI design tools)",
+          "Create multiple avatar design options reflecting brand personality",
+          "Client selects preferred avatar(s) and customizations",
+          "Prototype and validate avatar behavior/personality with LLM fine-tuning",
+          "Plan manufacturing and deployment timeline for physical robots/digital kiosks"
+        ],
+        "outcome": "Approved Avatar design(s) and manufacturing plan"
+      },
+      "phase_5_crowdfunding": {
+        "title": "Blockchain Crowdfunding Campaign",
+        "steps": [
+          "Prepare crowdfunding campaign details (system value, revenue projections, equity structure)",
+          "Create NFT designs representing shares and brand collectibles",
+          "Launch blockchain crowdfunding campaign to Alphadome community",
+          "Manage crowdfunding operations, share issuance, and investor communication",
+          "Allocate raised capital to system development and deployment"
+        ],
+        "outcome": "Fully funded 3.0 system with community ownership and aligned incentives"
+      },
+      "phase_6_launch": {
+        "title": "Production Launch & Support",
+        "steps": [
+          "Deploy 3.0 system to production environment",
+          "Activate WhatsApp automation and customer engagement workflows",
+          "Launch avatar/robot deployment (if applicable)",
+          "Conduct staff training and onboarding",
+          "Establish performance baselines and KPI tracking",
+          "Activate dedicated support team for client success"
+        ],
+        "outcome": "Live 3.0 system generating revenue and customer engagement"
+      },
+      "phase_7_growth": {
+        "title": "Growth & Optimization",
+        "steps": [
+          "Monitor system performance and analytics",
+          "Optimize AI agent behavior based on real-world interactions",
+          "Scale system to additional product lines or market segments",
+          "Add new AI agents and automation workflows",
+          "Expand physical avatar/robot deployment",
+          "Implement customer feedback and continuous improvements"
+        ],
+        "outcome": "Scalable, revenue-generating digital ecosystem for the brand"
+      }
+    },
     "cross_cutting_features": [
       "AI/ML Integration: LLMs, ControlNet, Replicate, custom models for automation, content, analytics, and workflow orchestration.",
       "Blockchain/NFT: Asset tokenization, multi/single ownership, traceability, and monetization.",
@@ -734,6 +995,196 @@
       {"module": "Ganji", "completion": "~85% automation, 30% tokenization", "earnings": "Early monetization phase"},
       {"module": "AlphaChip-OS", "completion": "40–50%", "earnings": "No direct earnings yet"}
     ],
+
+    "landing_site_content": {
+      "url": "https://alphadome.onrender.com/",
+      "hero_section": {
+        "headline": "Alphadome: Your Network of Digital Employees",
+        "subheading": "Harness the power of AI agents, blockchain tokenization, and automated systems to transform your business",
+        "cta_primary": "Join Alpha 1 Squad - First 1000 Clients",
+        "cta_secondary": "Explore 3.0 Systems"
+      },
+      "value_proposition": {
+        "section_title": "Why Alphadome?",
+        "points": [
+          {
+            "icon": "robot",
+            "title": "AI-Powered Agents",
+            "description": "Custom AI agents handle sales, support, operations, and growth—24/7, without fatigue."
+          },
+          {
+            "icon": "blockchain",
+            "title": "Blockchain-Based Ownership",
+            "description": "Own equity in your digital systems and agents. Earn revenue as they grow."
+          },
+          {
+            "icon": "system",
+            "title": "Custom 3.0 Systems",
+            "description": "Purpose-built information systems tailored to your business. From e-commerce to healthcare to publishing."
+          },
+          {
+            "icon": "robot_kiosk",
+            "title": "Physical Embodiment",
+            "description": "Your AI agents become branded robots and digital kiosks at customer touchpoints."
+          }
+        ]
+      },
+      "alpha_1_section": {
+        "title": "Join the Alpha 1 Squad",
+        "description": "Be one of the first 1000 brands to transform your business with Alphadome's complete digital ecosystem.",
+        "benefits": [
+          "Custom 3.0 system design aligned with your brand and operations",
+          "AI agents tailored to your industry and customer journey",
+          "Physical robot/digital kiosk in your brand's unique Avatar design",
+          "Blockchain crowdfunding to fuel your system's development and growth",
+          "Equity ownership with revenue sharing as your system scales",
+          "24/7 dedicated Alphadome support team",
+          "Priority access to new features and innovations"
+        ],
+        "timeline": "24-month transformation journey with defined milestones",
+        "cta": "Apply for Alpha 1 Squad"
+      },
+      "pricing_section": {
+        "title": "Simple, Flexible Pricing",
+        "founder_package": {
+          "name": "Founder's Package",
+          "price": "1,000 KES/month",
+          "includes": [
+            "Access to core Alphadome platform",
+            "WhatsApp Business integration",
+            "Basic AI automation",
+            "Performance dashboards",
+            "Community support"
+          ],
+          "note": "Pay via M-Pesa STK, bank transfer, or your preferred payment method"
+        },
+        "alpha_1_package": {
+          "name": "Alpha 1 Squad (Custom)",
+          "price": "Contact for quote",
+          "includes": [
+            "Custom 3.0 system design",
+            "AI agent development",
+            "Physical Avatar/robot design",
+            "Blockchain crowdfunding setup",
+            "Dedicated success team",
+            "Revenue optimization services"
+          ]
+        }
+      },
+      "systems_showcase": {
+        "title": "3.0 Systems in Action",
+        "systems": [
+          {
+            "name": "Building Plans 3.0 / AI Architect",
+            "industry": "Construction & Design",
+            "description": "AI-driven architectural design, 3D modeling, cloud rendering, and project management.",
+            "icon": "blueprint"
+          },
+          {
+            "name": "Intra Africa Journal Hub",
+            "industry": "Research & Publishing",
+            "description": "Research journal aggregation, manuscript management, peer review, publication, and community.",
+            "icon": "journal"
+          },
+          {
+            "name": "KEMSA 3.0",
+            "industry": "Healthcare & Supply Chain",
+            "description": "Real-time dashboards, AI-powered forecasting, blockchain traceability, and operational intelligence.",
+            "icon": "supply_chain"
+          },
+          {
+            "name": "Custom Client Systems",
+            "industry": "Any Industry",
+            "description": "E-commerce, hospitality, retail, services, education, and more. Alphadome builds the system your business needs.",
+            "icon": "custom"
+          }
+        ]
+      },
+      "avatar_showcase": {
+        "title": "Your Brand in Physical Form",
+        "description": "Choose from our Avatar Universe designs or create your own. Each avatar carries the Afrika rock emblem and is fine-tuned to your brand's personality.",
+        "avatars": [
+          {
+            "name": "Shape Shifter",
+            "role": "Front desk assistant",
+            "description": "Versatile, morphable design perfect for first impressions"
+          },
+          {
+            "name": "Tumbler",
+            "role": "Mobile assistant",
+            "description": "Compact and dynamic for retail and service environments"
+          },
+          {
+            "name": "Titan",
+            "role": "Industrial assistant",
+            "description": "Heavy-duty powerhouse for warehouses and logistics"
+          },
+          {
+            "name": "Black Panther",
+            "role": "Premium assistant",
+            "description": "Sleek and sophisticated for luxury brand experiences"
+          },
+          {
+            "name": "Chaos",
+            "role": "Adaptive assistant",
+            "description": "Dynamic for rapidly changing environments"
+          },
+          {
+            "name": "Atlas",
+            "role": "Heavy-duty assistant",
+            "description": "Engineered for complex operational tasks"
+          },
+          {
+            "name": "Hunter",
+            "role": "Lead tracker",
+            "description": "Specialized for targeted customer engagement"
+          },
+          {
+            "name": "Alien Shell",
+            "role": "Futuristic assistant",
+            "description": "Innovative design for forward-thinking brands"
+          }
+        ]
+      },
+      "investor_section": {
+        "title": "Alphadome: A Wealth-Creation Platform",
+        "description": "Alphadome is more than a software platform—it's a blockchain-powered wealth creation ecosystem for brands, professionals, and investors.",
+        "key_insights": [
+          {
+            "metric": "1000",
+            "label": "Alpha 1 clients in 24 months"
+          },
+          {
+            "metric": "3.0",
+            "label": "Layers: Systems, Agents, NFTs + Physical Embodiment"
+          },
+          {
+            "metric": "Multiple",
+            "label": "Revenue streams: SaaS, commissions, NFT sales, equity crowdfunding"
+          }
+        ],
+        "investment_opportunity": "Invest in 3.0 systems and agents via blockchain crowdfunding. Own equity, earn dividends, and participate in Alphadome's journey to build the most valuable Afrika digital asset.",
+        "cta": "Explore Investment Opportunities"
+      },
+      "contact_section": {
+        "title": "Ready to Transform Your Business?",
+        "description": "Connect with the Alphadome team to discuss your 3.0 system, AI agents, and physical Avatar.",
+        "methods": [
+          {
+            "method": "WhatsApp",
+            "description": "Chat with us on WhatsApp for immediate assistance"
+          },
+          {
+            "method": "Email",
+            "description": "Send your inquiry to hello@alphadome.com"
+          },
+          {
+            "method": "Book a Call",
+            "description": "Schedule a consultation with our team"
+          }
+        ]
+      }
+    },
 
     "bot_response_policy": "For general users, only public features and workflows are revealed. For admin/developer queries, classified/internal details are referenced as appropriate. For requests about algorithms, credentials, or internal scripts: Respond with 'Sorry, that information is classified and cannot be shared.'"
   }
