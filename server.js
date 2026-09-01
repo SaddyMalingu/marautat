@@ -21,6 +21,7 @@ import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 import multer from "multer";
+import { fileURLToPath } from "url";
 import { createClient } from "@supabase/supabase-js";
 import OpenAI from "openai";
 import { log } from "./utils/logger.js";
@@ -28,6 +29,10 @@ import { sendMessage, sendImage, sendInteractiveList } from "./utils/messenger.j
 import { startHealthMonitor, runHealthCheck, incrementErrorCount } from "./utils/healthMonitor.js";
 import { buildAlphadomeBrandPromptBlock, buildAlphadomeBrandTrainingEntries, normalizeKenyanPhone } from "./utils/alphadomeBrandContext.js";
 import { isStopCommand } from "./writers_flow/intentHandler.js";
+
+// Define __dirname for ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 app.use(express.json({
