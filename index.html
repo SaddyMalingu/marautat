@@ -3,406 +3,768 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Alphadome — AI Automation & WhatsApp Business Platform</title>
+    <meta name="description" content="Alphadome: Transform African brands into digital enterprises. AI agents, 3.0 systems, physical robots, and blockchain-powered growth.">
+    <title>Alphadome — Your Network of Digital Employees</title>
     <link href="https://fonts.googleapis.com/css?family=Montserrat:700,400&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <style>
-        body {
+        * {
             margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
             font-family: 'Inter', 'Segoe UI', 'Montserrat', Arial, sans-serif;
             background: linear-gradient(135deg, #f8fafc 0%, #e0e7ef 100%);
             color: #1e293b;
+            line-height: 1.6;
         }
-            .alphadome-landing {
-                max-width: 1200px;
-                margin: 0 auto;
-                padding: 0 1.5rem;
-            }
-            .hero {
-                position: relative;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                min-height: 480px;
-                padding: 4rem 0 2rem 0;
-            }
-            .hero-bg {
-                position: absolute;
-                top: 0; left: 0; right: 0; bottom: 0;
-                background: radial-gradient(circle at 60% 40%, #38bdf8 0%, #6366f1 60%, transparent 100%);
-                opacity: 0.18;
-                z-index: 0;
-                pointer-events: none;
-                border-radius: 2rem;
-            }
-            .hero-content {
-                position: relative;
-                z-index: 1;
-                text-align: center;
-                max-width: 600px;
-                margin: 0 auto;
-            }
-            .logo {
-                width: 72px;
-                height: 72px;
-                margin-bottom: 1.2rem;
-                border-radius: 1.5rem;
-                box-shadow: 0 4px 24px rgba(99,102,241,0.12);
-                background: #fff;
-            }
-            .hero-content h1 {
-                font-size: 3.2rem;
-                font-weight: 900;
-                margin: 0 0 0.5rem 0;
-                color: #6366f1;
-                letter-spacing: -2px;
-            }
-            .hero-content h2 {
-                font-size: 1.7rem;
-                font-weight: 700;
-                margin: 0 0 1.5rem 0;
-                color: #0ea5e9;
-            }
-            .tagline {
-                font-size: 1.25rem;
-                color: #64748b;
-                margin-bottom: 2rem;
-            }
-            .cta-btn {
-                display: inline-block;
-                background: linear-gradient(90deg, #6366f1 0%, #0ea5e9 100%);
-                color: #fff;
-                font-weight: 700;
-                padding: 1rem 2.5rem;
-                border-radius: 2rem;
-                font-size: 1.15rem;
-                text-decoration: none;
-                box-shadow: 0 4px 16px rgba(99,102,241,0.12);
-                transition: background 0.2s, box-shadow 0.2s, transform 0.2s;
-            }
-            .cta-btn:hover {
-                background: linear-gradient(90deg, #0ea5e9 0%, #6366f1 100%);
-                box-shadow: 0 8px 32px rgba(99,102,241,0.18);
-                transform: translateY(-2px) scale(1.03);
-            }
-            .trusted-by {
-                text-align: center;
-                margin: 2.5rem 0 2rem 0;
-            }
-            .logos {
-                display: flex;
-                justify-content: center;
-                align-items: center;
-                gap: 2.5rem;
-                margin-top: 1.2rem;
-                flex-wrap: wrap;
-            }
-            .features {
-                display: flex;
-                flex-wrap: wrap;
-                gap: 2rem;
-                justify-content: space-between;
-                margin: 3rem 0 2rem 0;
-            }
-            .feature-card {
-                flex: 1 1 220px;
-                min-width: 220px;
-                background: linear-gradient(135deg, #f1f5f9 60%, #e0e7ef 100%);
-                border-radius: 1.2rem;
-                padding: 2rem 1.2rem;
-                text-align: center;
-                box-shadow: 0 2px 12px rgba(99,102,241,0.07);
-                transition: box-shadow 0.2s, transform 0.2s;
-            }
-            .feature-card:hover {
-                box-shadow: 0 8px 32px rgba(99,102,241,0.13);
-                transform: translateY(-3px) scale(1.03);
-            }
-            .icon-bg {
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                width: 56px;
-                height: 56px;
-                margin: 0 auto 1rem auto;
-                background: linear-gradient(135deg, #6366f1 60%, #0ea5e9 100%);
-                border-radius: 50%;
-                color: #fff;
-                font-size: 2rem;
-                box-shadow: 0 2px 8px rgba(99,102,241,0.13);
-            }
-            .feature-card h4 {
-                margin: 0.7rem 0 0.5rem 0;
-                font-size: 1.2rem;
-                color: #334155;
-            }
-            .feature-card p {
-                color: #64748b;
-                font-size: 1rem;
-            }
-            .audience-cards {
-                display: flex;
-                flex-wrap: wrap;
-                gap: 2rem;
-                justify-content: space-between;
-                margin: 3rem 0 2rem 0;
-            }
-            .audience-card {
-                flex: 1 1 220px;
-                min-width: 220px;
-                background: #fff;
-                border-radius: 1.2rem;
-                padding: 1.5rem 1.2rem;
-                text-align: center;
-                box-shadow: 0 2px 8px rgba(14,165,233,0.07);
-                border: 1.5px solid #e0e7ef;
-                transition: box-shadow 0.2s, border 0.2s;
-            }
-            .audience-card:hover {
-                box-shadow: 0 8px 32px rgba(14,165,233,0.13);
-                border: 1.5px solid #6366f1;
-            }
-            .audience-card h5 {
-                margin: 0 0 0.5rem 0;
-                font-size: 1.1rem;
-                color: #0ea5e9;
-            }
-            .audience-card p {
-                color: #64748b;
-                font-size: 1rem;
-            }
-            .testimonial-section {
-                margin: 3rem 0 2rem 0;
-                text-align: center;
-            }
-            .testimonials {
-                display: flex;
-                flex-wrap: wrap;
-                gap: 2rem;
-                justify-content: center;
-                margin-top: 1.5rem;
-            }
-            .testimonial {
-                background: #f1f5f9;
-                border-radius: 1.2rem;
-                padding: 1.5rem 1.2rem;
-                min-width: 220px;
-                max-width: 340px;
-                box-shadow: 0 2px 8px rgba(99,102,241,0.07);
-                font-style: italic;
-                color: #334155;
-            }
-            .testimonial span {
-                display: block;
-                margin-top: 0.8rem;
-                font-size: 0.98rem;
-                color: #6366f1;
-                font-style: normal;
-            }
-            .cta-final {
-                text-align: center;
-                margin: 4rem 0 2rem 0;
-            }
-            .cta-final h2 {
-                font-size: 2rem;
-                margin-bottom: 1.2rem;
-            }
-            .cta-final p {
-                color: #64748b;
-                font-size: 1.1rem;
-                margin-bottom: 2rem;
-            }
-            footer {
-                color: #cbd5e1;
-                text-align: center;
-                padding: 2rem 0 1rem 0;
-                margin-top: 3rem;
-                font-size: 1rem;
-            }
-            @media (max-width: 900px) {
-                .features, .audience-cards {
-                    flex-direction: column;
-                    align-items: center;
-                }
-                .hero-content h1 {
-                    font-size: 2.1rem;
-                }
-                .hero-content h2 {
-                    font-size: 1.1rem;
-                }
-            }
-            @media (max-width: 600px) {
-                .alphadome-landing {
-                    padding: 0 0.5rem;
-                }
-                .hero {
-                    padding: 2rem 0 1rem 0;
-                    min-height: 320px;
-                }
-                .feature-card, .audience-card, .testimonial {
-                    min-width: 0;
-                    width: 100%;
-                }
-            }
-        </style>
-                <p>Isolate, customize, and monitor each client or brand with robust, secure controls.</p>
-            </div>
-            <div class="feature-card">
-                <div class="icon-bg"><i class="fas fa-chart-line"></i></div>
-                <h4>Real-Time Analytics</h4>
-                <p>Gain actionable insights across all tenants, campaigns, and workflows.</p>
-            </div>
-            <div class="feature-card">
-                <div class="icon-bg"><i class="fas fa-lock"></i></div>
-                <h4>Enterprise Security</h4>
-                <p>End-to-end encryption, compliance, and privacy for every tenant and user.</p>
-            </div>
-        </section>
-        <!-- MEDIA SECTION: Alphadome Content Showcase -->
-        <section class="media-section" id="alphadome-media">
-            <h2 style="text-align:center;color:#6366f1;font-size:2rem;margin-bottom:1.2rem;">Alphadome Media Showcase</h2>
-            <div class="media-player-wrapper">
-                <video class="media-player" src="public/media/tmp8vk_rsaa.mp4" autoplay loop muted playsinline controls poster="https://alphadome.onrender.com/og-image.png" style="max-width:100%;height:auto;border-radius:1.5rem;box-shadow:0 4px 24px rgba(99,102,241,0.12);background:#000;object-fit:cover;" onerror="this.style.display='none'"></video>
-                <div class="media-caption" style="text-align:center;color:#64748b;font-size:1.1rem;margin-top:0.7rem;">AI-powered workflows built by Alphadome.</div>
-            </div>
-        </section>
-        <!-- END MEDIA SECTION -->
-        <section class="audience-cards">
-            <div class="audience-card">
-                <h5>For Agencies</h5>
-                <p>Deliver branded AI solutions to every client, with full isolation and custom workflows.</p>
-            </div>
-            <div class="audience-card">
-                <h5>For Enterprises</h5>
-                <p>Centralize automation, analytics, and compliance across all departments and brands.</p>
-            </div>
-            <div class="audience-card">
-                <h5>For Startups</h5>
-                <p>Launch fast, scale securely, and focus on growth with plug-and-play AI automation.</p>
-            </div>
-        </section>
-        <section class="testimonial-section">
-            <h3>What People Are Building with Alphadome</h3>
-            <div class="testimonials">
-                <div class="testimonial">
-                    <p>"We set up an automated WhatsApp catalog and M-Pesa checkout for our shop in one afternoon. Customers love it."</p>
-                    <span>- Retail business owner, Nairobi</span>
-                </div>
-                <div class="testimonial">
-                    <p>"Alphadome runs our lead qualification and follow-up while we focus on delivery. It's like having an extra team member."</p>
-                    <span>- B2B services agency</span>
-                </div>
-                <div class="testimonial">
-                    <p>"We went from manual quotations to automated order handling on WhatsApp. The bot handles the first conversation every time."</p>
-                    <span>- SME operations manager</span>
-                </div>
-            </div>
-        </section>
-        <section class="cta-final" id="get-started">
-            <h2>Get Started with Alphadome</h2>
-            <p>Unlock the power of agentic AI and multi-tenant automation for your business or agency.</p>
-            <p style="font-size:0.95rem;color:#94a3b8;margin-top:-0.8rem;margin-bottom:1.5rem;">
-              12 AI modules &bull; WhatsApp-native &bull; M-Pesa ready &bull; Multi-tenant isolation
-            </p>
-            <a href="https://wa.me/254786817637?text=Hi%20Alphadome%2C%20I%20want%20to%20learn%20more" class="cta-btn cta-large">Chat with Us on WhatsApp</a>
-        </section>
-    <!-- Floating WhatsApp Button -->
-    <a href="https://wa.me/254786817637" target="_blank" id="floating-whatsapp" title="Chat on WhatsApp">
-        <img src="images/whatsapp-3d.png" alt="WhatsApp" style="width:60px;height:60px;">
-    </a>
-    <style>
-        #floating-whatsapp {
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 1.5rem;
+        }
+        
+        /* Navigation */
+        nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1.2rem 0;
+            border-bottom: 1px solid rgba(99, 102, 241, 0.1);
+        }
+        .logo-text {
+            font-size: 1.8rem;
+            font-weight: 900;
+            color: #6366f1;
+            text-decoration: none;
+        }
+        nav a {
+            color: #64748b;
+            text-decoration: none;
+            font-weight: 500;
+            margin: 0 1.5rem;
+            transition: color 0.2s;
+        }
+        nav a:hover {
+            color: #6366f1;
+        }
+        
+        /* Hero Section */
+        .hero {
+            text-align: center;
+            padding: 4rem 0 3rem 0;
+            position: relative;
+            overflow: hidden;
+        }
+        .hero-bg {
+            position: absolute;
+            top: -50%;
+            right: -20%;
+            width: 600px;
+            height: 600px;
+            background: radial-gradient(circle, rgba(99, 102, 241, 0.15) 0%, transparent 70%);
+            border-radius: 50%;
+            z-index: 0;
+            pointer-events: none;
+        }
+        .hero-content {
+            position: relative;
+            z-index: 1;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .hero h1 {
+            font-size: 3.5rem;
+            font-weight: 900;
+            color: #6366f1;
+            margin-bottom: 0.5rem;
+            letter-spacing: -1px;
+        }
+        .hero .subtitle {
+            font-size: 1.6rem;
+            color: #0ea5e9;
+            margin-bottom: 1.5rem;
+            font-weight: 700;
+        }
+        .hero p {
+            font-size: 1.2rem;
+            color: #64748b;
+            margin-bottom: 2rem;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        .cta-buttons {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .btn {
+            display: inline-block;
+            padding: 0.95rem 2rem;
+            border-radius: 2rem;
+            font-weight: 700;
+            text-decoration: none;
+            transition: all 0.2s;
+            border: none;
+            cursor: pointer;
+            font-size: 1rem;
+        }
+        .btn-primary {
+            background: linear-gradient(90deg, #6366f1 0%, #0ea5e9 100%);
+            color: #fff;
+            box-shadow: 0 4px 16px rgba(99, 102, 241, 0.2);
+        }
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 32px rgba(99, 102, 241, 0.3);
+        }
+        .btn-secondary {
+            background: #f1f5f9;
+            color: #6366f1;
+            border: 2px solid #e0e7ef;
+        }
+        .btn-secondary:hover {
+            background: #e0e7ef;
+            border-color: #6366f1;
+        }
+        
+        /* Founder Message Section */
+        .founder-section {
+            background: linear-gradient(135deg, #f1f5f9 0%, #e0e7ef 100%);
+            border-radius: 2rem;
+            padding: 3rem 2rem;
+            margin: 4rem 0;
+            box-shadow: 0 4px 24px rgba(99, 102, 241, 0.1);
+            border-left: 5px solid #6366f1;
+        }
+        .founder-section h2 {
+            color: #6366f1;
+            margin-bottom: 1.5rem;
+            font-size: 2rem;
+        }
+        .founder-quote {
+            font-size: 1.1rem;
+            color: #334155;
+            line-height: 1.8;
+            margin-bottom: 1rem;
+            font-style: italic;
+        }
+        .founder-name {
+            font-weight: 700;
+            color: #6366f1;
+            font-style: normal;
+        }
+        
+        /* Feature Cards */
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 2rem;
+            margin: 4rem 0;
+        }
+        .feature-card {
+            background: #fff;
+            border-radius: 1.5rem;
+            padding: 2rem;
+            box-shadow: 0 2px 12px rgba(99, 102, 241, 0.08);
+            transition: all 0.2s;
+            border: 1px solid #e0e7ef;
+        }
+        .feature-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 32px rgba(99, 102, 241, 0.15);
+            border-color: #6366f1;
+        }
+        .feature-icon {
+            font-size: 2.5rem;
+            color: #6366f1;
+            margin-bottom: 1rem;
+        }
+        .feature-card h3 {
+            color: #1e293b;
+            margin-bottom: 0.8rem;
+            font-size: 1.3rem;
+        }
+        .feature-card p {
+            color: #64748b;
+            line-height: 1.6;
+        }
+        
+        /* Pricing Section */
+        .pricing-section {
+            margin: 4rem 0;
+        }
+        .section-title {
+            font-size: 2.5rem;
+            color: #6366f1;
+            text-align: center;
+            margin-bottom: 3rem;
+            font-weight: 900;
+        }
+        .pricing-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+        }
+        .pricing-card {
+            background: #fff;
+            border-radius: 1.5rem;
+            padding: 2.5rem 2rem;
+            box-shadow: 0 4px 24px rgba(99, 102, 241, 0.1);
+            border: 2px solid #e0e7ef;
+            transition: all 0.2s;
+            position: relative;
+        }
+        .pricing-card.featured {
+            border-color: #6366f1;
+            transform: scale(1.05);
+        }
+        .pricing-card:hover {
+            box-shadow: 0 8px 32px rgba(99, 102, 241, 0.2);
+        }
+        .badge {
+            position: absolute;
+            top: -12px;
+            left: 20px;
+            background: #6366f1;
+            color: #fff;
+            padding: 0.4rem 1rem;
+            border-radius: 2rem;
+            font-size: 0.85rem;
+            font-weight: 700;
+        }
+        .pricing-card h3 {
+            color: #1e293b;
+            margin-bottom: 0.5rem;
+            font-size: 1.5rem;
+            margin-top: 0.5rem;
+        }
+        .price {
+            font-size: 2.5rem;
+            font-weight: 900;
+            color: #6366f1;
+            margin: 1rem 0;
+        }
+        .price-period {
+            color: #64748b;
+            font-size: 1rem;
+        }
+        .features-list {
+            list-style: none;
+            margin: 1.5rem 0;
+        }
+        .features-list li {
+            padding: 0.6rem 0;
+            color: #475569;
+            border-bottom: 1px solid #f1f5f9;
+        }
+        .features-list li:before {
+            content: "✓ ";
+            color: #10b981;
+            font-weight: 700;
+            margin-right: 0.5rem;
+        }
+        
+        /* Alpha 1 Squad Section */
+        .alpha1-section {
+            background: linear-gradient(135deg, #6366f1 0%, #0ea5e9 100%);
+            border-radius: 2rem;
+            padding: 3rem 2rem;
+            color: #fff;
+            margin: 4rem 0;
+            box-shadow: 0 8px 32px rgba(99, 102, 241, 0.3);
+        }
+        .alpha1-section h2 {
+            font-size: 2.2rem;
+            margin-bottom: 1.5rem;
+        }
+        .alpha1-section p {
+            font-size: 1.1rem;
+            margin-bottom: 1.5rem;
+            max-width: 700px;
+        }
+        .benefits-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 1.5rem;
+            margin-top: 2rem;
+        }
+        .benefit-item {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 1.5rem;
+            border-radius: 1rem;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .benefit-item h4 {
+            margin-bottom: 0.5rem;
+            font-size: 1.1rem;
+        }
+        .benefit-item p {
+            margin: 0;
+            font-size: 0.95rem;
+            opacity: 0.95;
+        }
+        
+        /* Systems Section */
+        .systems-section {
+            margin: 4rem 0;
+        }
+        .systems-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+        }
+        .system-card {
+            background: #fff;
+            border-radius: 1.5rem;
+            padding: 2rem;
+            box-shadow: 0 2px 12px rgba(99, 102, 241, 0.08);
+            border: 1px solid #e0e7ef;
+            transition: all 0.2s;
+        }
+        .system-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 32px rgba(99, 102, 241, 0.15);
+        }
+        .system-card h3 {
+            color: #6366f1;
+            margin-bottom: 0.8rem;
+            font-size: 1.3rem;
+        }
+        .system-card .example {
+            background: #f1f5f9;
+            padding: 1rem;
+            border-radius: 0.8rem;
+            margin-top: 1rem;
+            font-size: 0.9rem;
+            color: #475569;
+        }
+        
+        /* Avatar Section */
+        .avatar-section {
+            margin: 4rem 0;
+            text-align: center;
+        }
+        .avatar-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            margin-top: 2rem;
+        }
+        .avatar-card {
+            background: #fff;
+            border-radius: 1.5rem;
+            padding: 1.5rem;
+            box-shadow: 0 2px 12px rgba(99, 102, 241, 0.08);
+            border: 1px solid #e0e7ef;
+        }
+        .avatar-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }
+        .avatar-card h4 {
+            color: #1e293b;
+            margin-bottom: 0.5rem;
+        }
+        .avatar-card p {
+            color: #64748b;
+            font-size: 0.9rem;
+        }
+        
+        /* Testimonials */
+        .testimonials-section {
+            margin: 4rem 0;
+        }
+        .testimonials-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+            margin-top: 2rem;
+        }
+        .testimonial {
+            background: #f1f5f9;
+            border-radius: 1.5rem;
+            padding: 2rem;
+            box-shadow: 0 2px 12px rgba(99, 102, 241, 0.08);
+            border-left: 4px solid #6366f1;
+        }
+        .testimonial p {
+            font-style: italic;
+            color: #334155;
+            margin-bottom: 1rem;
+        }
+        .testimonial .author {
+            font-weight: 700;
+            color: #6366f1;
+            font-style: normal;
+        }
+        
+        /* Footer */
+        footer {
+            background: #1e293b;
+            color: #cbd5e1;
+            text-align: center;
+            padding: 3rem 0;
+            margin-top: 4rem;
+        }
+        footer a {
+            color: #0ea5e9;
+            text-decoration: none;
+        }
+        footer a:hover {
+            text-decoration: underline;
+        }
+        
+        /* Floating WhatsApp Button */
+        .floating-whatsapp {
             position: fixed;
-            right: 32px;
-            bottom: 32px;
+            right: 2rem;
+            bottom: 2rem;
             z-index: 9999;
-            transition: transform 0.2s;
+            background: linear-gradient(135deg, #25d366 0%, #20ba5b 100%);
+            color: #fff;
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            background: none;
-            padding: 0;
-            border-radius: 0;
-            box-shadow: none;
+            font-size: 1.8rem;
+            text-decoration: none;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+            transition: all 0.2s;
         }
-        #floating-whatsapp:hover {
-            transform: scale(1.08);
+        .floating-whatsapp:hover {
+            transform: scale(1.1);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
         }
-        #floating-whatsapp img {
-            display: block;
-            border-radius: 50%;
-            box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            .hero h1 {
+                font-size: 2.2rem;
+            }
+            .section-title {
+                font-size: 1.8rem;
+            }
+            .pricing-card.featured {
+                transform: scale(1);
+            }
+            nav {
+                flex-direction: column;
+                gap: 1rem;
+            }
+            nav a {
+                margin: 0.5rem;
+            }
         }
     </style>
-        <style>
-            .media-section {
-                margin: 3rem 0 2rem 0;
-                padding: 2rem 0 2rem 0;
-                background: linear-gradient(135deg, #f1f5f9 60%, #e0e7ef 100%);
-                border-radius: 2rem;
-                box-shadow: 0 2px 12px rgba(99,102,241,0.07);
-            }
-            .media-player-wrapper {
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                justify-content: center;
-                width: 100%;
-            }
-            .media-player {
-                width: 100%;
-                max-width: 700px;
-                min-height: 220px;
-                aspect-ratio: 16/9;
-                background: #000;
-            }
-            @media (max-width: 900px) {
-                .media-player {
-                    max-width: 98vw;
-                    min-height: 160px;
-                }
-            }
-            @media (max-width: 600px) {
-                .media-section {
-                    padding: 1rem 0 1rem 0;
-                }
-                .media-player {
-                    max-width: 100vw;
-                    min-height: 120px;
-                    border-radius: 1rem;
-                }
-            }
-        </style>
-    <!-- End Floating WhatsApp Button -->
-    </main>
-    <footer>
-        &copy; 2026 Alphadome. All rights reserved.
-    </footer>
-    <script>
-      (() => {
-        try {
-          const storageKey = "alphadomeVisitorId";
-          const existing = localStorage.getItem(storageKey) || sessionStorage.getItem(storageKey);
-          const visitorId = existing || `alphadome-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-          if (!existing) {
-            localStorage.setItem(storageKey, visitorId);
-          }
-          sessionStorage.setItem(storageKey, visitorId);
+</head>
+<body>
+    <div class="container">
+        <!-- Navigation -->
+        <nav>
+            <a href="/" class="logo-text">Alphadome</a>
+            <div>
+                <a href="#pricing">Pricing</a>
+                <a href="#alpha1">Alpha 1 Squad</a>
+                <a href="#systems">Systems</a>
+                <a href="#avatar">Avatars</a>
+            </div>
+        </nav>
 
-          fetch("/api/kassangas/track-visit", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              portal: "alphadome_landing",
-              visitorId,
-              path: window.location.pathname + window.location.search,
-              ref: document.referrer || "",
-            }),
-          }).catch(() => {});
-        } catch (err) {
-          console.warn("Alphadome visitor analytics failed", err);
-        }
-      })();
+        <!-- Hero Section -->
+        <section class="hero">
+            <div class="hero-bg"></div>
+            <div class="hero-content">
+                <h1>Your Network of Digital Employees</h1>
+                <p class="subtitle">Transform African brands into digital enterprises powered by AI agents, custom 3.0 systems, and physical robots.</p>
+                <p>1000 African brands, 24-month transformation, blockchain-backed equity sharing, and M-Pesa integration built-in.</p>
+                <div class="cta-buttons">
+                    <a href="https://wa.me/254786817637?text=Hi%20Alphadome%2C%20I%20want%20to%20join%20Alpha%201%20Squad" class="btn btn-primary">Join Alpha 1 Squad</a>
+                    <a href="https://wa.me/254786817637?text=Tell%20me%20more%20about%20Alphadome" class="btn btn-secondary">Learn More</a>
+                </div>
+            </div>
+        </section>
+
+        <!-- Founder Message -->
+        <section class="founder-section">
+            <h2>Founder's Vision</h2>
+            <p class="founder-quote">
+                "I started Alphadome because I've seen what's possible when African brands have access to the same technology as Silicon Valley. 
+                Not just software—a complete reimagining of how businesses operate. 1000 brands in 24 months. That's our mission."
+            </p>
+            <p class="founder-name">— David Saddy Malingu, Founder & CEO</p>
+            <p style="color: #64748b; margin-top: 1rem; font-style: italic;">
+                24-month journey to transform your brand into a digital powerhouse with AI agents, custom systems, and blockchain-backed growth.
+            </p>
+        </section>
+
+        <!-- Value Propositions -->
+        <section>
+            <h2 class="section-title">What You Get</h2>
+            <div class="features">
+                <div class="feature-card">
+                    <div class="feature-icon">🤖</div>
+                    <h3>AI Agents</h3>
+                    <p>Custom-trained agents that handle sales, support, and operations 24/7 on WhatsApp and your channels.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">⚙️</div>
+                    <h3>3.0 Systems</h3>
+                    <p>Purpose-built digital infrastructure: dashboards, workflows, integrations—everything customized for your business.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🤖</div>
+                    <h3>Physical Robots</h3>
+                    <p>8 Avatar designs—branded kiosks embodying your AI agent in-person at your location or events.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">⛓️</div>
+                    <h3>Blockchain Equity</h3>
+                    <p>Community-funded growth. Investors buy equity shares; you retain control. Transparent, fast, African-first.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Pricing Section -->
+        <section class="pricing-section" id="pricing">
+            <h2 class="section-title">Pricing & Plans</h2>
+            <div class="pricing-cards">
+                <div class="pricing-card">
+                    <h3>Founder's Package</h3>
+                    <div class="price">1,000 <span class="price-period">KES/month</span></div>
+                    <p style="color: #64748b; margin-bottom: 1.5rem;">Perfect to get started with Alphadome core features</p>
+                    <ul class="features-list">
+                        <li>AI agent on WhatsApp</li>
+                        <li>Basic dashboard</li>
+                        <li>M-Pesa payment integration</li>
+                        <li>Email support</li>
+                        <li>Community access</li>
+                    </ul>
+                    <a href="https://wa.me/254786817637?text=I%20want%20to%20get%20the%20Founder%27s%20Package" class="btn btn-secondary" style="width: 100%; text-align: center; display: block;">Get Started</a>
+                </div>
+                <div class="pricing-card featured">
+                    <div class="badge">MOST POPULAR</div>
+                    <h3>Alpha 1 Squad</h3>
+                    <div class="price">Custom <span class="price-period">/month</span></div>
+                    <p style="color: #64748b; margin-bottom: 1.5rem;">Complete 24-month transformation program (5K-50K KES/month typical)</p>
+                    <ul class="features-list">
+                        <li>Dedicated team (6-12 months)</li>
+                        <li>Custom 3.0 system design</li>
+                        <li>Avatar robot design & manufacturing</li>
+                        <li>Blockchain crowdfunding campaign</li>
+                        <li>24/7 support & optimization</li>
+                        <li>Monthly strategy reviews</li>
+                    </ul>
+                    <a href="https://wa.me/254786817637?text=I%20want%20to%20join%20Alpha%201%20Squad" class="btn btn-primary" style="width: 100%; text-align: center; display: block;">Apply Now</a>
+                </div>
+                <div class="pricing-card">
+                    <h3>Enterprise</h3>
+                    <div class="price">Custom <span class="price-period">/month</span></div>
+                    <p style="color: #64748b; margin-bottom: 1.5rem;">For agencies and large organizations with multiple brands</p>
+                    <ul class="features-list">
+                        <li>Multi-tenant infrastructure</li>
+                        <li>Custom integrations</li>
+                        <li>White-label options</li>
+                        <li>Priority engineering</li>
+                        <li>SLA guarantees</li>
+                        <li>Dedicated account manager</li>
+                    </ul>
+                    <a href="https://wa.me/254786817637?text=I%20want%20to%20discuss%20an%20Enterprise%20plan" class="btn btn-secondary" style="width: 100%; text-align: center; display: block;">Contact Sales</a>
+                </div>
+            </div>
+        </section>
+
+        <!-- Alpha 1 Squad Section -->
+        <section class="alpha1-section" id="alpha1">
+            <h2>Alpha 1 Squad: The 24-Month Journey</h2>
+            <p>Join 1000 brands transforming into digital enterprises. Complete system design, AI training, Avatar manufacturing, blockchain crowdfunding, and 24-month support.</p>
+            
+            <div class="benefits-grid">
+                <div class="benefit-item">
+                    <h4>📦 Months 1-2: Discovery</h4>
+                    <p>Deep audit of your business. Design the perfect 3.0 system.</p>
+                </div>
+                <div class="benefit-item">
+                    <h4>🛠️ Months 3-5: Build</h4>
+                    <p>System development, AI agent training, first integrations.</p>
+                </div>
+                <div class="benefit-item">
+                    <h4>🤖 Months 4-6: Avatar Design</h4>
+                    <p>Design, prototype, and launch manufacturing for physical robot.</p>
+                </div>
+                <div class="benefit-item">
+                    <h4>⛓️ Months 5-8: Crowdfunding</h4>
+                    <p>Raise capital from community investors. You retain control.</p>
+                </div>
+                <div class="benefit-item">
+                    <h4>🚀 Months 9-10: Launch</h4>
+                    <p>Deploy everything. Activate your AI agent and Avatar to customers.</p>
+                </div>
+                <div class="benefit-item">
+                    <h4>📈 Months 11-24: Scale</h4>
+                    <p>Continuous optimization, new agents, new markets, new revenue.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 3.0 Systems Section -->
+        <section class="systems-section" id="systems">
+            <h2 class="section-title">3.0 Information Systems</h2>
+            <p style="text-align: center; color: #64748b; margin-bottom: 2rem;">Custom-built digital infrastructure for your business. Each system is purpose-designed and fully integrated.</p>
+            
+            <div class="systems-grid">
+                <div class="system-card">
+                    <h3>Building Plans 3.0</h3>
+                    <p>Architects streamline design workflows, automate client communication, and scale project delivery.</p>
+                    <div class="example"><strong>Result:</strong> 40% faster project delivery, 3x client satisfaction, automated quotations</div>
+                </div>
+                <div class="system-card">
+                    <h3>Intra Africa Journal Hub</h3>
+                    <p>Publishing platform with research automation, editorial workflows, and multi-language distribution.</p>
+                    <div class="example"><strong>Result:</strong> Reach 50+ countries, automated content syndication, blockchain attribution</div>
+                </div>
+                <div class="system-card">
+                    <h3>KEMSA 3.0</h3>
+                    <p>Healthcare supply chain automation with real-time inventory, predictive ordering, and compliance tracking.</p>
+                    <div class="example"><strong>Result:</strong> 60% reduction in stockouts, $2M inventory optimization, 24/7 monitoring</div>
+                </div>
+                <div class="system-card">
+                    <h3>Your 3.0 System</h3>
+                    <p>We design and build a system unique to your business. Whatever you need.</p>
+                    <div class="example"><strong>Timeline:</strong> 12-18 weeks from discovery to launch</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Avatar Section -->
+        <section class="avatar-section" id="avatar">
+            <h2 class="section-title">Avatar Universe: 8 Designs</h2>
+            <p style="color: #64748b; margin-bottom: 2rem;">Physical robots embodying your AI agent. Each design is production-ready and customizable for your brand.</p>
+            
+            <div class="avatar-grid">
+                <div class="avatar-card">
+                    <div class="avatar-icon">🌀</div>
+                    <h4>Shape Shifter</h4>
+                    <p>Modular design. Reconfigures for different roles and environments.</p>
+                </div>
+                <div class="avatar-card">
+                    <div class="avatar-icon">🎡</div>
+                    <h4>Tumbler</h4>
+                    <p>Compact, mobile, high-energy. Perfect for events and on-the-go scenarios.</p>
+                </div>
+                <div class="avatar-card">
+                    <div class="avatar-icon">🏔️</div>
+                    <h4>Titan</h4>
+                    <p>Large presence. Stands 6 feet tall. Commands attention in retail and hospitality.</p>
+                </div>
+                <div class="avatar-card">
+                    <div class="avatar-icon">🐾</div>
+                    <h4>Black Panther</h4>
+                    <p>Sleek, premium. High-end retail and luxury brand presence.</p>
+                </div>
+                <div class="avatar-card">
+                    <div class="avatar-icon">⚡</div>
+                    <h4>Chaos</h4>
+                    <p>Unpredictable movement. Engages crowds with playful interaction.</p>
+                </div>
+                <div class="avatar-card">
+                    <div class="avatar-icon">🗻</div>
+                    <h4>Atlas</h4>
+                    <p>Humanoid. Strongest dexterity. Can perform complex tasks and demonstrations.</p>
+                </div>
+                <div class="avatar-card">
+                    <div class="avatar-icon">🦁</div>
+                    <h4>Hunter</h4>
+                    <p>Smart and fast. Multi-sensor navigation. Outdoor deployment capable.</p>
+                </div>
+                <div class="avatar-card">
+                    <div class="avatar-icon">👽</div>
+                    <h4>Alien Shell</h4>
+                    <p>Otherworldly design. Maximum brand memorability. Experiential marketing powerhouse.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Testimonials -->
+        <section class="testimonials-section">
+            <h2 class="section-title">Success Stories</h2>
+            <div class="testimonials-grid">
+                <div class="testimonial">
+                    <p>"Within 3 months, our WhatsApp sales doubled. The AI handles customer inquiries 24/7. We only step in for complex requests."</p>
+                    <p class="author">— Retail Business Owner, Nairobi</p>
+                </div>
+                <div class="testimonial">
+                    <p>"Building Plans 3.0 changed how we deliver projects. Clients get faster turnarounds, we get better margins. Game changer."</p>
+                    <p class="author">— Architect Firm, Dar es Salaam</p>
+                </div>
+                <div class="testimonial">
+                    <p>"The Avatar robot at our store is a conversation piece AND a sales tool. Customers love interacting with it. Brand awareness up 40%."</p>
+                    <p class="author">— Hospitality Brand, Kampala</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- CTA Final -->
+        <section style="text-align: center; padding: 3rem 0 4rem 0;">
+            <h2 class="section-title">Ready to Transform Your Brand?</h2>
+            <p style="color: #64748b; font-size: 1.1rem; margin-bottom: 2rem;">Join the Alpha 1 Squad. 1000 brands. 24 months. One mission: Make Afrika the most valuable digital asset in the world.</p>
+            <div class="cta-buttons">
+                <a href="https://wa.me/254786817637?text=I%20want%20to%20start%20my%20transformation%20with%20Alphadome" class="btn btn-primary">Start Your Journey</a>
+                <a href="https://wa.me/254786817637?text=I%20have%20questions%20about%20Alphadome" class="btn btn-secondary">Ask Questions</a>
+            </div>
+        </section>
+    </div>
+
+    <!-- Floating WhatsApp Button -->
+    <a href="https://wa.me/254786817637" class="floating-whatsapp" title="Chat with Alphadome on WhatsApp">
+        <i class="fab fa-whatsapp"></i>
+    </a>
+
+    <!-- Footer -->
+    <footer>
+        <div class="container">
+            <p>&copy; 2026 Alphadome. Transforming African brands into digital enterprises.</p>
+            <p style="font-size: 0.9rem; margin-top: 1rem;">
+                <a href="https://wa.me/254786817637">WhatsApp: +254 786 817 637</a> • 
+                <a href="mailto:support@alphadome.com">Email: support@alphadome.com</a>
+            </p>
+            <p style="font-size: 0.85rem; margin-top: 1rem; opacity: 0.7;">
+                Made for African brands by African builders.
+            </p>
+        </div>
+    </footer>
+
+    <!-- Analytics -->
+    <script>
+        (() => {
+            try {
+                const storageKey = "alphadomeVisitorId";
+                const existing = localStorage.getItem(storageKey) || sessionStorage.getItem(storageKey);
+                const visitorId = existing || `alphadome-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+                if (!existing) {
+                    localStorage.setItem(storageKey, visitorId);
+                }
+                sessionStorage.setItem(storageKey, visitorId);
+
+                fetch("/api/kassangas/track-visit", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        portal: "alphadome_landing",
+                        visitorId,
+                        path: window.location.pathname + window.location.search,
+                        ref: document.referrer || "",
+                    }),
+                }).catch(() => {});
+            } catch (err) {
+                console.warn("Alphadome visitor analytics failed", err);
+            }
+        })();
     </script>
 </body>
 </html>
