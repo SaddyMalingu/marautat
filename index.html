@@ -739,10 +739,11 @@
         </div>
     </footer>
 
-    <!-- Analytics -->
+    <!-- Comprehensive Analytics and Visitor Tracking -->
     <script>
         (() => {
             try {
+                // ========== VISITOR IDENTIFICATION ==========
                 const storageKey = "alphadomeVisitorId";
                 const existing = localStorage.getItem(storageKey) || sessionStorage.getItem(storageKey);
                 const visitorId = existing || `alphadome-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -751,6 +752,24 @@
                 }
                 sessionStorage.setItem(storageKey, visitorId);
 
+                // ========== VISITOR JOURNEY TRACKING ==========
+                const journey = {
+                    visitorId,
+                    sessionStart: new Date().toISOString(),
+                    landingPage: window.location.pathname,
+                    referrer: document.referrer || "direct",
+                    userAgent: navigator.userAgent,
+                    language: navigator.language,
+                    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                    screenResolution: `${window.screen.width}x${window.screen.height}`,
+                    viewport: `${window.innerWidth}x${window.innerHeight}`,
+                    events: [],
+                    ctas: [],
+                    scrollDepth: 0,
+                    timeOnPage: 0,
+                };
+
+                // ========== TRACK PAGE LOAD ==========
                 fetch("/api/kassangas/track-visit", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
@@ -758,11 +777,110 @@
                         portal: "alphadome_landing",
                         visitorId,
                         path: window.location.pathname + window.location.search,
-                        ref: document.referrer || "",
+                        ref: document.referrer || "direct",
+                        userAgent: navigator.userAgent,
+                        language: navigator.language,
+                        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                        screenResolution: `${window.screen.width}x${window.screen.height}`,
                     }),
                 }).catch(() => {});
+
+                // ========== TRACK CTA CLICKS ==========
+                document.addEventListener('click', (e) => {
+                    const link = e.target.closest('a');
+                    if (link && (link.href.includes('wa.me') || link.href.includes('#'))) {
+                        const ctaData = {
+                            timestamp: new Date().toISOString(),
+                            link: link.href,
+                            text: link.textContent.trim().substring(0, 100),
+                            section: document.querySelector('h2, h3')?.textContent || 'unknown',
+                        };
+                        journey.ctas.push(ctaData);
+                        
+                        fetch("/api/kassangas/track-event", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                                visitorId,
+                                eventType: "cta_click",
+                                ...ctaData,
+                            }),
+                        }).catch(() => {});
+                    }
+                });
+
+                // ========== TRACK SCROLL DEPTH ==========
+                let maxScroll = 0;
+                window.addEventListener('scroll', () => {
+                    const scrollPercent = Math.round((window.scrollY / (document.documentElement.scrollHeight - window.innerHeight)) * 100);
+                    if (scrollPercent > maxScroll) {
+                        maxScroll = scrollPercent;
+                        journey.scrollDepth = scrollPercent;
+                    }
+                });
+
+                // ========== TRACK SECTION VIEWS ==========
+                const sections = document.querySelectorAll('section');
+                const observer = new IntersectionObserver((entries) => {
+                    entries.forEach((entry) => {
+                        if (entry.isIntersecting) {
+                            const sectionTitle = entry.target.querySelector('h2, h3')?.textContent || 'Section';
+                            fetch("/api/kassangas/track-event", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({
+                                    visitorId,
+                                    eventType: "section_view",
+                                    section: sectionTitle.substring(0, 100),
+                                    timestamp: new Date().toISOString(),
+                                }),
+                            }).catch(() => {});
+                        }
+                    });
+                }, { threshold: 0.5 });
+
+                sections.forEach((section) => observer.observe(section));
+
+                // ========== TRACK TIME ON PAGE ==========
+                setInterval(() => {
+                    journey.timeOnPage += 5;
+                }, 5000);
+
+                // ========== TRACK EXIT INTENT ==========
+                document.addEventListener('mouseout', (e) => {
+                    if (e.clientY < 0) {
+                        fetch("/api/kassangas/track-event", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                                visitorId,
+                                eventType: "exit_intent",
+                                timeOnPage: journey.timeOnPage,
+                                scrollDepth: journey.scrollDepth,
+                                ctaClicks: journey.ctas.length,
+                                timestamp: new Date().toISOString(),
+                            }),
+                        }).catch(() => {});
+                    }
+                });
+
+                // ========== SAVE JOURNEY ON PAGE UNLOAD ==========
+                window.addEventListener('beforeunload', () => {
+                    fetch("/api/kassangas/save-visitor-journey", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            ...journey,
+                            timeOnPage: journey.timeOnPage,
+                            scrollDepth: journey.scrollDepth,
+                            sessionEnd: new Date().toISOString(),
+                        }),
+                        keepalive: true,
+                    }).catch(() => {});
+                });
+
             } catch (err) {
-                console.warn("Alphadome visitor analytics failed", err);
+                console.warn("Alphadome analytics failed", err);
             }
         })();
     </script>
