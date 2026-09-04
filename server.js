@@ -307,6 +307,21 @@ app.get('/admin/api/slo-board', adminAuth, async (req, res) => {
 const publicDir = path.join(process.cwd(), 'public');
 app.use(express.static(publicDir, { index: false }));
 
+// Google Search Console verification
+app.get('/google3600d50e9b43ca55.html', (req, res) => {
+  res.type('text/plain');
+  res.send('google-site-verification: google3600d50e9b43ca55.html');
+});
+
+// Blog route
+app.get('/blog', (req, res) => {
+  res.sendFile(path.join(publicDir, 'blog', 'index.html'));
+});
+
+app.get('/blog/:slug', (req, res) => {
+  res.sendFile(path.join(publicDir, 'blog', req.params.slug + '.html'));
+});
+
 // AI Jobs & Mercor Referral Engine routes
 app.use('/ai-jobs', aiJobsRouter);
 
