@@ -77,8 +77,20 @@ router.get('/admin/ai-jobs/analytics', requireAdmin, async (req, res) => {
   }
 });
 
+router.post('/admin/ai-jobs/generate-blogs', requireAdmin, async (req, res) => {
+  try {
+    const { generateBlogPostsForOpportunity, generateAllBlogPosts } = await import('../scripts/aiBlogGenerator.js');
+    const { opportunityId } = req.body;
+    const result = opportunityId ? await generateBlogPostsForOpportunity(opportunityId) : await generateAllBlogPosts();
+    res.json(result);
+  } catch (err) {
+    console.error('[AI Jobs Admin] Blog generation error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 function renderAdminDashboard(categories, opportunities, analytics) {
-  const adminKey = process.env.ADMIN_KEY || process.env.ADMIN_PASS || '';
+  const ak = process.env.ADMIN_KEY || process.env.ADMIN_PASS || '';
   const catsOptions = categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
   const oppsRows = opportunities.map(o => `
     <tr>
@@ -88,18 +100,18 @@ function renderAdminDashboard(categories, opportunities, analytics) {
       <td>$${o.compensation_max||'-'}</td>
       <td>
         ${o.status !== 'published' ? `<button onclick="updateStatus('${o.id}','published')">Publish</button>` : ''}
-        ${o.status !== 'closed' ? `<button onclick="updateStatus('${o.id}','closed')">Close</button>` : ''}
-        ${o.status !== 'draft' ? `<button onclick="updateStatus('${o.id}','draft')">Draft</button>` : ''}
+        <button onclick="generateBlogs('${o.id}')">Generate Blogs</button>
         <button onclick="deleteOpp('${o.id}')">Delete</button>
       </td>
     </tr>
   `).join('');
-  
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>AI Jobs Admin</title><style>body{font-family:system-ui,sans-serif;margin:0;padding:20px;background:#081421;color:#f3f7fa}h1,h2{color:#ff8a00}.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1rem;margin:1rem 0}.stat{background:rgba(255,255,255,.05);padding:1rem;border-radius:8px;text-align:center}.sv{font-size:2rem;font-weight:bold;color:#ff8a00}table{width:100%;border-collapse:collapse;margin:1rem 0}th,td{padding:.75rem;text-align:left;border-bottom:1px solid rgba(255,255,255,.1)}th{color:#ff8a00}.s-published{color:#7ef9c8}.s-draft{color:#b8c7d6}.s-closed{color:#ff6464}form{background:rgba(255,255,255,.05);padding:1rem;border-radius:8px;margin:1rem 0}input,select,textarea{width:100%;padding:.5rem;margin:.5rem 0;background:rgba(0,0,0,.3);border:1px solid rgba(255,255,255,.2);color:#f3f7fa;border-radius:4px}button{background:#ff8a00;color:#000;border:none;padding:.5rem 1rem;border-radius:4px;cursor:pointer;margin:.25rem}</style></head><body><h1>AI Jobs Admin</h1><div class="stats"><div class="stat"><div class="sv">${analytics?.opportunity_views||0}</div><div>Views</div></div><div class="stat"><div class="sv">${analytics?.apply_clicks||0}</div><div>Clicks</div></div><div class="stat"><div class="sv">${opportunities.length}</div><div>Total</div></div></div><h2>Create Opportunity</h2><form id="f"><input name="title" placeholder="Title" required><select name="category_id" required><option value="">Category</option>${catsOptions}</select><input type="number" name="compensation_max" placeholder="Max USD/hr"><textarea name="description" placeholder="Description" rows="3"></textarea><input name="location_text" placeholder="Location"><input name="skills" placeholder="Skills (comma-separated)"><input name="referral_url" placeholder="Referral URL (optional)"><button type="submit">Create</button></form><h2>Opportunities</h2><table><thead><tr><th>Title</th><th>Category</th><th>Status</th><th>Pay</th><th>Actions</th></tr></thead><tbody>${oppsRows}</tbody></table><script>
-const ADMIN_KEY='${adminKey}';
-async function updateStatus(id,status){await fetch('/admin/ai-jobs/opportunities/'+id,{method:'PUT',headers:{'Content-Type':'application/json','x-admin-key':ADMIN_KEY},body:JSON.stringify({status})});location.reload()}
-async function deleteOpp(id){if(confirm('Delete?')){await fetch('/admin/ai-jobs/opportunities/'+id,{method:'DELETE',headers:{'x-admin-key':ADMIN_KEY}});location.reload()}}
-document.getElementById('f').onsubmit=async(e)=>{e.preventDefault();const f=e.target;await fetch('/admin/ai-jobs/opportunities',{method:'POST',headers:{'Content-Type':'application/json','x-admin-key':ADMIN_KEY},body:JSON.stringify({title:f.title.value,category_id:f.category_id.value,compensation_max:parseFloat(f.compensation_max.value)||null,description:f.description.value,location_text:f.location_text.value,skills:f.skills.value.split(',').map(s=>s.trim()).filter(Boolean),referral_url:f.referral_url.value||null,status:'draft',slug:f.title.value.toLowerCase().replace(/[^a-z0-9]+/g,'-')})});location.reload()}
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>AI Jobs Admin</title><style>body{font-family:system-ui,sans-serif;margin:0;padding:20px;background:#081421;color:#f3f7fa}h1,h2{color:#ff8a00}.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1rem;margin:1rem 0}.stat{background:rgba(255,255,255,.05);padding:1rem;border-radius:8px;text-align:center}.sv{font-size:2rem;font-weight:bold;color:#ff8a00}table{width:100%;border-collapse:collapse;margin:1rem 0}th,td{padding:.75rem;text-align:left;border-bottom:1px solid rgba(255,255,255,.1)}th{color:#ff8a00}.s-published{color:#7ef9c8}.s-draft{color:#b8c7d6}.s-closed{color:#ff6464}form{background:rgba(255,255,255,.05);padding:1rem;border-radius:8px;margin:1rem 0}input,select,textarea{width:100%;padding:.5rem;margin:.5rem 0;background:rgba(0,0,0,.3);border:1px solid rgba(255,255,255,.2);color:#f3f7fa;border-radius:4px}button{background:#ff8a00;color:#000;border:none;padding:.5rem 1rem;border-radius:4px;cursor:pointer;margin:.25rem}#blogLinks{display:none;margin:1rem 0;padding:1rem;background:rgba(255,255,255,.05);border-radius:8px}#blogLinks a{display:block;color:#ff8a00;padding:.25rem 0}</style></head><body><h1>AI Jobs Admin</h1><div class="stats"><div class="stat"><div class="sv">${analytics?.opportunity_views||0}</div><div>Views</div></div><div class="stat"><div class="sv">${analytics?.apply_clicks||0}</div><div>Clicks</div></div><div class="stat"><div class="sv">${opportunities.length}</div><div>Total</div></div></div><div style="margin:1rem 0"><button onclick="generateAllBlogs()">Generate All Blog Posts</button></div><h2>Create Opportunity</h2><form id="f"><input name="title" placeholder="Title" required><select name="category_id" required><option value="">Category</option>${catsOptions}</select><input type="number" name="compensation_max" placeholder="Max USD/hr"><textarea name="description" placeholder="Description" rows="3"></textarea><input name="location_text" placeholder="Location"><input name="skills" placeholder="Skills (comma-separated)"><input name="referral_url" placeholder="Referral URL (optional)"><button type="submit">Create</button></form><h2>Opportunities</h2><table><thead><tr><th>Title</th><th>Category</th><th>Status</th><th>Pay</th><th>Actions</th></tr></thead><tbody>${oppsRows}</tbody></table><div id="blogLinks"><h3>Generated Blog Posts</h3><div id="blogLinksList"></div></div><script>
+const AK='${ak}';
+async function updateStatus(id,s){await fetch('/admin/ai-jobs/opportunities/'+id,{method:'PUT',headers:{'Content-Type':'application/json','x-admin-key':AK},body:JSON.stringify({status:s})});location.reload()}
+async function deleteOpp(id){if(confirm('Delete?')){await fetch('/admin/ai-jobs/opportunities/'+id,{method:'DELETE',headers:{'x-admin-key':AK}});location.reload()}}
+async function generateBlogs(id){const r=await fetch('/admin/ai-jobs/generate-blogs',{method:'POST',headers:{'Content-Type':'application/json','x-admin-key':AK},body:JSON.stringify({opportunityId:id})});const d=await r.json();if(d.posts){const l=document.getElementById('blogLinksList');l.innerHTML=d.posts.map(p=>'<a href="'+p.url+'" target="_blank">'+p.title+'</a>').join('');document.getElementById('blogLinks').style.display='block'}}
+async function generateAllBlogs(){const r=await fetch('/admin/ai-jobs/generate-blogs',{method:'POST',headers:{'Content-Type':'application/json','x-admin-key':AK},body:JSON.stringify({})});const d=await r.json();alert('Generated '+(d.total||0)+' blog posts')}
+document.getElementById('f').onsubmit=async(e)=>{e.preventDefault();const f=e.target;await fetch('/admin/ai-jobs/opportunities',{method:'POST',headers:{'Content-Type':'application/json','x-admin-key':AK},body:JSON.stringify({title:f.title.value,category_id:f.category_id.value,compensation_max:parseFloat(f.compensation_max.value)||null,description:f.description.value,location_text:f.location_text.value,skills:f.skills.value.split(',').map(s=>s.trim()).filter(Boolean),referral_url:f.referral_url.value||null,status:'draft',slug:f.title.value.toLowerCase().replace(/[^a-z0-9]+/g,'-')})});location.reload()}
 </script></body></html>`;
 }
 
