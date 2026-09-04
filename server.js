@@ -29,6 +29,9 @@ import { sendMessage, sendImage, sendInteractiveList } from "./utils/messenger.j
 import { startHealthMonitor, runHealthCheck, incrementErrorCount } from "./utils/healthMonitor.js";
 import { buildAlphadomeBrandPromptBlock, buildAlphadomeBrandTrainingEntries, normalizeKenyanPhone } from "./utils/alphadomeBrandContext.js";
 import { isStopCommand } from "./writers_flow/intentHandler.js";
+import aiJobsRouter from "./routes/aiJobs.js";
+import sitemapRouter from "./routes/sitemap.js";
+import aiJobsAdminRouter from "./routes/aiJobsAdmin.js";
 
 // Define __dirname for ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -302,6 +305,15 @@ app.get('/admin/api/slo-board', adminAuth, async (req, res) => {
 // Serve static files from public directory
 const publicDir = path.join(process.cwd(), 'public');
 app.use(express.static(publicDir, { index: false }));
+
+// AI Jobs & Mercor Referral Engine routes
+app.use('/ai-jobs', aiJobsRouter);
+
+// Sitemap
+app.use('/', sitemapRouter);
+
+// AI Jobs Admin routes
+app.use('/', aiJobsAdminRouter);
 
 // Secure route to download request.log for debugging
 app.get('/debug/request-log', (req, res) => {

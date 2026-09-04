@@ -1,0 +1,15 @@
+User-agent: *
+Allow: /
+
+# AI Jobs section
+Allow: /ai-jobs
+Allow: /ai-jobs/mercor
+Allow: /ai-jobs/mercor/
+
+# Disallow admin and private routes
+Disallow: /admin/
+Disallow: /debug/
+Disallow: /api/opportunities/*/apply
+
+# Sitemap
+Sitemap: https://alphadome.com/sitemap.xml
