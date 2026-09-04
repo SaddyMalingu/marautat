@@ -6,6 +6,8 @@ import { createClient } from '@supabase/supabase-js';
 import { getAnalyticsSummary } from '../utils/aiJobsService.js';
 
 const router = Router();
+
+// Use service role key for admin operations (bypasses RLS)
 const supabase = createClient(
   process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY
@@ -20,14 +22,17 @@ function requireAdmin(req, res, next) {
 
 router.get('/admin/ai-jobs', requireAdmin, async (req, res) => {
   try {
-    const [cats, opps, analytics] = await Promise.all([
-      supabase.from('opportunity_categories').select('*').order('display_order'),
-      supabase.from('opportunities').select('*, category:opportunity_categories(name)').order('created_at', { ascending: false }).limit(50),
-      getAnalyticsSummary({ days: 30 })
-    ]);
-    res.send(renderAdminDashboard(cats.data || [], opps.data || [], analytics));
+    const catsRes = await supabase.from('opportunity_categories').select('*').order('display_order');
+    const oppsRes = await supabase.from('opportunities').select('*, category:opportunity_categories(name)').order('created_at', { ascending: false }).limit(50);
+    const analytics = await getAnalyticsSummary({ days: 30 });
+    
+    if (catsRes.error) console.error('[AI Jobs Admin] Categories error:', catsRes.error);
+    if (oppsRes.error) console.error('[AI Jobs Admin] Opportunities error:', oppsRes.error);
+    
+    res.send(renderAdminDashboard(catsRes.data || [], oppsRes.data || [], analytics));
   } catch (err) {
-    res.status(500).send('Error loading dashboard');
+    console.error('[AI Jobs Admin] Dashboard error:', err);
+    res.status(500).send('Error loading dashboard: ' + err.message);
   }
 });
 
