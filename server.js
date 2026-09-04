@@ -32,6 +32,7 @@ import { isStopCommand } from "./writers_flow/intentHandler.js";
 import aiJobsRouter from "./routes/aiJobs.js";
 import sitemapRouter from "./routes/sitemap.js";
 import aiJobsAdminRouter from "./routes/aiJobsAdmin.js";
+import aiJobsGuidesRouter from "./routes/aiJobsGuides.js";
 
 // Define __dirname for ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -314,6 +315,9 @@ app.use('/', sitemapRouter);
 
 // AI Jobs Admin routes
 app.use('/', aiJobsAdminRouter);
+
+// AI Jobs Guide routes
+app.use('/', aiJobsGuidesRouter);
 
 // Secure route to download request.log for debugging
 app.get('/debug/request-log', (req, res) => {
