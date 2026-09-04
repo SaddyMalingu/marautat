@@ -96,8 +96,8 @@ router.get('/mercor/opportunity/:slug', async (req, res) => {
   }
 });
 
-// GET /api/opportunities/:id/apply - Track apply click and redirect
-router.get('/api/opportunities/:id/apply', async (req, res) => {
+// GET /ai-jobs/apply/:id - Track apply click and redirect
+router.get('/apply/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const { createClient } = await import('@supabase/supabase-js');
