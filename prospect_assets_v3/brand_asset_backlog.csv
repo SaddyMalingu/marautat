@@ -1,0 +1,18 @@
+brand,project_name,7_day_goal,primary_deliverable,status,priority
+Ventura,Industrial Quotation Copilot 3.0,Demo ERP-style quote-to-order workflow with agent follow-up,Clickable flow + short architecture note,demo_started,P1
+Cardboard,Motion QA Agent for Video Editor UI,Ship interaction spec and performance QA checks,Design.md + perf checklist + sample test artifacts,initiated,P3
+Seeing Systems,Field Test Exception Triage 3.0,Prototype hardware test incident triage loop,Ops dashboard mock + failure taxonomy,initiated,P3
+Sitefire,GEO Action Loop Copilot,Demo visibility-to-action optimization loop,Action recommendation pipeline + eval checklist,spec_ready,P1
+Pocket,Voice Quality Regression Console,Track voice quality deltas and regressions,Eval dashboard prototype + regression report,initiated,P2
+Superset,Multi-Agent Job Orchestration Telemetry Slice,Visualize parallel run states and failures,Control-plane style telemetry panel,initiated,P2
+Fort,Sensor Insight Follow-Up Agent,Deliver triggered insight follow-up flow,Messaging workflow + response capture,initiated,P3
+Vela,Scheduling Context Guardrails Kit,Model edge-case scheduling decisions,Decision policy set + test scenarios,initiated,P2
+KelAI,Alpha Research Workflow Copilot,Structure quant research experiments and evaluation,Experiment tracker + eval summary template,initiated,P2
+Lab0,Enterprise Connector Readiness Sandbox,Show safe connector execution lifecycle,Dry-run + audit + rollback workflow assets,spec_ready,P1
+Collar,Dataroom Diligence Assist Flow,Automate triage to memo workflow,Document triage + memo draft pipeline demo,initiated,P2
+Ardent,Branch Lifecycle UX Proof,Map create-test-destroy branch journey,UX flow + API interaction map,initiated,P2
+CharacterQuilt,Agent Failure Replay and Eval Loop,Operationalize replay and quality feedback cycles,Failure capture schema + replay runbook,spec_ready,P1
+AgentPhone,Telephony Reliability Ops Assistant,Classify delivery anomalies and define recoveries,Reliability playbook + callback decision matrix,spec_ready,P1
+Intelligence Factory,Manipulation Deployment Reliability Board,Track model reliability toward production target,Reliability dashboard + test progression log,initiated,P3
+Huscarl,Actuarial Workflow Automation Slice,Automate extraction to recommendation chain,Workflow spec + approval checkpoints,initiated,P2
+Ooak Data,Workflow Dataset Ingestion Control Plane,Model ingestion and anonymization gates,Pipeline state model + QA gate checklist,initiated,P2

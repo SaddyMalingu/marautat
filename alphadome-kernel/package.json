@@ -1,0 +1,28 @@
+{
+  "name": "alphadome-kernel",
+  "version": "0.1.0",
+  "description": "Shared Alphadome kernel for tenant orchestration, billing, and workflow services",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/copy-static.mjs",
+    "check": "tsc --noEmit -p tsconfig.json",
+    "start": "node --env-file-if-exists=.env.local dist/server.js",
+    "dev": "npm run build ; npm run start",
+    "proof:isolation": "node scripts/run-isolation-proof.mjs",
+    "proof:isolation:strict": "node scripts/run-isolation-proof.mjs --strict-ids",
+    "proof:isolation:live": "node scripts/proof-isolation-live.mjs",
+    "proof:isolation:live:strict": "node scripts/proof-isolation-live.mjs --strict-ids",
+    "proof:isolation:live:auto": "node scripts/proof-isolation-live-auto.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.76.1",
+    "express": "^5.1.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.3",
+    "typescript": "^5.9.2",
+    "dotenv": "^16.3.1"
+  }
+}

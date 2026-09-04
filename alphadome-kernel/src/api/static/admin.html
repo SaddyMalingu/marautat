@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Alphadome Admin Console</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #1a1a1a; color: #e0e0e0; }
+    header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 2rem; color: white; }
+    header h1 { margin-bottom: 0.5rem; }
+    header p { opacity: 0.9; }
+    .container { max-width: 1400px; margin: 0 auto; padding: 0 1rem; }
+    .dashboard { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; padding: 2rem 0; }
+    .panel { background: #2a2a2a; border: 1px solid #404040; border-radius: 8px; padding: 1.5rem; }
+    .panel h2 { color: #667eea; margin-bottom: 1rem; font-size: 1.2rem; }
+    .stat { display: flex; justify-content: space-between; padding: 0.75rem 0; border-bottom: 1px solid #404040; }
+    .stat:last-child { border-bottom: none; }
+    .stat-label { color: #b0b0b0; }
+    .stat-value { font-weight: 600; color: #4fc3f7; }
+    .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem; }
+    button { background: #667eea; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 4px; cursor: pointer; font-size: 0.9rem; transition: background 0.2s; }
+    button:hover { background: #764ba2; }
+    button.danger { background: #ef5350; }
+    button.danger:hover { background: #c62828; }
+    .log-box { background: #1a1a1a; border: 1px solid #404040; border-radius: 4px; padding: 1rem; margin-top: 1rem; max-height: 300px; overflow-y: auto; font-family: monospace; font-size: 0.85rem; }
+    .log-entry { padding: 0.25rem 0; color: #90caf9; }
+    .log-entry.error { color: #ef5350; }
+    .log-entry.success { color: #66bb6a; }
+    .log-entry.warn { color: #ffa726; }
+    table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+    th, td { padding: 0.75rem; text-align: left; border-bottom: 1px solid #404040; }
+    th { background: #1a1a1a; font-weight: 600; color: #667eea; }
+    tr:hover { background: #323232; }
+    .status-badge { display: inline-block; padding: 0.25rem 0.75rem; border-radius: 12px; font-size: 0.85rem; font-weight: 600; }
+    .status-online { background: #4caf50; color: white; }
+    .status-offline { background: #757575; color: white; }
+    .status-error { background: #ef5350; color: white; }
+    footer { text-align: center; padding: 2rem; color: #757575; font-size: 0.9rem; margin-top: 3rem; border-top: 1px solid #404040; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container">
+      <h1>🛠️ Alphadome Admin Console</h1>
+      <p>Kernel operations & system health</p>
+    </div>
+  </header>
+
+  <div class="container">
+    <div class="dashboard">
+      <div class="panel">
+        <h2>System Status</h2>
+        <div class="stat">
+          <span class="stat-label">Service</span>
+          <span class="stat-value">
+            <span class="status-badge status-online">● ONLINE</span>
+          </span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Kernel Version</span>
+          <span class="stat-value">0.1.0</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Uptime</span>
+          <span class="stat-value" id="uptime">--</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Node Version</span>
+          <span class="stat-value" id="nodeVersion">--</span>
+        </div>
+        <div class="actions">
+          <button onclick="checkHealth()">Health Check</button>
+          <button onclick="getMetrics()">Fetch Metrics</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Generation Engine</h2>
+        <div class="stat">
+          <span class="stat-label">Status</span>
+          <span class="stat-value" id="engineRunning">--</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Queued Jobs</span>
+          <span class="stat-value" id="engineQueued">--</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Total Jobs</span>
+          <span class="stat-value" id="engineTotal">--</span>
+        </div>
+        <div class="actions">
+          <button onclick="checkEngineStatus()">Refresh</button>
+          <button onclick="clearQueue()" class="danger">Clear Queue</button>
+        </div>
+      </div>
+
+      <div class="panel" style="grid-column: 1 / -1;">
+        <h2>Kernel Endpoints</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Endpoint</th>
+              <th>Method</th>
+              <th>Purpose</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>/kernel/health</td>
+              <td>GET</td>
+              <td>Service health check</td>
+              <td><span class="status-badge status-online">● Active</span></td>
+            </tr>
+            <tr>
+              <td>/kernel/webhook/resolve-tenant</td>
+              <td>POST</td>
+              <td>WhatsApp ingress + tenant resolve</td>
+              <td><span class="status-badge status-online">● Active</span></td>
+            </tr>
+            <tr>
+              <td>/kernel/api/engine</td>
+              <td>GET</td>
+              <td>Generation engine status</td>
+              <td><span class="status-badge status-online">● Active</span></td>
+            </tr>
+            <tr>
+              <td>/kernel/api/generate</td>
+              <td>POST</td>
+              <td>Enqueue generation job</td>
+              <td><span class="status-badge status-online">● Active</span></td>
+            </tr>
+            <tr>
+              <td>/kernel/api/generate/:jobId</td>
+              <td>GET</td>
+              <td>Get job status</td>
+              <td><span class="status-badge status-online">● Active</span></td>
+            </tr>
+            <tr>
+              <td>/kernel/api/generate/:jobId</td>
+              <td>DELETE</td>
+              <td>Cancel generation job</td>
+              <td><span class="status-badge status-online">● Active</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="panel" style="grid-column: 1 / -1;">
+        <h2>Event Log</h2>
+        <div class="log-box" id="logBox">
+          <div class="log-entry success">✓ Kernel started</div>
+          <div class="log-entry">• Ready to accept requests</div>
+        </div>
+        <button onclick="clearLogs()" style="margin-top: 1rem;">Clear Logs</button>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    Alphadome Kernel Admin • Last updated: <span id="lastUpdate">--</span>
+  </footer>
+
+  <script>
+    const logBox = document.getElementById('logBox');
+    const maxLogs = 50;
+
+    function addLog(message, type = 'info') {
+      const entry = document.createElement('div');
+      entry.className = `log-entry ${type}`;
+      const timestamp = new Date().toLocaleTimeString();
+      entry.textContent = `[${timestamp}] ${message}`;
+      logBox.appendChild(entry);
+      logBox.scrollTop = logBox.scrollHeight;
+
+      if (logBox.children.length > maxLogs) {
+        logBox.firstChild.remove();
+      }
+      updateLastUpdate();
+    }
+
+    function updateLastUpdate() {
+      document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
+    }
+
+    async function checkHealth() {
+      try {
+        const res = await fetch('/kernel/health');
+        const data = await res.json();
+        addLog(`Health check: ${data.ok ? 'OK' : 'FAILED'}`, data.ok ? 'success' : 'error');
+      } catch (err) {
+        addLog(`Health check failed: ${err.message}`, 'error');
+      }
+    }
+
+    async function checkEngineStatus() {
+      try {
+        const res = await fetch('/kernel/api/engine');
+        const data = await res.json();
+        const engine = data.engine;
+        document.getElementById('engineRunning').textContent = engine.running ? '✓ Running' : '○ Idle';
+        document.getElementById('engineQueued').textContent = engine.queued;
+        document.getElementById('engineTotal').textContent = engine.total;
+        addLog(`Engine status: ${engine.queued} queued, ${engine.total} total`, 'info');
+      } catch (err) {
+        addLog(`Engine status check failed: ${err.message}`, 'error');
+      }
+    }
+
+    async function getMetrics() {
+      try {
+        addLog('Fetching metrics...', 'info');
+        // Placeholder for future metrics endpoint
+        addLog('No metrics endpoint yet (future work)', 'warn');
+      } catch (err) {
+        addLog(`Metrics fetch failed: ${err.message}`, 'error');
+      }
+    }
+
+    async function clearQueue() {
+      if (!confirm('Are you sure? This will cancel all pending jobs.')) return;
+      addLog('Queue clear requested (not implemented)', 'warn');
+    }
+
+    function clearLogs() {
+      logBox.innerHTML = '<div class="log-entry">Logs cleared</div>';
+      updateLastUpdate();
+    }
+
+    // Initialize
+    setInterval(checkEngineStatus, 10000); // Poll every 10 seconds
+    checkEngineStatus();
+    updateLastUpdate();
+  </script>
+</body>
+</html>

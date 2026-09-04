@@ -1,0 +1,959 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Alphadome | Agentic Commerce + Fast Checkout Platform</title>
+  <link href="https://fonts.googleapis.com/css?family=Montserrat:700,400&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;900&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="./tailwind.output.css">
+  <style>
+    html, body {
+      width: 100%;
+      max-width: 100%;
+      overflow-x: hidden;
+    }
+    body {
+      margin: 0;
+      font-family: 'Montserrat', Arial, sans-serif;
+      background: #0f172a;
+      color: #fff;
+      overflow-x: hidden;
+      font-size: 1.08rem;
+      letter-spacing: 0.01em;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+    /* Remove animated-bg and gradient background */
+    header {
+      background: rgba(30,41,59,0.95);
+      padding: 2rem 0 1rem 0;
+      text-align: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      position: relative;
+      z-index: 2;
+    }
+    header h1 {
+      font-size: 3.2rem;
+      margin: 0 0 0.5rem 0;
+      letter-spacing: 2px;
+      color: #38bdf8;
+      text-shadow: 0 4px 32px #0ea5e9aa;
+      font-weight: 900;
+      font-family: 'Montserrat', Arial, sans-serif;
+      line-height: 1.1;
+    }
+    header p {
+      font-size: 1.3rem;
+      color: #cbd5e1;
+      margin: 0 0 1rem 0;
+      text-shadow: 0 2px 8px #6366f1aa;
+      font-family: 'Roboto', 'Montserrat', Arial, sans-serif;
+      font-weight: 400;
+      line-height: 1.4;
+    }
+    header .logo-container {
+      width: 100%;
+      max-width: 220px;
+      margin: 0 auto 1rem auto;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      position: relative;
+    }
+    header .logo-container video {
+      width: 100%;
+      height: auto;
+      max-width: 220px;
+      max-height: 120px;
+      border-radius: 1.2rem;
+      box-shadow: 0 2px 16px #0ea5e9aa;
+      object-fit: cover;
+      background: #222;
+      display: block;
+    }
+    .cta-btn {
+      display: inline-block;
+      background: linear-gradient(90deg, #6366f1 0%, #0ea5e9 100%);
+      color: #fff;
+      font-weight: 700;
+      padding: 1rem 2.5rem;
+      border-radius: 2rem;
+      font-size: 1.15rem;
+      text-decoration: none;
+      box-shadow: 0 4px 16px rgba(99,102,241,0.12);
+      transition: background 0.2s, box-shadow 0.2s, transform 0.2s;
+      backdrop-filter: blur(8px);
+      border: 1px solid #38bdf8;
+    }
+    .cta-btn:hover {
+      background: linear-gradient(90deg, #0ea5e9 0%, #6366f1 100%);
+      box-shadow: 0 8px 32px rgba(99,102,241,0.18);
+      transform: translateY(-2px) scale(1.03);
+      border-color: #fff;
+    }
+    .hero {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 70vh;
+      text-align: center;
+      padding: 3rem 0 2rem 0;
+      position: relative;
+      z-index: 2;
+    }
+    .hero h2 {
+      font-size: 2.6rem;
+      margin-bottom: 1rem;
+      color: #38bdf8;
+      font-weight: 800;
+      text-shadow: 0 4px 32px #0ea5e9aa;
+      letter-spacing: 1px;
+      font-family: 'Montserrat', Arial, sans-serif;
+      line-height: 1.15;
+    }
+    .hero p {
+      font-size: 1.3rem;
+      max-width: 700px;
+      margin: 0 auto 2rem auto;
+      color: #e0e7ef;
+      text-shadow: 0 2px 8px #6366f1aa;
+      font-family: 'Roboto', 'Montserrat', Arial, sans-serif;
+      font-weight: 400;
+      line-height: 1.5;
+    }
+    .hero-buttons {
+      margin-top: 2rem;
+      display: flex;
+      gap: 1.5rem;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    #hero-3d {
+      width: 100%;
+      max-width: 100%;
+      overflow: hidden;
+    }
+    .wave-divider {
+      display: block;
+      width: 100%;
+      max-width: 100%;
+      height: auto;
+    }
+    .assets-live {
+      margin: 2.2rem auto;
+      max-width: 1180px;
+      padding: 0 1.2rem;
+    }
+    .assets-live h2 {
+      text-align: center;
+      color: #38bdf8;
+      font-size: 2rem;
+      margin: 0 0 0.55rem 0;
+      font-weight: 800;
+    }
+    .assets-live .lead {
+      text-align: center;
+      color: #cbd5e1;
+      margin: 0 0 1.3rem 0;
+      font-size: 1.02rem;
+    }
+    .asset-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 1rem;
+    }
+    .asset-card {
+      background: rgba(30,41,59,0.9);
+      border: 1px solid rgba(56,189,248,0.28);
+      border-radius: 1rem;
+      padding: 1rem;
+      box-shadow: 0 8px 22px rgba(14,165,233,0.16);
+      backdrop-filter: blur(8px);
+    }
+    .asset-card h4 {
+      margin: 0 0 0.45rem 0;
+      color: #e2f6ff;
+      font-size: 1.02rem;
+      font-weight: 700;
+    }
+    .asset-card p {
+      margin: 0 0 0.8rem 0;
+      color: #cbd5e1;
+      font-size: 0.93rem;
+      line-height: 1.4;
+    }
+    .asset-actions {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .asset-link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(90deg, #6366f1 0%, #0ea5e9 100%);
+      border: 1px solid rgba(56,189,248,0.5);
+      border-radius: 999px;
+      padding: 0.46rem 0.82rem;
+      color: #fff;
+      text-decoration: none;
+      font-size: 0.83rem;
+      font-weight: 700;
+    }
+    .asset-link.secondary {
+      background: rgba(255,255,255,0.09);
+    }
+    @media (max-width: 600px) {
+      header {
+        padding: 1.2rem 0 0.5rem 0;
+      }
+      header .logo-container {
+        max-width: 98vw;
+        margin-bottom: 0.7rem;
+      }
+      header .logo-container video {
+        width: 98vw;
+        max-width: 180px;
+        max-height: 90px;
+        border-radius: 1rem;
+      }
+      header h1 {
+        font-size: 1.45rem;
+        letter-spacing: 1px;
+        margin-bottom: 0.3rem;
+      }
+      header p {
+        font-size: 1rem;
+        margin-bottom: 0.7rem;
+      }
+      .hero {
+        padding: 1.2rem 0 1rem 0;
+        min-height: 50vh;
+      }
+      #hero-3d { height: 170px !important; margin-bottom: 0.8rem !important; }
+      .hero h2 {
+        font-size: 1.3rem;
+        margin-bottom: 0.7rem;
+      }
+      .hero p {
+        font-size: 1rem;
+        max-width: 95vw;
+        margin-bottom: 1.2rem;
+      }
+      .hero-buttons {
+        flex-direction: column;
+        gap: 0.7rem;
+        margin-top: 1.2rem;
+      }
+      .cta-btn {
+        font-size: 1rem;
+        padding: 0.7rem 1.2rem;
+        width: 90vw;
+        max-width: 320px;
+        margin: 0 auto;
+      }
+      .assets-live { margin: 1.3rem auto; padding: 0 0.8rem; }
+      .assets-live h2 { font-size: 1.35rem; }
+      .assets-live .lead { font-size: 0.95rem; }
+      .asset-grid { grid-template-columns: 1fr; gap: 0.8rem; }
+      .asset-card { padding: 0.9rem; }
+      .glass {
+        padding: 1rem;
+        max-width: 98vw;
+      }
+      .features {
+        font-family: 'Montserrat', Arial, sans-serif;
+        letter-spacing: 0.5px;
+        gap: 1rem;
+        margin: 2rem 0 1rem 0;
+      }
+      .feature-card {
+        padding: 1.2rem 0.7rem;
+        min-width: 0;
+        font-family: 'Roboto', 'Montserrat', Arial, sans-serif;
+        font-weight: 400;
+        line-height: 1.45;
+        max-width: 98vw;
+        font-size: 0.98rem;
+      }
+      .feature-card h4 {
+        font-size: 1.1rem;
+      }
+      .feature-card i {
+        font-size: 2rem;
+      }
+    }
+    .glass {
+      background: rgba(255,255,255,0.08);
+      border-radius: 2rem;
+      box-shadow: 0 8px 32px rgba(14,165,233,0.15);
+      backdrop-filter: blur(12px);
+      border: 1px solid #38bdf8;
+    
+      padding: 2rem;
+      margin: 2rem auto;
+      max-width: 900px;
+      z-index: 2;
+      position: relative;
+    }
+    .features {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 2rem;
+      margin: 4rem 0 2rem 0;
+      z-index: 2;
+    }
+    
+    .feature-card {
+      background: linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%);
+      border-radius: 1.5rem;
+      box-shadow: 0 12px 32px #38bdf8aa, 0 2px 12px rgba(0,0,0,0.08);
+      padding: 2rem 1.5rem;
+      max-width: 340px;
+      min-width: 220px;
+      text-align: center;
+      transition: transform 0.2s, box-shadow 0.2s;
+      backdrop-filter: blur(8px);
+      border: 1.5px solid #38bdf8;
+      position: relative;
+      z-index: 2;
+      overflow: hidden;
+      margin-bottom: 1.2rem;
+      color: #fff;
+    }
+    .feature-card::before {
+      content: '';
+      position: absolute;
+      top: -30px; left: -30px;
+      width: 120px; height: 120px;
+      background: radial-gradient(circle, #38bdf8 0%, transparent 70%);
+      opacity: 0.18;
+      z-index: 1;
+      pointer-events: none;
+      filter: blur(12px);
+    }
+    .feature-card i {
+      font-size: 2.8rem;
+      color: #fff;
+      margin-bottom: 1rem;
+      filter: drop-shadow(0 2px 8px #38bdf8);
+    }
+    @media (max-width: 900px) {
+      .features {
+        flex-direction: column;
+        align-items: center;
+      }
+      .feature-card {
+        max-width: 98vw;
+        min-width: 0;
+        margin-bottom: 1.2rem;
+      }
+    }
+    .feature-card:hover {
+      transform: translateY(-6px) scale(1.04);
+      box-shadow: 0 16px 48px rgba(14,165,233,0.25);
+      border-color: #fff;
+    }
+    .feature-card i {
+      font-size: 2.8rem;
+      color: #0ea5e9;
+      margin-bottom: 1rem;
+      filter: drop-shadow(0 2px 8px #38bdf8);
+    }
+    .feature-card h4 {
+      margin: 0.5rem 0 0.5rem 0;
+      font-size: 1.4rem;
+      color: #38bdf8;
+      font-weight: 700;
+    }
+    .feature-card p {
+      color: #cbd5e1;
+      font-size: 1.05rem;
+      z-index: 2;
+      position: relative;
+    }
+    .showcase {
+      text-align: center;
+      margin: 4rem 0 2rem 0;
+      z-index: 2;
+    }
+    .showcase img {
+      max-width: 90%;
+      border-radius: 1.5rem;
+      box-shadow: 0 8px 32px rgba(14,165,233,0.15);
+      margin-bottom: 1.5rem;
+      border: 2px solid #6366f1;
+      animation: showcasePulse 2.5s infinite alternate;
+    }
+    @keyframes showcasePulse {
+      0% { box-shadow: 0 8px 32px rgba(14,165,233,0.15); }
+      100% { box-shadow: 0 16px 64px #38bdf8aa; }
+    }
+    .how-it-works {
+      margin: 4rem 0 2rem 0;
+      text-align: center;
+      z-index: 2;
+    }
+    .how-it-works h2 {
+      color: #38bdf8;
+      font-size: 2rem;
+      margin-bottom: 1.5rem;
+      font-weight: 800;
+    }
+    .steps {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 2rem;
+      z-index: 2;
+    }
+    .step {
+      background: rgba(255,255,255,0.14);
+      color: #1e293b;
+      border-radius: 1.2rem;
+      box-shadow: 0 2px 12px rgba(14,165,233,0.08);
+      padding: 1.5rem 1.2rem;
+      max-width: 220px;
+      min-width: 180px;
+      text-align: center;
+      transition: transform 0.2s, box-shadow 0.2s;
+      backdrop-filter: blur(6px);
+      border: 1px solid #38bdf8;
+      color: #fff;
+      z-index: 2;
+      position: relative;
+    }
+    .step:hover {
+      transform: translateY(-4px) scale(1.03);
+      box-shadow: 0 8px 32px #38bdf8aa;
+      border-color: #fff;
+    }
+    .step i {
+      font-size: 2rem;
+      color: #0ea5e9;
+      margin-bottom: 0.5rem;
+      filter: drop-shadow(0 2px 8px #38bdf8);
+    }
+    .brands {
+      margin: 4rem 0 2rem 0;
+      text-align: center;
+      z-index: 2;
+    }
+    .brands-logos {
+      display: flex;
+      justify-content: center;
+      gap: 2rem;
+      flex-wrap: wrap;
+      margin-top: 1rem;
+      z-index: 2;
+    }
+    .brands-logos img {
+      height: 32px;
+      filter: grayscale(1) brightness(1.2);
+      opacity: 0.8;
+      border-radius: 0.5rem;
+      border: 1px solid #6366f1;
+      box-shadow: 0 2px 8px #38bdf8aa;
+      transition: transform 0.2s;
+    }
+    .brands-logos img:hover {
+      transform: scale(1.08);
+      border-color: #fff;
+    }
+    .testimonials {
+      margin: 4rem 0 2rem 0;
+      text-align: center;
+      z-index: 2;
+    }
+    .testimonial {
+      background: rgba(30,41,59,0.95);
+      border-radius: 1.2rem;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+      padding: 1.5rem 1.2rem;
+      max-width: 320px;
+      margin: 1rem auto;
+      color: #cbd5e1;
+      font-size: 1.1rem;
+      border: 1px solid #6366f1;
+      backdrop-filter: blur(6px);
+      position: relative;
+      z-index: 2;
+    }
+    .testimonial span {
+      color: #38bdf8;
+      font-weight: 700;
+      font-size: 1rem;
+      margin-top: 0.5rem;
+      display: block;
+    }
+    .pricing {
+      margin: 4rem 0 2rem 0;
+      text-align: center;
+      z-index: 2;
+    }
+    .pricing-table {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 2rem;
+      margin-top: 2rem;
+      z-index: 2;
+    }
+    .plan {
+      background: rgba(255,255,255,0.14);
+      color: #1e293b;
+      border-radius: 1.2rem;
+      box-shadow: 0 2px 12px rgba(14,165,233,0.08);
+      padding: 2rem 1.5rem;
+      max-width: 260px;
+      min-width: 200px;
+      text-align: center;
+      transition: transform 0.2s, box-shadow 0.2s;
+      backdrop-filter: blur(6px);
+      border: 1px solid #6366f1;
+      color: #fff;
+      z-index: 2;
+      position: relative;
+    }
+    .plan:hover {
+      transform: translateY(-4px) scale(1.03);
+      box-shadow: 0 8px 32px #38bdf8aa;
+      border-color: #fff;
+    }
+    .plan h4 {
+      color: #38bdf8;
+      font-weight: 700;
+      font-size: 1.2rem;
+      margin-bottom: 0.5rem;
+    }
+    .plan p {
+      color: #0ea5e9;
+      font-size: 1.1rem;
+      margin-bottom: 1rem;
+    }
+    .plan ul {
+      list-style: none;
+      padding: 0;
+      margin: 0 0 1rem 0;
+    }
+    .plan ul li {
+      color: #cbd5e1;
+      font-size: 1rem;
+      margin-bottom: 0.5rem;
+    }
+    .faq {
+      margin: 4rem 0 2rem 0;
+      text-align: center;
+      z-index: 2;
+    }
+    .faq h2 {
+      color: #38bdf8;
+      font-size: 2rem;
+      margin-bottom: 1.5rem;
+      font-weight: 800;
+    }
+    .faq-list {
+      max-width: 700px;
+      margin: 0 auto;
+      text-align: left;
+      z-index: 2;
+    }
+    .faq-item {
+      background: rgba(30,41,59,0.95);
+      border-radius: 1rem;
+      margin-bottom: 1rem;
+      padding: 1rem;
+      color: #cbd5e1;
+      font-size: 1rem;
+      cursor: pointer;
+      border: 1px solid #6366f1;
+      backdrop-filter: blur(6px);
+      z-index: 2;
+      position: relative;
+    }
+    .faq-item .answer {
+      display: none;
+      margin-top: 0.5rem;
+      color: #e0e7ef;
+    }
+    .faq-item.active .answer {
+      display: block;
+    }
+    footer {
+      background: #1e293b;
+      color: #cbd5e1;
+      text-align: center;
+      padding: 2rem 0 1rem 0;
+      margin-top: 3rem;
+      font-size: 1rem;
+      z-index: 2;
+      position: relative;
+    }
+    .social-icons {
+      margin-top: 1rem;
+      z-index: 2;
+    }
+    .social-icons a {
+      color: #0ea5e9;
+      margin: 0 0.5rem;
+      font-size: 1.5rem;
+      transition: color 0.2s;
+    }
+    .social-icons a:hover {
+      color: #38bdf8;
+    }
+    @media (max-width: 900px) {
+      .features, .pricing-table, .brands-logos {
+        flex-direction: column;
+        align-items: center;
+      }
+      .steps {
+        flex-direction: column;
+        align-items: center;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header style="background:rgba(15,23,42,0.98);padding:2rem 0 1rem 0;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,0.1);position:relative;z-index:2;">
+    <div class="logo-container">
+      <video src="logo-bg.mp4" autoplay loop muted playsinline poster="" preload="auto"></video>
+    </div>
+    <h1 style="font-size:3.2rem;margin:0 0 0.2rem 0;letter-spacing:2px;color:#38bdf8;text-shadow:0 4px 32px #0ea5e9aa;font-weight:900;font-family:'Montserrat',Arial,sans-serif;line-height:1.1;">Alphadome</h1>
+    <p style="font-size:1.35rem;color:#cbd5e1;margin:0 0 1rem 0;text-shadow:0 2px 8px #6366f1aa;font-family:'Roboto','Montserrat',Arial,sans-serif;font-weight:500;line-height:1.4;">Agentic Commerce Infrastructure for African Businesses</p>
+    <p style="font-size:1.1rem;color:#e0e7ef;margin:0 0 1.2rem 0;text-shadow:0 2px 8px #6366f1aa;font-family:'Roboto','Montserrat',Arial,sans-serif;font-weight:400;line-height:1.4;">Powering instant QR scan-to-STK checkout, multi-tenant operations, and automated growth workflows.</p>
+    <div class="hero-buttons">
+      <a href="https://alphadomemagic-production.up.railway.app/" class="cta-btn" aria-label="Alphadome Magic">Alphadome Magic</a>
+      <a href="/kassangas-merchant-portal" class="cta-btn" aria-label="Fast Mpesa Checkout">Fast Mpesa Checkout</a>
+      <a href="/kassangas-client-wallet" class="cta-btn" aria-label="Client Fast Wallet">Client Fast Wallet</a>
+      <a href="/portfolio.html" class="cta-btn" id="view-demo-btn" aria-label="Our Portfolio">Our Portfolio</a>
+      <a href="#pricing" class="cta-btn" aria-label="Join Alphadome">Join Alphadome</a>
+    </div>
+  </header>
+  <!-- 3D Hero Canvas -->
+  <div id="hero-3d" style="width:100%;max-width:100%;height:320px;margin:0 auto 1.5rem auto;z-index:1;"></div>
+  <main>
+    <section class="hero">
+      <h2>Instant Checkout. Agentic Growth.</h2>
+      <p>Alphadome enables businesses to collect payments in seconds with reusable merchant QR templates, scan-to-STK fast checkout, and customer repeat-pay acceleration across merchants.</p>
+      <noscript><p style="color:#f87171">Enable JavaScript to see interactive 3D graphics.</p></noscript>
+      <div class="hero-buttons">
+        <a href="/kassangas-merchant-portal" class="cta-btn" aria-label="Launch Merchant Portal">Launch Merchant Portal</a>
+        <a href="/kassangas-client-wallet" class="cta-btn" aria-label="Open Client Wallet">Open Client Wallet</a>
+      </div>
+    </section>
+    <section class="assets-live">
+      <h2>Live 3.0 Assets</h2>
+      <p class="lead">Independent operating assets from the Alphadome 3.0 infrastructure.</p>
+      <div class="asset-grid">
+        <article class="asset-card">
+          <h4>Alpha Professor 3.0</h4>
+          <p>Published AI-powered academic assistant and knowledge engine.</p>
+          <div class="asset-actions">
+            <a class="asset-link" href="https://alphaprofessor-81647-1c1e114c2185.herokuapp.com/" target="_blank" rel="noopener">Open Live</a>
+          </div>
+        </article>
+        <article class="asset-card">
+          <h4>Alpha 3.0 (Comms & Outreach)</h4>
+          <p>Campaign, onboarding, catalog, and revenue workflows in production stack.</p>
+          <div class="asset-actions">
+            <a class="asset-link" href="/portfolio.html">View Portfolio</a>
+            <a class="asset-link secondary" href="/kassangas-client-wallet">Fast Wallet</a>
+          </div>
+        </article>
+        <article class="asset-card">
+          <h4>Alpha Architect</h4>
+          <p>AI design and cloud-rendering capabilities exposed via Alphadome experience layer.</p>
+          <div class="asset-actions">
+            <a class="asset-link" href="https://alphadomemagic-production.up.railway.app/" target="_blank" rel="noopener">Open Magic Hub</a>
+          </div>
+        </article>
+        <article class="asset-card">
+          <h4>Intra Africa Journal Hub 3.0</h4>
+          <p>Journal submission/review/publishing infrastructure in the Alphadome ecosystem.</p>
+          <div class="asset-actions">
+            <a class="asset-link" href="/portfolio.html">Portfolio Entry</a>
+            <a class="asset-link secondary" href="mailto:info@alphadome.ai?subject=Intra%20Africa%20Journal%20Hub%203.0%20Access">Request Access</a>
+          </div>
+        </article>
+        <article class="asset-card">
+          <h4>Kassangas Fast Checkout</h4>
+          <p>Merchant and client QR scan-to-STK flow optimized for repeat payments.</p>
+          <div class="asset-actions">
+            <a class="asset-link" href="/kassangas-merchant-portal">Merchant Portal</a>
+            <a class="asset-link secondary" href="/kassangas-client-wallet">Client Wallet</a>
+          </div>
+        </article>
+        <article class="asset-card">
+          <h4>All 3.0 Published Agents</h4>
+          <p>Explore all live agents and brands currently onboarded in the Alphadome ecosystem.</p>
+          <div class="asset-actions">
+            <a class="asset-link" href="/portfolio.html">Open Portfolio</a>
+          </div>
+        </article>
+      </div>
+    </section>
+    <svg class="wave-divider" viewBox="0 0 1440 60" fill="none" xmlns="http://www.w3.org/2000/svg"><path fill="#0ea5e9" fill-opacity="0.12" d="M0,30 C360,60 1080,0 1440,30 L1440,60 L0,60 Z"></path></svg>
+    <!-- Floating WhatsApp Button -->
+    <a href="https://wa.me/254786817637" target="_blank" id="floating-whatsapp" title="Chat on WhatsApp">
+      <img src="./images/whatsapp-3d.png" alt="WhatsApp" style="width:60px;height:60px;">
+    </a>
+    <style>
+      #floating-whatsapp {
+        position: fixed !important;
+        right: calc(16px + env(safe-area-inset-right, 0px));
+        bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+        z-index: 2147483000;
+        transition: transform 0.2s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: none;
+        padding: 0;
+        border-radius: 0;
+        box-shadow: none;
+        transform: translateZ(0);
+        backface-visibility: hidden;
+      }
+      #floating-whatsapp:hover {
+        transform: scale(1.08);
+      }
+      #floating-whatsapp img {
+        display: block;
+        border-radius: 50%;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+      }
+    </style>
+    <!-- End Floating WhatsApp Button -->
+      <div class="feature-card">
+        <i class="fas fa-qrcode" aria-label="Fast QR Payments"></i>
+        <h4>Fast QR Payments</h4>
+        <p>Merchant QR templates enable instant scan-to-STK checkout and repeat payments in seconds.</p>
+      </div>
+      <div class="feature-card">
+        <i class="fas fa-cubes" aria-label="Agentic Workflows"></i>
+        <h4>Agentic Workflows</h4>
+        <p>Modular, multi-tenant automation for every brand and client.</p>
+      </div>
+      <div class="feature-card">
+        <i class="fas fa-robot" aria-label="Creative AI Bots"></i>
+        <h4>Creative AI Bots</h4>
+        <p>WhatsApp, Email, and Social integrations for engagement and support.</p>
+      </div>
+      <div class="feature-card">
+        <i class="fas fa-chart-line" aria-label="Dynamic Dashboards"></i>
+        <h4>Dynamic Dashboards</h4>
+        <p>Real-time analytics and management for all tenants and campaigns.</p>
+      </div>
+      <div class="feature-card">
+        <i class="fas fa-lock" aria-label="Secure Multi-Tenancy"></i>
+        <h4>Secure Multi-Tenancy</h4>
+        <p>Per-tenant credentials, SMTP, and data isolation for enterprise security.</p>
+      </div>
+    </section>
+    <svg class="wave-divider" viewBox="0 0 1440 60" fill="none" xmlns="http://www.w3.org/2000/svg"><path fill="#6366f1" fill-opacity="0.12" d="M0,30 C360,0 1080,60 1440,30 L1440,60 L0,60 Z"></path></svg>
+    <section class="showcase" id="demo">
+      <h2>See Alphadome in Action</h2>
+      <img src="https://assets-global.website-files.com/63e3e7e7e7e7e7e7e7e7e7e7/63e3e7e7e7e7e7e7e7e7e7e7_whatsapp-automation-hero.svg" alt="Dashboard Demo" loading="lazy">
+      <p>Watch a demo of agentic workflows, creative bots, and tenant dashboards in real time.</p>
+    </section>
+    <svg class="wave-divider" viewBox="0 0 1440 60" fill="none" xmlns="http://www.w3.org/2000/svg"><path fill="#38bdf8" fill-opacity="0.12" d="M0,30 C360,60 1080,0 1440,30 L1440,60 L0,60 Z"></path></svg>
+    <section class="glass how-it-works">
+      <h2>How It Works</h2>
+      <div class="steps">
+        <div class="step">
+          <i class="fas fa-link" aria-label="Connect"></i>
+          <h4>Connect</h4>
+          <p>Integrate your brand, client, or agency in minutes.</p>
+        </div>
+        <div class="step">
+          <i class="fas fa-sliders-h" aria-label="Configure"></i>
+          <h4>Configure</h4>
+          <p>Customize workflows, bots, and dashboards for each tenant.</p>
+        </div>
+        <div class="step">
+          <i class="fas fa-bolt" aria-label="Automate"></i>
+          <h4>Automate</h4>
+          <p>Launch agentic automation across channels and brands.</p>
+        </div>
+        <div class="step">
+          <i class="fas fa-chart-bar" aria-label="Scale"></i>
+          <h4>Scale</h4>
+          <p>Grow with real-time analytics, security, and multi-tenant controls.</p>
+        </div>
+      </div>
+    </section>
+    <svg class="wave-divider" viewBox="0 0 1440 60" fill="none" xmlns="http://www.w3.org/2000/svg"><path fill="#0ea5e9" fill-opacity="0.12" d="M0,30 C360,60 1080,0 1440,30 L1440,60 L0,60 Z"></path></svg>
+    <section class="brands">
+      <h2>Trusted by Leading Brands</h2>
+      <div class="brands-logos">
+        <img src="https://upload.wikimedia.org/wikipedia/commons/4/44/Microsoft_logo.svg" alt="Microsoft" loading="lazy">
+        <img src="https://upload.wikimedia.org/wikipedia/commons/a/a6/Logo_NIKE.svg" alt="Nike" loading="lazy">
+        <img src="https://upload.wikimedia.org/wikipedia/commons/2/2f/Google_2015_logo.svg" alt="Google" loading="lazy">
+        <img src="https://upload.wikimedia.org/wikipedia/commons/0/08/Netflix_2015_logo.svg" alt="Netflix" loading="lazy">
+        <img src="https://upload.wikimedia.org/wikipedia/commons/5/51/IBM_logo.svg" alt="IBM" loading="lazy">
+      </div>
+    </section>
+    <svg class="wave-divider" viewBox="0 0 1440 60" fill="none" xmlns="http://www.w3.org/2000/svg"><path fill="#6366f1" fill-opacity="0.12" d="M0,30 C360,0 1080,60 1440,30 L1440,60 L0,60 Z"></path></svg>
+    <section class="testimonials">
+      <h2>What Our Users Say</h2>
+      <div class="testimonial">
+        <p>ΓÇ£Alphadome let us launch AI-powered services for every clientΓÇöno dev team needed.ΓÇ¥</p>
+        <span>- Maya, Agency Director</span>
+      </div>
+      <div class="testimonial">
+        <p>ΓÇ£The multi-tenant controls and analytics are a game changer for our enterprise.ΓÇ¥</p>
+        <span>- Alex, CTO</span>
+      </div>
+      <div class="testimonial">
+        <p>ΓÇ£We automated onboarding, support, and marketing in days. The agentic workflows are magic.ΓÇ¥</p>
+        <span>- Priya, Startup Founder</span>
+      </div>
+    </section>
+    <svg class="wave-divider" viewBox="0 0 1440 60" fill="none" xmlns="http://www.w3.org/2000/svg"><path fill="#38bdf8" fill-opacity="0.12" d="M0,30 C360,60 1080,0 1440,30 L1440,60 L0,60 Z"></path></svg>
+    <section class="glass pricing" id="pricing">
+      <h2>Pricing & Plans</h2>
+      <div class="pricing-table">
+        <div class="plan">
+          <h4>Monthly</h4>
+          <p>900 KES/tenant/month</p>
+          <ul>
+            <li>All features</li>
+            <li>Unlimited bots</li>
+            <li>Dashboard access</li>
+          </ul>
+          <a href="#get-started" class="cta-btn" aria-label="Start Monthly">Start Monthly</a>
+        </div>
+        <div class="plan">
+          <h4>One-Time</h4>
+          <p>100 KES/tenant (single payment)</p>
+          <ul>
+            <li>All features</li>
+            <li>Unlimited bots</li>
+            <li>Dashboard access</li>
+          </ul>
+          <a href="#get-started" class="cta-btn" aria-label="Start One-Time">Start One-Time</a>
+        </div>
+        <div class="plan">
+          <h4>Custom</h4>
+          <p>Contact for enterprise pricing</p>
+          <ul>
+            <li>Custom integrations</li>
+            <li>Advanced analytics</li>
+            <li>Priority support</li>
+          </ul>
+          <a href="mailto:info@alphadome.ai" class="cta-btn" aria-label="Contact Sales">Contact Sales</a>
+        </div>
+      </div>
+    </section>
+    <svg class="wave-divider" viewBox="0 0 1440 60" fill="none" xmlns="http://www.w3.org/2000/svg"><path fill="#0ea5e9" fill-opacity="0.12" d="M0,30 C360,60 1080,0 1440,30 L1440,60 L0,60 Z"></path></svg>
+    <section class="faq">
+      <h2>FAQ & Support</h2>
+      <div class="faq-list">
+        <div class="faq-item" onclick="this.classList.toggle('active')">
+          <strong>How do I onboard a new tenant?</strong>
+          <div class="answer">Use the dashboard to add a brand or client, configure their workflows, and launch automation instantly.</div>
+        </div>
+        <div class="faq-item" onclick="this.classList.toggle('active')">
+          <strong>Is my data secure?</strong>
+          <div class="answer">Yes, Alphadome uses per-tenant isolation, encryption, and enterprise-grade security controls.</div>
+        </div>
+        <div class="faq-item" onclick="this.classList.toggle('active')">
+          <strong>Can I customize bots and workflows?</strong>
+          <div class="answer">Absolutely! Each tenant can have unique bots, workflows, and dashboard views.</div>
+        </div>
+        <div class="faq-item" onclick="this.classList.toggle('active')">
+          <strong>How do I get support?</strong>
+          <div class="answer">Contact us via WhatsApp, Email, or Phone. See below for details.</div>
+        </div>
+      </div>
+      <div class="social-icons">
+        <a href="https://wa.me/254117604817" target="_blank" aria-label="WhatsApp"><i class="fab fa-whatsapp"></i></a>
+        <a href="mailto:info@alphadome.ai" aria-label="Email"><i class="fas fa-envelope"></i></a>
+        <a href="tel:+254743780542" aria-label="Phone"><i class="fas fa-phone"></i></a>
+      </div>
+    </section>
+    <section class="glass cta-final" id="get-started">
+      <h2>Get Started with Alphadome</h2>
+      <p>Unlock the power of agentic AI and multi-tenant automation for your business or agency.</p>
+      <a href="mailto:info@alphadome.ai" class="cta-btn cta-large" aria-label="Request a Demo">Request a Demo</a>
+    </section>
+  </main>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.155.0/build/three.min.js"></script>
+  <script>
+    // Simple Three.js 3D animated sphere
+    window.addEventListener('DOMContentLoaded', () => {
+      const container = document.getElementById('hero-3d');
+      if (!container || !window.THREE) return;
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(60, container.offsetWidth/container.offsetHeight, 0.1, 1000);
+      const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+      renderer.setClearColor(0x0f172a, 0); // transparent
+      renderer.setSize(container.offsetWidth, container.offsetHeight);
+      container.appendChild(renderer.domElement);
+      // Lighting
+      const light = new THREE.PointLight(0x38bdf8, 1.2, 100);
+      light.position.set(10, 10, 10);
+      scene.add(light);
+      // Sphere
+      const geometry = new THREE.SphereGeometry(1.5, 64, 64);
+      const material = new THREE.MeshPhysicalMaterial({
+        color: 0x38bdf8,
+        roughness: 0.2,
+        metalness: 0.7,
+        clearcoat: 1,
+        clearcoatRoughness: 0.1,
+        transmission: 0.7,
+        thickness: 0.5,
+        ior: 1.2,
+        reflectivity: 0.8,
+        transparent: true,
+        opacity: 0.95
+      });
+      const sphere = new THREE.Mesh(geometry, material);
+      scene.add(sphere);
+      camera.position.z = 5;
+      // Animation
+      function animate() {
+        requestAnimationFrame(animate);
+        sphere.rotation.y += 0.008;
+        sphere.rotation.x += 0.003;
+        renderer.render(scene, camera);
+      }
+      animate();
+      // Responsive
+      window.addEventListener('resize', () => {
+        renderer.setSize(container.offsetWidth, container.offsetHeight);
+        camera.aspect = container.offsetWidth/container.offsetHeight;
+        camera.updateProjectionMatrix();
+      });
+    });
+  </script>
+  <footer>
+    &copy; 2026 Alphadome. All rights reserved.<br>
+    <div class="social-icons">
+      <a href="https://wa.me/254117604817" target="_blank" aria-label="WhatsApp"><i class="fab fa-whatsapp"></i></a>
+      <a href="mailto:info@alphadome.ai" aria-label="Email"><i class="fas fa-envelope"></i></a>
+      <a href="tel:+254743780542" aria-label="Phone"><i class="fas fa-phone"></i></a>
+    </div>
+    <div style="margin-top:1rem;">
+      <a href="#" style="color:#0ea5e9;">About</a> |
+      <a href="#" style="color:#0ea5e9;">Docs</a> |
+      <a href="#" style="color:#0ea5e9;">Privacy</a> |
+      <a href="#" style="color:#0ea5e9;">Terms</a>
+    </div>
+  </footer>
+  <script>
+    // FAQ accordion
+    document.querySelectorAll('.faq-item').forEach(item => {
+      item.addEventListener('click', () => {
+        item.classList.toggle('active');
+      });
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,100 @@
+{
+  "segmentation_framework": {
+    "highest_priority_verticals": [
+      {
+        "vertical": "ICT & Security Integrators",
+        "why_strong_fit": "Alphadome already has tender/quotation + compliance logic. ICT integrators bid on CCTV, access control, PA systems—all highly manual RFQ processes.",
+        "pain_points": ["4-6 hour quotation prep", "manual compliance checklist", "lost quotes due to delays", "no digital tender tracking"],
+        "system_pitch": "AI Tender & Quotation Operations System for security integrators",
+        "deal_size": "$5K-$25K pilot (3-month engagement)",
+        "decision_maker": "Operations manager or senior sales",
+        "conversion_likelihood": "High (18-22%)"
+      },
+      {
+        "vertical": "Solar EPC Companies",
+        "why_strong_fit": "BOQ generation, site survey scheduling, compliance checklist, proposal automation—all proven in your system.",
+        "pain_points": ["2-4 hour quote turnaround", "site survey coordination manual", "compliance tracking scattered", "proposal generation slow"],
+        "system_pitch": "AI BOQ & Proposal System for solar installers",
+        "deal_size": "$3K-$7.5K pilot",
+        "decision_maker": "Project manager or sales lead",
+        "conversion_likelihood": "High (20-25%)"
+      },
+      {
+        "vertical": "Logistics & Freight Forwarders",
+        "why_strong_fit": "Shipment status automation, exception alerts, customer notifications via WhatsApp—core to Alphadome outreach.",
+        "pain_points": ["manual shipment tracking", "customer satisfaction low", "staff can't handle inquiry volume", "no real-time visibility"],
+        "system_pitch": "AI Shipment Operations & WhatsApp Customer Engagement",
+        "deal_size": "$2K-$7.5K pilot",
+        "decision_maker": "Operations lead or customer service manager",
+        "conversion_likelihood": "High (20-22%)"
+      },
+      {
+        "vertical": "Construction & Equipment Suppliers",
+        "why_strong_fit": "Project estimation, cost tracking, compliance documentation, proposal generation.",
+        "pain_points": ["long quote turnaround", "compliance checklists manual", "cost overruns hard to predict", "no project pipeline visibility"],
+        "system_pitch": "AI Project Operations & Quotation System for construction suppliers",
+        "deal_size": "$5K-$25K pilot",
+        "decision_maker": "Operations director or project manager",
+        "conversion_likelihood": "High (18-20%)"
+      },
+      {
+        "vertical": "Medical & Equipment Distributors",
+        "why_strong_fit": "Catalog management, quotation, compliance (especially for regulated medical supplies), payment recovery.",
+        "pain_points": ["complex catalog", "quote errors", "regulatory compliance burden", "payment collection slow"],
+        "system_pitch": "AI Operations & Quotation System for medical/equipment distribution",
+        "deal_size": "$3K-$15K pilot",
+        "decision_maker": "Sales manager or compliance officer",
+        "conversion_likelihood": "Medium-High (16-20%)"
+      }
+    ],
+    "secondary_verticals": [
+      {
+        "vertical": "General SME / Unknown",
+        "why_strong_fit": "Discovery call required; if WhatsApp usage exists and manual processes dominate, Alphadome is relevant.",
+        "pain_points": "TBD on discovery call",
+        "system_pitch": "Discovery call to understand ops + identify automation opportunity",
+        "deal_size": "$2K-$10K pilot (if qualified)",
+        "decision_maker": "Business owner or operations manager",
+        "conversion_likelihood": "Low-Medium (8-15%)"
+      }
+    ],
+    "scoring_framework": {
+      "high_priority": {
+        "criteria": "Primary vertical OR strong signal from DOCX notes + WhatsApp active + decision-maker reached",
+        "action": "Immediate outreach; target for Week 1-2 calls",
+        "target_response_time": "24-48 hours"
+      },
+      "medium_priority": {
+        "criteria": "Secondary vertical OR unclear fit + WhatsApp available",
+        "action": "Scheduled outreach batch 2 (days 5-10); prepare discovery script",
+        "target_response_time": "48-72 hours"
+      },
+      "low_priority": {
+        "criteria": "No vertical signal + WhatsApp uncertain or international number",
+        "action": "Wave 2 (after Week 1) OR defer to contextual re-engagement",
+        "target_response_time": "Try once; if no response, defer to month 2"
+      }
+    },
+    "expected_pipeline_math": {
+      "starting_contacts": 126,
+      "wave1_outreach_target": 80,
+      "wave1_response_rate_realistic": "35-40%",
+      "wave1_responses_expected": "28-32",
+      "wave1_qualified_rate": "20%",
+      "wave1_qualified_expected": "5-6",
+      "wave1_proposals_target": 3,
+      "wave1_closes_target": 1,
+      "week2_cumulative_calls": "20 strategy calls",
+      "week2_cumulative_proposals": "6",
+      "week2_cumulative_closes": "2"
+    },
+    "contact_grooming_process": {
+      "step1_normalize": "Apply 254XXXXXXXXX format to all numbers",
+      "step2_segment": "Assign vertical based on available DOCX context or phone pattern",
+      "step3_prioritize": "Score high/medium/low based on vertical fit + completeness",
+      "step4_batch": "Divide into daily batches (8-12 per day)",
+      "step5_track": "Log attempt, response, outcome, next action in CSV",
+      "step6_qualify": "Move qualified prospects to proposal/call scheduling"
+    }
+  }
+}

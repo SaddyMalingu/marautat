@@ -43,6 +43,7 @@
   "license": "ISC",
   "dependencies": {
     "@supabase/supabase-js": "^2.76.1",
+    "xlsx": "^0.18.5",
     "autoprefixer": "^10.4.24",
     "axios": "^1.12.2",
     "body-parser": "^2.2.0",
@@ -61,9 +62,7 @@
     "nodemailer": "^8.0.1",
     "openai": "^6.3.0",
     "postcss": "^8.5.6",
-    "replicate": "^1.4.0",
-    "three": "^0.182.0",
-    "xlsx": "^0.18.5"
+    "three": "^0.182.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.10",

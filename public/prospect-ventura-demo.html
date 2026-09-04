@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ventura Prospect Demo - Alphadome</title>
+  <style>
+    :root {
+      --bg: #0b1420;
+      --panel: #132132;
+      --card: #1a2b41;
+      --text: #ecf4ff;
+      --muted: #a7bfd8;
+      --accent: #ff9f1c;
+      --ok: #2dd4bf;
+      --warn: #f59e0b;
+      --bad: #fb7185;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 24px;
+      background: radial-gradient(circle at top right, #1d3557 0%, var(--bg) 40%);
+      color: var(--text);
+      font-family: "Segoe UI", Tahoma, sans-serif;
+    }
+    .wrap { max-width: 1100px; margin: 0 auto; }
+    h1 { margin: 0 0 8px; font-size: 30px; }
+    p { color: var(--muted); margin: 0 0 18px; }
+    .grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 16px; }
+    .card {
+      background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01));
+      border: 1px solid rgba(167,191,216,0.2);
+      border-radius: 12px;
+      padding: 16px;
+    }
+    .card h2 { margin-top: 0; font-size: 18px; }
+    label { display: block; margin: 10px 0 6px; color: var(--muted); font-size: 13px; }
+    input, textarea, select, button {
+      width: 100%;
+      border-radius: 8px;
+      border: 1px solid rgba(167,191,216,0.3);
+      background: #0f1b2a;
+      color: var(--text);
+      padding: 10px;
+      font-size: 14px;
+    }
+    textarea { min-height: 140px; font-family: Consolas, monospace; }
+    button {
+      margin-top: 12px;
+      cursor: pointer;
+      background: linear-gradient(90deg, var(--accent), #ffd166);
+      color: #1b1b1b;
+      border: none;
+      font-weight: 700;
+    }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .pill {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 4px 10px;
+      font-size: 12px;
+      border: 1px solid rgba(167,191,216,0.35);
+    }
+    .ok { color: var(--ok); }
+    .warn { color: var(--warn); }
+    .bad { color: var(--bad); }
+    .mono { font-family: Consolas, monospace; font-size: 12px; white-space: pre-wrap; }
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+    th, td { padding: 8px; text-align: left; border-bottom: 1px solid rgba(167,191,216,0.15); font-size: 12px; }
+    @media (max-width: 920px) { .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Ventura Quote-to-Order Demo</h1>
+    <p>Prospect scaffold for import -> validate -> follow-up -> approve -> order-ready workflow.</p>
+
+    <div class="grid">
+      <div class="card">
+        <h2>1) Import Quote</h2>
+        <label>Customer Name</label>
+        <input id="customerName" value="Atlas Industrial Supplies" />
+
+        <label>Source</label>
+        <input id="source" value="erp_csv_upload" />
+
+        <label>Quote Lines JSON</label>
+        <textarea id="quoteLines">[
+  { "sku": "STEEL-ROD-8MM", "qty": 120, "unit_price": 8.5, "delivery_date": "2026-08-12" },
+  { "sku": "CEMENT-50KG", "qty": 0, "unit_price": 7.2, "delivery_date": "" },
+  { "sku": "", "qty": 30, "unit_price": 4.1 }
+]</textarea>
+
+        <button id="importBtn">Import Quote</button>
+
+        <h2 style="margin-top:18px;">2) Actions</h2>
+        <div class="row">
+          <button id="validateBtn">Validate</button>
+          <button id="approveBtn">Approve</button>
+        </div>
+
+        <div class="row">
+          <select id="channelSel">
+            <option value="whatsapp">whatsapp</option>
+            <option value="email">email</option>
+          </select>
+          <input id="missingFields" value="qty,delivery_date,sku" />
+        </div>
+        <button id="followupBtn">Send Follow-up</button>
+      </div>
+
+      <div class="card">
+        <h2>Current Quote State</h2>
+        <div id="quoteState" class="mono">No quote imported yet.</div>
+
+        <h2 style="margin-top:16px;">Dashboard</h2>
+        <div id="summary"></div>
+        <table>
+          <thead>
+            <tr><th>ID</th><th>Status</th><th>Completeness</th><th>Risk</th></tr>
+          </thead>
+          <tbody id="quoteRows"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let activeQuoteId = null;
+
+    function statusClass(status) {
+      if (["order_ready"].includes(status)) return "ok";
+      if (["needs_review", "followup_sent", "approved_with_exceptions"].includes(status)) return "warn";
+      return "bad";
+    }
+
+    async function refreshDashboard() {
+      const res = await fetch('/api/prospect/ventura/dashboard');
+      const data = await res.json();
+      const s = data.summary || {};
+      document.getElementById('summary').innerHTML = `
+        <div class="pill">Total: ${s.total_quotes || 0}</div>
+        <div class="pill warn">Needs Review: ${s.needs_review || 0}</div>
+        <div class="pill">Follow-up Sent: ${s.followup_sent || 0}</div>
+        <div class="pill ok">Order Ready: ${s.order_ready || 0}</div>
+        <div class="pill">Avg Completeness: ${s.avg_completeness_score || 0}%</div>
+      `;
+
+      const rows = (data.quotes || []).map((q) => `
+        <tr>
+          <td>${q.quote_id.slice(0, 12)}...</td>
+          <td class="${statusClass(q.status)}">${q.status}</td>
+          <td>${q.completeness_score}%</td>
+          <td>${q.risk_level}</td>
+        </tr>
+      `).join('');
+      document.getElementById('quoteRows').innerHTML = rows || '<tr><td colspan="4">No quotes yet</td></tr>';
+    }
+
+    async function loadQuoteState() {
+      if (!activeQuoteId) return;
+      const res = await fetch(`/api/prospect/ventura/quotes/${activeQuoteId}`);
+      const data = await res.json();
+      document.getElementById('quoteState').textContent = JSON.stringify(data, null, 2);
+      await refreshDashboard();
+    }
+
+    async function postJson(url, body) {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body || {}),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Request failed');
+      return data;
+    }
+
+    document.getElementById('importBtn').onclick = async () => {
+      try {
+        const quoteLines = JSON.parse(document.getElementById('quoteLines').value);
+        const payload = {
+          source: document.getElementById('source').value,
+          customer: { name: document.getElementById('customerName').value },
+          quote_lines: quoteLines,
+        };
+        const result = await postJson('/api/prospect/ventura/quotes/import', payload);
+        activeQuoteId = result.quote_id;
+        await loadQuoteState();
+      } catch (err) {
+        alert(err.message);
+      }
+    };
+
+    document.getElementById('validateBtn').onclick = async () => {
+      if (!activeQuoteId) return alert('Import a quote first.');
+      try {
+        await postJson(`/api/prospect/ventura/quotes/${activeQuoteId}/validate`, {});
+        await loadQuoteState();
+      } catch (err) {
+        alert(err.message);
+      }
+    };
+
+    document.getElementById('approveBtn').onclick = async () => {
+      if (!activeQuoteId) return alert('Import a quote first.');
+      try {
+        await postJson(`/api/prospect/ventura/quotes/${activeQuoteId}/approve`, {
+          approver: 'alphadome-demo-operator',
+          notes: 'Demo approval',
+        });
+        await loadQuoteState();
+      } catch (err) {
+        alert(err.message);
+      }
+    };
+
+    document.getElementById('followupBtn').onclick = async () => {
+      if (!activeQuoteId) return alert('Import a quote first.');
+      try {
+        const missing = document.getElementById('missingFields').value
+          .split(',')
+          .map((x) => x.trim())
+          .filter(Boolean);
+        await postJson(`/api/prospect/ventura/quotes/${activeQuoteId}/followup`, {
+          channel: document.getElementById('channelSel').value,
+          missing_fields: missing,
+        });
+        await loadQuoteState();
+      } catch (err) {
+        alert(err.message);
+      }
+    };
+
+    refreshDashboard();
+  </script>
+</body>
+</html>
