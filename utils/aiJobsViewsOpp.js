@@ -1,4 +1,4 @@
-const SITE_URL = process.env.SITE_URL || 'https://alphadome.com';
+const SITE_URL = process.env.SITE_URL || 'https://alphadome.onrender.com';
 
 function renderOpportunityPage(opportunity, referralUrl) {
   const comp = opportunity.compensation_max ? `$${opportunity.compensation_max}${opportunity.compensation_type==='hourly'?'/hr':''}` : 'Not specified';

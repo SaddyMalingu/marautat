@@ -9,7 +9,7 @@ import { Router } from 'express';
 import { getActiveCategories, getOpportunities } from '../utils/aiJobsService.js';
 
 const router = Router();
-const SITE_URL = process.env.SITE_URL || 'https://alphadome.com';
+const SITE_URL = process.env.SITE_URL || 'https://alphadome.onrender.com';
 
 router.get('/sitemap.xml', async (req, res) => {
   try {

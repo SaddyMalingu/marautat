@@ -1,4 +1,4 @@
-const SITE_URL = process.env.SITE_URL || 'https://alphadome.com';
+const SITE_URL = process.env.SITE_URL || 'https://alphadome.onrender.com';
 
 const CATEGORY_KEYWORDS = {
   'software-engineering': { primary: 'software engineering jobs', secondary: ['remote software engineer jobs', 'AI software engineer jobs', 'Python developer jobs'] },
