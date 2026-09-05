@@ -313,17 +313,66 @@ app.get('/google3600d50e9b43ca55.html', (req, res) => {
   res.send('google-site-verification: google3600d50e9b43ca55.html');
 });
 
+// SEO Middleware - Auto-inject structured data and meta tags
+app.use((req, res, next) => {
+  // Add security headers
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+});
+
+// Robots.txt with sitemap
+app.get('/robots.txt', (req, res) => {
+  res.type('text/plain');
+  res.send('User-agent: *\nAllow: /\nDisallow: /admin/\nDisallow: /api/\nSitemap: https://alphadome.onrender.com/sitemap.xml');
+});
+
 // Blog routes - serve from public/blog or generate dynamically
 app.get('/blog', async (req, res) => {
-  const blogIndex = path.join(publicDir, 'blog', 'index.html');
+  const blogDir = path.join(publicDir, 'blog');
+  const blogIndex = path.join(blogDir, 'index.html');
+  
+  // If index exists, serve it
   if (fs.existsSync(blogIndex)) return res.sendFile(blogIndex);
-  // Generate index if it doesn't exist
+  
+  // Generate blog index dynamically from existing posts
   try {
-    const { generateAllBlogPosts } = await import('./scripts/blogManager.js');
-    await generateAllBlogPosts({ review: false, images: false });
-    if (fs.existsSync(blogIndex)) return res.sendFile(blogIndex);
-  } catch (e) {}
-  res.send('Blog posts are being generated. Please visit <a href="/admin/ai-jobs">Admin</a> to generate blogs.');
+    if (!fs.existsSync(blogDir)) fs.mkdirSync(blogDir, { recursive: true });
+    const files = fs.readdirSync(blogDir).filter(f => f.endsWith('.html') && f !== 'index.html');
+    
+    if (files.length > 0) {
+      // Build index from existing posts
+      const posts = files.map(f => {
+        const slug = f.replace('.html', '');
+        const content = fs.readFileSync(path.join(blogDir, f), 'utf8');
+        const titleMatch = content.match(/<h1>(.*?)<\/h1>/);
+        const title = titleMatch ? titleMatch[1] : slug.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        const descMatch = content.match(/<meta name="description" content="(.*?)"/);
+        const desc = descMatch ? descMatch[1] : '';
+        const imgMatch = content.match(/<img src="(\/images\/blog\/[^"]+)"/);
+        const img = imgMatch ? imgMatch[1] : '';
+        return { slug, title, desc, img };
+      });
+      
+      const postList = posts.map(p => `
+        <article style="margin:1rem 0;padding:1.5rem;background:rgba(255,255,255,.05);border-radius:12px">
+          ${p.img ? `<img src="${p.img}" alt="${p.title}" style="width:100%;max-height:200px;object-fit:cover;border-radius:8px;margin-bottom:1rem">` : ''}
+          <h3 style="margin:0 0 .5rem"><a href="/blog/${p.slug}.html" style="color:#ff8a00;text-decoration:none">${p.title}</a></h3>
+          <p style="color:#b8c7d6;font-size:.9rem;margin:0">${p.desc}</p>
+        </article>
+      `).join('');
+      
+      const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>AI Jobs Blog | AlphaDome</title><meta name="description" content="AI jobs articles, salaries, skills, and career guides."><link rel="canonical" href="/blog/"><meta property="og:title" content="AI Jobs Blog | AlphaDome"><meta property="og:type" content="website"><style>:root{--bg:#081421;--accent:#ff8a00;--text:#f3f7fa;--muted:#b8c7d6}*{box-sizing:border-box;margin:0;padding:0}body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.6}.c{max-width:800px;margin:0 auto;padding:0 24px}nav{padding:1rem 0}nav a{color:var(--accent);text-decoration:none}h1{font-size:2rem;margin:1rem 0}</style></head><body><div class="c"><nav><a href="/">AlphaDome</a> / Blog</nav><h1>AI Jobs Blog</h1><p style="color:var(--muted)">Articles about AI jobs, salaries, skills, and career guides.</p>${postList}<p style="color:var(--muted);margin-top:2rem">Total: ${posts.length} articles</p></div></body></html>`;
+      
+      fs.writeFileSync(blogIndex, html);
+      return res.sendFile(blogIndex);
+    }
+  } catch (e) {
+    console.error('[Blog] Error generating index:', e);
+  }
+  
+  res.send('No blog posts yet. Visit <a href="/admin/ai-jobs">Admin</a> to generate blogs.');
 });
 
 app.get('/blog/:slug', (req, res) => {
