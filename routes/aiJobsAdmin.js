@@ -79,9 +79,13 @@ router.get('/admin/ai-jobs/analytics', requireAdmin, async (req, res) => {
 
 router.post('/admin/ai-jobs/generate-blogs', requireAdmin, async (req, res) => {
   try {
-    const { generateBlogPostsForOpportunity, generateAllBlogPosts } = await import('../scripts/blogManager.js');
-    const { opportunityId } = req.body;
-    const result = opportunityId ? await generateBlogPostsForOpportunity(opportunityId) : await generateAllBlogPosts();
+    const { generateBlogPostsForOpportunity, generateAllBlogPosts, reviewBlog, reviewAllBlogs } = await import('../scripts/blogManager.js');
+    const { opportunityId, action, slug } = req.body;
+    let result;
+    if (action === 'review' && slug) result = await reviewBlog(slug);
+    else if (action === 'review') result = await reviewAllBlogs();
+    else if (opportunityId) result = await generateBlogPostsForOpportunity(opportunityId);
+    else result = await generateAllBlogPosts();
     res.json(result);
   } catch (err) {
     console.error('[AI Jobs Admin] Blog generation error:', err);
@@ -136,7 +140,8 @@ async function generateBlogs(id){showProgress(true);setProgress(10);const r=awai
 async function generateAllBlogs(){showProgress(true);setProgress(10);const r=await fetch('/admin/ai-jobs/generate-blogs',{method:'POST',headers:{'Content-Type':'application/json','x-admin-key':AK},body:JSON.stringify({})});setProgress(100);const d=await r.json();alert('Generated '+(d.total||0)+' blog posts');setTimeout(function(){showProgress(false)},2000);loadBlogs()}
 async function reviewAllBlogs(){showProgress(true);setProgress(10);const r=await fetch('/admin/ai-jobs/generate-blogs',{method:'POST',headers:{'Content-Type':'application/json','x-admin-key':AK},body:JSON.stringify({}),review:true});setProgress(100);const d=await r.json();alert('Reviewed '+(d.reviewed||0)+' blog posts');setTimeout(function(){showProgress(false)},2000);loadBlogs()}
 async function loadBlogs(){const r=await fetch('/admin/ai-jobs/blogs',{headers:{'x-admin-key':AK}});const d=await r.json();if(d.blogs){const l=document.getElementById('allBlogsList');l.innerHTML=d.blogs.map(b=>'<div style="background:rgba(255,255,255,.05);padding:1rem;border-radius:8px;margin:.5rem 0"><a href="'+b.url+'" target="_blank" style="color:#ff8a00;font-weight:bold">'+b.title+'</a>'+(b.hasImage?' 🖼️':'')+' <span style="color:#b8c7d6;font-size:.8rem">('+b.slug+')</span> <button onclick="reviewBlog(\''+b.slug+'\')">Review</button></div>').join('')+'<p style="color:#b8c7d6">Total: '+d.blogs.length+' blog posts</p'}}
-async function reviewBlog(slug){if(!confirm('Review and improve this blog post?'))return;showProgress(true);setProgress(10);const r=await fetch('/admin/ai-jobs/generate-blogs',{method:'POST',headers:{'Content-Type':'application/json','x-admin-key':AK},body:JSON.stringify({action:'review',slug:slug})});setProgress(100);const d=await r.json();alert('Reviewed: '+(d.slug||slug));showProgress(false);loadBlogs()}
+async function reviewBlog(slug){if(!confirm('Review and improve: '+slug+'?'))return;showProgress(true);setProgress(10);const r=await fetch('/admin/ai-jobs/generate-blogs',{method:'POST',headers:{'Content-Type':'application/json','x-admin-key':AK},body:JSON.stringify({action:'review',slug:slug})});setProgress(100);const d=await r.json();alert('Reviewed: '+(d.slug||slug));showProgress(false);loadBlogs()}
+async function reviewAllBlogs(){if(!confirm('Review ALL blog posts? This may take a while.'))return;showProgress(true);setProgress(10);const r=await fetch('/admin/ai-jobs/generate-blogs',{method:'POST',headers:{'Content-Type':'application/json','x-admin-key':AK},body:JSON.stringify({action:'review'})});setProgress(100);const d=await r.json();alert('Reviewed: '+(d.reviewed||0)+' blog posts');showProgress(false);loadBlogs()}
 document.getElementById('f').onsubmit=async(e)=>{e.preventDefault();const f=e.target;await fetch('/admin/ai-jobs/opportunities',{method:'POST',headers:{'Content-Type':'application/json','x-admin-key':AK},body:JSON.stringify({title:f.title.value,category_id:f.category_id.value,compensation_max:parseFloat(f.compensation_max.value)||null,description:f.description.value,location_text:f.location_text.value,skills:f.skills.value.split(',').map(s=>s.trim()).filter(Boolean),referral_url:f.referral_url.value||null,status:'draft',slug:f.title.value.toLowerCase().replace(/[^a-z0-9]+/g,'-')})});location.reload()}
 loadBlogs()
 </script></body></html>`;
