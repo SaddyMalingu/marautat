@@ -30,7 +30,7 @@ async function genImage(prompt, slug) {
     if (!t) return null;
     const { default: Replicate } = await import('replicate');
     const rep = new Replicate({ auth: t });
-    const out = await rep.run('google/nanobanana', { input: { prompt: prompt } });
+    const out = await rep.run('google/nano-banana-pro', { input: { prompt: prompt } });
     if (!fs.existsSync(IMG)) fs.mkdirSync(IMG, { recursive: true });
     const axios = (await import('axios')).default;
     const res = await axios.get(out, { responseType: 'arraybuffer' });
@@ -158,4 +158,6 @@ export async function generateAllBlogs(opts) {
 }
 
 if (import.meta.url === 'file://' + process.argv[1]) { var id = process.argv[2], act = process.argv[3]; (act === 'review' ? reviewAllBlogs() : id ? generateBlogPostsForOpportunity(id) : generateAllBlogs()).then(function(r){console.log(JSON.stringify(r));}); }
+
+
 
