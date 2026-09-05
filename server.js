@@ -313,13 +313,23 @@ app.get('/google3600d50e9b43ca55.html', (req, res) => {
   res.send('google-site-verification: google3600d50e9b43ca55.html');
 });
 
-// Blog route
-app.get('/blog', (req, res) => {
-  res.sendFile(path.join(publicDir, 'blog', 'index.html'));
+// Blog routes - serve from public/blog or generate dynamically
+app.get('/blog', async (req, res) => {
+  const blogIndex = path.join(publicDir, 'blog', 'index.html');
+  if (fs.existsSync(blogIndex)) return res.sendFile(blogIndex);
+  // Generate index if it doesn't exist
+  try {
+    const { generateAllBlogPosts } = await import('./scripts/blogManager.js');
+    await generateAllBlogPosts({ review: false, images: false });
+    if (fs.existsSync(blogIndex)) return res.sendFile(blogIndex);
+  } catch (e) {}
+  res.send('Blog posts are being generated. Please visit <a href="/admin/ai-jobs">Admin</a> to generate blogs.');
 });
 
 app.get('/blog/:slug', (req, res) => {
-  res.sendFile(path.join(publicDir, 'blog', req.params.slug + '.html'));
+  const blogFile = path.join(publicDir, 'blog', req.params.slug + '.html');
+  if (fs.existsSync(blogFile)) return res.sendFile(blogFile);
+  res.status(404).send('Blog post not found. Visit <a href="/blog">Blog Index</a>');
 });
 
 // AI Jobs & Mercor Referral Engine routes
