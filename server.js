@@ -376,7 +376,8 @@ app.get('/blog', async (req, res) => {
 });
 
 app.get('/blog/:slug', (req, res) => {
-  const blogFile = path.join(publicDir, 'blog', req.params.slug + '.html');
+  const cleanSlug = req.params.slug.replace(/\.html$/, '');
+  const blogFile = path.join(publicDir, 'blog', cleanSlug + '.html');
   if (fs.existsSync(blogFile)) return res.sendFile(blogFile);
   res.status(404).send('Blog post not found. Visit <a href="/blog">Blog Index</a>');
 });

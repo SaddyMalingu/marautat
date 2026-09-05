@@ -1,9 +1,10 @@
-﻿import { createClient } from '@supabase/supabase-js';
+import { createClient } from '@supabase/supabase-js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-const __f = fileURLToPath(import.meta.url);
-const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_KEY;
+const sb = createClient(supabaseUrl, supabaseKey);
 const SITE = process.env.SITE_URL || 'https://alphadome.onrender.com';
 const BLOG = path.join(process.cwd(), 'public', 'blog');
 const IMG = path.join(process.cwd(), 'public', 'images', 'blog');
@@ -67,6 +68,92 @@ async function reviewContent(content, title, opp) {
   return improved ? cleanContent(improved) : cleanContent(content);
 }
 
+function generateFallbackContent(opp, type) {
+  const title = opp.title || 'AI Specialist';
+  const salary = opp.compensation_max || 75;
+  const skillsList = opp.skills && opp.skills.length > 0 ? opp.skills.join(', ') : 'AI/ML, Python, Prompt Engineering, Evaluation';
+  const year = new Date().getFullYear();
+
+  if (type === 'salary') {
+    const weekly = salary * 40;
+    const monthly = salary * 160;
+    const yearly = salary * 2000;
+    return `
+      <p>As the demand for elite AI and technical talent accelerates in ${year}, the compensation landscape for a <strong>${title}</strong> has become one of the most attractive in the remote knowledge economy. Whether you are transitioning into this discipline or evaluating market opportunities, understanding your commercial valuation is essential.</p>
+      <h2>Market Compensation Overview</h2>
+      <p>The current benchmark for a <strong>${title}</strong> on leading AI talent platforms reaches up to <strong>$${salary} per hour</strong>. Based on standard working arrangements, here is how this compensation scales:</p>
+      <table>
+        <thead>
+          <tr><th>Timeframe</th><th>Estimated Gross Earnings</th><th>Annualized Context</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Hourly Rate</td><td>$${salary}/hr</td><td>Base billable rate</td></tr>
+          <tr><td>Part-Time (20 hrs/wk)</td><td>$${weekly / 2}/wk</td><td>~$${yearly / 2}/year</td></tr>
+          <tr><td>Full-Time (40 hrs/wk)</td><td>$${weekly}/wk</td><td>~$${yearly}/year</td></tr>
+          <tr><td>Monthly Projected</td><td>$${monthly}/month</td><td>Consistent billable allocation</td></tr>
+        </tbody>
+      </table>
+      <h2>Key Factors Driving Higher Rates</h2>
+      <p>Contractors and professionals commanding top-of-bracket rates typically differentiate themselves in three specific areas:</p>
+      <ul>
+        <li><strong>Tooling and Stack Mastery:</strong> Exceptional hands-on capability with ${skillsList}.</li>
+        <li><strong>Verification and Autonomous Execution:</strong> Delivering reliable, audit-ready deliverables with minimal supervision.</li>
+        <li><strong>Domain Synthesis:</strong> Combining technical acuity with practical business understanding to solve high-stakes challenges.</li>
+      </ul>
+      <h2>Maximizing Your Contracting Potential</h2>
+      <p>To capture the upper bound of this salary band, focus on building verifiable proof of work, maintaining transparent communication, and completing platform vetting early. Pre-vetted candidates on modern networks are frequently matched with high-priority assignments ahead of public postings.</p>
+    `;
+  }
+
+  if (type === 'howto') {
+    return `
+      <p>The role of a <strong>${title}</strong> represents a pivotal junction in the modern AI ecosystem. Organizations building next-generation workflows require specialized professionals who can navigate complex technical domains with precision and speed.</p>
+      <h2>What Does a ${title} Do?</h2>
+      <p>In this capacity, you are tasked with architecting solutions, validating intelligent models, and applying rigorous domain standards to production pipelines. Daily responsibilities often center around ${skillsList}, collaborating with distributed engineering teams, and solving non-trivial problems in real time.</p>
+      <h2>Core Roadmap to Qualification</h2>
+      <ol>
+        <li><strong>Master the Foundations:</strong> Solidify your command of core competencies, particularly ${skillsList}.</li>
+        <li><strong>Build a Portfolio of Applied Work:</strong> Create tangible repositories, benchmarks, or case studies demonstrating real-world problem solving.</li>
+        <li><strong>Complete Platform Assessments:</strong> Undergo thorough technical evaluations on discovery platforms like Mercor to verify your domain depth.</li>
+        <li><strong>Maintain Fast Turnarounds:</strong> Build a reputation for clean execution, dependable velocity, and accurate self-direction.</li>
+      </ol>
+      <h2>Earning Potential and Opportunities</h2>
+      <p>With market rates reaching up to <strong>$${salary}/hr</strong>, this career path offers top-tier compensation combined with the autonomy of remote work. Explore active openings and submit your credentials to secure direct matching.</p>
+    `;
+  }
+
+  if (type === 'remote') {
+    return `
+      <p>Remote opportunities for a <strong>${title}</strong> have seen exponential growth over the past year. Organizations worldwide are bypassing geographic borders to source top-tier domain experts capable of delivering high-impact outcomes from anywhere.</p>
+      <h2>The Shift Toward Global Remote AI Talent</h2>
+      <p>Modern remote arrangements for roles like ${title} provide unprecedented flexibility alongside competitive global compensation. Qualified specialists can earn up to <strong>$${salary}/hr</strong>, working on cutting-edge systems without relocation constraints.</p>
+      <h2>Essential Skills for Remote Success</h2>
+      <ul>
+        <li><strong>Asynchronous Communication:</strong> Clear documentation, concise status updates, and structured deliverables.</li>
+        <li><strong>Technical Autonomy:</strong> Deep capability in ${skillsList} without continuous handholding.</li>
+        <li><strong>Self-Directed Quality Assurance:</strong> Delivering production-ready work that passes review on first submission.</li>
+      </ul>
+      <h2>How to Secure High-Paying Remote Roles</h2>
+      <p>Rather than submitting hundreds of cold applications on traditional job boards, forward-thinking specialists leverage specialized discovery networks. Platforms like Mercor directly match qualified candidates with clients based on verified skill assessments.</p>
+    `;
+  }
+
+  return `
+    <p>Success as a <strong>${title}</strong> hinges on a carefully curated blend of specialized technical depth and operational discipline. As AI frameworks evolve, the specific capabilities required to excel in this field continue to rise.</p>
+    <h2>Essential Technical Competencies</h2>
+    <p>Top-earning specialists in this discipline demonstrate mastery across key tools and disciplines, notably <strong>${skillsList}</strong>. Critical proficiencies include:</p>
+    <ul>
+      <li><strong>Architecture & Logic:</strong> Systematic breakdown of technical constraints and rapid prototyping.</li>
+      <li><strong>Domain Precision:</strong> Deep understanding of evaluation criteria, benchmark reliability, and optimization patterns.</li>
+      <li><strong>Integration & Tooling:</strong> Seamless incorporation into modern development stacks, APIs, and automated test harnesses.</li>
+    </ul>
+    <h2>Soft Skills That Command Higher Rates</h2>
+    <p>While technical prowess opens doors, communication and dependability dictate rate growth. Roles paying up to <strong>$${salary}/hr</strong> require proactive risk identification, structured status tracking, and flawless asynchronous collaboration.</p>
+    <h2>Continuous Skill Acceleration</h2>
+    <p>The most effective strategy for maintaining high hourly rates is continuous hands-on experimentation. Regularly evaluate new frameworks, engage with live technical benchmarks, and maintain an active candidate profile on talent networks.</p>
+  `;
+}
+
 // Generate unique content
 async function generateContent(opp, type) {
   const title = opp.title;
@@ -81,7 +168,8 @@ async function generateContent(opp, type) {
   };
   
   const content = await ai(prompts[type] || prompts.salary);
-  return content ? cleanContent(content) : null;
+  if (content) return cleanContent(content);
+  return generateFallbackContent(opp, type);
 }
 
 function buildHTML(post, id) {
@@ -136,9 +224,21 @@ export async function reviewBlog(slug) {
   var file = path.join(BLOG, slug + '.html');
   if (!fs.existsSync(file)) return { error: 'Not found' };
   var content = fs.readFileSync(file, 'utf8');
-  var title = (content.match(/<h1>(.*?)<\/h1>/) || [])[1] || slug;
-  var reviewed = await reviewContent(content, title, { title: slug, compensation_max: 75, skills: ['AI'] });
-  fs.writeFileSync(file, reviewed, 'utf8');
+  var titleMatch = content.match(/<h1>(.*?)<\/h1>/);
+  var title = titleMatch ? titleMatch[1] : slug;
+  var oppIdMatch = content.match(/\/ai-jobs\/apply\/([a-zA-Z0-9_-]+)/);
+  var oppId = oppIdMatch ? oppIdMatch[1] : '';
+  var imgMatch = content.match(/<img src="(\/images\/blog\/[^"]+)"/);
+  var thumb = imgMatch ? imgMatch[1] : null;
+
+  var articleMatch = content.match(/<article>([\s\S]*?)<\/article>/);
+  var body = articleMatch ? articleMatch[1] : content;
+  body = body.replace(/<h1>.*?<\/h1>/, '').replace(/<p style="color:var\(--muted\)[^>]*>.*?<\/p>/, '').replace(/<img[^>]*>/, '');
+
+  var reviewed = await reviewContent(body, title, { title: slug, compensation_max: 75, skills: ['AI'] });
+  if (reviewed) {
+    fs.writeFileSync(file, buildHTML({ title: title, slug: slug, content: reviewed, thumb: thumb }, oppId), 'utf8');
+  }
   return { success: true, slug: slug };
 }
 
@@ -159,8 +259,16 @@ export async function generateAllBlogs(opts) {
   var ops = d.data;
   if (!ops || !ops.length) return { error: 'None' };
   var all = [];
-  for (var i = 0; i < ops.length; i++) { var r = await generateBlogPostsForOpportunity(ops[i].id, opts); if (r.posts) all = all.concat(r.publog); }
+  for (var i = 0; i < ops.length; i++) {
+    var r = await generateBlogPostsForOpportunity(ops[i].id, opts);
+    if (r && r.posts) all = all.concat(r.posts);
+  }
   return { success: true, total: all.length, posts: all };
 }
 
-if (import.meta.url === 'file://' + process.argv[1]) { var id = process.argv[2], act = process.argv[3], slug = process.argv[4]; (act === 'review' ? (slug ? reviewBlog(slug) : reviewAllBlogs()) : id ? generateBlogPostsForOpportunity(id) : generateAllBlogs()).then(function(r){console.log(JSON.stringify(r));}); }
+export const generateAllBlogPosts = generateAllBlogs;
+
+if (import.meta.url === 'file://' + process.argv[1]) {
+  var id = process.argv[2], act = process.argv[3], slug = process.argv[4];
+  (act === 'review' ? (slug ? reviewBlog(slug) : reviewAllBlogs()) : id ? generateBlogPostsForOpportunity(id) : generateAllBlogs()).then(function(r){console.log(JSON.stringify(r));});
+}
