@@ -202,3 +202,4 @@ export async function generateAllBlogs(opts) {
 }
 
 if (import.meta.url === 'file://' + process.argv[1]) { var id = process.argv[2], act = process.argv[3], slug = process.argv[4]; (act === 'review' ? (slug ? reviewBlog(slug) : reviewAllBlogs()) : id ? generateBlogPostsForOpportunity(id) : generateAllBlogs()).then(function(r){console.log(JSON.stringify(r));}); }
+
