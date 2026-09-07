@@ -112,7 +112,7 @@ async function saveToDB(post, id, category) {
   } catch (e) { console.error('[DB] Error:', e.message); }
 }
 
-async function restoreFromDB() {
+export async function restoreFromDB() {
   try {
     if (!fs.existsSync(BLOG)) fs.mkdirSync(BLOG, { recursive: true });
     const { data, error } = await sb.from('blog_posts').select('*').eq('status', 'published');
@@ -202,4 +202,5 @@ export async function generateAllBlogs(opts) {
 }
 
 if (import.meta.url === 'file://' + process.argv[1]) { var id = process.argv[2], act = process.argv[3], slug = process.argv[4]; (act === 'review' ? (slug ? reviewBlog(slug) : reviewAllBlogs()) : id ? generateBlogPostsForOpportunity(id) : generateAllBlogs()).then(function(r){console.log(JSON.stringify(r));}); }
+
 
