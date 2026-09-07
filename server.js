@@ -340,7 +340,7 @@ async function restoreBlogs() {
 }
 restoreBlogs();
 
-// Backup endpoint - call this BEFORE deploying to save existing posts
+// Backup endpoint
 app.get('/admin/backup-blogs', async (req, res) => {
   const key = req.query.key;
   if (key !== process.env.ADMIN_KEY && key !== process.env.ADMIN_PASS) {
@@ -350,6 +350,21 @@ app.get('/admin/backup-blogs', async (req, res) => {
     const { backup } = await import('./scripts/backupBlogs.js');
     const result = await backup();
     res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Restore endpoint - force restore from database
+app.get('/admin/restore-blogs', async (req, res) => {
+  const key = req.query.key;
+  if (key !== process.env.ADMIN_KEY && key !== process.env.ADMIN_PASS) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  try {
+    const { restoreFromDB } = await import('./scripts/blogManager.js');
+    const count = await restoreFromDB();
+    res.json({ success: true, restored: count });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
