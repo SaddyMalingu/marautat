@@ -89,7 +89,28 @@ router.post('/admin/ai-jobs/generate-blogs', requireAdmin, async (req, res) => {
     else result = await generateAllBlogs();
     res.json(result);
   } catch (err) {
-    console.error('[AI Jobs Admin] Blog generation error:', err);
+    console.error('[AI Jobs Admin] Blog error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/admin/ai-jobs/blogs', requireAdmin, async (req, res) => {
+  try {
+    const fs = await import('fs');
+    const path = await import('path');
+    const blogDir = path.join(process.cwd(), 'public', 'blog');
+    if (!fs.existsSync(blogDir)) return res.json({ blogs: [] });
+    const files = fs.readdirSync(blogDir).filter(f => f.endsWith('.html') && f !== 'index.html');
+    const blogs = files.map(f => {
+      const slug = f.replace('.html', '');
+      const content = fs.readFileSync(path.join(blogDir, f), 'utf8');
+      const titleMatch = content.match(/<h1>(.*?)<\/h1>/);
+      const title = titleMatch ? titleMatch[1] : slug;
+      const hasImage = content.includes('/images/blog/');
+      return { slug, title, url: `/blog/${f}`, hasImage, created: fs.statSync(path.join(blogDir, f)).mtime };
+    });
+    res.json({ blogs, total: blogs.length });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });

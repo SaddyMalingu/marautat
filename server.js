@@ -328,6 +328,18 @@ app.get('/robots.txt', (req, res) => {
   res.send('User-agent: *\nAllow: /\nDisallow: /admin/\nDisallow: /api/\nSitemap: https://alphadome.onrender.com/sitemap.xml');
 });
 
+// Restore blog posts from database on startup
+async function restoreBlogs() {
+  try {
+    const { restoreFromDB } = await import('./scripts/blogManager.js');
+    const count = await restoreFromDB();
+    console.log('[Blog] Restored ' + count + ' posts from database');
+  } catch (e) {
+    console.error('[Blog] Restore failed:', e.message);
+  }
+}
+restoreBlogs();
+
 // Blog routes - serve from public/blog or generate dynamically
 app.get('/blog', async (req, res) => {
   const blogDir = path.join(publicDir, 'blog');
