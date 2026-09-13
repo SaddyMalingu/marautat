@@ -36,44 +36,50 @@ function buildHTML(post, id) {
 
 export async function runSmartAutomation(opts = {}) {
   const maxPostsPerRun = opts.max_posts_per_run || 10;
-  console.log('[SMART] Starting intelligent automation...');
-  const { data: jobs } = await sb.from('opportunities').select('id, title, slug').eq('status', 'published').order('created_at', { ascending: false });
-  if (!jobs || !jobs.length) { console.log('[SMART] No published jobs'); return { generated: 0 }; }
-  const { data: existingPosts } = await sb.from('blog_posts').select('opportunity_id, slug').eq('status', 'published');
-  const postsByJob = {};
-  if (existingPosts) { existingPosts.forEach(p => { if (!postsByJob[p.opportunity_id]) postsByJob[p.opportunity_id] = new Set(); postsByJob[p.opportunity_id].add(p.slug); }); }
-  const jobsNeedingContent = jobs.map(job => {
-    const existingSlugs = postsByJob[job.id] || new Set();
-    const journey = getContentJourney(job);
-    const missingPosts = journey.filter(p => !existingSlugs.has(p.slug));
-    return { ...job, existing_count: existingSlugs.size, missing_count: missingPosts.length, missing_posts: missingPosts };
-  }).filter(j => j.missing_count > 0).sort((a, b) => b.missing_count - a.missing_count);
-  console.log('[SMART] ' + jobsNeedingContent.length + ' jobs need content');
-  let totalGenerated = 0;
-  const results = [];
-  for (const job of jobsNeedingContent) {
-    if (totalGenerated >= maxPostsPerRun) break;
-    const toGenerate = Math.min(job.missing_posts.length, maxPostsPerRun - totalGenerated, 2);
-    console.log('[SMART] ' + job.title + ': generating ' + toGenerate + '/' + job.missing_count);
-    let generated = 0;
-    for (let i = 0; i < toGenerate; i++) {
-      const post = job.missing_posts[i];
-      try {
-        const content = await ai(post.prompt);
-        if (!content) continue;
-        const cleaned = clean(content);
-        const html = buildHTML({ title: post.title, slug: post.slug, content: cleaned, thumb: null }, job.id);
-        if (!fs.existsSync(BLOG)) fs.mkdirSync(BLOG, { recursive: true });
-        fs.writeFileSync(path.join(BLOG, post.slug + '.html'), html, 'utf8');
-        await sb.from('blog_posts').upsert({ slug: post.slug, title: post.title, content: cleaned, html_content: html, opportunity_id: job.id, category: post.angle, status: 'published' }, { onConflict: 'slug' });
-        generated++;
-        totalGenerated++;
-      } catch (e) { console.error('[SMART] Error: ' + e.message); }
+  const runType = opts.run_type || 'scheduled';
+  const startTime = new Date();
+  console.log('[SMART] Starting automation (' + runType + ')...');
+  const { data: logEntry } = await sb.from('automation_log').insert({ run_type: runType, status: 'running', started_at: startTime.toISOString() }).select('id').single();
+  const logId = logEntry?.id;
+  try {
+    const { data: jobs } = await sb.from('opportunities').select('id, title, slug').eq('status', 'published').order('created_at', { ascending: false });
+    if (!jobs || !jobs.length) { await sb.from('automation_log').update({ status: 'success', posts_generated: 0, jobs_processed: 0, completed_at: new Date().toISOString() }).eq('id', logId); return { generated: 0, jobs_processed: 0 }; }
+    const { data: existingPosts } = await sb.from('blog_posts').select('opportunity_id, slug').eq('status', 'published');
+    const postsByJob = {};
+    if (existingPosts) { existingPosts.forEach(p => { if (!postsByJob[p.opportunity_id]) postsByJob[p.opportunity_id] = new Set(); postsByJob[p.opportunity_id].add(p.slug); }); }
+    const jobsNeedingContent = jobs.map(job => { const existingSlugs = postsByJob[job.id] || new Set(); const journey = getContentJourney(job); const missingPosts = journey.filter(p => !existingSlugs.has(p.slug)); return { ...job, existing_count: existingSlugs.size, missing_count: missingPosts.length, missing_posts: missingPosts }; }).filter(j => j.missing_count > 0).sort((a, b) => b.missing_count - a.missing_count);
+    console.log('[SMART] ' + jobsNeedingContent.length + ' jobs need content');
+    let totalGenerated = 0;
+    const details = [];
+    for (const job of jobsNeedingContent) {
+      if (totalGenerated >= maxPostsPerRun) break;
+      const toGenerate = Math.min(job.missing_posts.length, maxPostsPerRun - totalGenerated, 2);
+      console.log('[SMART] ' + job.title + ': generating ' + toGenerate + '/' + job.missing_count);
+      let generated = 0;
+      for (let i = 0; i < toGenerate; i++) {
+        const post = job.missing_posts[i];
+        try {
+          const content = await ai(post.prompt);
+          if (!content) continue;
+          const cleaned = clean(content);
+          const html = buildHTML({ title: post.title, slug: post.slug, content: cleaned, thumb: null }, job.id);
+          if (!fs.existsSync(BLOG)) fs.mkdirSync(BLOG, { recursive: true });
+          fs.writeFileSync(path.join(BLOG, post.slug + '.html'), html, 'utf8');
+          await sb.from('blog_posts').upsert({ slug: post.slug, title: post.title, content: cleaned, html_content: html, opportunity_id: job.id, category: post.angle, status: 'published' }, { onConflict: 'slug' });
+          generated++;
+          totalGenerated++;
+        } catch (e) { console.error('[SMART] Error: ' + e.message); }
+      }
+      details.push({ job: job.title, generated });
     }
-    results.push({ job: job.title, generated });
+    await sb.from('automation_log').update({ status: 'success', posts_generated: totalGenerated, jobs_processed: details.length, details: JSON.stringify(details), completed_at: new Date().toISOString() }).eq('id', logId);
+    console.log('[SMART] Complete: ' + totalGenerated + ' posts generated');
+    return { success: true, generated: totalGenerated, jobs_processed: details.length, details };
+  } catch (e) {
+    await sb.from('automation_log').update({ status: 'failed', completed_at: new Date().toISOString() }).eq('id', logId);
+    console.error('[SMART] Failed: ' + e.message);
+    return { success: false, error: e.message };
   }
-  console.log('[SMART] Complete: ' + totalGenerated + ' posts generated');
-  return { generated: totalGenerated, jobs_processed: results.length, details: results };
 }
 
-if (import.meta.url === 'file://' + process.argv[1]) { runSmartAutomation().then(r => console.log(JSON.stringify(r))).catch(console.error); }
+if (import.meta.url === 'file://' + process.argv[1]) { runSmartAutomation({ run_type: 'manual' }).then(r => console.log(JSON.stringify(r))).catch(console.error); }

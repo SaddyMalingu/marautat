@@ -26,11 +26,28 @@ router.get('/admin/ai-jobs', requireAdmin, async (req, res) => {
     const oppsRes = await supabase.from('opportunities').select('*, category:opportunity_categories(name)').order('created_at', { ascending: false }).limit(50);
     const analytics = await getAnalyticsSummary({ days: 30 });
     
+    // Get automation stats
+    const { data: automationRuns } = await supabase.from('automation_log')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(5);
+    
+    const { data: automationStats } = await supabase.from('automation_log')
+      .select('posts_generated, jobs_processed')
+      .gte('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString());
+    
+    const weeklyPosts = automationStats?.reduce((sum, r) => sum + (r.posts_generated || 0), 0) || 0;
+    const weeklyJobs = automationStats?.reduce((sum, r) => sum + (r.jobs_processed || 0), 0) || 0;
+    
     if (catsRes.error) console.error('[AI Jobs Admin] Categories error:', catsRes.error);
     if (oppsRes.error) console.error('[AI Jobs Admin] Opportunities error:', oppsRes.error);
     
     const adminKey = req.query.key || req.headers['x-admin-key'] || process.env.ADMIN_KEY || process.env.ADMIN_PASS || '';
-    res.send(renderAdminDashboard(catsRes.data || [], oppsRes.data || [], analytics, adminKey));
+    res.send(renderAdminDashboard(catsRes.data || [], oppsRes.data || [], analytics, adminKey, {
+      recentRuns: automationRuns || [],
+      weeklyPosts,
+      weeklyJobs
+    }));
   } catch (err) {
     console.error('[AI Jobs Admin] Dashboard error:', err);
     res.status(500).send('Error loading dashboard: ' + err.message);
@@ -136,8 +153,11 @@ router.get('/admin/ai-jobs/blogs', requireAdmin, async (req, res) => {
   }
 });
 
-function renderAdminDashboard(categories, opportunities, analytics, adminKey) {
+function renderAdminDashboard(categories, opportunities, analytics, adminKey, automationStats = {}) {
   const ak = adminKey || process.env.ADMIN_KEY || process.env.ADMIN_PASS || '';
+  const recentRuns = automationStats.recentRuns || [];
+  const weeklyPosts = automationStats.weeklyPosts || 0;
+  const weeklyJobs = automationStats.weeklyJobs || 0;
   const catsOptions = categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
   const oppsRows = opportunities.map(o => {
     const safeTitle = (o.title || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -215,6 +235,24 @@ function renderAdminDashboard(categories, opportunities, analytics, adminKey) {
     <div class="stat"><div class="sv">${analytics?.total_clicks||0}</div><div class="stat-label">Clicks</div></div>
     <div class="stat"><div class="sv">${analytics?.overall_ctr||0}%</div><div class="stat-label">CTR</div></div>
     <div class="stat"><div class="sv">${opportunities.length}</div><div class="stat-label">Jobs</div></div>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="sv">${weeklyPosts}</div><div class="stat-label">Posts This Week</div></div>
+    <div class="stat"><div class="sv">${weeklyJobs}</div><div class="stat-label">Jobs Processed</div></div>
+    <div class="stat"><div class="sv">${recentRuns.length}</div><div class="stat-label">Total Runs</div></div>
+    <div class="stat"><div class="sv">${recentRuns.filter(r => r.status === 'success').length}</div><div class="stat-label">Successful</div></div>
+  </div>
+
+  <div class="card">
+    <h2>Recent Automation Runs</h2>
+    ${recentRuns.length > 0 ? recentRuns.map(r => `
+      <div style="display:flex;justify-content:space-between;padding:.5rem 0;border-bottom:1px solid rgba(255,255,255,.1)">
+        <span style="color:var(--text);font-size:.9rem">${new Date(r.created_at).toLocaleDateString()} ${new Date(r.created_at).toLocaleTimeString()}</span>
+        <span style="color:var(--muted);font-size:.9rem">${r.run_type} · ${r.posts_generated || 0} posts · ${r.jobs_processed || 0} jobs</span>
+        <span style="color:${r.status === 'success' ? '#7ef9c8' : r.status === 'failed' ? '#ff6464' : '#ff8a00'};font-size:.9rem;text-transform:capitalize">${r.status}</span>
+      </div>
+    `).join('') : '<p style="color:var(--muted)">No automation runs yet.</p>'}
   </div>
 
   <div class="card">
