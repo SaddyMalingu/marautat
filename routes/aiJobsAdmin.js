@@ -395,4 +395,16 @@ loadBlogs();
 </script></body></html>`;
 }
 
+// Analytics endpoint
+router.get('/admin/ai-jobs/analytics', requireAdmin, async (req, res) => {
+  try {
+    const { getAnalyticsSummary } = await import('../utils/analytics.js');
+    const days = parseInt(req.query.days) || 30;
+    const summary = await getAnalyticsSummary(days);
+    res.json(summary);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;

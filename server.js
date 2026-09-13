@@ -372,6 +372,11 @@ app.get('/admin/restore-blogs', async (req, res) => {
 
 // Blog routes - serve from public/blog or generate dynamically
 app.get('/blog', async (req, res) => {
+  // Track page view (non-blocking)
+  try {
+    const { trackPageView } = await import('./utils/analytics.js');
+    trackPageView('/blog', req);
+  } catch (e) {}
   const blogDir = path.join(publicDir, 'blog');
   const blogIndex = path.join(blogDir, 'index.html');
   
@@ -417,9 +422,16 @@ app.get('/blog', async (req, res) => {
   res.send('No blog posts yet. Visit <a href="/admin/ai-jobs">Admin</a> to generate blogs.');
 });
 
-app.get('/blog/:slug', (req, res) => {
+app.get('/blog/:slug', async (req, res) => {
   const cleanSlug = req.params.slug.replace(/\.html$/, '');
   const blogFile = path.join(publicDir, 'blog', cleanSlug + '.html');
+  
+  // Track page view (non-blocking)
+  try {
+    const { trackPageView } = await import('./utils/analytics.js');
+    trackPageView('/blog/' + cleanSlug, req);
+  } catch (e) {}
+  
   if (fs.existsSync(blogFile)) return res.sendFile(blogFile);
   res.status(404).send('Blog post not found. Visit <a href="/blog">Blog Index</a>');
 });
