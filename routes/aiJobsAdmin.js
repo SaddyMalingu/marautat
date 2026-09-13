@@ -158,8 +158,102 @@ function renderAdminDashboard(categories, opportunities, analytics, adminKey) {
   }).join('');
 
   const publishedOpps = JSON.stringify(opportunities.filter(o => o.status === 'published').map(o => ({ id: o.id, title: o.title })));
+  
+  const analyticsRows = analytics?.top_pages ? analytics.top_pages.slice(0, 10).map(p => `
+    <div style="display:flex;justify-content:space-between;padding:.5rem 0;border-bottom:1px solid rgba(255,255,255,.1)">
+      <span style="color:var(--text);font-size:.9rem;word-break:break-all">${p.path}</span>
+      <span style="color:var(--accent);font-weight:bold;white-space:nowrap;margin-left:1rem">${p.views} views · ${p.ctr}% CTR</span>
+    </div>
+  `).join('') : '<p style="color:var(--muted)">No analytics data yet. Start tracking by visiting blog posts.</p>';
 
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>AI Jobs Admin</title><style>body{font-family:system-ui,sans-serif;margin:0;padding:20px;background:#081421;color:#f3f7fa}h1,h2{color:#ff8a00}.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1rem;margin:1rem 0}.stat{background:rgba(255,255,255,.05);padding:1rem;border-radius:8px;text-align:center}.sv{font-size:2rem;font-weight:bold;color:#ff8a00}table{width:100%;border-collapse:collapse;margin:1rem 0}th,td{padding:.75rem;text-align:left;border-bottom:1px solid rgba(255,255,255,.1)}th{color:#ff8a00}.s-published{color:#7ef9c8}.s-draft{color:#b8c7d6}.s-closed{color:#ff6464}form{background:rgba(255,255,255,.05);padding:1rem;border-radius:8px;margin:1rem 0}input,select,textarea{width:100%;padding:.5rem;margin:.5rem 0;background:rgba(0,0,0,.3);border:1px solid rgba(255,255,255,.2);color:#f3f7fa;border-radius:4px}button{background:#ff8a00;color:#000;border:none;padding:.5rem 1rem;border-radius:4px;cursor:pointer;margin:.25rem}#progressBar{display:none;margin:1rem 0;padding:1rem;background:rgba(255,255,255,.05);border-radius:8px}#progressFill{height:8px;width:0%;background:#ff8a00;border-radius:4px;transition:width .3s}#blogLinks{display:none;margin:1rem 0;padding:1rem;background:rgba(255,255,255,.05);border-radius:8px}#blogLinks a{display:block;color:#ff8a00;padding:.25rem 0}</style></head><body><h1>AI Jobs Admin</h1><div class="stats"><div class="stat"><div class="sv">${analytics?.opportunity_views||0}</div><div>Views</div></div><div class="stat"><div class="sv">${analytics?.apply_clicks||0}</div><div>Clicks</div></div><div class="stat"><div class="sv">${opportunities.length}</div><div>Total</div></div></div><div style="margin:1rem 0"><button onclick="generateAllBlogs()">Generate All Blog Posts</button> <button onclick="reviewAllBlogs()">Review All Blog Posts</button></div><h2>Create Opportunity</h2><form id="f"><input name="title" placeholder="Title" required><select name="category_id" required><option value="">Category</option>${catsOptions}</select><input type="number" name="compensation_max" placeholder="Max USD/hr"><textarea name="description" placeholder="Description" rows="3"></textarea><input name="location_text" placeholder="Location"><input name="skills" placeholder="Skills (comma-separated)"><input name="referral_url" placeholder="Referral URL (optional)"><button type="submit">Create</button></form><h2>Opportunities</h2><table><thead><tr><th>Title</th><th>Category</th><th>Status</th><th>Pay</th><th>Actions</th></tr></thead><tbody>${oppsRows}</tbody></table><div id="progressBar"><h3 id="progressTitle">Generating Blog Posts...</h3><div style="background:rgba(255,255,255,.1);border-radius:4px"><div id="progressFill"></div></div></div><div id="blogLinks"><h3>Generated Blog Posts</h3><div id="blogLinksList"></div></div><h2 style="margin-top:2rem">All Blog Posts</h2><button onclick="loadBlogs()">Refresh Blog List</button> <button onclick="reviewAllBlogs()">Review All Blogs</button><div id="allBlogsList" style="margin-top:1rem"></div><script>
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>AI Jobs Admin</title><style>
+    :root{--bg:#081421;--accent:#ff8a00;--text:#f3f7fa;--muted:#b8c7d6;--card:rgba(255,255,255,.05)}
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);line-height:1.6;padding:1rem}
+    h1,h2{color:var(--accent);margin:1rem 0}
+    h1{font-size:1.8rem}
+    h2{font-size:1.3rem;margin-top:2rem}
+    .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:.75rem;margin:1rem 0}
+    .stat{background:var(--card);padding:1rem;border-radius:8px;text-align:center}
+    .sv{font-size:1.8rem;font-weight:bold;color:var(--accent)}
+    .stat-label{font-size:.8rem;color:var(--muted)}
+    .card{background:var(--card);padding:1rem;border-radius:8px;margin:1rem 0}
+    table{width:100%;border-collapse:collapse;margin:1rem 0;display:block;overflow-x:auto;white-space:nowrap}
+    th,td{padding:.6rem;text-align:left;border-bottom:1px solid rgba(255,255,255,.1);font-size:.9rem}
+    th{color:var(--accent);position:sticky;top:0;background:var(--bg)}
+    .s-published{color:#7ef9c8}
+    .s-draft{color:#b8c7d6}
+    .s-closed{color:#ff6464}
+    form{background:var(--card);padding:1rem;border-radius:8px;margin:1rem 0}
+    input,select,textarea{width:100%;padding:.6rem;margin:.4rem 0;background:rgba(0,0,0,.3);border:1px solid rgba(255,255,255,.2);color:var(--text);border-radius:4px;font-size:16px}
+    button{background:var(--accent);color:#000;border:none;padding:.6rem 1rem;border-radius:4px;cursor:pointer;margin:.2rem;font-weight:600;min-height:44px}
+    button:hover{opacity:.9}
+    .btn-group{display:flex;flex-wrap:wrap;gap:.5rem;margin:1rem 0}
+    #progressBar{display:none;margin:1rem 0;padding:1rem;background:var(--card);border-radius:8px}
+    #progressFill{height:8px;width:0%;background:var(--accent);border-radius:4px;transition:width .3s}
+    .hidden{display:none}
+    .mobile-stack{display:flex;flex-direction:column;gap:.5rem}
+    @media(max-width:600px){
+      body{padding:.5rem}
+      h1{font-size:1.4rem}
+      .stats{grid-template-columns:1fr 1fr}
+      table{font-size:.8rem}
+      th,td{padding:.4rem}
+      .btn-stack{flex-direction:column}
+      button{width:100%;margin:.2rem 0}
+      .op-actions{display:flex;flex-direction:column;gap:.3rem}
+      .op-actions button{width:100%;margin:0}
+    }
+    @media(min-width:601px){
+      .op-actions{display:flex;gap:.3rem;flex-wrap:wrap}
+    }
+  </style></head><body>
+  <h1>AI Jobs Admin</h1>
+  
+  <div class="stats">
+    <div class="stat"><div class="sv">${analytics?.total_views||0}</div><div class="stat-label">Page Views</div></div>
+    <div class="stat"><div class="sv">${analytics?.total_clicks||0}</div><div class="stat-label">Clicks</div></div>
+    <div class="stat"><div class="sv">${analytics?.overall_ctr||0}%</div><div class="stat-label">CTR</div></div>
+    <div class="stat"><div class="sv">${opportunities.length}</div><div class="stat-label">Jobs</div></div>
+  </div>
+
+  <div class="card">
+    <h2>Top Performing Pages</h2>
+    ${analyticsRows}
+  </div>
+
+  <div class="btn-group">
+    <button onclick="generateAllBlogs()">Generate All Blog Posts</button>
+    <button onclick="reviewAllBlogs()">Review All Blog Posts</button>
+    <button onclick="loadBlogs()">Refresh Blog List</button>
+  </div>
+
+  <h2>Create Opportunity</h2>
+  <form id="f">
+    <input name="title" placeholder="Job Title" required>
+    <select name="category_id" required><option value="">Select Category</option>${catsOptions}</select>
+    <input type="number" name="compensation_max" placeholder="Max USD/hr">
+    <textarea name="description" placeholder="Job Description" rows="3"></textarea>
+    <input name="location_text" placeholder="Location (e.g., Remote)">
+    <input name="skills" placeholder="Skills (comma-separated)">
+    <input name="referral_url" placeholder="Referral URL (optional)">
+    <button type="submit">Create Opportunity</button>
+  </form>
+
+  <h2>Opportunities</h2>
+  <table>
+    <thead><tr><th>Title</th><th>Category</th><th>Status</th><th>Pay</th><th>Actions</th></tr></thead>
+    <tbody>${oppsRows}</tbody>
+  </table>
+
+  <div id="progressBar"><h3 id="progressTitle">Generating...</h3><div style="background:rgba(255,255,255,.1);border-radius:4px"><div id="progressFill"></div></div></div>
+  
+  <div class="card hidden" id="blogLinks"><h3>Generated Blog Posts</h3><div id="blogLinksList"></div></div>
+  
+  <h2>All Blog Posts</h2>
+  <div id="allBlogsList">Loading...</div>
+
+  <script>
 const AK = '${ak}';
 
 function showProgress(show) {
