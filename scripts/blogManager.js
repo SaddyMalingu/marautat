@@ -10,6 +10,23 @@ const BLOG = path.join(process.cwd(), 'public', 'blog');
 const IMG = path.join(process.cwd(), 'public', 'images', 'blog');
 const VM = '<meta name="google-site-verification" content="nQc8r4A_tjZX4469pNlpTR5hf7bfjEazZtITnrrHZUU">';
 
+
+export async function restoreFromDB() {
+  try {
+    if (!fs.existsSync(BLOG)) fs.mkdirSync(BLOG, { recursive: true });
+    const { data, error } = await sb.from('blog_posts').select('*').eq('status', 'published');
+    if (error) { console.error('[DB] Restore error:', error.message); return 0; }
+    if (!data || !data.length) { console.log('[DB] No posts to restore'); return 0; }
+    for (const post of data) {
+      if (post.html_content) {
+        fs.writeFileSync(path.join(BLOG, post.slug + '.html'), post.html_content, 'utf8');
+      }
+    }
+    console.log('[DB] Restored ' + data.length + ' posts');
+    return data.length;
+  } catch (e) { console.error('[DB] Restore error:', e.message); return 0; }
+}
+
 function clean(c) {
   if (!c) return c;
   return c
@@ -104,6 +121,7 @@ export async function generateBlogPostsForOpportunity(oppId, opts) {
   console.log('[GEN] Done: ' + res.length + ' posts');
   return { success: true, posts: res };
 }
+
 
 
 
