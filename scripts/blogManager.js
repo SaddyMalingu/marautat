@@ -126,3 +126,20 @@ export async function generateBlogPostsForOpportunity(oppId, opts) {
 
 
 
+
+async function reviewContent(content, title) {
+  try {
+    const k = process.env.HF_API_KEY || process.env.HF_API_KEY_WRITERS_FLOW;
+    if (!k) return content;
+    const axios = (await import('axios')).default;
+    const prompt = `Review and improve this blog post. Remove ALL asterisks, markdown formatting, and AI patterns. Fix inconsistencies. Make it read like a professional human-written educational article. Ensure proper HTML structure with h2, h3, p, ul, li tags. Content:\n\n` + content;
+    const r = await axios.post('https://router.huggingface.co/v1/chat/completions', {
+      model: 'meta-llama/Llama-3.1-8B-Instruct:novita',
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 2500,
+      temperature: 0.7
+    }, { headers: { Authorization: `Bearer ${k}` }, timeout: 90000 });
+    const improved = r.data?.choices?.[0]?.message?.content;
+    return improved || content;
+  } catch (e) { return content; }
+}
