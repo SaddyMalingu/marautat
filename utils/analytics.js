@@ -5,20 +5,69 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY
 );
 
+// Get location from IP (free, no API key needed)
+async function getLocation(ip) {
+  try {
+    if (!ip || ip === 'unknown' || ip.startsWith('127.') || ip.startsWith('192.168.') || ip.startsWith('10.')) {
+      return { country: 'local', region: 'local', city: 'local' };
+    }
+    const axios = (await import('axios')).default;
+    const res = await axios.get(`http://ip-api.com/json/${ip}?fields=status,country,regionName,city`, { timeout: 3000 });
+    if (res.data?.status === 'success') {
+      return {
+        country: res.data.country || 'unknown',
+        region: res.data.regionName || 'unknown',
+        city: res.data.city || 'unknown'
+      };
+    }
+  } catch (e) {}
+  return { country: 'unknown', region: 'unknown', city: 'unknown' };
+}
+
 // Track page view
 export async function trackPageView(pagePath, req) {
   try {
+    const ip = req.ip || req.connection?.remoteAddress || 'unknown';
+    const location = await getLocation(ip);
+    
     const { error } = await supabase.from('analytics_page_views').insert({
       page_path: pagePath,
       referrer: req.get('Referrer') || req.headers.referer || 'direct',
       user_agent: req.get('User-Agent') || 'unknown',
-      ip_hash: hashIp(req.ip || req.connection?.remoteAddress || 'unknown'),
+      ip_hash: hashIp(ip),
+      country: location.country,
+      region: location.region,
+      city: location.city,
       session_id: req.query.session_id || req.headers['x-session-id'] || null,
       created_at: new Date().toISOString()
     });
     if (error && error.code !== '42P01') console.error('[Analytics] Page view error:', error.message);
   } catch (e) {
     // Silently fail - analytics should never break the app
+  }
+}
+
+// Track click
+export async function trackClick(pagePath, clickType, req) {
+  try {
+    const ip = req.ip || req.connection?.remoteAddress || 'unknown';
+    const location = await getLocation(ip);
+    
+    const { error } = await supabase.from('analytics_clicks').insert({
+      page_path: pagePath,
+      click_type: clickType || 'mercor_link',
+      referrer: req.get('Referrer') || req.headers.referer || 'direct',
+      user_agent: req.get('User-Agent') || 'unknown',
+      ip_hash: hashIp(ip),
+      country: location.country,
+      region: location.region,
+      city: location.city,
+      session_id: req.query.session_id || req.headers['x-session-id'] || null,
+      created_at: new Date().toISOString()
+    });
+    if (error && error.code !== '42P01') console.error('[Analytics] Click error:', error.message);
+  } catch (e) {
+    // Silently fail
   }
 }
 
@@ -46,10 +95,10 @@ export async function getAnalyticsSummary(days = 30) {
     const since = new Date();
     since.setDate(since.getDate() - days);
     
-    // Get page views
+    // Get page views with location
     const { data: views } = await supabase
       .from('analytics_page_views')
-      .select('page_path')
+      .select('page_path, country, region, city')
       .gte('created_at', since.toISOString());
     
     // Get clicks
@@ -87,16 +136,31 @@ export async function getAnalyticsSummary(days = 30) {
       .map(([path, stats]) => ({ path, ...stats }))
       .sort((a, b) => b.views - a.views);
     
+    // Aggregate by country
+    const countryStats = {};
+    if (views) {
+      views.forEach(v => {
+        const country = v.country || 'unknown';
+        countryStats[country] = (countryStats[country] || 0) + 1;
+      });
+    }
+    
+    // Sort countries by views
+    const sortedCountries = Object.entries(countryStats)
+      .map(([country, views]) => ({ country, views }))
+      .sort((a, b) => b.views - a.views);
+    
     return {
       total_views: views?.length || 0,
       total_clicks: clicks?.length || 0,
       overall_ctr: views?.length > 0 ? (((clicks?.length || 0) / views.length) * 100).toFixed(1) : 0,
       top_pages: sortedPages.slice(0, 20),
+      top_countries: sortedCountries.slice(0, 10),
       period_days: days
     };
   } catch (e) {
     console.error('[Analytics] Summary error:', e.message);
-    return { total_views: 0, total_clicks: 0, overall_ctr: 0, top_pages: [], period_days: days };
+    return { total_views: 0, total_clicks: 0, overall_ctr: 0, top_pages: [], top_countries: [], period_days: days };
   }
 }
 
