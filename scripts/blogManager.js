@@ -1,4 +1,4 @@
-﻿import { createClient } from '@supabase/supabase-js';
+import { createClient } from '@supabase/supabase-js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -192,3 +192,148 @@ function updateIndex() {
   const list = posts.map(function(p){return '<article style="margin:1rem 0;padding:1.5rem;background:rgba(255,255,255,.05);border-radius:12px"><h3 style="margin:0 0 .5rem"><a href="/blog/'+p.slug+'.html" style="color:#ff8a00;text-decoration:none">'+p.title+'</a></h3><a href="/blog/'+p.slug+'.html" style="color:#b8c7d6;font-size:.9rem">Read more</a></article>';}).join("");
   fs.writeFileSync(path.join(BLOG,"index.html"),'<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>AI Jobs Blog | AlphaDome</title><meta name="description" content="AI jobs articles."><link rel="canonical" href="/blog/"><style>:root{--bg:#081421;--accent:#ff8a00;--text:#f3f7fa;--muted:#b8c7d6}*{box-sizing:border-box;margin:0;padding:0}body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.6}.c{max-width:800px;margin:0 auto;padding:0 24px}nav{padding:1rem 0}nav a{color:var(--accent);text-decoration:none}h1{font-size:2rem;margin:1rem 0}</style></head><body><div class="c"><nav><a href="/">AlphaDome</a> / Blog</nav><h1>AI Jobs Blog</h1><p style="color:var(--muted)">Expert career guides.</p>'+list+'<p style="color:var(--muted);margin-top:2rem">'+posts.length+' articles</p></div></body></html>',"utf8");
 }
+
+export async function generateAllBlogs(opts = {}) {
+  try {
+    const { data: opps, error } = await sb
+      .from('opportunities')
+      .select('id, title')
+      .eq('status', 'published');
+
+    if (error) {
+      console.error('[GEN ALL] Error fetching opportunities:', error.message);
+      return { error: error.message };
+    }
+
+    if (!opps || !opps.length) {
+      console.log('[GEN ALL] No published opportunities found');
+      return { success: true, posts: [], message: 'No published opportunities found' };
+    }
+
+    console.log(`[GEN ALL] Processing ${opps.length} published opportunities...`);
+    const allPosts = [];
+    for (const opp of opps) {
+      try {
+        const res = await generateBlogPostsForOpportunity(opp.id, opts);
+        if (res && res.posts) {
+          allPosts.push(...res.posts);
+        }
+      } catch (err) {
+        console.error(`[GEN ALL] Error generating for opp ${opp.id}:`, err.message);
+      }
+    }
+
+    updateIndex();
+    return { success: true, posts: allPosts, total: allPosts.length };
+  } catch (err) {
+    console.error('[GEN ALL] Fatal error:', err.message);
+    return { error: err.message };
+  }
+}
+
+export async function reviewBlog(slug) {
+  try {
+    if (!slug) return { error: 'Slug is required' };
+    const cleanSlug = slug.replace(/\.html$/, '');
+
+    if (!fs.existsSync(BLOG)) fs.mkdirSync(BLOG, { recursive: true });
+    const filePath = path.join(BLOG, `${cleanSlug}.html`);
+
+    let htmlContent = '';
+    let title = cleanSlug.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    let oppId = null;
+    let thumb = null;
+    let category = 'general';
+
+    // Check DB first
+    const { data: dbPost } = await sb.from('blog_posts').select('*').eq('slug', cleanSlug).maybeSingle();
+    if (dbPost) {
+      title = dbPost.title || title;
+      htmlContent = dbPost.html_content || '';
+      oppId = dbPost.opportunity_id;
+      thumb = dbPost.thumbnail_url;
+      category = dbPost.category || 'general';
+    }
+
+    // Fall back to file if no DB content
+    if (!htmlContent && fs.existsSync(filePath)) {
+      htmlContent = fs.readFileSync(filePath, 'utf8');
+    }
+
+    if (!htmlContent && !dbPost?.content) {
+      return { error: `Blog post ${cleanSlug} not found` };
+    }
+
+    const titleMatch = htmlContent.match(/<h1>(.*?)<\/h1>/);
+    if (titleMatch) title = titleMatch[1];
+
+    let rawContent = dbPost?.content;
+    if (!rawContent && htmlContent) {
+      const artMatch = htmlContent.match(/<article>([\s\S]*?)<\/article>/);
+      rawContent = artMatch ? artMatch[1] : htmlContent;
+    }
+
+    rawContent = clean(rawContent);
+    if (!rawContent || !String(rawContent).trim()) {
+      return { error: 'No reviewable content found for ' + cleanSlug };
+    }
+    const improved = await reviewContent(rawContent, title);
+    const cleanedImproved = clean(improved) || rawContent;
+
+    const postData = {
+      title,
+      slug: cleanSlug,
+      content: cleanedImproved,
+      thumb: thumb || (htmlContent.match(/<img src="(\/images\/blog\/[^"]+)"/)?.[1] || null)
+    };
+
+    const newHtml = buildHTML(postData, oppId);
+
+    fs.writeFileSync(filePath, newHtml, 'utf8');
+    await saveToDB(postData, oppId, category);
+    updateIndex();
+
+    console.log(`[REVIEW] Successfully reviewed: ${cleanSlug}`);
+    return { success: true, slug: cleanSlug, title };
+  } catch (err) {
+    console.error(`[REVIEW] Error reviewing ${slug}:`, err.message);
+    return { error: err.message };
+  }
+}
+
+export async function reviewAllBlogs() {
+  try {
+    if (!fs.existsSync(BLOG)) fs.mkdirSync(BLOG, { recursive: true });
+
+    let slugs = [];
+    const { data: posts } = await sb.from('blog_posts').select('slug').eq('status', 'published');
+    if (posts && posts.length > 0) {
+      slugs = posts.map(p => p.slug);
+    } else {
+      const files = fs.readdirSync(BLOG).filter(f => f.endsWith('.html') && f !== 'index.html');
+      slugs = files.map(f => f.replace('.html', ''));
+    }
+
+    if (!slugs.length) {
+      return { success: true, reviewed: 0, message: 'No blog posts to review' };
+    }
+
+    console.log(`[REVIEW ALL] Reviewing ${slugs.length} blog posts...`);
+    let reviewed = 0;
+    for (const slug of slugs) {
+      try {
+        const res = await reviewBlog(slug);
+        if (res && res.success) reviewed++;
+      } catch (e) {
+        console.error(`[REVIEW ALL] Error for ${slug}:`, e.message);
+      }
+    }
+
+    updateIndex();
+    return { success: true, reviewed, total: slugs.length };
+  } catch (err) {
+    console.error('[REVIEW ALL] Error:', err.message);
+    return { error: err.message };
+  }
+}
+
