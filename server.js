@@ -305,6 +305,27 @@ app.get('/admin/api/slo-board', adminAuth, async (req, res) => {
 
 // Serve static files from public directory
 const publicDir = path.join(process.cwd(), 'public');
+
+// Track blog page views that are served straight from disk.
+// express.static below answers /blog/<slug>.html before the /blog/:slug route
+// runs, so without this hook those views would never reach analytics.
+// Non-blocking and exception-safe: it can never affect the response.
+app.use((req, res, next) => {
+  try {
+    if (req.method === 'GET' && !req.__pvTracked) {
+      const reqPath = req.path || '';
+      if (reqPath.startsWith('/blog/') && reqPath.endsWith('.html')) {
+        req.__pvTracked = true;
+        const trackedPath = reqPath.replace(/\.html$/, '');
+        import('./utils/analytics.js')
+          .then(({ trackPageView }) => trackPageView(trackedPath, req))
+          .catch(() => {});
+      }
+    }
+  } catch (e) {}
+  next();
+});
+
 app.use(express.static(publicDir, { index: false }));
 
 // Google Search Console verification
@@ -371,7 +392,7 @@ app.get('/admin/restore-blogs', async (req, res) => {
 });
 
 // Blog routes - serve from public/blog or generate dynamically
-app.get('/blog', async (req, res) => {
+app.get(['/blog', '/blog/'], async (req, res) => {
   // Track page view (non-blocking)
   try {
     const { trackPageView } = await import('./utils/analytics.js');
@@ -426,11 +447,14 @@ app.get('/blog/:slug', async (req, res) => {
   const cleanSlug = req.params.slug.replace(/\.html$/, '');
   const blogFile = path.join(publicDir, 'blog', cleanSlug + '.html');
   
-  // Track page view (non-blocking)
-  try {
-    const { trackPageView } = await import('./utils/analytics.js');
-    trackPageView('/blog/' + cleanSlug, req);
-  } catch (e) {}
+  // Track page view (non-blocking). Skipped when the static hook above already
+  // recorded this view, so a page is only ever counted once.
+  if (!req.__pvTracked) {
+    try {
+      const { trackPageView } = await import('./utils/analytics.js');
+      trackPageView('/blog/' + cleanSlug, req);
+    } catch (e) {}
+  }
   
   if (fs.existsSync(blogFile)) return res.sendFile(blogFile);
   res.status(404).send('Blog post not found. Visit <a href="/blog">Blog Index</a>');

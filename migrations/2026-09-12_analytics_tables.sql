@@ -26,6 +26,15 @@ CREATE TABLE IF NOT EXISTS public.analytics_clicks (
   created_at timestamp with time zone DEFAULT now()
 );
 
+-- Add geolocation columns if not already present
+ALTER TABLE public.analytics_page_views ADD COLUMN IF NOT EXISTS country text;
+ALTER TABLE public.analytics_page_views ADD COLUMN IF NOT EXISTS region text;
+ALTER TABLE public.analytics_page_views ADD COLUMN IF NOT EXISTS city text;
+
+ALTER TABLE public.analytics_clicks ADD COLUMN IF NOT EXISTS country text;
+ALTER TABLE public.analytics_clicks ADD COLUMN IF NOT EXISTS region text;
+ALTER TABLE public.analytics_clicks ADD COLUMN IF NOT EXISTS city text;
+
 -- Indexes for fast queries
 CREATE INDEX IF NOT EXISTS idx_analytics_views_page ON public.analytics_page_views(page_path);
 CREATE INDEX IF NOT EXISTS idx_analytics_views_created ON public.analytics_page_views(created_at);

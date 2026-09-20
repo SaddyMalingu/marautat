@@ -24,27 +24,103 @@ router.get('/admin/ai-jobs', requireAdmin, async (req, res) => {
   try {
     const catsRes = await supabase.from('opportunity_categories').select('*').order('display_order');
     const oppsRes = await supabase.from('opportunities').select('*, category:opportunity_categories(name)').order('created_at', { ascending: false }).limit(50);
-    const analytics = await getAnalyticsSummary({ days: 30 });
     
-    // Get automation stats
-    const { data: automationRuns } = await supabase.from('automation_log')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(5);
+    // Get combined analytics
+    let analytics = { total_views: 0, total_clicks: 0, overall_ctr: 0, top_pages: [] };
+    try {
+      const oppEventsSummary = await getAnalyticsSummary({ days: 30 });
+      const { getAnalyticsSummary: getPageAnalytics } = await import('../utils/analytics.js');
+      const pageSummary = await getPageAnalytics(30);
+
+      const oppViews = (oppEventsSummary?.page_views || 0) + (oppEventsSummary?.category_views || 0) + (oppEventsSummary?.opportunity_views || 0);
+      const oppClicks = (oppEventsSummary?.apply_clicks || 0) + (oppEventsSummary?.referral_clicks || 0);
+      const totalViews = (pageSummary?.total_views || 0) + oppViews;
+      const totalClicks = (pageSummary?.total_clicks || 0) + oppClicks;
+      const rawCtr = totalViews > 0 ? ((totalClicks / totalViews) * 100) : parseFloat(pageSummary?.overall_ctr || '0');
+      const overallCtr = Math.min(rawCtr, 100).toFixed(1);
+
+      analytics = {
+        ...oppEventsSummary,
+        ...pageSummary,
+        total_views: totalViews,
+        total_clicks: totalClicks,
+        overall_ctr: overallCtr,
+        top_pages: pageSummary?.top_pages?.length ? pageSummary.top_pages : []
+      };
+    } catch (anErr) {
+      console.error('[AI Jobs Admin] Analytics fetch error:', anErr.message);
+    }
     
-    const { data: automationStats } = await supabase.from('automation_log')
-      .select('posts_generated, jobs_processed')
-      .gte('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString());
-    
-    const weeklyPosts = automationStats?.reduce((sum, r) => sum + (r.posts_generated || 0), 0) || 0;
-    const weeklyJobs = automationStats?.reduce((sum, r) => sum + (r.jobs_processed || 0), 0) || 0;
+    // Detect automation_log schema once (cached per process) so we query the
+    // date column that actually exists instead of relying on error-message text
+    if (!globalThis.__automationLogColumns) {
+      try {
+        const probe = await supabase.from('automation_log').select('*').limit(1);
+        if (probe.data?.[0]) {
+          globalThis.__automationLogColumns = new Set(Object.keys(probe.data[0]));
+        } else if (probe.error && /created_at/.test(probe.error.message || '')) {
+          // Table is empty but PostgREST complained about created_at → it doesn't exist
+          globalThis.__automationLogColumns = new Set(['started_at']);
+        } else if (probe.error && /started_at/.test(probe.error.message || '')) {
+          globalThis.__automationLogColumns = new Set(['created_at']);
+        } else {
+          // Empty table, no error: both orderings valid in PostgREST; prefer started_at
+          globalThis.__automationLogColumns = new Set(['started_at', 'created_at']);
+        }
+      } catch (e) {
+        globalThis.__automationLogColumns = new Set(['started_at']);
+      }
+    }
+    const automationLogColumns = globalThis.__automationLogColumns;
+
+    // Get automation stats (support both started_at and created_at columns)
+    let automationRuns = [];
+    let weeklyPosts = 0;
+    let weeklyJobs = 0;
+    try {
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      const useStartedAt = automationLogColumns.has('started_at');
+      const dateCol = useStartedAt ? 'started_at' : 'created_at';
+      let runsRes = await supabase.from('automation_log')
+        .select('*')
+        .order(dateCol, { ascending: false })
+        .limit(5);
+
+      if (runsRes.error && runsRes.error.code !== '42P01') {
+        // Error message text varies (column may be quoted differently); try the other date column
+        const altCol = dateCol === 'started_at' ? 'created_at' : 'started_at';
+        const altRes = await supabase.from('automation_log')
+          .select('*')
+          .order(altCol, { ascending: false })
+          .limit(5);
+        if (!altRes.error) runsRes = altRes;
+      }
+      automationRuns = runsRes.data || [];
+
+      let statsRes = await supabase.from('automation_log')
+        .select('posts_generated, jobs_processed')
+        .gte(dateCol, sevenDaysAgo);
+
+      if (statsRes.error && statsRes.error.code !== '42P01') {
+        const altCol = dateCol === 'started_at' ? 'created_at' : 'started_at';
+        const altRes = await supabase.from('automation_log')
+          .select('posts_generated, jobs_processed')
+          .gte(altCol, sevenDaysAgo);
+        if (!altRes.error) statsRes = altRes;
+      }
+
+      weeklyPosts = statsRes.data?.reduce((sum, r) => sum + (r.posts_generated || 0), 0) || 0;
+      weeklyJobs = statsRes.data?.reduce((sum, r) => sum + (r.jobs_processed || 0), 0) || 0;
+    } catch (autoErr) {
+      console.warn('[AI Jobs Admin] Automation log query error:', autoErr.message);
+    }
     
     if (catsRes.error) console.error('[AI Jobs Admin] Categories error:', catsRes.error);
     if (oppsRes.error) console.error('[AI Jobs Admin] Opportunities error:', oppsRes.error);
     
     const adminKey = req.query.key || req.headers['x-admin-key'] || process.env.ADMIN_KEY || process.env.ADMIN_PASS || '';
     res.send(renderAdminDashboard(catsRes.data || [], oppsRes.data || [], analytics, adminKey, {
-      recentRuns: automationRuns || [],
+      recentRuns: automationRuns,
       weeklyPosts,
       weeklyJobs
     }));
@@ -89,7 +165,30 @@ router.delete('/admin/ai-jobs/opportunities/:id', requireAdmin, async (req, res)
 router.get('/admin/ai-jobs/analytics', requireAdmin, async (req, res) => {
   try {
     const days = parseInt(req.query.days) || 30;
-    res.json(await getAnalyticsSummary({ days }));
+    const oppSummary = await getAnalyticsSummary({ days });
+    let pageSummary = {};
+    try {
+      const { getAnalyticsSummary: getPageSummary } = await import('../utils/analytics.js');
+      pageSummary = await getPageSummary(days);
+    } catch (e) {}
+
+    const oppViews = (oppSummary?.page_views || 0) + (oppSummary?.category_views || 0) + (oppSummary?.opportunity_views || 0);
+    const oppClicks = (oppSummary?.apply_clicks || 0) + (oppSummary?.referral_clicks || 0);
+    const totalViews = (pageSummary?.total_views || 0) + oppViews;
+    const totalClicks = (pageSummary?.total_clicks || 0) + oppClicks;
+    const rawCtr = totalViews > 0 ? ((totalClicks / totalViews) * 100) : parseFloat(pageSummary?.overall_ctr || '0');
+    const overallCtr = Math.min(rawCtr, 100).toFixed(1);
+
+    res.json({
+      ...oppSummary,
+      ...pageSummary,
+      total_views: totalViews,
+      total_clicks: totalClicks,
+      overall_ctr: overallCtr,
+      top_pages: pageSummary?.top_pages || [],
+      top_countries: pageSummary?.top_countries || [],
+      period_days: days
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -97,7 +196,14 @@ router.get('/admin/ai-jobs/analytics', requireAdmin, async (req, res) => {
 
 router.post('/admin/ai-jobs/generate-blogs', requireAdmin, async (req, res) => {
   try {
-    const { generateBlogPostsForOpportunity, generateAllBlogs, reviewBlog, reviewAllBlogs } = await import('../scripts/blogManager.js');
+    const blogManager = await import('../scripts/blogManager.js');
+    const { generateBlogPostsForOpportunity, generateAllBlogs, reviewBlog, reviewAllBlogs } = blogManager;
+    const missing = ['generateBlogPostsForOpportunity', 'generateAllBlogs', 'reviewBlog', 'reviewAllBlogs']
+      .filter(fn => typeof blogManager[fn] !== 'function');
+    if (missing.length) {
+      console.error('[AI Jobs Admin] blogManager missing exports:', missing.join(', '));
+      return res.status(500).json({ error: 'blogManager missing exports: ' + missing.join(', ') });
+    }
     const { opportunityId, action, slug } = req.body;
     let result;
     if (action === 'review' && slug) result = await reviewBlog(slug);
@@ -116,37 +222,34 @@ router.get('/admin/ai-jobs/blogs', requireAdmin, async (req, res) => {
     const fs = await import('fs');
     const path = await import('path');
     const blogDir = path.join(process.cwd(), 'public', 'blog');
-    if (!fs.existsSync(blogDir)) return res.json({ blogs: [] });
-    const files = fs.readdirSync(blogDir).filter(f => f.endsWith('.html') && f !== 'index.html');
-    const blogs = files.map(f => {
-      const slug = f.replace('.html', '');
-      const content = fs.readFileSync(path.join(blogDir, f), 'utf8');
-      const titleMatch = content.match(/<h1>(.*?)<\/h1>/);
-      const title = titleMatch ? titleMatch[1] : slug;
-      const hasImage = content.includes('/images/blog/');
-      return { slug, title, url: `/blog/${f}`, hasImage, created: fs.statSync(path.join(blogDir, f)).mtime };
-    });
-    res.json({ blogs, total: blogs.length });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+    
+    let blogs = [];
+    if (fs.existsSync(blogDir)) {
+      const files = fs.readdirSync(blogDir).filter(f => f.endsWith('.html') && f !== 'index.html');
+      blogs = files.map(f => {
+        const slug = f.replace('.html', '');
+        const content = fs.readFileSync(path.join(blogDir, f), 'utf8');
+        const titleMatch = content.match(/<h1>(.*?)<\/h1>/);
+        const title = titleMatch ? titleMatch[1] : slug;
+        const hasImage = content.includes('/images/blog/');
+        return { slug, title, url: `/blog/${f}`, hasImage, created: fs.statSync(path.join(blogDir, f)).mtime };
+      });
+    }
 
-router.get('/admin/ai-jobs/blogs', requireAdmin, async (req, res) => {
-  try {
-    const fs = await import('fs');
-    const path = await import('path');
-    const blogDir = path.join(process.cwd(), 'public', 'blog');
-    if (!fs.existsSync(blogDir)) return res.json({ blogs: [] });
-    const files = fs.readdirSync(blogDir).filter(f => f.endsWith('.html') && f !== 'index.html');
-    const blogs = files.map(f => {
-      const slug = f.replace('.html', '');
-      const content = fs.readFileSync(path.join(blogDir, f), 'utf8');
-      const titleMatch = content.match(/<h1>(.*?)<\/h1>/);
-      const title = titleMatch ? titleMatch[1] : slug;
-      const hasImage = content.includes('/images/blog/');
-      return { slug, title, url: `/blog/${f}`, hasImage, created: fs.statSync(path.join(blogDir, f)).mtime };
-    });
+    // If disk has 0 posts, query Supabase database as fallback
+    if (blogs.length === 0) {
+      const { data: dbPosts } = await supabase.from('blog_posts').select('slug, title, thumbnail_url, created_at').eq('status', 'published');
+      if (dbPosts && dbPosts.length > 0) {
+        blogs = dbPosts.map(p => ({
+          slug: p.slug,
+          title: p.title || p.slug,
+          url: `/blog/${p.slug}.html`,
+          hasImage: Boolean(p.thumbnail_url),
+          created: p.created_at
+        }));
+      }
+    }
+
     res.json({ blogs, total: blogs.length });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -246,13 +349,15 @@ function renderAdminDashboard(categories, opportunities, analytics, adminKey, au
 
   <div class="card">
     <h2>Recent Automation Runs</h2>
-    ${recentRuns.length > 0 ? recentRuns.map(r => `
+    ${recentRuns.length > 0 ? recentRuns.map(r => {
+      const runDate = r.started_at || r.created_at || new Date().toISOString();
+      return `
       <div style="display:flex;justify-content:space-between;padding:.5rem 0;border-bottom:1px solid rgba(255,255,255,.1)">
-        <span style="color:var(--text);font-size:.9rem">${new Date(r.created_at).toLocaleDateString()} ${new Date(r.created_at).toLocaleTimeString()}</span>
+        <span style="color:var(--text);font-size:.9rem">${new Date(runDate).toLocaleDateString()} ${new Date(runDate).toLocaleTimeString()}</span>
         <span style="color:var(--muted);font-size:.9rem">${r.run_type} · ${r.posts_generated || 0} posts · ${r.jobs_processed || 0} jobs</span>
         <span style="color:${r.status === 'success' ? '#7ef9c8' : r.status === 'failed' ? '#ff6464' : '#ff8a00'};font-size:.9rem;text-transform:capitalize">${r.status}</span>
       </div>
-    `).join('') : '<p style="color:var(--muted)">No automation runs yet.</p>'}
+    `}).join('') : '<p style="color:var(--muted)">No automation runs yet.</p>'}
   </div>
 
   <div class="card">
@@ -483,7 +588,7 @@ async function loadBlogs() {
             (b.hasImage ? ' 🖼️' : '') +
             ' <span style="color:#b8c7d6;font-size:.8rem">(' + cleanSlug + ')</span>' +
           '</div>' +
-          '<button onclick="reviewBlog(\\\'' + cleanSlug + '\\\')">Review</button>' +
+          '<button data-slug="' + cleanSlug + '" onclick="reviewBlog(this.getAttribute(\'data-slug\'))">Review</button>' +
         '</div>';
       }).join('') + '<p style="color:#b8c7d6">Total: ' + d.blogs.length + ' blog posts</p>';
     } else {
@@ -526,17 +631,5 @@ document.getElementById('f').onsubmit = async function(e) {
 loadBlogs();
 </script></body></html>`;
 }
-
-// Analytics endpoint
-router.get('/admin/ai-jobs/analytics', requireAdmin, async (req, res) => {
-  try {
-    const { getAnalyticsSummary } = await import('../utils/analytics.js');
-    const days = parseInt(req.query.days) || 30;
-    const summary = await getAnalyticsSummary(days);
-    res.json(summary);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
 
 export default router;

@@ -11,10 +11,13 @@ CREATE TABLE IF NOT EXISTS public.automation_log (
   status text DEFAULT 'success', -- 'success', 'partial', 'failed'
   details jsonb DEFAULT '{}'::jsonb,
   started_at timestamp with time zone DEFAULT now(),
-  completed_at timestamp with time zone
+  completed_at timestamp with time zone,
+  created_at timestamp with time zone DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_automation_log_created ON public.automation_log(created_at DESC);
+ALTER TABLE public.automation_log ADD COLUMN IF NOT EXISTS created_at timestamp with time zone DEFAULT now();
+
+CREATE INDEX IF NOT EXISTS idx_automation_log_created ON public.automation_log(started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_automation_log_status ON public.automation_log(status);
 
 ALTER TABLE public.automation_log ENABLE ROW LEVEL SECURITY;
