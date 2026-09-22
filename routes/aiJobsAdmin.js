@@ -602,35 +602,38 @@ async function loadBlogs() {
   }
 }
 
-document.getElementById('f').onsubmit = async function(e) {
-  e.preventDefault();
-  const f = e.target;
-  try {
-    const payload = {
-      title: f.title.value,
-      category_id: f.category_id.value,
-      compensation_max: parseFloat(f.compensation_max.value) || null,
-      description: f.description.value,
-      location_text: f.location_text.value,
-      skills: f.skills.value.split(',').map(function(s) { return s.trim(); }).filter(Boolean),
-      referral_url: f.referral_url.value || null,
-      status: 'draft',
-      slug: f.title.value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
-    };
-    const res = await fetch('/admin/ai-jobs/opportunities?key=' + encodeURIComponent(AK), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-admin-key': AK },
-      body: JSON.stringify(payload)
-    });
-    if (!res.ok) throw new Error('Create failed');
-    location.reload();
-  } catch (err) {
-    alert('Error creating opportunity: ' + err.message);
+  const form = document.getElementById('f');
+  if (form) {
+  form.onsubmit = async function(e) {
+    e.preventDefault();
+    const f = e.target;
+    try {
+      const payload = {
+        title: f.title.value,
+        category_id: f.category_id.value,
+        compensation_max: parseFloat(f.compensation_max.value) || null,
+        description: f.description.value,
+        location_text: f.location_text.value,
+        skills: f.skills.value.split(',').map(function(s) { return s.trim(); }).filter(Boolean),
+        referral_url: f.referral_url.value || null,
+        status: 'draft',
+        slug: f.title.value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+      };
+      const res = await fetch('/admin/ai-jobs/opportunities?key=' + encodeURIComponent(AK), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-key': AK },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) throw new Error('Create failed');
+      location.reload();
+    } catch (err) {
+      alert('Error creating opportunity: ' + err.message);
+    }
+  };
   }
-};
 
-loadBlogs();
-</script></body></html>`;
+  if (typeof loadBlogs === 'function') { try { loadBlogs(); } catch (e) { console.error('loadBlogs error:', e); } }
+  </script></body></html>`;
 }
 
 export default router;

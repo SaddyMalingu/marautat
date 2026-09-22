@@ -54,8 +54,9 @@ const browserJS = src.slice(src.indexOf('<script>') + 8, htmlEnd);
 for (const fn of ['generateAllBlogs', 'generateBlogs', 'reviewBlog', 'reviewAllBlogs', 'loadBlogs', 'updateStatus', 'deleteOpp']) {
   check('handler defined and reachable: ' + fn, browserJS.includes('function ' + fn + '('));
 }
-check('form submit handler bound', browserJS.includes("getElementById('f').onsubmit"));
-check('blog list auto-loads on page open', browserJS.includes('loadBlogs();'));
+check('form submit handler bound to #f', browserJS.includes("getElementById('f')") && browserJS.includes('.onsubmit'));
+check('blog list auto-loads on page open (guarded)', browserJS.includes('loadBlogs();'));
+check('form binding is null-safe (form may render after script)', browserJS.includes("getElementById('f')") && browserJS.includes('if (form)'));
 check('no reviewBlog call passes a quote-unsafe raw slug', !src.includes("reviewBlog('\" +"));
 check('server-side IDs are JS-string-escaped', src.includes('const jsStr = s => JSON.stringify'));
 check('route still renders Page Views card', src.includes('Page Views'));
