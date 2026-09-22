@@ -257,10 +257,11 @@ router.get('/admin/ai-jobs/blogs', requireAdmin, async (req, res) => {
 });
 
 function renderAdminDashboard(categories, opportunities, analytics, adminKey, automationStats = {}) {
-  const ak = adminKey || process.env.ADMIN_KEY || process.env.ADMIN_PASS || '';
+  const ak = String(adminKey || process.env.ADMIN_KEY || process.env.ADMIN_PASS || '').replace(/[<>"'&]/g, '');
   const recentRuns = automationStats.recentRuns || [];
   const weeklyPosts = automationStats.weeklyPosts || 0;
   const weeklyJobs = automationStats.weeklyJobs || 0;
+  const jsStr = s => JSON.stringify(String(s ?? ''));
   const catsOptions = categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
   const oppsRows = opportunities.map(o => {
     const safeTitle = (o.title || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -272,15 +273,15 @@ function renderAdminDashboard(categories, opportunities, analytics, adminKey, au
       <td><span class="s-${o.status}">${o.status}</span></td>
       <td>$${o.compensation_max || '-'}</td>
       <td>
-        ${o.status !== 'published' ? `<button onclick="updateStatus('${o.id}','published')">Publish</button>` : ''}
-        <button onclick="generateBlogs('${o.id}')">Generate Blogs</button>
-        <button onclick="deleteOpp('${o.id}')">Delete</button>
+        ${o.status !== 'published' ? `<button onclick="updateStatus(${jsStr(o.id)},'published')">Publish</button>` : ''}
+        <button onclick="generateBlogs(${jsStr(o.id)})">Generate Blogs</button>
+        <button onclick="deleteOpp(${jsStr(o.id)})">Delete</button>
       </td>
     </tr>
   `;
   }).join('');
 
-  const publishedOpps = JSON.stringify(opportunities.filter(o => o.status === 'published').map(o => ({ id: o.id, title: o.title })));
+  const publishedOpps = JSON.stringify(opportunities.filter(o => o.status === 'published').map(o => ({ id: o.id, title: o.title }))).replace(/</g, '\\u003c');
   
   const analyticsRows = analytics?.top_pages ? analytics.top_pages.slice(0, 10).map(p => `
     <div style="display:flex;justify-content:space-between;padding:.5rem 0;border-bottom:1px solid rgba(255,255,255,.1)">

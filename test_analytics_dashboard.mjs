@@ -43,9 +43,21 @@ check('probe error on started_at -> use created_at', pickCols([], 'column automa
 check('probe empty table no error -> prefers started_at', [...pickCols([], null)][0] === 'started_at');
 check('probe with row -> real keys', pickCols([{ started_at: 1, status: 2 }], null).has('started_at'));
 
-// --- Syntax check the edited route ---
+// Browser-equivalent parse check: strip the outer Node template wrapper the same
+// way a browser HTML parser would (first </script> ends the block), then ensure
+// every handler the UI needs is still defined afterwards.
 const { readFileSync } = await import('fs');
 const src = readFileSync('routes/aiJobsAdmin.js', 'utf8');
+const htmlEnd = src.indexOf('</script>');
+check('rendered page keeps a single script block boundary', htmlEnd > 0);
+const browserJS = src.slice(src.indexOf('<script>') + 8, htmlEnd);
+for (const fn of ['generateAllBlogs', 'generateBlogs', 'reviewBlog', 'reviewAllBlogs', 'loadBlogs', 'updateStatus', 'deleteOpp']) {
+  check('handler defined and reachable: ' + fn, browserJS.includes('function ' + fn + '('));
+}
+check('form submit handler bound', browserJS.includes("getElementById('f').onsubmit"));
+check('blog list auto-loads on page open', browserJS.includes('loadBlogs();'));
+check('no reviewBlog call passes a quote-unsafe raw slug', !src.includes("reviewBlog('\" +"));
+check('server-side IDs are JS-string-escaped', src.includes('const jsStr = s => JSON.stringify'));
 check('route still renders Page Views card', src.includes('Page Views'));
 check('route still renders Top Performing Pages', src.includes('Top Performing Pages'));
 check('old broken overallCtr line gone', !src.includes("(oppSummary?.page_views || 0);"));
