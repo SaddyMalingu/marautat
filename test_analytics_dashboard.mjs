@@ -58,6 +58,8 @@ check('form submit handler bound to #f', browserJS.includes("getElementById('f')
 check('blog list auto-loads on page open (guarded)', browserJS.includes('loadBlogs();'));
 check('form binding is null-safe (form may render after script)', browserJS.includes("getElementById('f')") && browserJS.includes('if (form)'));
 check('no reviewBlog call passes a quote-unsafe raw slug', !src.includes("reviewBlog('\" +"));
+check('review buttons use dataset.slug (no quote nesting)', src.includes('reviewBlog(this.dataset.slug)'));
+check('no backslash-escaped quotes inside onclick strings', !src.includes("getAttribute(\\'"));
 check('server-side IDs are JS-string-escaped', src.includes('const jsStr = s => JSON.stringify'));
 check('route still renders Page Views card', src.includes('Page Views'));
 check('route still renders Top Performing Pages', src.includes('Top Performing Pages'));

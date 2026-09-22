@@ -589,7 +589,7 @@ async function loadBlogs() {
             (b.hasImage ? ' 🖼️' : '') +
             ' <span style="color:#b8c7d6;font-size:.8rem">(' + cleanSlug + ')</span>' +
           '</div>' +
-          '<button data-slug="' + cleanSlug + '" onclick="reviewBlog(this.getAttribute(\'data-slug\'))">Review</button>' +
+          '<button data-slug="' + cleanSlug + '" onclick="reviewBlog(this.dataset.slug)">Review</button>' +
         '</div>';
       }).join('') + '<p style="color:#b8c7d6">Total: ' + d.blogs.length + ' blog posts</p>';
     } else {
