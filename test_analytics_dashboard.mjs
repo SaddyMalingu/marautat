@@ -60,7 +60,8 @@ check('form binding is null-safe (form may render after script)', browserJS.incl
 check('no reviewBlog call passes a quote-unsafe raw slug', !src.includes("reviewBlog('\" +"));
 check('review buttons use dataset.slug (no quote nesting)', src.includes('reviewBlog(this.dataset.slug)'));
 check('no backslash-escaped quotes inside onclick strings', !src.includes("getAttribute(\\'"));
-check('server-side IDs are JS-string-escaped', src.includes('const jsStr = s => JSON.stringify'));
+check('opportunity buttons use data-opp (no quoted payload inside onclick)', src.includes('data-opp="${escAttr(o.id)}"') && src.includes('generateBlogs(this.dataset.opp)') && src.includes("updateStatus(this.dataset.opp,'published')") && src.includes('deleteOpp(this.dataset.opp)'));
+check('no JSON double-quoted payload inside any onclick', !src.includes('onclick="generateBlogs(${') && !src.includes('onclick="deleteOpp(${') && !src.includes('onclick="updateStatus(${'));
 check('route still renders Page Views card', src.includes('Page Views'));
 check('route still renders Top Performing Pages', src.includes('Top Performing Pages'));
 check('old broken overallCtr line gone', !src.includes("(oppSummary?.page_views || 0);"));

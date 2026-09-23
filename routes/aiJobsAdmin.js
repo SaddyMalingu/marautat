@@ -261,7 +261,7 @@ function renderAdminDashboard(categories, opportunities, analytics, adminKey, au
   const recentRuns = automationStats.recentRuns || [];
   const weeklyPosts = automationStats.weeklyPosts || 0;
   const weeklyJobs = automationStats.weeklyJobs || 0;
-  const jsStr = s => JSON.stringify(String(s ?? ''));
+  const escAttr = s => String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   const catsOptions = categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
   const oppsRows = opportunities.map(o => {
     const safeTitle = (o.title || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -273,9 +273,9 @@ function renderAdminDashboard(categories, opportunities, analytics, adminKey, au
       <td><span class="s-${o.status}">${o.status}</span></td>
       <td>$${o.compensation_max || '-'}</td>
       <td>
-        ${o.status !== 'published' ? `<button onclick="updateStatus(${jsStr(o.id)},'published')">Publish</button>` : ''}
-        <button onclick="generateBlogs(${jsStr(o.id)})">Generate Blogs</button>
-        <button onclick="deleteOpp(${jsStr(o.id)})">Delete</button>
+        ${o.status !== 'published' ? `<button data-opp="${escAttr(o.id)}" onclick="updateStatus(this.dataset.opp,'published')">Publish</button>` : ''}
+        <button data-opp="${escAttr(o.id)}" onclick="generateBlogs(this.dataset.opp)">Generate Blogs</button>
+        <button data-opp="${escAttr(o.id)}" onclick="deleteOpp(this.dataset.opp)">Delete</button>
       </td>
     </tr>
   `;
