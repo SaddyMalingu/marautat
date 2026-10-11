@@ -56,7 +56,14 @@ Only after staging is green and you've confirmed the live site still renders `/a
 - **Code-only instant revert (preferred, Phase 3):** set `AI_JOBS_MULTITENANT=false`. No DB change.
 - **Full schema revert:** run `..._ROLLBACK.sql` (drops only the new columns + `site_tenants`; content untouched).
 
-## Next phases (awaiting go-ahead)
-- **Phase 2:** generalize `aiJobsConfig.js` allowlist per-source; seed respondent.io; decouple views/routes/sitemap from literal "mercor".
-- **Phase 3:** `/:tenantSlug` routing + admin tenant/source pickers + per-tenant blog CTA, all behind `AI_JOBS_MULTITENANT` flag (default off).
+## Next phases
+- **Phase 2 (DONE, commit 5f6eae3):** generalized config/views/routes/sitemap off the literal "Mercor" + seeded respondent.io. All backward-compatible; `/ai-jobs/mercor/*` output is byte-identical.
+  - New public endpoints (multi-platform):
+    - `GET /ai-jobs/s/:sourceSlug` — source landing (e.g. `/ai-jobs/s/respondent`)
+    - `GET /ai-jobs/s/:sourceSlug/opportunity/:slug`
+    - `GET /ai-jobs/s/:sourceSlug/:categorySlug`
+  - `ALLOWED_REDIRECT_DOMAINS` now includes respondent.io + env override `AI_JOBS_EXTRA_REDIRECT_DOMAINS`.
+  - Seed: `migrations/2026-10-12_seed_respondent_source.sql` (run AFTER Phase 1).
+- **Phase 3 (pending):** `/:tenantSlug` routing + admin tenant/source pickers + per-tenant blog CTA, all behind `AI_JOBS_MULTITENANT` flag (default off).
 - **Phase 4 (optional):** converge tenant resolution onto `alphadome-kernel` behind parity tests.
+
