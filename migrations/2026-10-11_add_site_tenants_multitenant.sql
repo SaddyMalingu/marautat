@@ -57,6 +57,7 @@ VALUES (
   '["t.mercor.com","mercor.com","www.mercor.com"]'::jsonb,
   true
 )
+ON CONFLICT (slug) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
 -- 3. Add NULLABLE tenant_id to the existing AI Jobs / blog tables.
