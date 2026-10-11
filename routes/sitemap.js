@@ -6,16 +6,16 @@
  */
 
 import { Router } from 'express';
-import { getActiveCategories, getOpportunities } from '../utils/aiJobsService.js';
+import { getActiveSources, getActiveCategories, getCategoriesForSource, getOpportunities } from '../utils/aiJobsService.js';
 
 const router = Router();
 const SITE_URL = process.env.SITE_URL || 'https://alphadome.onrender.com';
 
 router.get('/sitemap.xml', async (req, res) => {
   try {
-    const categories = await getActiveCategories();
-    const opportunities = await getOpportunities({ limit: 1000 });
-    
+    const sources = await getActiveSources();
+    const mercor = sources.find(s => s.slug === 'mercor') || null;
+
     let xml = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
@@ -33,9 +33,10 @@ router.get('/sitemap.xml', async (req, res) => {
     <changefreq>daily</changefreq>
     <priority>0.9</priority>
   </url>`;
-    
-    // Add category pages
-    for (const cat of categories) {
+
+    // --- Mercor (legacy paths, unchanged) ---
+    const mercorCategories = mercor ? await getCategoriesForSource(mercor.id) : await getActiveCategories();
+    for (const cat of mercorCategories) {
       xml += `
   <url>
     <loc>${SITE_URL}/ai-jobs/mercor/${cat.slug}</loc>
@@ -43,9 +44,8 @@ router.get('/sitemap.xml', async (req, res) => {
     <priority>0.8</priority>
   </url>`;
     }
-    
-    // Add opportunity pages
-    for (const opp of opportunities) {
+    const mercorOpps = await getOpportunities({ limit: 1000, sourceId: mercor?.id });
+    for (const opp of mercorOpps) {
       xml += `
   <url>
     <loc>${SITE_URL}/ai-jobs/mercor/opportunity/${opp.slug}</loc>
@@ -54,10 +54,40 @@ router.get('/sitemap.xml', async (req, res) => {
     <lastmod>${opp.updated_at || opp.created_at}</lastmod>
   </url>`;
     }
-    
+
+    // --- Additional sources under /ai-jobs/s/:sourceSlug ---
+    for (const src of sources) {
+      if (src.slug === 'mercor') continue;
+      xml += `
+  <url>
+    <loc>${SITE_URL}/ai-jobs/s/${src.slug}</loc>
+    <changefreq>daily</changefreq>
+    <priority>0.8</priority>
+  </url>`;
+      const cats = await getCategoriesForSource(src.id);
+      for (const cat of cats) {
+        xml += `
+  <url>
+    <loc>${SITE_URL}/ai-jobs/s/${src.slug}/${cat.slug}</loc>
+    <changefreq>daily</changefreq>
+    <priority>0.7</priority>
+  </url>`;
+      }
+      const opps = await getOpportunities({ limit: 1000, sourceId: src.id });
+      for (const opp of opps) {
+        xml += `
+  <url>
+    <loc>${SITE_URL}/ai-jobs/s/${src.slug}/opportunity/${opp.slug}</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+    <lastmod>${opp.updated_at || opp.created_at}</lastmod>
+  </url>`;
+      }
+    }
+
     xml += `
 </urlset>`;
-    
+
     res.header('Content-Type', 'application/xml');
     res.send(xml);
   } catch (err) {
@@ -67,3 +97,4 @@ router.get('/sitemap.xml', async (req, res) => {
 });
 
 export default router;
+

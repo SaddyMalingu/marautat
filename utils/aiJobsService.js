@@ -268,9 +268,70 @@ async function getAnalyticsSummary({ days = 30 } = {}) {
   return summary;
 }
 
+/**
+ * Get a single active opportunity source by slug (e.g. 'mercor', 'respondent').
+ */
+async function getSourceBySlug(slug) {
+  if (!slug) return null;
+  const { data, error } = await supabase
+    .from('opportunity_sources')
+    .select('*')
+    .eq('slug', slug)
+    .eq('is_active', true)
+    .maybeSingle();
+
+  if (error) {
+    console.error('[AI Jobs] Error fetching source by slug:', error.message);
+    return null;
+  }
+  return data || null;
+}
+
+/**
+ * Get active categories that have at least one published opportunity for a
+ * given source. Keeps a source landing page from showing unrelated categories
+ * (e.g. Mercor categories on a respondent.io page).
+ */
+async function getCategoriesForSource(sourceId) {
+  if (!sourceId) return [];
+  const { data: opps, error: oppErr } = await supabase
+    .from('opportunities')
+    .select('category_id')
+    .eq('source_id', sourceId)
+    .eq('status', 'published')
+    .limit(1000);
+
+  if (oppErr) {
+    console.error('[AI Jobs] Error fetching source opportunities:', oppErr.message);
+    return [];
+  }
+  const catIds = [...new Set((opps || []).map(o => o.category_id).filter(Boolean))];
+  if (!catIds.length) return [];
+
+  const { data: cats, error: catErr } = await supabase
+    .from('opportunity_categories')
+    .select('*')
+    .in('id', catIds)
+    .eq('is_active', true)
+    .order('display_order');
+
+  if (catErr) {
+    console.error('[AI Jobs] Error fetching categories for source:', catErr.message);
+    return [];
+  }
+  return data_sorted(cats || []);
+}
+
+// Preserve display_order without relying on DB ordering guarantees.
+function data_sorted(rows) {
+  return rows.slice().sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+}
+
 export {
   getActiveSources,
+  getSourceBySlug,
   getActiveCategories,
+  getCategoriesForSource,
   getCategoryBySlug,
   getOpportunities,
   getOpportunityBySlug,

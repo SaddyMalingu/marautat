@@ -7,7 +7,9 @@
 import { Router } from 'express';
 import {
   getActiveSources,
+  getSourceBySlug,
   getActiveCategories,
+  getCategoriesForSource,
   getCategoryBySlug,
   getOpportunities,
   getOpportunityBySlug,
@@ -21,6 +23,7 @@ import {
 import {
   renderAiJobsLanding,
   renderMercorLanding,
+  renderSourceLanding,
   renderCategoryPage
 } from '../utils/aiJobsViews.js';
 import { renderOpportunityPage } from '../utils/aiJobsViewsOpp.js';
@@ -93,6 +96,67 @@ router.get('/mercor/opportunity/:slug', async (req, res) => {
   } catch (err) {
     console.error('[AI Jobs] Error rendering opportunity page:', err);
     res.status(500).send('Error loading opportunity page');
+  }
+});
+
+// ============================================================================
+// MULTI-PLATFORM SOURCE ROUTES (additive — legacy /mercor routes above intact)
+// Any opportunity source (respondent.io, etc.) is served under /ai-jobs/s/:slug
+// ============================================================================
+
+// GET /ai-jobs/s/:sourceSlug - generic source landing (e.g. respondent.io)
+router.get('/s/:sourceSlug', async (req, res) => {
+  try {
+    const { sourceSlug } = req.params;
+    const source = await getSourceBySlug(sourceSlug);
+    if (!source) return res.status(404).send('Source not found');
+    const categories = await getCategoriesForSource(source.id);
+    await trackEvent({ eventType: 'page_view', ...getTrackingInfo(req), metadata: { page: 'source-landing', source: sourceSlug } });
+    res.send(renderSourceLanding(source, categories));
+  } catch (err) {
+    console.error('[AI Jobs] Error rendering source page:', err);
+    res.status(500).send('Error loading source page');
+  }
+});
+
+// GET /ai-jobs/s/:sourceSlug/opportunity/:slug - opportunity scoped to a source
+router.get('/s/:sourceSlug/opportunity/:slug', async (req, res) => {
+  try {
+    const { sourceSlug, slug } = req.params;
+    const source = await getSourceBySlug(sourceSlug);
+    if (!source) return res.status(404).send('Source not found');
+    const opportunity = await getOpportunityBySlug(slug);
+    if (!opportunity) return res.status(404).send('Opportunity not found');
+    const referralUrl = resolveReferralUrl(opportunity, opportunity.category, DEFAULT_REFERRAL_URLS.general);
+    await trackEvent({ opportunityId: opportunity.id, categoryId: opportunity.category_id, eventType: 'opportunity_view', ...getTrackingInfo(req), metadata: { opportunity: slug, source: sourceSlug } });
+    res.send(renderOpportunityPage(opportunity, referralUrl, {
+      sourceName: source.name,
+      basePath: `/ai-jobs/s/${sourceSlug}`,
+      canonicalBase: `/ai-jobs/s/${sourceSlug}/opportunity`
+    }));
+  } catch (err) {
+    console.error('[AI Jobs] Error rendering source opportunity page:', err);
+    res.status(500).send('Error loading opportunity page');
+  }
+});
+
+// GET /ai-jobs/s/:sourceSlug/:categorySlug - category scoped to a source
+router.get('/s/:sourceSlug/:categorySlug', async (req, res) => {
+  try {
+    const { sourceSlug, categorySlug } = req.params;
+    const source = await getSourceBySlug(sourceSlug);
+    if (!source) return res.status(404).send('Source not found');
+    const category = await getCategoryBySlug(categorySlug);
+    if (!category) return res.status(404).send('Category not found');
+    const opportunities = await getOpportunities({ categoryId: category.id, sourceId: source.id, limit: 50 });
+    await trackEvent({ categoryId: category.id, eventType: 'category_view', ...getTrackingInfo(req), metadata: { category: categorySlug, source: sourceSlug } });
+    res.send(renderCategoryPage(category, opportunities, {
+      basePath: `/ai-jobs/s/${sourceSlug}`,
+      sourceName: source.name
+    }));
+  } catch (err) {
+    console.error('[AI Jobs] Error rendering source category page:', err);
+    res.status(500).send('Error loading category page');
   }
 });
 

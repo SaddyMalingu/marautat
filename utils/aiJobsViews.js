@@ -11,11 +11,25 @@ function renderMercorLanding(categories) {
   return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Mercor Jobs | AlphaDome</title><meta name="description" content="Explore Mercor opportunities across all categories."><link rel="canonical" href="${SITE_URL}/ai-jobs/mercor">${STYLE}</head><body><div class="c"><nav><a href="/ai-jobs">← AI Jobs</a></nav><header><h1>Mercor Opportunities</h1><p class="sub">Browse opportunities by category</p></header><div class="grid">${cats}</div><div class="disc"><p>AlphaDome is independent of Mercor. Some links are referral links.</p></div></div></body></html>`;
 }
 
-function renderCategoryPage(category, opportunities) {
+function renderCategoryPage(category, opportunities, opts = {}) {
+  const basePath = opts.basePath || '/ai-jobs/mercor';
+  const sourceName = opts.sourceName || 'Mercor';
   const opps = opportunities.length > 0 
-    ? opportunities.map(o => `<a href="/ai-jobs/mercor/opportunity/${o.slug}" class="card"><h3>${o.title}</h3><p>${o.compensation_max?'$'+o.compensation_max+'/hr':''} ${o.location_text||'Remote'}</p></a>`).join('')
+    ? opportunities.map(o => `<a href="${basePath}/opportunity/${o.slug}" class="card"><h3>${o.title}</h3><p>${o.compensation_max?'$'+o.compensation_max+'/hr':''} ${o.location_text||'Remote'}</p></a>`).join('')
     : '<p style="text-align:center;padding:3rem;color:var(--muted)">No current opportunities. Check back soon!</p>';
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>${category.seo_title||category.name+' | AlphaDome'}</title><meta name="description" content="${category.seo_description||category.description||''}"><link rel="canonical" href="${SITE_URL}/ai-jobs/mercor/${category.slug}">${STYLE}</head><body><div class="c"><nav><a href="/ai-jobs/mercor">← Mercor</a></nav><header><h1>${category.name} Opportunities</h1><p class="sub">${category.description||''}</p></header><div class="grid">${opps}</div><div class="disc"><p>AlphaDome is independent of Mercor.</p></div></div></body></html>`;
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>${category.seo_title||category.name+' | AlphaDome'}</title><meta name="description" content="${category.seo_description||category.description||''}"><link rel="canonical" href="${SITE_URL}${basePath}/${category.slug}">${STYLE}</head><body><div class="c"><nav><a href="${basePath}">← ${sourceName}</a></nav><header><h1>${category.name} Opportunities</h1><p class="sub">${category.description||''}</p></header><div class="grid">${opps}</div><div class="disc"><p>AlphaDome is independent of ${sourceName}.</p></div></div></body></html>`;
 }
 
-export { renderAiJobsLanding, renderMercorLanding, renderCategoryPage };
+// Generic source landing page (multi-platform). Used for any source under
+// /ai-jobs/s/:sourceSlug (e.g. respondent.io). Mercor keeps its legacy route.
+function renderSourceLanding(source, categories) {
+  const slug = source?.slug || 'source';
+  const name = source?.name || slug;
+  const basePath = `/ai-jobs/s/${slug}`;
+  const cats = categories.length > 0
+    ? categories.map(cat => `<a href="${basePath}/${cat.slug}" class="card"><h3>${cat.name}</h3><p>${cat.description||''}</p></a>`).join('')
+    : '<p style="text-align:center;padding:3rem;color:var(--muted)">No current opportunities. Check back soon!</p>';
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>${name} Opportunities | AlphaDome</title><meta name="description" content="Explore ${name} opportunities across all categories."><link rel="canonical" href="${SITE_URL}${basePath}">${STYLE}</head><body><div class="c"><nav><a href="/ai-jobs">← AI Jobs</a></nav><header><h1>${name} Opportunities</h1><p class="sub">Browse opportunities by category</p></header><div class="grid">${cats}</div><div class="disc"><p>AlphaDome is independent of ${name}. Some links are referral links.</p></div></div></body></html>`;
+}
+
+export { renderAiJobsLanding, renderMercorLanding, renderSourceLanding, renderCategoryPage };

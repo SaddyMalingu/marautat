@@ -24,12 +24,41 @@ const DEFAULT_REFERRAL_URLS = {
   }
 };
 
-// Allowed redirect domains (security: prevent open redirects)
-const ALLOWED_REDIRECT_DOMAINS = [
+// Base allowed redirect domains (security: prevent open redirects).
+// Multi-platform: Mercor today, plus room for additional providers
+// (e.g. respondent.io). Tenant-specific domains are layered in at runtime
+// (Phase 3) from site_tenants.allowed_redirect_domains.
+const BASE_REDIRECT_DOMAINS = [
   't.mercor.com',
   'mercor.com',
-  'www.mercor.com'
+  'www.mercor.com',
+  'respondent.io',
+  'www.respondent.io',
+  'app.respondent.io'
 ];
+
+// Extra domains can be injected via env without a code change:
+//   AI_JOBS_EXTRA_REDIRECT_DOMAINS="example.com,refer.example.org"
+function getExtraRedirectDomains() {
+  return String(process.env.AI_JOBS_EXTRA_REDIRECT_DOMAINS || '')
+    .split(',')
+    .map(d => d.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+// Effective allowlist = base + env extras (+ optional per-tenant domains).
+function getAllowedRedirectDomains(extraDomains = []) {
+  const set = new Set(BASE_REDIRECT_DOMAINS);
+  for (const d of getExtraRedirectDomains()) set.add(d);
+  for (const d of (Array.isArray(extraDomains) ? extraDomains : [])) {
+    const clean = String(d || '').trim().toLowerCase();
+    if (clean) set.add(clean);
+  }
+  return set;
+}
+
+// Backward-compatible export (static base list).
+const ALLOWED_REDIRECT_DOMAINS = BASE_REDIRECT_DOMAINS;
 
 /**
  * Resolve the referral URL for an opportunity.
@@ -60,16 +89,17 @@ function resolveReferralUrl(opportunity, category = null, generalUrl = DEFAULT_R
  * Prevents open redirect vulnerabilities.
  * 
  * @param {string} url - The URL to validate
+ * @param {string[]} [extraDomains] - optional per-tenant allowed hostnames
  * @returns {boolean} True if the URL is safe
  */
-function isValidReferralUrl(url) {
+function isValidReferralUrl(url, extraDomains = []) {
   if (!url || typeof url !== 'string') {
     return false;
   }
   
   try {
     const parsed = new URL(url);
-    return ALLOWED_REDIRECT_DOMAINS.includes(parsed.hostname);
+    return getAllowedRedirectDomains(extraDomains).has(parsed.hostname.toLowerCase());
   } catch {
     return false;
   }
@@ -88,6 +118,7 @@ function getCategoryReferralUrl(slug) {
 export {
   DEFAULT_REFERRAL_URLS,
   ALLOWED_REDIRECT_DOMAINS,
+  getAllowedRedirectDomains,
   resolveReferralUrl,
   isValidReferralUrl,
   getCategoryReferralUrl
