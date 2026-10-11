@@ -524,10 +524,50 @@ app.get('/kassangas-client-wallet', (req, res) => {
 
 // Only instantiate OpenAI if the API key is present
 
-const supabase = createClient(
-  process.env.SB_URL,
-  process.env.SB_SERVICE_ROLE_KEY
-);
+function createFallbackSupabase() {
+  const fallbackResult = { data: [], error: null };
+  const builder = {
+    from() { return builder; },
+    select() { return builder; },
+    insert() { return builder; },
+    update() { return builder; },
+    upsert() { return builder; },
+    delete() { return builder; },
+    eq() { return builder; },
+    neq() { return builder; },
+    gt() { return builder; },
+    gte() { return builder; },
+    lt() { return builder; },
+    lte() { return builder; },
+    order() { return builder; },
+    limit() { return builder; },
+    range() { return builder; },
+    maybeSingle() { return Promise.resolve(fallbackResult); },
+    single() { return Promise.resolve(fallbackResult); },
+    in() { return builder; },
+    contains() { return builder; },
+    filter() { return builder; },
+    or() { return builder; },
+    not() { return builder; },
+    ilike() { return builder; },
+    like() { return builder; },
+    is() { return builder; },
+    isNot() { return builder; },
+    then(onFulfilled, onRejected) { return Promise.resolve(fallbackResult).then(onFulfilled, onRejected); },
+    catch(onRejected) { return Promise.resolve(fallbackResult).catch(onRejected); },
+    finally(onFinally) { return Promise.resolve(fallbackResult).finally(onFinally); },
+  };
+  return builder;
+}
+
+const hasSupabaseConfig = Boolean(process.env.SB_URL && process.env.SB_SERVICE_ROLE_KEY);
+const supabase = hasSupabaseConfig
+  ? createClient(process.env.SB_URL, process.env.SB_SERVICE_ROLE_KEY)
+  : createFallbackSupabase();
+
+if (!hasSupabaseConfig) {
+  console.warn('[SERVER] SB_URL/SB_SERVICE_ROLE_KEY missing; running in local-safe fallback mode.');
+}
 
 // ===== PROSPECT DEMO: Ventura Quote-to-Order Scaffold =====
 const venturaDemoStore = {
@@ -14077,6 +14117,9 @@ app.post('/discovery', async (req, res) => {
   }
 });
 
-
+const PORT = Number(process.env.PORT) || 3000;
+app.listen(PORT, () => {
+  console.log(`Alphadome server listening on http://localhost:${PORT}`);
+});
 
 

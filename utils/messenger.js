@@ -3,7 +3,52 @@ import { log } from "./logger.js";
 import { incrementErrorCount } from "./healthMonitor.js";
 import { createClient } from "@supabase/supabase-js";
 
-const supabase = createClient(process.env.SB_URL, process.env.SB_SERVICE_ROLE_KEY);
+function createFallbackSupabase() {
+  const fallbackResult = { data: [], error: null };
+  const builder = {
+    from() { return builder; },
+    select() { return builder; },
+    insert() { return builder; },
+    update() { return builder; },
+    upsert() { return builder; },
+    delete() { return builder; },
+    eq() { return builder; },
+    neq() { return builder; },
+    gt() { return builder; },
+    gte() { return builder; },
+    lt() { return builder; },
+    lte() { return builder; },
+    order() { return builder; },
+    limit() { return builder; },
+    maybeSingle() { return Promise.resolve(fallbackResult); },
+    single() { return Promise.resolve(fallbackResult); },
+    in() { return builder; },
+    contains() { return builder; },
+    filter() { return builder; },
+    or() { return builder; },
+    not() { return builder; },
+    ilike() { return builder; },
+    like() { return builder; },
+    is() { return builder; },
+    isNot() { return builder; },
+    then(onFulfilled, onRejected) {
+      return Promise.resolve(fallbackResult).then(onFulfilled, onRejected);
+    },
+    catch(onRejected) {
+      return Promise.resolve(fallbackResult).catch(onRejected);
+    },
+    finally(onFinally) {
+      return Promise.resolve(fallbackResult).finally(onFinally);
+    },
+  };
+
+  return builder;
+}
+
+const hasSupabaseConfig = Boolean(process.env.SB_URL && process.env.SB_SERVICE_ROLE_KEY);
+const supabase = hasSupabaseConfig
+  ? createClient(process.env.SB_URL, process.env.SB_SERVICE_ROLE_KEY)
+  : createFallbackSupabase();
 
 function resolveAuth(creds) {
   return {

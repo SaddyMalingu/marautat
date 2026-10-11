@@ -13,8 +13,58 @@ try {
   console.log(`[${new Date().toISOString()}] [WARN] ENV LLM keys log failed: ${err?.message || err}`);
 }
 
+function createFallbackSupabase() {
+  const fallbackResult = { data: [], error: null };
+  const builder = {
+    from() { return builder; },
+    select() { return builder; },
+    insert() { return builder; },
+    update() { return builder; },
+    upsert() { return builder; },
+    delete() { return builder; },
+    rpc() { return Promise.resolve(fallbackResult); },
+    eq() { return builder; },
+    neq() { return builder; },
+    gt() { return builder; },
+    gte() { return builder; },
+    lt() { return builder; },
+    lte() { return builder; },
+    order() { return builder; },
+    limit() { return builder; },
+    maybeSingle() { return Promise.resolve(fallbackResult); },
+    single() { return Promise.resolve(fallbackResult); },
+    in() { return builder; },
+    contains() { return builder; },
+    filter() { return builder; },
+    or() { return builder; },
+    not() { return builder; },
+    ilike() { return builder; },
+    like() { return builder; },
+    is() { return builder; },
+    isNot() { return builder; },
+    then(onFulfilled, onRejected) {
+      return Promise.resolve(fallbackResult).then(onFulfilled, onRejected);
+    },
+    catch(onRejected) {
+      return Promise.resolve(fallbackResult).catch(onRejected);
+    },
+    finally(onFinally) {
+      return Promise.resolve(fallbackResult).finally(onFinally);
+    },
+  };
+
+  return builder;
+}
+
 // === Initialize Supabase client ===
-const supabase = createClient(process.env.SB_URL, process.env.SB_SERVICE_ROLE_KEY);
+const hasSupabaseConfig = Boolean(process.env.SB_URL && process.env.SB_SERVICE_ROLE_KEY);
+const supabase = hasSupabaseConfig
+  ? createClient(process.env.SB_URL, process.env.SB_SERVICE_ROLE_KEY)
+  : createFallbackSupabase();
+
+if (!hasSupabaseConfig) {
+  console.warn("[LOGGER] SB_URL/SB_SERVICE_ROLE_KEY not configured; running in local-safe fallback mode.");
+}
 
 // === Local log directory setup ===
 const logDir = path.join(process.cwd(), "logs");

@@ -7,16 +7,61 @@
 
 import { createClient } from '@supabase/supabase-js';
 
+function createFallbackSupabase() {
+  const fallbackResult = { data: [], error: null };
+  const builder = {
+    from() { return builder; },
+    select() { return builder; },
+    insert() { return builder; },
+    update() { return builder; },
+    upsert() { return builder; },
+    delete() { return builder; },
+    eq() { return builder; },
+    neq() { return builder; },
+    gt() { return builder; },
+    gte() { return builder; },
+    lt() { return builder; },
+    lte() { return builder; },
+    order() { return builder; },
+    limit() { return builder; },
+    range() { return builder; },
+    maybeSingle() { return Promise.resolve(fallbackResult); },
+    single() { return Promise.resolve(fallbackResult); },
+    in() { return builder; },
+    contains() { return builder; },
+    filter() { return builder; },
+    or() { return builder; },
+    not() { return builder; },
+    ilike() { return builder; },
+    like() { return builder; },
+    is() { return builder; },
+    isNot() { return builder; },
+    then(onFulfilled, onRejected) {
+      return Promise.resolve(fallbackResult).then(onFulfilled, onRejected);
+    },
+    catch(onRejected) {
+      return Promise.resolve(fallbackResult).catch(onRejected);
+    },
+    finally(onFinally) {
+      return Promise.resolve(fallbackResult).finally(onFinally);
+    },
+  };
+
+  return builder;
+}
+
 // Initialize Supabase client
 // IMPORTANT: Use service role key to bypass RLS for server-side operations
 const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
 
-if (!supabaseUrl || !supabaseKey) {
-  console.error('[AI Jobs] Missing Supabase credentials. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY');
+const hasSupabaseConfig = Boolean(supabaseUrl && supabaseKey);
+
+if (!hasSupabaseConfig) {
+  console.warn('[AI Jobs] Missing Supabase credentials. Running in local-safe fallback mode.');
 }
 
-const supabase = createClient(supabaseUrl, supabaseKey);
+const supabase = hasSupabaseConfig ? createClient(supabaseUrl, supabaseKey) : createFallbackSupabase();
 
 /**
  * Get all active opportunity sources.

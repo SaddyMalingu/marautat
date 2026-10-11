@@ -163,3 +163,4 @@
 [2026-04-22T08:25:15.372Z] GET /admin/api/approvals?key=localtest123&role=super_admin&actor=deploy-smoke 401 - 1ms
 [2026-04-22T08:25:15.389Z] GET /admin/api/executive-snapshot?key=localtest123&role=super_admin&actor=deploy-smoke 401 - 1ms
 [2026-04-22T08:25:15.394Z] GET /admin/api/tenants/list?limit=1&key=localtest123&role=super_admin&actor=deploy-smoke 401 - 1ms
+[2026-10-11T09:59:15.068Z] GET / 200 - 10ms
