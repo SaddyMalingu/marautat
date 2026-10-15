@@ -67,6 +67,9 @@ router.get('/admin/ai-jobs', requireAdmin, async (req, res) => {
   try {
     const catsRes = await supabase.from('opportunity_categories').select('*').order('display_order');
     const oppsRes = await supabase.from('opportunities').select('*, category:opportunity_categories(name)').order('created_at', { ascending: false }).limit(50);
+    // Multi-tenant pickers (additive; empty arrays if tables absent)
+    const tenantsRes = await supabase.from('site_tenants').select('id, name, slug, is_active').order('name');
+    const sourcesRes = await supabase.from('opportunity_sources').select('id, name, slug, is_active').order('name');
     
     // Get combined analytics
     let analytics = { total_views: 0, total_clicks: 0, overall_ctr: 0, top_pages: [] };
@@ -166,7 +169,7 @@ router.get('/admin/ai-jobs', requireAdmin, async (req, res) => {
       recentRuns: automationRuns,
       weeklyPosts,
       weeklyJobs
-    }));
+    }, tenantsRes.data || [], sourcesRes.data || []));
   } catch (err) {
     console.error('[AI Jobs Admin] Dashboard error:', err);
     res.status(500).send('Error loading dashboard: ' + err.message);
@@ -299,13 +302,20 @@ router.get('/admin/ai-jobs/blogs', requireAdmin, async (req, res) => {
   }
 });
 
-function renderAdminDashboard(categories, opportunities, analytics, adminKey, automationStats = {}) {
+function renderAdminDashboard(categories, opportunities, analytics, adminKey, automationStats = {}, tenants = [], sources = []) {
   const ak = String(adminKey || process.env.ADMIN_KEY || process.env.ADMIN_PASS || '').replace(/[<>"'&]/g, '');
   const recentRuns = automationStats.recentRuns || [];
   const weeklyPosts = automationStats.weeklyPosts || 0;
   const weeklyJobs = automationStats.weeklyJobs || 0;
   const escAttr = s => String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   const catsOptions = categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+  // Phase 3 pickers: offer type, tenant, source
+  const offerTypeOptions = ['job','product','service','brand','affiliate','course']
+    .map(t => `<option value="${t}"${t==='job'?' selected':''}>${t}</option>`).join('');
+  const tenantOptions = tenants.map(t =>
+    `<option value="${t.id}"${t.slug==='default'?' selected':''}>${escAttr(t.name)} (${escAttr(t.slug)})</option>`).join('');
+  const sourceOptions = ['<option value="">— none —</option>']
+    .concat(sources.map(s => `<option value="${s.id}">${escAttr(s.name)}</option>`)).join('');
   const oppsRows = opportunities.map(o => {
     const safeTitle = (o.title || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const safeCategory = (o.category?.name || '-').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -415,16 +425,21 @@ function renderAdminDashboard(categories, opportunities, analytics, adminKey, au
     <button onclick="loadBlogs()">Refresh Blog List</button>
   </div>
 
-  <h2>Create Opportunity</h2>
+  <h2>Create Opportunity / Offer</h2>
   <form id="f">
-    <input name="title" placeholder="Job Title" required>
-    <select name="category_id" required><option value="">Select Category</option>${catsOptions}</select>
-    <input type="number" name="compensation_max" placeholder="Max USD/hr">
-    <textarea name="description" placeholder="Job Description" rows="3"></textarea>
+    <input name="title" placeholder="Title (job, product, service, brand...)" required>
+    <select name="offer_type">${offerTypeOptions}</select>
+    <select name="tenant_id">${tenantOptions}</select>
+    <select name="source_id">${sourceOptions}</select>
+    <select name="category_id"><option value="">Select Category</option>${catsOptions}</select>
+    <input type="number" name="compensation_max" placeholder="Price / Max USD/hr">
+    <textarea name="description" placeholder="Description" rows="3"></textarea>
     <input name="location_text" placeholder="Location (e.g., Remote)">
     <input name="skills" placeholder="Skills (comma-separated)">
+    <input name="destination_url" placeholder="Destination URL (product/service/affiliate link)">
     <input name="referral_url" placeholder="Referral URL (optional)">
-    <button type="submit">Create Opportunity</button>
+    <input name="cta_label" placeholder="CTA button text (optional, e.g. Shop Now)">
+    <button type="submit">Create</button>
   </form>
 
   <h2>Opportunities</h2>
@@ -653,12 +668,17 @@ async function loadBlogs() {
     try {
       const payload = {
         title: f.title.value,
-        category_id: f.category_id.value,
+        offer_type: f.offer_type.value || 'job',
+        tenant_id: f.tenant_id.value || null,
+        source_id: f.source_id.value || null,
+        category_id: f.category_id.value || null,
         compensation_max: parseFloat(f.compensation_max.value) || null,
         description: f.description.value,
         location_text: f.location_text.value,
         skills: f.skills.value.split(',').map(function(s) { return s.trim(); }).filter(Boolean),
+        destination_url: f.destination_url.value || null,
         referral_url: f.referral_url.value || null,
+        cta_label: f.cta_label.value || null,
         status: 'draft',
         slug: f.title.value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
       };

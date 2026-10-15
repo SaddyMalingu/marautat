@@ -327,11 +327,84 @@ function data_sorted(rows) {
   return rows.slice().sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
 }
 
+/**
+ * Get a single active site tenant by slug (e.g. 'default', 'health').
+ */
+async function getSiteTenantBySlug(slug) {
+  if (!slug) return null;
+  const { data, error } = await supabase
+    .from('site_tenants')
+    .select('*')
+    .eq('slug', slug)
+    .eq('is_active', true)
+    .maybeSingle();
+  if (error) {
+    console.error('[AI Jobs] Error fetching site tenant:', error.message);
+    return null;
+  }
+  return data || null;
+}
+
+/**
+ * Get published offers for a tenant, optionally filtered by offer_type and/or
+ * category. This is the general "any offer" query (jobs, products, services,
+ * brands, affiliate, courses).
+ */
+async function getOffersByTenant(tenantId, { offerType = null, categoryId = null, limit = 50 } = {}) {
+  if (!tenantId) return [];
+  let query = supabase
+    .from('opportunities')
+    .select('*, category:opportunity_categories(*)')
+    .eq('tenant_id', tenantId)
+    .eq('status', 'published')
+    .order('published_at', { ascending: false })
+    .limit(limit);
+  if (offerType) query = query.eq('offer_type', offerType);
+  if (categoryId) query = query.eq('category_id', categoryId);
+  const { data, error } = await query;
+  if (error) {
+    console.error('[AI Jobs] Error fetching tenant offers:', error.message);
+    return [];
+  }
+  return data || [];
+}
+
+/**
+ * Offer-type metadata — the single source of truth for how an offer is labeled
+ * and what its call-to-action says. Jobs keep their legacy wording; other
+ * types get product/service/brand/affiliate-appropriate CTAs.
+ */
+const OFFER_TYPES = {
+  job:      { label: 'Job',      cta: 'Apply',     priceLabel: 'Compensation' },
+  product:  { label: 'Product',  cta: 'Shop Now',  priceLabel: 'Price' },
+  service:  { label: 'Service',  cta: 'Learn More',priceLabel: 'From' },
+  brand:    { label: 'Brand',    cta: 'Explore',   priceLabel: '' },
+  affiliate:{ label: 'Offer',    cta: 'Get Deal',  priceLabel: '' },
+  course:   { label: 'Course',   cta: 'Enroll',    priceLabel: 'Price' },
+};
+
+function offerMeta(offer) {
+  const type = (offer && offer.offer_type) || 'job';
+  const base = OFFER_TYPES[type] || OFFER_TYPES.job;
+  const destination = (offer && (offer.destination_url || offer.referral_url || offer.application_url)) || null;
+  return {
+    type,
+    label: base.label,
+    cta: (offer && offer.cta_label) || base.cta,
+    priceLabel: base.priceLabel,
+    destination,
+  };
+}
+
 export {
   getActiveSources,
   getSourceBySlug,
+  getSiteTenantBySlug,
   getActiveCategories,
   getCategoriesForSource,
+  getOffersByTenant,
+  offerMeta,
+  OFFER_TYPES,
   getCategoryBySlug,
   getOpportunities,
   getOpportunityBySlug,

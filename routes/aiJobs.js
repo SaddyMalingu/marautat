@@ -8,8 +8,11 @@ import { Router } from 'express';
 import {
   getActiveSources,
   getSourceBySlug,
+  getSiteTenantBySlug,
   getActiveCategories,
   getCategoriesForSource,
+  getOffersByTenant,
+  offerMeta,
   getCategoryBySlug,
   getOpportunities,
   getOpportunityBySlug,
@@ -24,11 +27,15 @@ import {
   renderAiJobsLanding,
   renderMercorLanding,
   renderSourceLanding,
-  renderCategoryPage
+  renderCategoryPage,
+  renderTenantOffers
 } from '../utils/aiJobsViews.js';
-import { renderOpportunityPage } from '../utils/aiJobsViewsOpp.js';
+import { renderOfferPage } from '../utils/aiJobsViewsOpp.js';
 
 const router = Router();
+
+// Phase 3 feature flag — tenant routing is OFF until explicitly enabled.
+const MULTITENANT = String(process.env.AI_JOBS_MULTITENANT || '').toLowerCase() === 'true';
 
 // Helper: Extract tracking info from request
 function getTrackingInfo(req) {
@@ -92,7 +99,7 @@ router.get('/mercor/opportunity/:slug', async (req, res) => {
     if (!opportunity) return res.status(404).send('Opportunity not found');
     const referralUrl = resolveReferralUrl(opportunity, opportunity.category, DEFAULT_REFERRAL_URLS.general);
     await trackEvent({ opportunityId: opportunity.id, categoryId: opportunity.category_id, eventType: 'opportunity_view', ...getTrackingInfo(req), metadata: { opportunity: slug } });
-    res.send(renderOpportunityPage(opportunity, referralUrl));
+    res.send(renderOfferPage(opportunity, { sourceName: 'Mercor', basePath: '/ai-jobs/mercor', canonicalBase: '/ai-jobs/mercor/opportunity' }));
   } catch (err) {
     console.error('[AI Jobs] Error rendering opportunity page:', err);
     res.status(500).send('Error loading opportunity page');
@@ -129,7 +136,7 @@ router.get('/s/:sourceSlug/opportunity/:slug', async (req, res) => {
     if (!opportunity) return res.status(404).send('Opportunity not found');
     const referralUrl = resolveReferralUrl(opportunity, opportunity.category, DEFAULT_REFERRAL_URLS.general);
     await trackEvent({ opportunityId: opportunity.id, categoryId: opportunity.category_id, eventType: 'opportunity_view', ...getTrackingInfo(req), metadata: { opportunity: slug, source: sourceSlug } });
-    res.send(renderOpportunityPage(opportunity, referralUrl, {
+    res.send(renderOfferPage(opportunity, {
       sourceName: source.name,
       basePath: `/ai-jobs/s/${sourceSlug}`,
       canonicalBase: `/ai-jobs/s/${sourceSlug}/opportunity`
@@ -215,10 +222,17 @@ router.get('/apply/:id', async (req, res) => {
       .eq('status', 'published')
       .single();
     if (error || !opportunity) return res.status(404).json({ error: 'Opportunity not found' });
-    const referralUrl = resolveReferralUrl(opportunity, opportunity.category, DEFAULT_REFERRAL_URLS.general);
-    if (!isValidReferralUrl(referralUrl)) return res.status(400).json({ error: 'Invalid referral URL' });
-    await trackEvent({ opportunityId: opportunity.id, categoryId: opportunity.category_id, eventType: 'apply_click', ...getTrackingInfo(req), metadata: { opportunity: opportunity.slug } });
-    res.redirect(302, referralUrl);
+    // Offer-aware destination: jobs/affiliate use referral_url (allowlist-enforced);
+    // products/services/brands use an admin-set destination_url (http/https only).
+    const meta = offerMeta(opportunity);
+    const dest = meta.destination;
+    if (!dest) return res.status(404).json({ error: 'No destination configured for this offer' });
+    let wellFormed = false;
+    try { const u = new URL(dest); wellFormed = u.protocol === 'http:' || u.protocol === 'https:'; } catch { wellFormed = false; }
+    const trusted = Boolean(opportunity.destination_url) || isValidReferralUrl(dest);
+    if (!wellFormed || !trusted) return res.status(400).json({ error: 'Invalid destination URL' });
+    await trackEvent({ opportunityId: opportunity.id, categoryId: opportunity.category_id, eventType: 'apply_click', ...getTrackingInfo(req), metadata: { opportunity: opportunity.slug, offer_type: meta.type } });
+    res.redirect(302, dest);
   } catch (err) {
     console.error('[AI Jobs] Error processing apply click:', err);
     res.status(500).json({ error: 'Error processing request' });
@@ -238,5 +252,64 @@ router.post('/api/events', async (req, res) => {
     res.status(500).json({ error: 'Error tracking event' });
   }
 });
+
+// ============================================================================
+// PHASE 3 — MULTI-TENANT TRAFFIC ENGINE (flag-gated: AI_JOBS_MULTITENANT=true)
+// Each site_tenant gets an SEO hub driving traffic to ANY offer type.
+//   /ai-jobs/t/:tenantSlug            -> tenant hub (all offers)
+//   /ai-jobs/t/:tenantSlug/o/:slug    -> individual offer
+//   /ai-jobs/t/:tenantSlug/:catSlug   -> tenant category
+// When the flag is OFF these return 404, so live behavior is unchanged.
+// ============================================================================
+if (MULTITENANT) {
+  router.get('/t/:tenantSlug', async (req, res) => {
+    try {
+      const { tenantSlug } = req.params;
+      const tenant = await getSiteTenantBySlug(tenantSlug);
+      if (!tenant) return res.status(404).send('Site not found');
+      const offers = await getOffersByTenant(tenant.id, { limit: 100 });
+      await trackEvent({ eventType: 'page_view', ...getTrackingInfo(req), metadata: { page: 'tenant-hub', tenant: tenantSlug } });
+      res.send(renderTenantOffers(tenant, offers));
+    } catch (err) {
+      console.error('[AI Jobs] Error rendering tenant hub:', err);
+      res.status(500).send('Error loading site');
+    }
+  });
+
+  router.get('/t/:tenantSlug/o/:slug', async (req, res) => {
+    try {
+      const { tenantSlug, slug } = req.params;
+      const tenant = await getSiteTenantBySlug(tenantSlug);
+      if (!tenant) return res.status(404).send('Site not found');
+      const opportunity = await getOpportunityBySlug(slug);
+      if (!opportunity) return res.status(404).send('Offer not found');
+      await trackEvent({ opportunityId: opportunity.id, categoryId: opportunity.category_id, eventType: 'opportunity_view', ...getTrackingInfo(req), metadata: { opportunity: slug, tenant: tenantSlug } });
+      res.send(renderOfferPage(opportunity, {
+        sourceName: opportunity.source?.name || tenant.name,
+        basePath: `/ai-jobs/t/${tenantSlug}`,
+        canonicalBase: `/ai-jobs/t/${tenantSlug}/o`
+      }));
+    } catch (err) {
+      console.error('[AI Jobs] Error rendering tenant offer:', err);
+      res.status(500).send('Error loading offer');
+    }
+  });
+
+  router.get('/t/:tenantSlug/:categorySlug', async (req, res) => {
+    try {
+      const { tenantSlug, categorySlug } = req.params;
+      const tenant = await getSiteTenantBySlug(tenantSlug);
+      if (!tenant) return res.status(404).send('Site not found');
+      const category = await getCategoryBySlug(categorySlug);
+      if (!category) return res.status(404).send('Category not found');
+      const offers = await getOffersByTenant(tenant.id, { categoryId: category.id, limit: 100 });
+      await trackEvent({ categoryId: category.id, eventType: 'category_view', ...getTrackingInfo(req), metadata: { category: categorySlug, tenant: tenantSlug } });
+      res.send(renderTenantOffers(tenant, offers, { title: `${tenant.name} — ${category.name}`, sub: category.description || `${category.name} offers from ${tenant.name}.` }));
+    } catch (err) {
+      console.error('[AI Jobs] Error rendering tenant category:', err);
+      res.status(500).send('Error loading category');
+    }
+  });
+}
 
 export default router;
