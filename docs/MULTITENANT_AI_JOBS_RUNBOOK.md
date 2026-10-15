@@ -56,14 +56,43 @@ Only after staging is green and you've confirmed the live site still renders `/a
 - **Code-only instant revert (preferred, Phase 3):** set `AI_JOBS_MULTITENANT=false`. No DB change.
 - **Full schema revert:** run `..._ROLLBACK.sql` (drops only the new columns + `site_tenants`; content untouched).
 
-## Next phases
-- **Phase 2 (DONE, commit 5f6eae3):** generalized config/views/routes/sitemap off the literal "Mercor" + seeded respondent.io. All backward-compatible; `/ai-jobs/mercor/*` output is byte-identical.
-  - New public endpoints (multi-platform):
-    - `GET /ai-jobs/s/:sourceSlug` — source landing (e.g. `/ai-jobs/s/respondent`)
-    - `GET /ai-jobs/s/:sourceSlug/opportunity/:slug`
-    - `GET /ai-jobs/s/:sourceSlug/:categorySlug`
-  - `ALLOWED_REDIRECT_DOMAINS` now includes respondent.io + env override `AI_JOBS_EXTRA_REDIRECT_DOMAINS`.
-  - Seed: `migrations/2026-10-12_seed_respondent_source.sql` (run AFTER Phase 1).
-- **Phase 3 (pending):** `/:tenantSlug` routing + admin tenant/source pickers + per-tenant blog CTA, all behind `AI_JOBS_MULTITENANT` flag (default off).
-- **Phase 4 (optional):** converge tenant resolution onto `alphadome-kernel` behind parity tests.
+## Phase 3 — Multi-Tenant Traffic Engine (DONE, commit fb15c4f)
+Generalized the engine beyond jobs: any `site_tenant` can drive SEO traffic to ANY offer
+(job, product, service, brand, affiliate, course). All flag-gated + backward compatible.
+
+**Data model (additive):** `opportunities` gains `offer_type` (default 'job'), `cta_label`,
+`destination_url`. Existing rows backfill to `offer_type='job'` → identical behavior.
+- Migration: `migrations/2026-10-15_phase3_offer_types.sql` (run BEFORE deploy).
+
+**Feature flag:** `AI_JOBS_MULTITENANT` (default OFF). When OFF, `/ai-jobs/t/*` returns 404
+and nothing changes. Set `AI_JOBS_MULTITENANT=true` in Render env to enable.
+
+**New tenant routes (when flag ON):**
+- `GET /ai-jobs/t/:tenantSlug` — tenant hub (all offers, type-badged)
+- `GET /ai-jobs/t/:tenantSlug/o/:offerSlug` — individual offer (offer-aware CTA)
+- `GET /ai-jobs/t/:tenantSlug/:categorySlug` — tenant category
+
+**Offer-aware CTAs:** job→Apply, product→Shop Now, service→Learn More, brand→Explore,
+affiliate→Get Deal, course→Enroll. Admin `/admin/ai-jobs` now has Tenant + Source + Offer
+Type + Destination URL + CTA pickers on the create form.
+
+### Deploy order (important — migration BEFORE code)
+1. Supabase SQL Editor → run `migrations/2026-10-15_phase3_offer_types.sql` (additive, safe).
+2. Push branch → `main`; Render redeploys.
+3. (Optional) set `AI_JOBS_MULTITENANT=true` in Render to turn on tenant routes.
+4. Live-test:
+   - `/ai-jobs` and `/ai-jobs/mercor/*` unchanged.
+   - `/ai-jobs/s/respondent` unchanged.
+   - With flag ON: `/ai-jobs/t/default` lists all default-tenant offers.
+   - Create a `product` offer in admin (set Destination URL) → it renders with "Shop Now".
+
+## Rollback
+- Instant: set `AI_JOBS_MULTITENANT=false` (tenant routes 404; everything else unchanged).
+- Schema: `migrations/2026-10-15_..._ROLLBACK` not required (columns are nullable/additive);
+  to fully revert, drop the 3 columns or redeploy previous commit.
+
+## Next (Phase 4, optional)
+- Converge tenant resolution onto `alphadome-kernel` behind parity tests.
+- Per-tenant custom domains / branded paths; respondent.io sample offers.
+
 
