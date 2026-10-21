@@ -91,8 +91,34 @@ Type + Destination URL + CTA pickers on the create form.
 - Schema: `migrations/2026-10-15_..._ROLLBACK` not required (columns are nullable/additive);
   to fully revert, drop the 3 columns or redeploy previous commit.
 
+## Phase A — Tenant-Portal Writer's Flow (Blogger) — commit 11e4f12
+Exposes a **Writer's Flow** section in the tenant portal (`/tenant-dashboard`) for
+founder's-plan clients, with two tabs: **Research & Outreach** (placeholder) and **Blogger**
+(fully functional, tenant-scoped).
+
+- **Nav:** new "Growth → Writer's Flow" item (`data-sec="writers-flow"` → `renderWritersFlow`).
+- **Migration:** `2026-10-16_tenant_blogger.sql` adds `site_tenants.client_phone`
+  (links a logged-in `bot_tenants` to its Blogger `site_tenants` row). **Run BEFORE deploy.**
+- **APIs (tenantSessionAuth, auto-scoped):** `GET /tenant/blogger`,
+  `POST /tenant/blogger/offers`, `POST /tenant/blogger/offers/:id/publish`,
+  `POST /tenant/blogger/offers/:id/blog`, `DELETE /tenant/blogger/offers/:id`.
+- **Scoping:** on first Blogger access, a `site_tenants` row is lazily created from the
+  tenant's `bot_tenants` name/phone → public page at `/ai-jobs/t/<their-slug>`.
+- **Public page requires** `AI_JOBS_MULTITENANT=true`.
+
+### Deploy order (migration BEFORE code)
+1. SQL Editor → run `migrations/2026-10-16_tenant_blogger.sql`.
+2. Push → `main`; Render redeploys.
+3. Log into `/tenant-dashboard` → **Writer's Flow** → **Blogger** tab.
+4. Create an offer (any type) → Publish → open the public page (flag must be ON).
+
+### Phase B (next) — Research & Outreach
+Tenant-scope the original WF: add `wf_campaigns.tenant_id`, `/tenant/wf/*` endpoints,
+per-tenant SMTP, and the Research & Outreach tab UI.
+
 ## Next (Phase 4, optional)
 - Converge tenant resolution onto `alphadome-kernel` behind parity tests.
 - Per-tenant custom domains / branded paths; respondent.io sample offers.
+- Founder's-plan gating for Writer's Flow (currently shown to all active tenants).
 
 
