@@ -4254,6 +4254,136 @@ app.patch("/tenant/bot-settings", tenantSessionAuth, async (req, res) => {
   }
 });
 
+// ===== TENANT BLOGGER (Writer's Flow → Blogger) =====
+// Tenant self-service traffic/SEO engine. Scoped to the logged-in tenant via
+// their bot_tenants row; lazily provisions a site_tenants row keyed by phone.
+const TB_OFFER_TYPES = { job: 'Job', product: 'Product', service: 'Service', brand: 'Brand', affiliate: 'Offer', course: 'Course' };
+function tbSlugify(name, fallback) {
+  const s = String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  if (s) return s;
+  const digits = String(fallback || '').replace(/\D/g, '').slice(-6);
+  return digits ? 'tenant-' + digits : 'tenant';
+}
+async function resolveTenantSite(tenant) {
+  const phone = tenant.client_phone;
+  const { data: existing } = await supabase
+    .from('site_tenants').select('*').eq('client_phone', phone).maybeSingle();
+  if (existing) return existing;
+  let slug = tbSlugify(tenant.client_name, phone);
+  const { data: clash } = await supabase.from('site_tenants').select('id').eq('slug', slug).maybeSingle();
+  if (clash) slug = slug + '-' + String(phone || '').replace(/\D/g, '').slice(-4);
+  const { data: created, error } = await supabase
+    .from('site_tenants')
+    .insert([{ slug, name: tenant.client_name || 'My Brand', client_phone: phone, is_active: true }])
+    .select('*').single();
+  if (error) throw error;
+  return created;
+}
+async function tenantSiteFromSession(req) {
+  const { tenantId } = req.tenantSession;
+  const { data: tenant } = await supabase
+    .from('bot_tenants').select('id, client_name, client_phone').eq('id', tenantId).maybeSingle();
+  if (!tenant) return null;
+  const site = await resolveTenantSite(tenant);
+  return { tenant, site };
+}
+
+// GET /tenant/blogger — context: site, public path, offers, categories
+app.get('/tenant/blogger', tenantSessionAuth, async (req, res) => {
+  try {
+    const ctx = await tenantSiteFromSession(req);
+    if (!ctx) return res.status(404).json({ error: 'Tenant not found' });
+    const { data: offers } = await supabase
+      .from('opportunities').select('*, category:opportunity_categories(name)')
+      .eq('tenant_id', ctx.site.id).order('created_at', { ascending: false }).limit(100);
+    const { data: cats } = await supabase
+      .from('opportunity_categories').select('id, name').eq('is_active', true).order('display_order');
+    res.json({
+      ok: true,
+      site: { id: ctx.site.id, slug: ctx.site.slug, name: ctx.site.name },
+      publicPath: `/ai-jobs/t/${ctx.site.slug}`,
+      offers: offers || [],
+      categories: cats || [],
+    });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /tenant/blogger/offers — create an offer (any type) scoped to this tenant
+app.post('/tenant/blogger/offers', tenantSessionAuth, async (req, res) => {
+  try {
+    const ctx = await tenantSiteFromSession(req);
+    if (!ctx) return res.status(404).json({ error: 'Tenant not found' });
+    const b = req.body || {};
+    const title = String(b.title || '').trim();
+    if (!title) return res.status(400).json({ error: 'Title is required' });
+    const slug = String(b.slug || title).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    const row = {
+      tenant_id: ctx.site.id,
+      source_id: b.source_id || null,
+      category_id: b.category_id || null,
+      title,
+      slug,
+      description: b.description || null,
+      offer_type: TB_OFFER_TYPES[b.offer_type] ? b.offer_type : 'job',
+      compensation_max: (b.price !== '' && b.price != null && !isNaN(parseFloat(b.price))) ? parseFloat(b.price) : null,
+      compensation_currency: b.currency || 'KES',
+      location_text: b.location_text || null,
+      destination_url: b.destination_url || null,
+      referral_url: b.referral_url || null,
+      cta_label: b.cta_label || null,
+      skills: Array.isArray(b.skills) ? b.skills : [],
+      status: 'draft',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    const { data, error } = await supabase.from('opportunities').insert([row]).select('id, slug').single();
+    if (error) throw error;
+    res.json({ ok: true, offer: data });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /tenant/blogger/offers/:id/publish
+app.post('/tenant/blogger/offers/:id/publish', tenantSessionAuth, async (req, res) => {
+  try {
+    const ctx = await tenantSiteFromSession(req);
+    if (!ctx) return res.status(404).json({ error: 'Tenant not found' });
+    const { data: offer } = await supabase.from('opportunities').select('id')
+      .eq('id', req.params.id).eq('tenant_id', ctx.site.id).maybeSingle();
+    if (!offer) return res.status(404).json({ error: 'Offer not found' });
+    await supabase.from('opportunities').update({
+      status: 'published', published_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    }).eq('id', req.params.id);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /tenant/blogger/offers/:id/blog — generate SEO blog(s) for an offer
+app.post('/tenant/blogger/offers/:id/blog', tenantSessionAuth, async (req, res) => {
+  try {
+    const ctx = await tenantSiteFromSession(req);
+    if (!ctx) return res.status(404).json({ error: 'Tenant not found' });
+    const { data: offer } = await supabase.from('opportunities').select('id')
+      .eq('id', req.params.id).eq('tenant_id', ctx.site.id).maybeSingle();
+    if (!offer) return res.status(404).json({ error: 'Offer not found' });
+    const { generateBlogPostsForOpportunity } = await import('./scripts/blogManager.js');
+    const result = await generateBlogPostsForOpportunity(offer.id);
+    res.json({ ok: true, result });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// DELETE /tenant/blogger/offers/:id
+app.delete('/tenant/blogger/offers/:id', tenantSessionAuth, async (req, res) => {
+  try {
+    const ctx = await tenantSiteFromSession(req);
+    if (!ctx) return res.status(404).json({ error: 'Tenant not found' });
+    const { data: offer } = await supabase.from('opportunities').select('id')
+      .eq('id', req.params.id).eq('tenant_id', ctx.site.id).maybeSingle();
+    if (!offer) return res.status(404).json({ error: 'Offer not found' });
+    await supabase.from('opportunities').delete().eq('id', req.params.id);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ===== TENANT ANALYTICS API =====
 
 app.get("/tenant/analytics", tenantSessionAuth, async (req, res) => {

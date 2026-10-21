@@ -171,6 +171,9 @@
       <div class="nav-item" data-sec="agent-performance"><span class="nav-icon"><i class="fa-solid fa-user-gear"></i></span>Agent Performance</div>
       <div class="nav-item" data-sec="onboarding"><span class="nav-icon"><i class="fa-solid fa-user-plus"></i></span>Onboarding</div>
 
+    <div class="sidebar-label">Growth</div>
+    <div class="nav-item" data-sec="writers-flow"><span class="nav-icon"><i class="fa-solid fa-rocket"></i></span>Writer's Flow</div>
+
     <div class="sidebar-label">Settings</div>
     <div class="nav-item" data-sec="profile"><span class="nav-icon"><i class="fa-solid fa-user"></i></span>Profile</div>
     <div class="nav-item" data-sec="smtp"><span class="nav-icon"><i class="fa-solid fa-envelope"></i></span>Email Setup</div>
@@ -290,7 +293,7 @@ function go(sec) {
     if (main) main.scrollTo({ top: 0, behavior: 'smooth' });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, 0);
-  const map = { home:renderHome, revenue:renderRevenue, analytics:renderAnalytics, 'a-boss-lite':renderABossLite, customers:renderCustomers, search:renderSearch, preferences:renderPreferences, favorites:renderFavorites, referrals:renderReferrals, catalog:renderCatalog, performance:renderPerformance, suppliers:renderSuppliers, orders:renderOrders, training:renderTraining, 'bot-config':renderBotConfig, profile:renderProfile, smtp:renderSmtp, payments:renderPayments, 'add-agent':renderAddAgent, assignments:renderAssignments, reviews:renderReviews, broadcast:renderBroadcast, abandoned:renderAbandoned, insights:renderInsights, 'auto-responses':renderAutoResponses, scheduled:renderScheduled, workflows:renderWorkflows, escalations:renderEscalations, 'agent-performance':renderAgentPerformance, onboarding:renderOnboarding, help:renderHelp };
+  const map = { home:renderHome, revenue:renderRevenue, analytics:renderAnalytics, 'a-boss-lite':renderABossLite, customers:renderCustomers, search:renderSearch, preferences:renderPreferences, favorites:renderFavorites, referrals:renderReferrals, catalog:renderCatalog, performance:renderPerformance, suppliers:renderSuppliers, orders:renderOrders, training:renderTraining, 'bot-config':renderBotConfig, profile:renderProfile, smtp:renderSmtp, payments:renderPayments, 'add-agent':renderAddAgent, assignments:renderAssignments, reviews:renderReviews, broadcast:renderBroadcast, abandoned:renderAbandoned, insights:renderInsights, 'auto-responses':renderAutoResponses, scheduled:renderScheduled, workflows:renderWorkflows, escalations:renderEscalations, 'agent-performance':renderAgentPerformance, onboarding:renderOnboarding, 'writers-flow':renderWritersFlow, help:renderHelp };
   (map[sec] || renderHome)();
 }
 
@@ -313,6 +316,127 @@ async function renderOnboarding() {
   } catch (e) {
     sp.innerHTML = `<div class='text-center p-5 text-danger'><h2>Failed to load onboarding page.</h2><div class='mt-2'>Please contact support.</div></div>`;
   }
+}
+
+// ═══ WRITER'S FLOW (Growth): Research & Outreach + Blogger ═══
+let wfTab = 'blogger';
+
+function wfOfferRows(offers) {
+  if (!offers.length) return `<tr><td colspan="5" class="text-muted text-center p-3">No offers yet — create your first one above.</td></tr>`;
+  return offers.map(o => `
+    <tr>
+      <td><strong>${esc(o.title)}</strong><div class="text-muted" style="font-size:.72rem">/${esc(o.slug)}</div></td>
+      <td><span class="badge-info">${esc(o.offer_type || 'job')}</span></td>
+      <td>${badge(o.status)}</td>
+      <td>${o.compensation_max != null ? esc(o.compensation_currency || 'KES') + ' ' + Number(o.compensation_max).toLocaleString() : '—'}</td>
+      <td class="text-end">
+        ${o.status !== 'published' ? `<button class="btn btn-sm btn-success me-1" data-act="publish" data-id="${esc(o.id)}">Publish</button>` : ''}
+        <button class="btn btn-sm btn-outline-info me-1" data-act="blog" data-id="${esc(o.id)}">Blog</button>
+        <button class="btn btn-sm btn-outline-danger" data-act="del" data-id="${esc(o.id)}">Delete</button>
+      </td>
+    </tr>`).join('');
+}
+
+function wfOutreachHtml() {
+  return `
+    <div class="panel p-5 text-center">
+      <i class="fa-solid fa-person-magnifying-glass fa-2x mb-3" style="color:var(--accent)"></i>
+      <h5 class="mb-2">Research &amp; Outreach Manager</h5>
+      <p class="text-muted mb-2">Automated lead discovery and outreach is coming to your portal soon.</p>
+      <span class="badge-mid">Coming soon</span>
+    </div>`;
+}
+
+function wfBloggerHtml(ctx) {
+  const offers = ctx.offers || [];
+  const cats = ctx.categories || [];
+  const typeOpts = ['job', 'product', 'service', 'brand', 'affiliate', 'course'].map(t => `<option value="${t}">${t}</option>`).join('');
+  const catOpts = cats.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  const publicPath = ctx.publicPath || '/ai-jobs/t/' + (ctx.site?.slug || '');
+  return `
+    <div class="panel mb-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <div><span class="text-muted">Your public page:</span> <strong>${esc(publicPath)}</strong></div>
+      <a class="btn btn-sm btn-info" href="${esc(publicPath)}" target="_blank" rel="noopener">View Live Page</a>
+    </div>
+    <div class="panel mb-3">
+      <div class="panel-title">Create Offer</div>
+      <form id="wfOfferForm" class="row g-2">
+        <div class="col-md-4"><input class="form-control form-control-sm" name="title" placeholder="Title (e.g. Acoustic Guitar)" required></div>
+        <div class="col-md-2"><select class="form-select form-select-sm" name="offer_type">${typeOpts}</select></div>
+        <div class="col-md-3"><select class="form-select form-select-sm" name="category_id"><option value="">Category…</option>${catOpts}</select></div>
+        <div class="col-md-2"><input class="form-control form-control-sm" name="price" type="number" step="0.01" placeholder="Price"></div>
+        <div class="col-md-1"><input class="form-control form-control-sm" name="currency" value="KES"></div>
+        <div class="col-md-6"><input class="form-control form-control-sm" name="destination_url" placeholder="Destination URL (product / service / checkout link)"></div>
+        <div class="col-md-6"><input class="form-control form-control-sm" name="referral_url" placeholder="Referral URL (optional)"></div>
+        <div class="col-md-4"><input class="form-control form-control-sm" name="cta_label" placeholder="CTA label (e.g. Shop Now)"></div>
+        <div class="col-md-8"><input class="form-control form-control-sm" name="description" placeholder="Short description"></div>
+        <div class="col-12"><button class="btn btn-info btn-sm" type="submit">Create Offer</button></div>
+      </form>
+    </div>
+    <div class="panel p-0">
+      <div class="panel-title px-3 pt-3">Your Offers</div>
+      <div class="table-responsive">
+        <table class="table table-sm mb-0 align-middle"><thead><tr><th>Title</th><th>Type</th><th>Status</th><th>Price</th><th></th></tr></thead><tbody>${wfOfferRows(offers)}</tbody></table>
+      </div>
+    </div>`;
+}
+
+async function renderWritersFlow() {
+  const sp = document.getElementById('spa');
+  sp.innerHTML = spinner("Loading Writer's Flow...");
+  let ctx;
+  try {
+    const r = await apiJson('/tenant/blogger');
+    if (!r.ok) { showErr(r.data?.error || "Failed to load Writer's Flow"); return; }
+    ctx = r.data;
+  } catch (e) { showErr(e.message); return; }
+
+  sp.innerHTML = `
+    <div class="section-hdr"><i class="fa-solid fa-rocket"></i> Writer's Flow</div>
+    <p class="text-muted" style="margin-top:-10px;margin-bottom:16px;">Grow your brand with automated research, outreach, and SEO content.</p>
+    <ul class="nav nav-pills gap-2 mb-3">
+      <li class="nav-item"><button class="nav-link ${wfTab === 'outreach' ? 'active' : ''}" data-tab="outreach">Research &amp; Outreach</button></li>
+      <li class="nav-item"><button class="nav-link ${wfTab === 'blogger' ? 'active' : ''}" data-tab="blogger">Blogger</button></li>
+    </ul>
+    <div class="wf-tab" id="wf-outreach" style="display:${wfTab === 'outreach' ? '' : 'none'}">${wfOutreachHtml()}</div>
+    <div class="wf-tab" id="wf-blogger" style="display:${wfTab === 'blogger' ? '' : 'none'}">${wfBloggerHtml(ctx)}</div>`;
+
+  const setTab = (tab) => {
+    wfTab = tab;
+    sp.querySelectorAll('[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+    document.getElementById('wf-outreach').style.display = tab === 'outreach' ? '' : 'none';
+    document.getElementById('wf-blogger').style.display = tab === 'blogger' ? '' : 'none';
+  };
+  sp.querySelectorAll('[data-tab]').forEach(btn => btn.addEventListener('click', () => setTab(btn.dataset.tab)));
+
+  const form = document.getElementById('wfOfferForm');
+  if (form) form.onsubmit = async (ev) => {
+    ev.preventDefault();
+    const f = ev.target;
+    const payload = {
+      title: f.title.value, offer_type: f.offer_type.value, category_id: f.category_id.value || null,
+      price: f.price.value, currency: f.currency.value || 'KES',
+      destination_url: f.destination_url.value || null, referral_url: f.referral_url.value || null,
+      cta_label: f.cta_label.value || null, description: f.description.value || null,
+    };
+    const r = await apiJson('/tenant/blogger/offers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    if (!r.ok) { toast(r.data?.error || 'Create failed', 'err'); return; }
+    toast('Offer created', 'ok'); renderWritersFlow();
+  };
+
+  const tbody = sp.querySelector('#wf-blogger tbody');
+  if (tbody) tbody.addEventListener('click', async (ev) => {
+    const btn = ev.target.closest('button[data-act]');
+    if (!btn) return;
+    const act = btn.dataset.act, id = btn.dataset.id;
+    if (act === 'del' && !confirm('Delete this offer?')) return;
+    const url = `/tenant/blogger/offers/${id}` + (act === 'publish' ? '/publish' : act === 'blog' ? '/blog' : '');
+    btn.disabled = true;
+    const r = await apiJson(url, { method: act === 'del' ? 'DELETE' : 'POST' });
+    if (!r.ok) { toast(r.data?.error || 'Action failed', 'err'); btn.disabled = false; return; }
+    toast(act === 'blog' ? 'Blog generated' : act === 'publish' ? 'Published' : 'Deleted', 'ok');
+    renderWritersFlow();
+  });
 }
 
 function showErr(msg) {
