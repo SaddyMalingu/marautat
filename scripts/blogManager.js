@@ -182,13 +182,23 @@ async function ai(prompt, deadline) {
         failure = { name: p.name, status: 0, text: 'out of time before ' + models[mi], kind: 'transient' };
         break;
       }
+      // `timeout` alone is not a wall-clock bound: in Node it is a *socket
+      // inactivity* timeout, so a provider that trickles its response keeps the
+      // socket "active" and the value is never reached. Live 2026-10-22 13:55 the
+      // openrouter/free attempt started with 12.8s of run budget left and answered
+      // 30.7s later (the whole BLOG_AI_TIMEOUT_MS), so a 90s run finished in 108s
+      // and the tenant waited 109s. The AbortController is the hard bound: it
+      // destroys the socket at the deadline even mid-response.
+      const budget = Math.max(1, Math.min(baseTimeout, remaining));
+      const ctl = new AbortController();
+      const timer = setTimeout(function () { ctl.abort(); }, budget);
       try {
         const r = await axios.post(p.url(), {
           model: models[mi],
           messages: [{ role: 'user', content: prompt }],
           max_tokens: 3000,
           temperature: 0.7,
-        }, { headers: p.headers(key), timeout: Math.min(baseTimeout, remaining) });
+        }, { headers: p.headers(key), timeout: budget, signal: ctl.signal });
         const content = r.data?.choices?.[0]?.message?.content || null;
         if (!content) {
           failure = { name: p.name, status: 200, text: 'empty content (' + models[mi] + ')', kind: 'transient' };
@@ -206,6 +216,17 @@ async function ai(prompt, deadline) {
         lastAiFatal = false;
         return content;
       } catch (e) {
+        // Our own timer fired, not the provider: the run budget ran out mid-call.
+        // Nothing else on this key can finish, so stop walking its models.
+        if (ctl.signal.aborted) {
+          failure = {
+            name: p.name, status: 0, kind: 'transient',
+            text: 'aborted after ' + (budget / 1000).toFixed(1) + 's (' + models[mi] + ') — run budget spent',
+          };
+          console.warn('[AI] ' + p.name + ' ' + models[mi] + ' aborted after ' + (budget / 1000).toFixed(1) +
+            's — run budget spent, composing the remaining angles from the offer data');
+          break;
+        }
         const status = e.response?.status;
         const raw = e.response?.data;
         const body = raw ? (typeof raw === 'string' ? raw : JSON.stringify(raw)) : '';
@@ -225,6 +246,8 @@ async function ai(prompt, deadline) {
           continue;
         }
         break;
+      } finally {
+        clearTimeout(timer);
       }
     }
     if (failure) failures.push(failure);
@@ -428,7 +451,9 @@ async function generateJourney(oppId, opts) {
   // every angle came from a model, 'template' when the AI tier was unavailable
   // and the copy was composed from the offer, 'mixed' when a run recovered.
   var mode = fromTemplate === 0 ? 'ai' : (fromTemplate >= res.length ? 'template' : 'mixed');
-  console.log('[GEN] Done: ' + res.length + '/' + journey.length + ' posts' +
+  console.log('[GEN] Done: ' + res.length + '/' + journey.length + ' posts in ' +
+    Math.round((Date.now() - runStart) / 1000) + 's' +
+    (budgetMs > 0 ? ' of ' + Math.round(budgetMs / 1000) + 's budget' : ' (no BLOG_RUN_BUDGET_MS)') +
     (fromTemplate ? ' (' + fromTemplate + ' composed from offer data — AI tier unavailable)' : '') +
     (skipped.length ? ' (' + skipped.length + ' angle(s) skipped)' : ''));
   if (!res.length) {

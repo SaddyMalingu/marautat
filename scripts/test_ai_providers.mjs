@@ -86,6 +86,20 @@ const server = http.createServer((req, res) => {
     }
     if (mode === "500") return send(500, { error: "upstream boom" });
     if (mode === "empty") return send(200, { choices: [] });
+    if (mode === "slow") {
+      // A trickling upstream, not a silent one: headers arrive at once and one byte
+      // every 250ms, so a socket-inactivity timeout never fires — only the client's
+      // own deadline can cut this. Live 2026-10-22 13:55 that exact shape let
+      // openrouter/free hold a 90s run open for 109s.
+      res.writeHead(200, { "Content-Type": "application/json" });
+      let sent = 0;
+      const tick = setInterval(() => {
+        if (res.writableEnded || res.destroyed) { clearInterval(tick); return; }
+        try { res.write(" "); } catch { clearInterval(tick); return; }
+        if (++sent >= 20) { clearInterval(tick); try { res.end(""); } catch { /* client gone */ } }
+      }, 250);
+      return;
+    }
     return send(200, { choices: [{ message: { content: provider.toUpperCase() + " OK" } }] });
   });
 });
@@ -378,6 +392,26 @@ await check("an expired deadline skips every provider without a request", async 
   assert(/run budget spent/.test(err), `error should say the budget is spent, got: ${err}`);
   assert(isAiFailureFatal() === false, `a spent budget must not abort the journey: ${err}`);
   return `${elapsed}ms, zero requests, not fatal`;
+});
+
+// Live 2026-10-22 13:55: a 90s run returned in 108s because the openrouter/free
+// attempt started with 12.8s of budget left and answered 30.7s later. Clamping
+// the axios `timeout` was not enough — in Node that is a socket-inactivity
+// timeout, so a provider that trickles its body keeps the value unreached. The
+// AbortController must cut the call at the deadline, mid-response.
+await check("a slow provider is cut at the deadline, not at its own pace", async () => {
+  resetStub();
+  setKeys({ or: "or-key" });
+  behavior.or = "slow";
+  const started = Date.now();
+  const out = await ai(PROMPT, Date.now() + 1500);
+  const elapsed = Date.now() - started;
+  const err = getLastAiError() || "";
+  assert(out === null, `expected null, got ${JSON.stringify(out)}`);
+  assert(elapsed < 3000, `expected an abort at ~1.5s, waited ${elapsed}ms`);
+  assert(/aborted after [\d.]+s/.test(err), `error should say it was aborted, got: ${err}`);
+  assert(isAiFailureFatal() === false, `an aborted call must stay transient: ${err}`);
+  return `${elapsed}ms against a 1500ms budget (provider needed 5000ms)`;
 });
 
 server.close();
