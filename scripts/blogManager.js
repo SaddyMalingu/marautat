@@ -85,16 +85,34 @@ const AI_PROVIDERS = [
 ];
 
 // Billing / auth failures will fail for every angle, so there is no point
-// burning the whole journey on them.
-const FATAL_AI = /(^|\D)(401|402|403)(\D|$)|no remaining credits|invalid.*(token|key)|unauthor/i;
+// burning the whole journey on them. Rate limits do NOT belong here: a 429 (or
+// Gemini's "You exceeded your current quota") clears within a minute, so the
+// journey should keep going instead of stopping after the first post.
+const FATAL_AI = /(^|\D)(401|402|403)(\D|$)|no remaining credits|insufficient.*(credit|balance)|invalid.*(token|key)|unauthor|not authorized/i;
+const TRANSIENT_AI = /(^|\D)(408|409|425|429|5\d\d)(\D|$)|rate limit|too many requests|quota|resource[_ ]exhausted|overloaded|timed? ?out|ECONNRESET|ETIMEDOUT|empty content/i;
+
+let lastAiFatal = false;
+
+// One exhausted provider must not abort the journey — only a chain where every
+// attempted provider failed on auth/billing is hopeless. Regression this guards
+// against (2026-10-22): HF answered 402 on every call while OpenRouter/Gemini
+// answered fine, but the fail-fast tested the *joined* error string
+// ("... | hf 402 ..."), so generation stopped after the first post.
+function classifyFailure(status, text) {
+  const probe = (status ? String(status) + ' ' : '') + (text || '');
+  if (TRANSIENT_AI.test(probe)) return 'transient';
+  if (FATAL_AI.test(probe)) return 'fatal';
+  return 'unknown';
+}
 
 // Exposed so verification scripts (scripts/test_ai_providers.mjs) can drive the
 // fallback chain against a local stub instead of the real providers.
 export function getLastAiError() { return lastAiError; }
+export function isAiFailureFatal() { return lastAiFatal; }
 
 async function ai(prompt) {
   const axios = (await import('axios')).default;
-  const failed = [];
+  const failures = [];
   for (const p of AI_PROVIDERS) {
     const key = p.key();
     if (!key) continue;
@@ -106,17 +124,28 @@ async function ai(prompt) {
         temperature: 0.7,
       }, { headers: p.headers(key), timeout: 120000 });
       const content = r.data?.choices?.[0]?.message?.content || null;
-      if (content) { lastAiError = null; return content; }
-      failed.push(p.name + ': empty content');
+      if (content) {
+        if (failures.length) console.log('[AI] ' + p.name + ' served after ' + failures.length + ' failed provider(s)');
+        lastAiError = null;
+        lastAiFatal = false;
+        return content;
+      }
+      failures.push({ name: p.name, status: 200, text: 'empty content', kind: 'transient' });
     } catch (e) {
       const status = e.response?.status;
       const raw = e.response?.data;
       const body = raw ? (typeof raw === 'string' ? raw : JSON.stringify(raw)) : '';
-      failed.push((p.name + ' ' + (status || '') + ' ' + (body || e.message)).trim().slice(0, 240));
+      const text = (body || e.message || '').slice(0, 240);
+      failures.push({ name: p.name, status: status || 0, text, kind: classifyFailure(status, text) });
     }
   }
-  lastAiError = failed.length ? failed.join(' | ') : 'no AI provider key configured (OPENROUTER_API_KEY / GEMINI_API_KEY / OPENAI_API_KEY / HF_API_KEY)';
-  console.error('[AI] All providers failed →', lastAiError);
+  // Only hopeless when every provider we could try said auth/billing. A single
+  // dead provider next to a healthy one must never stop the journey.
+  lastAiFatal = failures.length === 0 || failures.every(function (f) { return f.kind === 'fatal'; });
+  lastAiError = failures.length
+    ? failures.map(function (f) { return (f.name + ' ' + (f.status || '') + ' ' + f.text).trim().slice(0, 240); }).join(' | ')
+    : 'no AI provider key configured (OPENROUTER_API_KEY / GEMINI_API_KEY / OPENAI_API_KEY / HF_API_KEY)';
+  console.error('[AI] All providers failed →', lastAiError, '(fatal=' + lastAiFatal + ')');
   return null;
 }
 export { ai };
@@ -172,11 +201,11 @@ export async function generateBlogPostsForOpportunity(oppId, opts) {
     attempts++;
     var content = await ai(post.prompt);
     if (!content) {
-      if (FATAL_AI.test(lastAiError || '')) {
-        console.error('[GEN] Aborting after [' + post.angleName + '] — provider auth/billing failure: ' + lastAiError);
+      if (isAiFailureFatal()) {
+        console.error('[GEN] Aborting after [' + post.angleName + '] — every provider failed on auth/billing: ' + lastAiError);
         break;
       }
-      console.log('[GEN] Failed: ' + post.slug);
+      console.log('[GEN] Failed: ' + post.slug + ' — continuing with next angle');
       continue;
     }
     content = clean(content);

@@ -142,11 +142,15 @@ string is the diagnosis — you do not need host logs.
 | `401` / `unauthor` | key revoked or wrong | rotate the key on Render |
 | `404` | model route not available on that account | set `OPENROUTER_MODEL` / `HF_MODEL` |
 | `429` | rate limited | retry later or add a second key |
+| only 1 post written, run then stops | fail-fast matched one exhausted provider (e.g. `hf 402`) in the joined error string | fixed 2026-10-22: only an all-provider auth/billing failure aborts a journey; redeploy and re-run the verifier |
 | `no AI provider key configured` | no key at all | set one of the three keys |
 
 Providers are tried in order — **OpenRouter → Gemini → OpenAI → HuggingFace** —
-so any single key is enough. Billing/auth failures (`401/402/403`, "no remaining
-credits") abort the run on the first angle instead of retrying all 9.
+so any single key is enough. The journey only aborts when **every** provider it
+could try failed on auth/billing (`401/402/403`, "no remaining credits"). One
+exhausted provider next to a healthy one, or a `429` / `RESOURCE_EXHAUSTED`
+quota reply, lets the remaining angles continue — otherwise a permanently dead
+HuggingFace `402` in the chain caps every run at one post.
 
 **Zero-spend recovery.** Google AI Studio issues a `GEMINI_API_KEY` with a free
 tier and no credit card (https://aistudio.google.com/apikey). The writer talks to

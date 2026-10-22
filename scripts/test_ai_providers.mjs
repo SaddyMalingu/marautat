@@ -54,6 +54,17 @@ const server = http.createServer((req, res) => {
         error: "You have no remaining credits. Purchase pre-paid credits to continue using Inference Providers.",
       });
     }
+    if (mode === "429") {
+      // Shape of Gemini's free-tier quota response: a 429 whose body mentions
+      // "quota" and "billing" — it must NOT be mistaken for a billing failure.
+      return send(429, {
+        error: {
+          code: 429,
+          message: "You exceeded your current quota, please check your plan and billing details.",
+          status: "RESOURCE_EXHAUSTED",
+        },
+      });
+    }
     if (mode === "500") return send(500, { error: "upstream boom" });
     if (mode === "empty") return send(200, { choices: [] });
     return send(200, { choices: [{ message: { content: provider.toUpperCase() + " OK" } }] });
@@ -95,7 +106,7 @@ function resetStub() {
   for (const k of Object.keys(seen)) delete seen[k];
 }
 
-const { ai, getLastAiError } = await import("./blogManager.js");
+const { ai, getLastAiError, isAiFailureFatal } = await import("./blogManager.js");
 
 const PROMPT = "Write a short post about a salary guide.";
 
@@ -207,6 +218,47 @@ await check("OPENROUTER_KEY alias is accepted for the same credential", async ()
   assert(out === "OR OK", `expected OR OK, got ${JSON.stringify(out)}`);
   assert(seen.or && seen.or.auth === "Bearer alias-key", "alias key not forwarded");
   return "OPENROUTER_KEY -> openrouter";
+});
+
+// Regression (2026-10-22, live): HF kept answering 402 while OpenRouter/Gemini
+// worked. The journey fail-fast tested the joined error string, saw "402", and
+// aborted after the first post — 1 post written instead of 9.
+await check("one exhausted provider does not abort the journey", async () => {
+  resetStub();
+  setKeys({ or: "or-key", hf: "hf-key" });
+  behavior.or = "500";
+  behavior.hf = "402";
+  const out = await ai(PROMPT);
+  const err = getLastAiError() || "";
+  assert(out === null, `expected null, got ${JSON.stringify(out)}`);
+  assert(/hf 402/.test(err), `error should still name the 402 provider, got: ${err}`);
+  assert(isAiFailureFatal() === false, "a lone 402 next to other providers must not abort the journey");
+  return "hf 402 + or 500 -> keep going";
+});
+
+await check("every provider out of credits is fatal", async () => {
+  resetStub();
+  setKeys({ or: "or-key", gem: "gem-key", hf: "hf-key" });
+  behavior.or = "402";
+  behavior.gem = "402";
+  behavior.hf = "402";
+  const out = await ai(PROMPT);
+  assert(out === null, `expected null, got ${JSON.stringify(out)}`);
+  assert(isAiFailureFatal() === true, "all-providers-402 must abort the journey");
+  return "402 x3 -> fatal";
+});
+
+await check("free-tier 429 quota is transient, not fatal", async () => {
+  resetStub();
+  setKeys({ or: "or-key", gem: "gem-key" });
+  behavior.or = "429";
+  behavior.gem = "429";
+  const out = await ai(PROMPT);
+  const err = getLastAiError() || "";
+  assert(out === null, `expected null, got ${JSON.stringify(out)}`);
+  assert(/429/.test(err), `error should surface the 429, got: ${err}`);
+  assert(isAiFailureFatal() === false, `429/quota must not be treated as billing failure: ${err}`);
+  return "429 RESOURCE_EXHAUSTED -> retry later";
 });
 
 server.close();
