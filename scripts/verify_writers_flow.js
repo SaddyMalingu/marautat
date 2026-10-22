@@ -182,7 +182,10 @@ async function main() {
   else fail("publish", `POST ${pub.status}, status=${rowA?.status}`);
 
   // 8) Blog generation — the core contract: never 200 with zero posts.
-  const blog = await http.post(`/tenant/blogger/offers/${offerA.id}/blog`, {}, { headers: authHeaders(), timeout: 180000 });
+  // Free-tier models answer in 20-40s each and a journey is 9 angles plus a
+  // review pass per post, so allow ten minutes: a 180s cap reports a timeout for
+  // a run that is still making progress.
+  const blog = await http.post(`/tenant/blogger/offers/${offerA.id}/blog`, {}, { headers: authHeaders(), timeout: 600000 });
   const posts = blog.data?.result?.posts;
   if (Array.isArray(posts)) {
     for (const p of posts) if (p?.slug) createdSlugs.push(p.slug);
