@@ -207,14 +207,46 @@ await check("request carries model, messages and bearer token", async () => {
   return `model=${req.body.model}`;
 });
 
-await check("OPENROUTER_MODEL overrides the default model", async () => {
+await check("OPENROUTER_MODEL leads the model list without hiding the free fallbacks", async () => {
   resetStub();
   setKeys({ or: "or-key" });
   process.env.OPENROUTER_MODEL = "custom/model-id";
   await ai(PROMPT);
   delete process.env.OPENROUTER_MODEL;
   assert(seen.or.body.model === "custom/model-id", `got ${seen.or.body.model}`);
-  return "custom/model-id";
+  return "custom/model-id tried first";
+});
+
+// Regression (2026-10-22, live): the host pinned OPENROUTER_MODEL to a retired
+// free slug, so a healthy OpenRouter account answered 404 on every angle while
+// three working free models were configured. The pin must not starve the list.
+await check("a retired pinned model still falls through to the free list", async () => {
+  resetStub();
+  setKeys({ or: "or-key" });
+  process.env.OPENROUTER_MODEL = "meta-llama/llama-3.1-8b-instruct:free";
+  retired.add(process.env.OPENROUTER_MODEL);
+  const out = await ai(PROMPT);
+  delete process.env.OPENROUTER_MODEL;
+  assert(out === "OR OK", `expected OR OK, got ${JSON.stringify(out)}`);
+  assert(
+    seen.or && seen.or.body.model === OPENROUTER_FREE_MODELS[0],
+    `expected fallback to ${OPENROUTER_FREE_MODELS[0]}, got ${seen.or && seen.or.body.model}`
+  );
+  return `pinned slug 404 -> ${OPENROUTER_FREE_MODELS[0]}`;
+});
+
+await check("empty content from one model advances to the next model", async () => {
+  resetStub();
+  setKeys({ or: "or-key" });
+  behavior.or = "empty";
+  const out = await ai(PROMPT);
+  assert(out === null, `expected null, got ${JSON.stringify(out)}`);
+  const err = getLastAiError() || "";
+  assert(
+    err.includes(OPENROUTER_FREE_MODELS[OPENROUTER_FREE_MODELS.length - 1]),
+    `every model should have been tried, last error: ${err}`
+  );
+  return "empty 200 tries the whole list";
 });
 
 await check("OPENROUTER_KEY alias is accepted for the same credential", async () => {

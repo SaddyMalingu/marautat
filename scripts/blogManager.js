@@ -65,7 +65,17 @@ const AI_PROVIDERS = [
     // uses for the same credential — accept both so one key serves everything.
     key: () => process.env.OPENROUTER_API_KEY || process.env.OPENROUTER_KEY,
     url: () => (process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1') + '/chat/completions',
-    models: () => (process.env.OPENROUTER_MODEL ? [process.env.OPENROUTER_MODEL] : OPENROUTER_FREE_MODELS.slice()),
+    models: () => {
+      // A pin is a *preference*, not a trap. Live outage (2026-10-22): the host
+      // had OPENROUTER_MODEL pinned to llama-3.1-8b-instruct:free, OpenRouter
+      // retired that slug for free use, and every call answered 404 while three
+      // working free models sat right here in the list. So the pin leads and the
+      // verified free models still act as fallback.
+      const pinned = process.env.OPENROUTER_MODEL;
+      const list = OPENROUTER_FREE_MODELS.slice();
+      return pinned ? [pinned, ...list.filter((m) => m !== pinned)] : list;
+    },
+
     headers: (k) => ({ Authorization: 'Bearer ' + k, 'Content-Type': 'application/json' }),
   },
   {
@@ -140,6 +150,10 @@ async function ai(prompt) {
         const content = r.data?.choices?.[0]?.message?.content || null;
         if (!content) {
           failure = { name: p.name, status: 200, text: 'empty content (' + models[mi] + ')', kind: 'transient' };
+          // A model that answers 200 with nothing (reasoning models running out
+          // of tokens, filtered output) is as unusable as a retired slug: try the
+          // next candidate before giving up on the provider.
+          if (mi < models.length - 1) { failure = null; continue; }
           break;
         }
         if (failures.length || mi > 0) {
