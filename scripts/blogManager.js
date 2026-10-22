@@ -332,9 +332,13 @@ async function generateJourney(oppId, opts) {
   // connection and then stalls burns a whole attempt (BLOG_AI_TIMEOUT_MS) before
   // it counts as one miss. Live 2026-10-22 the journey wrote 1 of 9 pages in 6
   // minutes and the tenant's request was still open. So a wall-clock budget also
-  // bounds the walk. It only bites a failing run: while every angle is
-  // answering (misses === 0) the AI tier is never cut short, so a healthy paid
-  // run keeps all its review passes.
+  // bounds the walk, and it bounds it *unconditionally*: the earlier rule only
+  // applied it once an angle had missed, which sounds safe ("a healthy run is
+  // never cut short") but is not. Live 2026-10-22 13:10 the tier answered one
+  // angle out of nine, the other eight only after their full 45s walk, and
+  // `misses` kept resetting on the one success — 166s on the wire with 8 pages
+  // composed locally anyway. The budget has to be a ceiling, not a hint.
+
   var budgetMs = Number(process.env.BLOG_RUN_BUDGET_MS == null ? 90000 : process.env.BLOG_RUN_BUDGET_MS);
   // The run budget alone is not enough: it is only consulted between angles, and
   // one angle walks up to seven candidate models of the same key. Live
@@ -357,19 +361,19 @@ async function generateJourney(oppId, opts) {
       aiUsable = false;
       console.warn('[GEN] AI returned nothing for ' + misses + ' angle(s) in a row — composing the rest from the offer data ' +
         '(BLOG_AI_MAX_MISSES=' + maxMisses + ', last error: ' + (lastAiError || 'none') + ')');
-    } else if (aiUsable && misses > 0 && budgetMs > 0 && Date.now() - runStart > budgetMs) {
+    } else if (aiUsable && budgetMs > 0 && Date.now() - runStart > budgetMs) {
       aiUsable = false;
       console.warn('[GEN] AI budget spent (' + Math.round((Date.now() - runStart) / 1000) + 's of ' +
-        Math.round(budgetMs / 1000) + 's, BLOG_RUN_BUDGET_MS) — composing the rest from the offer data');
+        Math.round(budgetMs / 1000) + 's, BLOG_RUN_BUDGET_MS) — composing the remaining angles from the offer data');
     }
-    // Tightest cap that applies to this angle: the per-angle slice, plus the run
-    // budget once the tier has already missed (a healthy run is never cut short).
-    // Each AI call gets its own slice, so a fast compose never squeezes out the
-    // review pass.
+    // Tightest cap that applies to this angle: the per-angle slice, and the run
+    // deadline, which is a hard ceiling for the whole request. Each AI call gets
+    // its own slice, so a fast compose never squeezes out the review pass, but
+    // no call may run past the run deadline however well the tier is behaving.
     var capFor = function () {
       var cs = [];
       if (angleBudget > 0) cs.push(Date.now() + angleBudget);
-      if (budgetMs > 0 && (i === 0 || misses > 0)) cs.push(deadline);
+      if (budgetMs > 0) cs.push(deadline);
       return cs.length ? Math.min.apply(null, cs) : 0;
     };
     var angleDeadline = capFor();
@@ -403,9 +407,13 @@ async function generateJourney(oppId, opts) {
       content = await ai(post.prompt + ' Make this completely unique.', capFor());
       if (content) content = clean(content);
     }
-    // The review pass is a second AI call per post. Skip it when the writer is
-    // out of quota (lastAiError set) or when the text was composed locally.
-    if (rev && !composed && !lastAiError) content = await reviewContent(content, post.title, capFor());
+    // The review pass is a second AI call per post, so it can double the cost of
+    // an angle. Skip it when the writer is out of quota (lastAiError set), when
+    // the text was composed locally, or when most of the run budget is spent —
+    // spending the last of it polishing page 3 means pages 4-9 fall back to
+    // composed copy. Same total time, more AI-written pages.
+    var reviewHeadroom = budgetMs <= 0 || Date.now() - runStart < budgetMs * 0.6;
+    if (rev && !composed && !lastAiError && reviewHeadroom) content = await reviewContent(content, post.title, capFor());
     var thumb = null;
     if (img) thumb = await genImage(o.title + ' ' + post.angleName, post.slug);
     var postData = { title: post.title, slug: post.slug, content: content, thumb: thumb };
