@@ -128,7 +128,8 @@ Checks: **build identity** (is the served bundle the latest commit?), route
 registration (401 not 404, plus a 404 control), login, context, offer create,
 **slug collision** (same title twice must yield two slugs), publish,
 **blog generation** (must never return 200 with 0 posts), **blog coverage**
-(warns when fewer than 9 angles produced a post), public page, cleanup, **blog
+(warns when fewer than 9 unique angle pages were written, and reports
+`mode=ai|template|mixed`), public page, cleanup, **blog
 cleanup** (generated `verify-writers-flow-*` posts are deleted).
 
 Exit `0` = no failures, `1` = at least one, `2` = missing config. A stale
@@ -172,6 +173,7 @@ Relevant env (all optional except one key):
 | `OPENROUTER_API_KEY` | — (preferred; alias `OPENROUTER_KEY` accepted) |
 | `OPENROUTER_MODEL` | unset → tries `google/gemma-4-31b-it:free`, `minimax/minimax-m3.1-flash:free`, `nvidia/nemotron-3-super-120b-a12b:free`, `google/gemma-4-26b-a4b-it:free`, `nvidia/nemotron-3.5-lightning:free`, `poolside/laguna-s-2.1:free`, `openrouter/free` in order. A pin is tried **first** and the free list still follows it, so a retired pin cannot starve the writer (2026-10-22: the host was pinned to `llama-3.1-8b-instruct:free`, OpenRouter retired it, and every angle 404'd while three healthy free models sat unused). Retired (`404`) and throttled (`429`) slugs advance to the next model; only `401/402/403` stops the list |
 | `BLOG_ANGLE_DELAY_MS` | `1200` — pause between angles so nine sequential calls stay inside per-minute free limits; set `0` on a paid key |
+| `BLOG_FALLBACK_MODE` | `auto` — when an angle gets nothing from every provider, compose it from the offer's own fields (`public/blog/<slug>.html` still gets a full page). `off` restores the loud 502 for diagnosis |
 | `GEMINI_API_KEY` | — (free tier, no card) |
 | `GEMINI_MODEL` | `gemini-flash-latest` (pin `gemini-3.8-flash` to freeze) |
 | `OPENAI_API_KEY` / `OPENAI_MODEL` | — / `gpt-4o-mini` |
@@ -191,6 +193,44 @@ are paced by `BLOG_ANGLE_DELAY_MS` (default 1200 ms) and each throttled slug
 falls through to the next model, so nine angles can complete on free slugs alone.
 OpenRouter's free tier (50 req/day, 1000/day with a one-time $10 credit) is the
 sustainable demo path; keep it as the first provider and let Gemini sit second.
+
+**When every tier is dry at once** (live 2026-10-22: OpenRouter `429` on the
+remaining free slugs, Gemini daily quota spent, HuggingFace `402`), the journey
+no longer ends empty. Each angle is composed from the offer's own fields by
+`utils/angleFallback.js` — title, type, price, location, skills, CTA — and the
+run still writes nine pages under nine distinct URLs. The response says so:
+
+| Field | Meaning |
+| --- | --- |
+| `result.mode` | `ai` (every angle from a model), `template` (every angle composed), `mixed` (the AI tier recovered mid-run) |
+| `result.fallback` | how many posts were composed rather than generated |
+| `posts[].fallback` | `true` on a composed post — the dashboard toast says "composed from offer details" |
+
+Composed copy is deliberately honest: it never invents a price (it asks for one
+when the offer states none) and it escapes tenant-supplied fields. It is a demo
+and continuity guarantee, not an AI substitute — the page reads as structured
+advice, and the flags above make sure nobody claims a model wrote it.
+
+`npm run test:blog-fallback` covers this path offline (10 checks): a unique slug
+per angle, 230+ words per composed post, no pair above the duplicate threshold,
+survival with a title-only offer, HTML escaping, no markdown artefacts, the
+price never invented, CTA resolution for every offer type, plus both directions
+of the job/buyer split described below.
+
+**Offers are not all jobs.** The journey was written for the Mercor job catalog,
+so a tenant's service listing produced "How to Get Hired as a Kassangas Music
+Shop" and "Remote … Jobs" on its own blog. Every template now branches on
+`offer_type`: `job` (the default, which is what every legacy row and every
+untyped row resolves to) keeps the career copy, everything else gets buyer copy
+("What It Costs and What You Get", "How to Brief …", "Taking … Beyond a Single
+Site"). The prompts branch too, so the AI is not asked to write career advice
+for a service either.
+
+**One page per angle.** Until 2026-10-22 the two templates inside an angle were
+slugged `<offer>-<angle>`, so the second post overwrote the first — a "9 of 9
+angles" run wrote five pages. Slugs now carry the stage
+(`<offer>-awareness-1`, `<offer>-awareness-2`, …) and the verifier counts unique
+slugs, not array entries.
 
 ### Phase B (next) — Research & Outreach
 Tenant-scope the original WF: add `wf_campaigns.tenant_id`, `/tenant/wf/*` endpoints,

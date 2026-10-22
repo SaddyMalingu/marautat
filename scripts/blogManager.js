@@ -3,6 +3,9 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { getContentJourney, getAllAngles } from '../utils/contentJourney.js';
+// Composes angle copy from the offer's own fields when every AI provider is out
+// of quota. Imported as a pure function so it can be unit-tested without a host.
+import { composeAnglePost } from '../utils/angleFallback.js';
 const __f = fileURLToPath(import.meta.url);
 const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 const SITE = process.env.SITE_URL || 'https://alphadome.onrender.com';
@@ -272,38 +275,65 @@ export async function generateBlogPostsForOpportunity(oppId, opts) {
   // nine back-to-back requests. Pace them; set BLOG_ANGLE_DELAY_MS=0 to disable
   // on a paid key.
   var angleDelay = Number(process.env.BLOG_ANGLE_DELAY_MS == null ? 1200 : process.env.BLOG_ANGLE_DELAY_MS);
+  // A dead AI tier must not leave the tenant with nothing: each angle can also
+  // be composed from the offer's own fields (utils/angleFallback.js). Set
+  // BLOG_FALLBACK_MODE=off to restore the loud failure when diagnosing.
+  var allowFallback = String(process.env.BLOG_FALLBACK_MODE == null ? 'auto' : process.env.BLOG_FALLBACK_MODE).toLowerCase() !== 'off';
+  var aiUsable = true;
+  var fromTemplate = 0;
   lastAiError = null;
   for (var i = 0; i < journey.length; i++) {
     var post = journey[i];
-    if (i > 0 && angleDelay > 0) await sleep(angleDelay);
     console.log('[GEN] - [' + post.angleName + '] ' + post.title);
     attempts++;
-    var content = await ai(post.prompt);
-    if (!content) {
-      skipped.push({ slug: post.slug, angle: post.angleName, error: lastAiError });
-      if (isAiFailureFatal()) {
-        console.error('[GEN] Aborting after [' + post.angleName + '] — every provider failed on auth/billing: ' + lastAiError);
-        break;
-      }
-      console.log('[GEN] Failed: ' + post.slug + ' — continuing with next angle');
-      continue;
+    var content = null;
+    if (aiUsable) {
+      if (i > 0 && angleDelay > 0) await sleep(angleDelay);
+      content = await ai(post.prompt);
+      if (content) content = clean(content);
     }
-    content = clean(content);
-    if (isDuplicate(content, existing)) {
+    var composed = false;
+    if (!content) {
+      if (!allowFallback) {
+        skipped.push({ slug: post.slug, angle: post.angleName, error: lastAiError });
+        if (isAiFailureFatal()) {
+          console.error('[GEN] Aborting after [' + post.angleName + '] — every provider failed on auth/billing: ' + lastAiError);
+          break;
+        }
+        console.log('[GEN] Failed: ' + post.slug + ' — continuing with next angle');
+        continue;
+      }
+      content = composeAnglePost(o, post);
+      composed = true;
+      fromTemplate++;
+      // Provider-wide failures will fail for every remaining angle too, so stop
+      // paying the per-angle delay and the round trips.
+      if (isAiFailureFatal()) aiUsable = false;
+      console.warn('[GEN] AI unavailable for [' + post.angleName + '] (' + (aiUsable ? 'transient' : 'provider-wide') +
+        ') — composed from the offer data');
+    } else if (isDuplicate(content, existing)) {
       content = await ai(post.prompt + ' Make this completely unique.');
       if (content) content = clean(content);
     }
-    if (rev) content = await reviewContent(content, post.title);
+    // The review pass is a second AI call per post. Skip it when the writer is
+    // out of quota (lastAiError set) or when the text was composed locally.
+    if (rev && !composed && !lastAiError) content = await reviewContent(content, post.title);
     var thumb = null;
     if (img) thumb = await genImage(o.title + ' ' + post.angleName, post.slug);
     var postData = { title: post.title, slug: post.slug, content: content, thumb: thumb };
     fs.writeFileSync(path.join(BLOG, post.slug + '.html'), buildHTML(postData, o), 'utf8');
     await saveToDB(postData, o, post.angle);
     existing.push(content);
-    res.push({ title: post.title, slug: post.slug, angle: post.angleName, url: SITE + '/blog/' + post.slug + '.html', thumb: thumb });
+    res.push({ title: post.title, slug: post.slug, angle: post.angleName, url: SITE + '/blog/' + post.slug + '.html', thumb: thumb, fallback: composed });
   }
   updateIndex();
-  console.log('[GEN] Done: ' + res.length + '/' + journey.length + ' posts' + (skipped.length ? ' (' + skipped.length + ' angle(s) skipped)' : ''));
+  // mode tells the tenant (and the verifier) what actually happened: 'ai' when
+  // every angle came from a model, 'template' when the AI tier was unavailable
+  // and the copy was composed from the offer, 'mixed' when a run recovered.
+  var mode = fromTemplate === 0 ? 'ai' : (fromTemplate >= res.length ? 'template' : 'mixed');
+  console.log('[GEN] Done: ' + res.length + '/' + journey.length + ' posts' +
+    (fromTemplate ? ' (' + fromTemplate + ' composed from offer data — AI tier unavailable)' : '') +
+    (skipped.length ? ' (' + skipped.length + ' angle(s) skipped)' : ''));
   if (!res.length) {
     // Every angle produced nothing (missing/invalid LLM key, model unavailable,
     // rate limit). Report failure instead of a false "success" so callers such
@@ -314,14 +344,15 @@ export async function generateBlogPostsForOpportunity(oppId, opts) {
       posts: [],
       attempted: attempts,
       skipped: skipped,
+      mode: mode,
       error: 'No posts generated — the AI writer returned nothing (' + attempts + ' of ' +
-        journey.length + ' angles attempted). Check GEMINI_API_KEY / OPENROUTER_API_KEY / OPENAI_API_KEY / HF_API_KEY and model credits.' +
+        journey.length + ' angles attempted). Check GEMINI_API_KEY / OPENROUTER_API_KEY / OPENAI_API_KEY / HF_API_KEY and model credits, or unset BLOG_FALLBACK_MODE=off to compose posts from the offer data instead.' +
         (lastAiError ? ' Last AI error: ' + lastAiError : '')
     };
   }
   // Partial journeys are still a success, but callers must be able to show
   // *why* an angle was skipped (free-tier rate limits) instead of guessing.
-  return { success: true, posts: res, attempted: attempts, skipped: skipped };
+  return { success: true, posts: res, attempted: attempts, skipped: skipped, mode: mode, fallback: fromTemplate };
 }
 
 

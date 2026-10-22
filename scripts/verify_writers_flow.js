@@ -191,19 +191,27 @@ async function main() {
     for (const p of posts) if (p?.slug) createdSlugs.push(p.slug);
   }
   if (blog.status === 200 && Array.isArray(posts) && posts.length > 0) {
-    pass("blog generation", `${posts.length} post(s) written, e.g. ${posts[0]?.slug}`);
-    // A partial journey still answers 200, so it used to report "all green"
-    // (2026-10-22: 1 of 9 posts passed every check). Say so out loud.
+    const mode = blog.data?.result?.mode;
+    pass("blog generation", `${posts.length} post(s) written, e.g. ${posts[0]?.slug}${mode ? ` (mode=${mode})` : ""}`);
+    // Coverage is about pages a visitor can open, not array entries: two
+    // templates per angle shared one slug until 2026-10-22, so "9 of 9" could be
+    // five real pages with later posts overwriting earlier ones.
+    const uniqueSlugs = new Set(posts.map((p) => p?.slug).filter(Boolean));
+    const composed = posts.filter((p) => p?.fallback).length;
     if (posts.length < EXPECTED_ANGLES) {
       const skipped = Array.isArray(blog.data?.result?.skipped) ? blog.data.result.skipped : [];
       const why = skipped[0]?.error ? ` — first skip: ${String(skipped[0].error).slice(0, 160)}` : "";
       warn("blog coverage", `${posts.length}/${EXPECTED_ANGLES} angles produced a post${why}`);
+    } else if (uniqueSlugs.size < posts.length) {
+      warn("blog coverage", `${posts.length} posts share only ${uniqueSlugs.size} slug(s) — later angles overwrote earlier pages`);
+    } else {
+      pass("blog coverage", `${uniqueSlugs.size}/${EXPECTED_ANGLES} unique pages${composed ? ` (${composed} composed from offer data — AI tier unavailable)` : " (all AI-written)"}`);
     }
   } else if (blog.status === 200 && Array.isArray(posts) && posts.length === 0) {
     fail("blog generation", "200 with 0 posts — false success (pre-fix behaviour)");
   } else if (blog.status === 502) {
     warn("blog generation", `failing loudly as designed: ${blog.data?.error || "no detail"}`);
-    warn("blog root cause", "AI writer returned nothing for every angle — check GEMINI_API_KEY / OPENROUTER_API_KEY / OPENAI_API_KEY / HF_API_KEY and the model on the host");
+    warn("blog root cause", "AI writer returned nothing for every angle and BLOG_FALLBACK_MODE=off — unset it to compose posts from the offer data, or check GEMINI_API_KEY / OPENROUTER_API_KEY / OPENAI_API_KEY / HF_API_KEY");
   } else {
     fail("blog generation", `${blog.status} ${JSON.stringify(blog.data)?.slice(0, 200)}`);
   }
