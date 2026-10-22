@@ -131,6 +131,37 @@ Exit `0` = no failures, `1` = at least one, `2` = missing config. A stale
 `build identity` FAIL means the host is serving an older commit — redeploy from
 the Render dashboard (this repo has no CI deploy job).
 
+### When blog generation fails — `npm run test:ai-providers`
+The writer never fabricates posts: if the LLM returns nothing it fails loudly
+and the 502 body ends with `Last AI error: <provider> <status> <body>`. That
+string is the diagnosis — you do not need host logs.
+
+| `Last AI error` contains | Meaning | Fix |
+| --- | --- | --- |
+| `openrouter/hf 402 no remaining credits` | key valid, account out of credits | buy credits or set `OPENROUTER_API_KEY` |
+| `401` / `unauthor` | key revoked or wrong | rotate the key on Render |
+| `404` | model route not available on that account | set `OPENROUTER_MODEL` / `HF_MODEL` |
+| `429` | rate limited | retry later or add a second key |
+| `no AI provider key configured` | no key at all | set one of the three keys |
+
+Providers are tried in order — **OpenRouter → OpenAI → HuggingFace** — so any
+single key is enough. Billing/auth failures (`401/402/403`, "no remaining
+credits") abort the run on the first angle instead of retrying all 9.
+
+Relevant env (all optional except one key):
+
+| Var | Default |
+| --- | --- |
+| `OPENROUTER_API_KEY` | — (preferred) |
+| `OPENROUTER_MODEL` | `meta-llama/llama-3.1-8b-instruct:free` |
+| `OPENAI_API_KEY` / `OPENAI_MODEL` | — / `gpt-4o-mini` |
+| `HF_API_KEY` / `HF_MODEL` | — / `meta-llama/Llama-3.1-8B-Instruct:novita` |
+| `*_BASE_URL` | provider default (used by the offline test) |
+
+`npm run test:ai-providers` proves the whole chain offline against a stub
+server — no keys, no network, no DB. It reproduces the 402 incident, verifies
+fallback order, empty-content handling, model override and the no-key message.
+
 ### Phase B (next) — Research & Outreach
 Tenant-scope the original WF: add `wf_campaigns.tenant_id`, `/tenant/wf/*` endpoints,
 per-tenant SMTP, and the Research & Outreach tab UI.

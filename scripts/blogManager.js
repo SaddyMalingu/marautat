@@ -44,28 +44,68 @@ function clean(c) {
 // operator can see *why* generation produced nothing without reading host logs.
 let lastAiError = null;
 
+// Provider fallback order. Any single key being present is enough to generate;
+// set OPENROUTER_MODEL / OPENAI_MODEL / HF_MODEL to pin a specific model.
+const AI_PROVIDERS = [
+  {
+    name: 'openrouter',
+    key: () => process.env.OPENROUTER_API_KEY,
+    url: () => (process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1') + '/chat/completions',
+    model: () => process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.1-8b-instruct:free',
+    headers: (k) => ({ Authorization: 'Bearer ' + k, 'Content-Type': 'application/json' }),
+  },
+  {
+    name: 'openai',
+    key: () => process.env.OPENAI_API_KEY,
+    url: () => (process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1') + '/chat/completions',
+    model: () => process.env.OPENAI_MODEL || 'gpt-4o-mini',
+    headers: (k) => ({ Authorization: 'Bearer ' + k, 'Content-Type': 'application/json' }),
+  },
+  {
+    name: 'hf',
+    key: () => process.env.HF_API_KEY || process.env.HF_API_KEY_WRITERS_FLOW,
+    url: () => (process.env.HF_BASE_URL || 'https://router.huggingface.co/v1') + '/chat/completions',
+    model: () => process.env.HF_MODEL || 'meta-llama/Llama-3.1-8B-Instruct:novita',
+    headers: (k) => ({ Authorization: 'Bearer ' + k, 'Content-Type': 'application/json' }),
+  },
+];
+
+// Billing / auth failures will fail for every angle, so there is no point
+// burning the whole journey on them.
+const FATAL_AI = /(^|\D)(401|402|403)(\D|$)|no remaining credits|invalid.*(token|key)|unauthor/i;
+
+// Exposed so verification scripts (scripts/test_ai_providers.mjs) can drive the
+// fallback chain against a local stub instead of the real providers.
+export function getLastAiError() { return lastAiError; }
+
 async function ai(prompt) {
-  try {
-    const k = process.env.HF_API_KEY || process.env.HF_API_KEY_WRITERS_FLOW;
-    if (!k) { lastAiError = 'HF_API_KEY / HF_API_KEY_WRITERS_FLOW is not set'; console.log('[AI] No key'); return null; }
-    const axios = (await import('axios')).default;
-    const r = await axios.post('https://router.huggingface.co/v1/chat/completions', {
-      model: 'meta-llama/Llama-3.1-8B-Instruct:novita',
-      messages: [{ role: 'user', content: prompt }],
-      max_tokens: 3000,
-      temperature: 0.7
-    }, { headers: { Authorization: 'Bearer ' + k }, timeout: 120000 });
-    const content = r.data?.choices?.[0]?.message?.content || null;
-    if (!content) lastAiError = 'HF returned 200 with empty content';
-    return content;
-  } catch (e) {
-    const status = e.response?.status;
-    const body = e.response?.data ? (typeof e.response.data === 'string' ? e.response.data : JSON.stringify(e.response.data)) : '';
-    lastAiError = status ? `HF ${status} ${body}`.trim().slice(0, 300) : e.message;
-    console.error('[AI] Error:', lastAiError);
-    return null;
+  const axios = (await import('axios')).default;
+  const failed = [];
+  for (const p of AI_PROVIDERS) {
+    const key = p.key();
+    if (!key) continue;
+    try {
+      const r = await axios.post(p.url(), {
+        model: p.model(),
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 3000,
+        temperature: 0.7,
+      }, { headers: p.headers(key), timeout: 120000 });
+      const content = r.data?.choices?.[0]?.message?.content || null;
+      if (content) { lastAiError = null; return content; }
+      failed.push(p.name + ': empty content');
+    } catch (e) {
+      const status = e.response?.status;
+      const raw = e.response?.data;
+      const body = raw ? (typeof raw === 'string' ? raw : JSON.stringify(raw)) : '';
+      failed.push((p.name + ' ' + (status || '') + ' ' + (body || e.message)).trim().slice(0, 240));
+    }
   }
+  lastAiError = failed.length ? failed.join(' | ') : 'no AI provider key configured (OPENROUTER_API_KEY / OPENAI_API_KEY / HF_API_KEY)';
+  console.error('[AI] All providers failed →', lastAiError);
+  return null;
 }
+export { ai };
 
 async function genImage(prompt, slug) {
   try {
@@ -110,12 +150,21 @@ export async function generateBlogPostsForOpportunity(oppId, opts) {
   }
   var journey = getContentJourney(o);
   var res = [];
+  var attempts = 0;
   lastAiError = null;
   for (var i = 0; i < journey.length; i++) {
     var post = journey[i];
     console.log('[GEN] - [' + post.angleName + '] ' + post.title);
+    attempts++;
     var content = await ai(post.prompt);
-    if (!content) { console.log('[GEN] Failed: ' + post.slug); continue; }
+    if (!content) {
+      if (FATAL_AI.test(lastAiError || '')) {
+        console.error('[GEN] Aborting after [' + post.angleName + '] — provider auth/billing failure: ' + lastAiError);
+        break;
+      }
+      console.log('[GEN] Failed: ' + post.slug);
+      continue;
+    }
     content = clean(content);
     if (isDuplicate(content, existing)) {
       content = await ai(post.prompt + ' Make this completely unique.');
@@ -136,13 +185,13 @@ export async function generateBlogPostsForOpportunity(oppId, opts) {
     // Every angle produced nothing (missing/invalid LLM key, model unavailable,
     // rate limit). Report failure instead of a false "success" so callers such
     // as /tenant/blogger/offers/:id/blog can surface a real error.
-    console.warn('[GEN] No posts generated for ' + o.slug + ' (' + journey.length + ' angles attempted)');
+    console.warn('[GEN] No posts generated for ' + o.slug + ' (' + attempts + ' of ' + journey.length + ' angles attempted)');
     return {
       success: false,
       posts: [],
-      attempted: journey.length,
-      error: 'No posts generated — the AI writer returned nothing for all ' +
-        journey.length + ' angles. Check HF_API_KEY and model availability.' +
+      attempted: attempts,
+      error: 'No posts generated — the AI writer returned nothing (' + attempts + ' of ' +
+        journey.length + ' angles attempted). Check OPENROUTER_API_KEY / OPENAI_API_KEY / HF_API_KEY and model credits.' +
         (lastAiError ? ' Last AI error: ' + lastAiError : '')
     };
   }
@@ -156,17 +205,8 @@ export async function generateBlogPostsForOpportunity(oppId, opts) {
 
 async function reviewContent(content, title) {
   try {
-    const k = process.env.HF_API_KEY || process.env.HF_API_KEY_WRITERS_FLOW;
-    if (!k) return content;
-    const axios = (await import('axios')).default;
     const prompt = `Review and improve this blog post. Remove ALL asterisks, markdown formatting, and AI patterns. Fix inconsistencies. Make it read like a professional human-written educational article. Ensure proper HTML structure with h2, h3, p, ul, li tags. Content:\n\n` + content;
-    const r = await axios.post('https://router.huggingface.co/v1/chat/completions', {
-      model: 'meta-llama/Llama-3.1-8B-Instruct:novita',
-      messages: [{ role: 'user', content: prompt }],
-      max_tokens: 2500,
-      temperature: 0.7
-    }, { headers: { Authorization: `Bearer ${k}` }, timeout: 90000 });
-    const improved = r.data?.choices?.[0]?.message?.content;
+    const improved = await ai(prompt);
     return improved || content;
   } catch (e) { return content; }
 }
