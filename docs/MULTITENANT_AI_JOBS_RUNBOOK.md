@@ -153,6 +153,14 @@ Live baseline on `589d7d0` (2026-10-22 13:42 UTC): 18 passed / 0 failed /
 0 warnings — `409 busy` in 1.05 s, 9 posts in 82.8 s, 9/9 unique pages, 9 posts
 deleted, offers back to 3.
 
+Re-run on `2c5405c` (13:53 UTC) with the daily free quota **fully exhausted**:
+18 passed / 0 failed / 0 warnings, `mode=template`, 9/9 pages in **19.1 s**
+(`blog 200 - 18832ms`, `409 - 379ms`). A dry quota is fast, not slow: the first
+angle fails provider-wide, `isAiFailureFatal()` stops the walk, and the remaining
+eight pages are composed from the offer data. So the two worst cases are both
+bounded — half-dry ≈ the 90 s budget, fully dry ≈ 20 s — and neither can return
+fewer than nine pages.
+
 Exit `0` = no failures, `1` = at least one, `2` = missing config. A stale
 `build identity` FAIL means the host is serving an older commit — redeploy from
 the Render dashboard (this repo has no CI deploy job).
