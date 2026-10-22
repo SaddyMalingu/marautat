@@ -28,8 +28,9 @@ dotenv.config();
 const APPLY = process.argv.includes("--apply");
 const BLOG_DIR = path.join(process.cwd(), "public", "blog");
 
-// Only test artifacts. Real tenant posts must never match these prefixes.
-const PREFIXES = ["verify-writers-flow-", "test-ai-specialist"];
+// Only test artifacts, with the trailing hyphen kept so a real post whose title
+// merely *starts* the same way can never match.
+const PREFIXES = ["verify-writers-flow-", "test-ai-specialist-"];
 
 const url = process.env.SUPABASE_URL;
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
