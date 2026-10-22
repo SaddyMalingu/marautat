@@ -173,7 +173,9 @@ async function main() {
     // A partial journey still answers 200, so it used to report "all green"
     // (2026-10-22: 1 of 9 posts passed every check). Say so out loud.
     if (posts.length < EXPECTED_ANGLES) {
-      warn("blog coverage", `${posts.length}/${EXPECTED_ANGLES} angles produced a post — the rest failed without aborting (rate limit? see the AI error in the 502 body)`);
+      const skipped = Array.isArray(blog.data?.result?.skipped) ? blog.data.result.skipped : [];
+      const why = skipped[0]?.error ? ` — first skip: ${String(skipped[0].error).slice(0, 160)}` : "";
+      warn("blog coverage", `${posts.length}/${EXPECTED_ANGLES} angles produced a post${why}`);
     }
   } else if (blog.status === 200 && Array.isArray(posts) && posts.length === 0) {
     fail("blog generation", "200 with 0 posts — false success (pre-fix behaviour)");

@@ -194,6 +194,7 @@ export async function generateBlogPostsForOpportunity(oppId, opts) {
   var journey = getContentJourney(o);
   var res = [];
   var attempts = 0;
+  var skipped = [];
   lastAiError = null;
   for (var i = 0; i < journey.length; i++) {
     var post = journey[i];
@@ -201,6 +202,7 @@ export async function generateBlogPostsForOpportunity(oppId, opts) {
     attempts++;
     var content = await ai(post.prompt);
     if (!content) {
+      skipped.push({ slug: post.slug, angle: post.angleName, error: lastAiError });
       if (isAiFailureFatal()) {
         console.error('[GEN] Aborting after [' + post.angleName + '] — every provider failed on auth/billing: ' + lastAiError);
         break;
@@ -223,7 +225,7 @@ export async function generateBlogPostsForOpportunity(oppId, opts) {
     res.push({ title: post.title, slug: post.slug, angle: post.angleName, url: SITE + '/blog/' + post.slug + '.html', thumb: thumb });
   }
   updateIndex();
-  console.log('[GEN] Done: ' + res.length + '/' + journey.length + ' posts');
+  console.log('[GEN] Done: ' + res.length + '/' + journey.length + ' posts' + (skipped.length ? ' (' + skipped.length + ' angle(s) skipped)' : ''));
   if (!res.length) {
     // Every angle produced nothing (missing/invalid LLM key, model unavailable,
     // rate limit). Report failure instead of a false "success" so callers such
@@ -233,12 +235,15 @@ export async function generateBlogPostsForOpportunity(oppId, opts) {
       success: false,
       posts: [],
       attempted: attempts,
+      skipped: skipped,
       error: 'No posts generated — the AI writer returned nothing (' + attempts + ' of ' +
         journey.length + ' angles attempted). Check GEMINI_API_KEY / OPENROUTER_API_KEY / OPENAI_API_KEY / HF_API_KEY and model credits.' +
         (lastAiError ? ' Last AI error: ' + lastAiError : '')
     };
   }
-  return { success: true, posts: res };
+  // Partial journeys are still a success, but callers must be able to show
+  // *why* an angle was skipped (free-tier rate limits) instead of guessing.
+  return { success: true, posts: res, attempted: attempts, skipped: skipped };
 }
 
 
