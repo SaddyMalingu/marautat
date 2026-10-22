@@ -4375,6 +4375,15 @@ app.post('/tenant/blogger/offers/:id/blog', tenantSessionAuth, async (req, res) 
     if (!offer) return res.status(404).json({ error: 'Offer not found' });
     const { generateBlogPostsForOpportunity } = await import('./scripts/blogManager.js');
     const result = await generateBlogPostsForOpportunity(offer.id);
+    // Never report success when nothing was written — the tenant would see a
+    // "Blog generated" toast while no post exists.
+    if (!result || result.success !== true) {
+      return res.status(502).json({
+        ok: false,
+        error: result?.error || 'Blog generation failed',
+        result: result || null,
+      });
+    }
     res.json({ ok: true, result });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });

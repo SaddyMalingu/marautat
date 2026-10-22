@@ -434,7 +434,9 @@ async function renderWritersFlow() {
     btn.disabled = true;
     const r = await apiJson(url, { method: act === 'del' ? 'DELETE' : 'POST' });
     if (!r.ok) { toast(r.data?.error || 'Action failed', 'err'); btn.disabled = false; return; }
-    toast(act === 'blog' ? 'Blog generated' : act === 'publish' ? 'Published' : 'Deleted', 'ok');
+    toast(act === 'blog'
+      ? `Blog generated (${r.data?.result?.posts?.length ?? 0} posts)`
+      : act === 'publish' ? 'Published' : 'Deleted', 'ok');
     renderWritersFlow();
   });
 }

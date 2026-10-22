@@ -118,7 +118,20 @@ export async function generateBlogPostsForOpportunity(oppId, opts) {
     res.push({ title: post.title, slug: post.slug, angle: post.angleName, url: SITE + '/blog/' + post.slug + '.html', thumb: thumb });
   }
   updateIndex();
-  console.log('[GEN] Done: ' + res.length + ' posts');
+  console.log('[GEN] Done: ' + res.length + '/' + journey.length + ' posts');
+  if (!res.length) {
+    // Every angle produced nothing (missing/invalid LLM key, model unavailable,
+    // rate limit). Report failure instead of a false "success" so callers such
+    // as /tenant/blogger/offers/:id/blog can surface a real error.
+    console.warn('[GEN] No posts generated for ' + o.slug + ' (' + journey.length + ' angles attempted)');
+    return {
+      success: false,
+      posts: [],
+      attempted: journey.length,
+      error: 'No posts generated — the AI writer returned nothing for all ' +
+        journey.length + ' angles. Check HF_API_KEY and model availability.'
+    };
+  }
   return { success: true, posts: res };
 }
 
