@@ -37,6 +37,8 @@ const behavior = { or: "ok", gem: "ok", oa: "ok", hf: "ok" };
 const seen = {};
 // Model slugs the stub pretends OpenRouter has retired (404 "unavailable for free").
 const retired = new Set();
+// Model slugs whose upstream is throttled (429 "temporarily rate-limited upstream").
+const throttled = new Set();
 
 const server = http.createServer((req, res) => {
   let raw = "";
@@ -59,6 +61,16 @@ const server = http.createServer((req, res) => {
     if (retired.has(body.model)) {
       return send(404, {
         error: { message: "This model is unavailable for free. The paid version is available now.", code: 404 },
+      });
+    }
+    // Shape of OpenRouter's upstream throttle (live 2026-10-22): the key and the
+    // slug are both valid, the provider behind that one model is saturated.
+    if (throttled.has(body.model)) {
+      return send(429, {
+        error: {
+          code: 429,
+          message: `${body.model} is temporarily rate-limited upstream. Please retry shortly, or add your own key.`,
+        },
       });
     }
     if (mode === "429") {
@@ -111,6 +123,7 @@ function resetStub() {
   behavior.oa = "ok";
   behavior.hf = "ok";
   retired.clear();
+  throttled.clear();
   for (const k of Object.keys(seen)) delete seen[k];
 }
 
@@ -312,6 +325,38 @@ await check("a retired free model falls through to the next candidate", async ()
     `expected fallback to ${OPENROUTER_FREE_MODELS[1]}, got ${seen.or && seen.or.body.model}`
   );
   return `${OPENROUTER_FREE_MODELS[0]} gone -> ${OPENROUTER_FREE_MODELS[1]}`;
+});
+
+// Regression (2026-10-22, live, second wave): once the retired pin was fixed the
+// host still wrote 0 of 9 posts because gemma-4-31b:free answered 429
+// "temporarily rate-limited upstream" and a 429 aborted the whole OpenRouter
+// provider — the three healthy free models were never tried.
+await check("a throttled free model falls through instead of losing the provider", async () => {
+  resetStub();
+  setKeys({ or: "or-key" });
+  throttled.add(OPENROUTER_FREE_MODELS[0]);
+  const out = await ai(PROMPT);
+  assert(out === "OR OK", `expected OR OK, got ${JSON.stringify(out)}`);
+  assert(
+    seen.or && seen.or.body.model === OPENROUTER_FREE_MODELS[1],
+    `expected fallback to ${OPENROUTER_FREE_MODELS[1]}, got ${seen.or && seen.or.body.model}`
+  );
+  assert(getLastAiError() === null, `a recovered call must clear lastAiError, got ${getLastAiError()}`);
+  return `${OPENROUTER_FREE_MODELS[0]} 429 -> ${OPENROUTER_FREE_MODELS[1]}`;
+});
+
+// The 429 fallthrough must not mask a real auth failure: a 402 means the account
+// is out of credits, so paying for the other six slugs is pointless.
+await check("402 still stops the model list immediately", async () => {
+  resetStub();
+  setKeys({ or: "or-key" });
+  behavior.or = "402";
+  const out = await ai(PROMPT);
+  const err = getLastAiError() || "";
+  assert(out === null, `expected null, got ${JSON.stringify(out)}`);
+  assert(/openrouter 402/.test(err), `error should name the 402, got: ${err}`);
+  assert(isAiFailureFatal() === true, "a lone 402 provider is a billing failure");
+  return "402 -> provider abandoned, no slug burn";
 });
 
 server.close();

@@ -146,7 +146,8 @@ string is the diagnosis — you do not need host logs.
 | `401` / `unauthor` | key revoked or wrong | rotate the key on Render |
 | `404` + `unavailable for free` | the free model slug was retired (2026-10-22: `llama-3.1-8b-instruct:free`) | nothing — the writer now falls through `OPENROUTER_FREE_MODELS` on `404`, including past a retired `OPENROUTER_MODEL` pin; clear the pin if the console logs show it leading every run |
 | `404` (any other) | model route not available on that account | set `OPENROUTER_MODEL` / `HF_MODEL` |
-| `429` / `RESOURCE_EXHAUSTED` | free-tier quota | wait for the window to reset, or add `OPENROUTER_API_KEY` (free tier: 50 req/day, 1000/day after a one-time $10 credit) |
+| `429` + `rate-limited upstream` | that one model's upstream pool is saturated; the key is fine | nothing — the writer advances to the next slug in `OPENROUTER_FREE_MODELS` (live 2026-10-22: gemma-4-31b was throttled while five siblings were healthy) |
+| `429` + `You exceeded your current quota` | your own free-tier quota (per day) | wait for the reset window, add a second key, or add credits (OpenRouter free tier: 50 req/day, 1000/day after a one-time $10 credit) |
 | only 1 post written, run then stops | fail-fast matched one exhausted provider (e.g. `hf 402`) in the joined error string | fixed 2026-10-22: only an all-provider auth/billing failure aborts a journey; redeploy and re-run the verifier |
 | `verify-writers-flow-*` posts visible on `/blog` | verifier runs published real posts before the post-delete endpoint existed | `npm run prune:verify-posts` on the host to list them, `npm run prune:verify-posts -- --apply` to delete (needs `SUPABASE_SERVICE_ROLE_KEY`) |
 | `no AI provider key configured` | no key at all | set one of the three keys |
@@ -169,7 +170,8 @@ Relevant env (all optional except one key):
 | Var | Default |
 | --- | --- |
 | `OPENROUTER_API_KEY` | — (preferred; alias `OPENROUTER_KEY` accepted) |
-| `OPENROUTER_MODEL` | unset → tries `google/gemma-4-31b-it:free`, `minimax/minimax-m3.1-flash:free`, `nvidia/nemotron-3-super-120b-a12b:free`, `poolside/laguna-s-2.1:free` in order. A pin is tried **first** and the free list still follows it, so a retired pin cannot starve the writer (2026-10-22: the host was pinned to `llama-3.1-8b-instruct:free`, OpenRouter retired it, and every angle 404'd while three healthy free models sat unused) |
+| `OPENROUTER_MODEL` | unset → tries `google/gemma-4-31b-it:free`, `minimax/minimax-m3.1-flash:free`, `nvidia/nemotron-3-super-120b-a12b:free`, `google/gemma-4-26b-a4b-it:free`, `nvidia/nemotron-3.5-lightning:free`, `poolside/laguna-s-2.1:free`, `openrouter/free` in order. A pin is tried **first** and the free list still follows it, so a retired pin cannot starve the writer (2026-10-22: the host was pinned to `llama-3.1-8b-instruct:free`, OpenRouter retired it, and every angle 404'd while three healthy free models sat unused). Retired (`404`) and throttled (`429`) slugs advance to the next model; only `401/402/403` stops the list |
+| `BLOG_ANGLE_DELAY_MS` | `1200` — pause between angles so nine sequential calls stay inside per-minute free limits; set `0` on a paid key |
 | `GEMINI_API_KEY` | — (free tier, no card) |
 | `GEMINI_MODEL` | `gemini-flash-latest` (pin `gemini-3.8-flash` to freeze) |
 | `OPENAI_API_KEY` / `OPENAI_MODEL` | — / `gpt-4o-mini` |
@@ -177,15 +179,18 @@ Relevant env (all optional except one key):
 | `*_BASE_URL` | provider default (used by the offline test) |
 
 `npm run test:ai-providers` proves the whole chain offline against a stub
-server — no keys, no network, no DB. It reproduces the 402 incident, verifies
-fallback order, empty-content handling, model override, the retired-slug
-fallthrough (13 checks) and the no-key message.
+server — no keys, no network, no DB. It reproduces the 402 incident and the
+2026-10-22 live failures, and verifies fallback order, empty-content handling,
+model override, retired-slug fallthrough, throttled-slug (`429`) fallthrough and
+the 402-still-aborts rule (17 checks), plus the no-key message.
 
-**Free-tier budget.** One journey is 9 sequential LLM calls (one per angle), so a
-handful of test runs exhausts a small free tier — a real `429` from Gemini after
-repeated runs is expected, not a code bug. OpenRouter's free tier (50 req/day,
-1000/day with a one-time $10 credit) is the sustainable demo path; keep it as the
-first provider and let Gemini sit second.
+**Free-tier budget.** One journey is 9 sequential generation calls plus one
+review call per post, so a handful of test runs exhausts a small free tier — a
+real `429` from Gemini after repeated runs is expected, not a code bug. Angles
+are paced by `BLOG_ANGLE_DELAY_MS` (default 1200 ms) and each throttled slug
+falls through to the next model, so nine angles can complete on free slugs alone.
+OpenRouter's free tier (50 req/day, 1000/day with a one-time $10 credit) is the
+sustainable demo path; keep it as the first provider and let Gemini sit second.
 
 ### Phase B (next) — Research & Outreach
 Tenant-scope the original WF: add `wf_campaigns.tenant_id`, `/tenant/wf/*` endpoints,

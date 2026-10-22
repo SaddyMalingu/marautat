@@ -51,11 +51,23 @@ let lastAiError = null;
 // was llama-3.1-8b-instruct:free answering 404 "This model is unavailable for
 // free". Generation therefore falls through this list (see ai()) instead of
 // dying with whichever slug expires. Pin OPENROUTER_MODEL to freeze one.
+//
+// Free tier limits are per model AND per upstream pool, so the list is also the
+// rate-limit budget: a 429 on one slug must land on the next one (live 2026-10-22,
+// gemma-4-31b "temporarily rate-limited upstream" blocked all 9 angles). Every
+// slug below was verified free in https://openrouter.ai/api/v1/models.
 export const OPENROUTER_FREE_MODELS = [
   'google/gemma-4-31b-it:free',
   'minimax/minimax-m3.1-flash:free',
   'nvidia/nemotron-3-super-120b-a12b:free',
+  // Same family as the first slug but a different upstream pool, so a gemma
+  // throttle does not take out both.
+  'google/gemma-4-26b-a4b-it:free',
+  'nvidia/nemotron-3.5-lightning:free',
   'poolside/laguna-s-2.1:free',
+  // OpenRouter's own free router: last resort, it picks whatever free model is
+  // healthy right now (its 429s clear as the pool rotates).
+  'openrouter/free',
 ];
 
 const AI_PROVIDERS = [
@@ -113,6 +125,20 @@ const TRANSIENT_AI = /(^|\D)(408|409|425|429|5\d\d)(\D|$)|rate limit|too many re
 
 let lastAiFatal = false;
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// A model can be unusable for this call while its siblings are healthy: the slug
+// is retired (404) or its upstream is throttled (429 "temporarily rate-limited
+// upstream", 5xx). Those must advance to the next model of the same provider —
+// live 2026-10-22, one throttled gemma slug blocked all 9 angles. Auth/billing
+// failures (401/402/403) do not change per model, so they stop the provider
+// immediately instead of burning the rest of the list.
+function shouldTryNextModel(status) {
+  if (!status) return false;
+  if (status === 404 || status === 408 || status === 425 || status === 429) return true;
+  return status >= 500 && status <= 599;
+}
+
 // One exhausted provider must not abort the journey — only a chain where every
 // attempted provider failed on auth/billing is hopeless. Regression this guards
 // against (2026-10-22): HF answered 402 on every call while OpenRouter/Gemini
@@ -169,9 +195,15 @@ async function ai(prompt) {
         const text = (body || e.message || '').slice(0, 240);
         failure = { name: p.name, status: status || 0, text, kind: classifyFailure(status, text) };
         // A retired free slug answers 404 ("This model is unavailable for
-        // free"). Try the next candidate before giving up on the provider.
-        if (status === 404 && mi < models.length - 1) {
-          console.warn('[AI] ' + p.name + ' model ' + models[mi] + ' is gone — trying ' + models[mi + 1]);
+        // free") and a throttled one answers 429 ("temporarily rate-limited
+        // upstream"). Neither is a reason to abandon the other models on the
+        // same key: advance to the next candidate, pausing briefly on a 429 so
+        // the retry does not immediately hit the same limiter.
+        if (shouldTryNextModel(status) && mi < models.length - 1) {
+          const step = 400 * (mi + 1);
+          console.warn('[AI] ' + p.name + ' model ' + models[mi] + ' unusable (' + (status || 'err') +
+            ') — trying ' + models[mi + 1]);
+          if (status === 429) await sleep(Math.min(step, 1500));
           failure = null;
           continue;
         }
@@ -236,9 +268,14 @@ export async function generateBlogPostsForOpportunity(oppId, opts) {
   var res = [];
   var attempts = 0;
   var skipped = [];
+  // Free-tier models rate-limit per minute, so a 9-angle journey must not fire
+  // nine back-to-back requests. Pace them; set BLOG_ANGLE_DELAY_MS=0 to disable
+  // on a paid key.
+  var angleDelay = Number(process.env.BLOG_ANGLE_DELAY_MS == null ? 1200 : process.env.BLOG_ANGLE_DELAY_MS);
   lastAiError = null;
   for (var i = 0; i < journey.length; i++) {
     var post = journey[i];
+    if (i > 0 && angleDelay > 0) await sleep(angleDelay);
     console.log('[GEN] - [' + post.angleName + '] ' + post.title);
     attempts++;
     var content = await ai(post.prompt);
