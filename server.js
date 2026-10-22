@@ -14102,6 +14102,9 @@ function scheduleFollowupAutomationFromEnv() {
 
 app.listen(process.env.PORT, () => {
   log(`Server running on port ${process.env.PORT}`, "SYSTEM");
+  if (process.env.RENDER_GIT_COMMIT) {
+    log(`Deployed commit: ${process.env.RENDER_GIT_COMMIT}`, "SYSTEM");
+  }
   console.log(`🚀 Server running on port ${process.env.PORT}`);
   scheduleFollowupAutomationFromEnv();
 });
