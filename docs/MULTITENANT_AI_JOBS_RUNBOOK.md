@@ -144,16 +144,24 @@ string is the diagnosis — you do not need host logs.
 | `429` | rate limited | retry later or add a second key |
 | `no AI provider key configured` | no key at all | set one of the three keys |
 
-Providers are tried in order — **OpenRouter → OpenAI → HuggingFace** — so any
-single key is enough. Billing/auth failures (`401/402/403`, "no remaining
+Providers are tried in order — **OpenRouter → Gemini → OpenAI → HuggingFace** —
+so any single key is enough. Billing/auth failures (`401/402/403`, "no remaining
 credits") abort the run on the first angle instead of retrying all 9.
+
+**Zero-spend recovery.** Google AI Studio issues a `GEMINI_API_KEY` with a free
+tier and no credit card (https://aistudio.google.com/apikey). The writer talks to
+Gemini through its OpenAI-compatible endpoint
+(`https://generativelanguage.googleapis.com/v1beta/openai`), so setting only that
+one var restores generation on the next restart — no code change and no purchase.
 
 Relevant env (all optional except one key):
 
 | Var | Default |
 | --- | --- |
-| `OPENROUTER_API_KEY` | — (preferred) |
+| `OPENROUTER_API_KEY` | — (preferred; alias `OPENROUTER_KEY` accepted) |
 | `OPENROUTER_MODEL` | `meta-llama/llama-3.1-8b-instruct:free` |
+| `GEMINI_API_KEY` | — (free tier, no card) |
+| `GEMINI_MODEL` | `gemini-flash-latest` (pin `gemini-3.8-flash` to freeze) |
 | `OPENAI_API_KEY` / `OPENAI_MODEL` | — / `gpt-4o-mini` |
 | `HF_API_KEY` / `HF_MODEL` | — / `meta-llama/Llama-3.1-8B-Instruct:novita` |
 | `*_BASE_URL` | provider default (used by the offline test) |

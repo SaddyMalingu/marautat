@@ -5,9 +5,14 @@ import { createClient } from "@supabase/supabase-js";
 
 dotenv.config();
 
-// Log LLM env presence at startup (no secrets)
+// Log LLM env presence at startup (no secrets). The names here must match the
+// ones the writers actually read (scripts/blogManager.js), otherwise the boot
+// log advertises a key that generation cannot see — how the 2026-10-22 outage
+// stayed hidden behind `hf=true`.
 try {
-  const envLog = `[${new Date().toISOString()}] [SYSTEM] ENV LLM keys: openai=${Boolean(process.env.OPENAI_API_KEY)} openrouter=${Boolean(process.env.OPENROUTER_KEY)} hf=${Boolean(process.env.HF_API_KEY)}`;
+  const openrouterKey = process.env.OPENROUTER_API_KEY || process.env.OPENROUTER_KEY;
+  const hfKey = process.env.HF_API_KEY || process.env.HF_API_KEY_WRITERS_FLOW;
+  const envLog = `[${new Date().toISOString()}] [SYSTEM] ENV LLM keys: openai=${Boolean(process.env.OPENAI_API_KEY)} openrouter=${Boolean(openrouterKey)} gemini=${Boolean(process.env.GEMINI_API_KEY)} hf=${Boolean(hfKey)}`;
   console.log(envLog);
 } catch (err) {
   console.log(`[${new Date().toISOString()}] [WARN] ENV LLM keys log failed: ${err?.message || err}`);

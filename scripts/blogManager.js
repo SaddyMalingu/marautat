@@ -44,14 +44,28 @@ function clean(c) {
 // operator can see *why* generation produced nothing without reading host logs.
 let lastAiError = null;
 
-// Provider fallback order. Any single key being present is enough to generate;
-// set OPENROUTER_MODEL / OPENAI_MODEL / HF_MODEL to pin a specific model.
+// Provider fallback order: OpenRouter → Gemini (free tier) → OpenAI → HuggingFace.
+// Any single key being present is enough to generate; set OPENROUTER_MODEL /
+// GEMINI_MODEL / OPENAI_MODEL / HF_MODEL to pin a specific model.
 const AI_PROVIDERS = [
   {
     name: 'openrouter',
-    key: () => process.env.OPENROUTER_API_KEY,
+    // OPENROUTER_KEY is the name the rest of the platform (server.js, kernel)
+    // uses for the same credential — accept both so one key serves everything.
+    key: () => process.env.OPENROUTER_API_KEY || process.env.OPENROUTER_KEY,
     url: () => (process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1') + '/chat/completions',
     model: () => process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.1-8b-instruct:free',
+    headers: (k) => ({ Authorization: 'Bearer ' + k, 'Content-Type': 'application/json' }),
+  },
+  {
+    // Google AI Studio: free tier, no credit card, OpenAI-compatible endpoint.
+    // This is the zero-spend recovery path when a paid account runs dry (the
+    // 2026-10-22 HF 402 incident). GEMINI_MODEL pins a stable flash model
+    // (e.g. gemini-3.8-flash); the default alias survives model shutdowns.
+    name: 'gemini',
+    key: () => process.env.GEMINI_API_KEY,
+    url: () => (process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/openai') + '/chat/completions',
+    model: () => process.env.GEMINI_MODEL || 'gemini-flash-latest',
     headers: (k) => ({ Authorization: 'Bearer ' + k, 'Content-Type': 'application/json' }),
   },
   {
@@ -101,7 +115,7 @@ async function ai(prompt) {
       failed.push((p.name + ' ' + (status || '') + ' ' + (body || e.message)).trim().slice(0, 240));
     }
   }
-  lastAiError = failed.length ? failed.join(' | ') : 'no AI provider key configured (OPENROUTER_API_KEY / OPENAI_API_KEY / HF_API_KEY)';
+  lastAiError = failed.length ? failed.join(' | ') : 'no AI provider key configured (OPENROUTER_API_KEY / GEMINI_API_KEY / OPENAI_API_KEY / HF_API_KEY)';
   console.error('[AI] All providers failed →', lastAiError);
   return null;
 }
@@ -191,7 +205,7 @@ export async function generateBlogPostsForOpportunity(oppId, opts) {
       posts: [],
       attempted: attempts,
       error: 'No posts generated — the AI writer returned nothing (' + attempts + ' of ' +
-        journey.length + ' angles attempted). Check OPENROUTER_API_KEY / OPENAI_API_KEY / HF_API_KEY and model credits.' +
+        journey.length + ' angles attempted). Check GEMINI_API_KEY / OPENROUTER_API_KEY / OPENAI_API_KEY / HF_API_KEY and model credits.' +
         (lastAiError ? ' Last AI error: ' + lastAiError : '')
     };
   }

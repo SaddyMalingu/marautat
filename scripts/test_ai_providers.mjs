@@ -33,7 +33,7 @@ function record(status, name, detail = "") {
 // ---------------------------------------------------------------------------
 // Stub provider: behaviour per provider is flipped by each test.
 // ---------------------------------------------------------------------------
-const behavior = { or: "ok", oa: "ok", hf: "ok" };
+const behavior = { or: "ok", gem: "ok", oa: "ok", hf: "ok" };
 const seen = {};
 
 const server = http.createServer((req, res) => {
@@ -70,14 +70,18 @@ const base = `http://127.0.0.1:${server.address().port}`;
 process.env.SUPABASE_URL = "http://127.0.0.1:1";
 process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-role-key";
 process.env.OPENROUTER_BASE_URL = base + "/or";
+process.env.GEMINI_BASE_URL = base + "/gem";
 process.env.OPENAI_BASE_URL = base + "/oa";
 process.env.HF_BASE_URL = base + "/hf";
 delete process.env.OPENROUTER_MODEL;
+delete process.env.GEMINI_MODEL;
 delete process.env.OPENAI_MODEL;
 delete process.env.HF_MODEL;
 
-function setKeys({ or, oa, hf } = {}) {
+function setKeys({ or, gem, oa, hf } = {}) {
   if (or) process.env.OPENROUTER_API_KEY = or; else delete process.env.OPENROUTER_API_KEY;
+  delete process.env.OPENROUTER_KEY;
+  if (gem) process.env.GEMINI_API_KEY = gem; else delete process.env.GEMINI_API_KEY;
   if (oa) process.env.OPENAI_API_KEY = oa; else delete process.env.OPENAI_API_KEY;
   if (hf) process.env.HF_API_KEY = hf; else delete process.env.HF_API_KEY;
   delete process.env.HF_API_KEY_WRITERS_FLOW;
@@ -85,6 +89,7 @@ function setKeys({ or, oa, hf } = {}) {
 
 function resetStub() {
   behavior.or = "ok";
+  behavior.gem = "ok";
   behavior.oa = "ok";
   behavior.hf = "ok";
   for (const k of Object.keys(seen)) delete seen[k];
@@ -148,13 +153,26 @@ await check("falls back when a provider returns empty content", async () => {
   return "empty 200 is not treated as success";
 });
 
+await check("gemini recovers the run when paid providers are out of credits", async () => {
+  resetStub();
+  setKeys({ or: "or-key", gem: "gem-key", hf: "hf-key" });
+  behavior.or = "402";
+  behavior.hf = "402";
+  const out = await ai(PROMPT);
+  assert(out === "GEM OK", `expected GEM OK, got ${JSON.stringify(out)}`);
+  assert(getLastAiError() === null, `lastAiError should be cleared, got ${getLastAiError()}`);
+  assert(seen.gem && seen.gem.auth === "Bearer gem-key", "gemini call missing or bad bearer token");
+  assert(seen.gem.body.model === "gemini-flash-latest", `unexpected default model: ${seen.gem.body.model}`);
+  return "402 x2 -> gemini (free tier) served content";
+});
+
 await check("no keys configured is self-describing", async () => {
   resetStub();
   setKeys({});
   const out = await ai(PROMPT);
   const err = getLastAiError() || "";
   assert(out === null, `expected null, got ${JSON.stringify(out)}`);
-  assert(/OPENROUTER_API_KEY/.test(err) && /HF_API_KEY/.test(err), `unhelpful error: ${err}`);
+  assert(/OPENROUTER_API_KEY/.test(err) && /GEMINI_API_KEY/.test(err) && /HF_API_KEY/.test(err), `unhelpful error: ${err}`);
   return err.slice(0, 90) + "…";
 });
 
@@ -178,6 +196,17 @@ await check("OPENROUTER_MODEL overrides the default model", async () => {
   delete process.env.OPENROUTER_MODEL;
   assert(seen.or.body.model === "custom/model-id", `got ${seen.or.body.model}`);
   return "custom/model-id";
+});
+
+await check("OPENROUTER_KEY alias is accepted for the same credential", async () => {
+  resetStub();
+  setKeys({});
+  process.env.OPENROUTER_KEY = "alias-key";
+  const out = await ai(PROMPT);
+  delete process.env.OPENROUTER_KEY;
+  assert(out === "OR OK", `expected OR OK, got ${JSON.stringify(out)}`);
+  assert(seen.or && seen.or.auth === "Bearer alias-key", "alias key not forwarded");
+  return "OPENROUTER_KEY -> openrouter";
 });
 
 server.close();
