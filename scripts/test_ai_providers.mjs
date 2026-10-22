@@ -35,6 +35,9 @@ function record(status, name, detail = "") {
 // ---------------------------------------------------------------------------
 const behavior = { or: "ok", gem: "ok", oa: "ok", hf: "ok" };
 const seen = {};
+// Every request the stub received, in order — lets a test prove which slugs were
+// *not* tried (retired ones, or a provider whose time box was already spent).
+const calls = [];
 // Model slugs the stub pretends OpenRouter has retired (404 "unavailable for free").
 const retired = new Set();
 // Model slugs whose upstream is throttled (429 "temporarily rate-limited upstream").
@@ -48,6 +51,7 @@ const server = http.createServer((req, res) => {
     let body = {};
     try { body = JSON.parse(raw); } catch { /* ignore */ }
     seen[provider] = { auth: req.headers.authorization, body };
+    calls.push({ provider, model: body.model || null });
     const mode = behavior[provider] || "ok";
     const send = (code, obj) => {
       res.writeHead(code, { "Content-Type": "application/json" });
@@ -138,10 +142,14 @@ function resetStub() {
   behavior.hf = "ok";
   retired.clear();
   throttled.clear();
+  calls.length = 0;
+  // Retired slugs live on the module (per process), so a case that proves a 404
+  // is remembered must start from a clean set.
+  resetRetiredModels();
   for (const k of Object.keys(seen)) delete seen[k];
 }
 
-const { ai, getLastAiError, isAiFailureFatal, OPENROUTER_FREE_MODELS } = await import("./blogManager.js");
+const { ai, getLastAiError, isAiFailureFatal, OPENROUTER_FREE_MODELS, resetRetiredModels } = await import("./blogManager.js");
 
 const PROMPT = "Write a short post about a salary guide.";
 
@@ -412,6 +420,72 @@ await check("a slow provider is cut at the deadline, not at its own pace", async
   assert(/aborted after [\d.]+s/.test(err), `error should say it was aborted, got: ${err}`);
   assert(isAiFailureFatal() === false, `an aborted call must stay transient: ${err}`);
   return `${elapsed}ms against a 1500ms budget (provider needed 5000ms)`;
+});
+
+// Live 2026-10-22 18:03 (90s run, 45s angle budget): OpenRouter answered 429/404
+// in a few seconds, stalled 30s on the `openrouter/free` router, and left Gemini
+// 6.3s (cut mid-call) and HF nothing at all. The tier then reported "dry" and all
+// nine pages were composed from the offer data. The deadline has to be shared:
+// a provider that has never answered must not be able to spend another
+// provider's share of it.
+await check("a stalled provider cannot spend the next provider's share", async () => {
+  resetStub();
+  setKeys({ or: "or-key", gem: "gem-key" });
+  behavior.or = "slow";
+  const started = Date.now();
+  const out = await ai(PROMPT, Date.now() + 3000);
+  const elapsed = Date.now() - started;
+  assert(out === "GEM OK", `expected the next provider to serve, got ${JSON.stringify(out)} (${elapsed}ms)`);
+  assert(seen.gem, "gemini was never called — its share was eaten by openrouter");
+  assert(elapsed < 2800, `expected ~half the 3s deadline to be enough, waited ${elapsed}ms`);
+  return `openrouter cut at ~1.5s, gemini served, ${elapsed}ms of a 3000ms deadline`;
+});
+
+// A retired slug costs a round-trip per angle, and a run is nine angles: the
+// same 404 was paid nine times before this. Live 2026-10-22 18:03
+// `minimax/minimax-m3.1-flash:free` 404'd on the first walk of the run.
+await check("a 404 slug is probed once per process, not once per angle", async () => {
+  resetStub();
+  setKeys({ or: "or-key" });
+  const gone = OPENROUTER_FREE_MODELS[1];
+  // Force the walk past the first slug so it actually reaches the retired one:
+  // throttled [0] -> retired [1] (404) -> [2] serves.
+  throttled.add(OPENROUTER_FREE_MODELS[0]);
+  retired.add(gone);
+  const first = await ai(PROMPT);
+  const second = await ai(PROMPT);
+  assert(first === "OR OK" && second === "OR OK", `expected both angles to be served, got ${first}/${second}`);
+  assert(
+    seen.or && seen.or.body.model === OPENROUTER_FREE_MODELS[2],
+    `expected the walk to land on ${OPENROUTER_FREE_MODELS[2]}, got ${seen.or && seen.or.body.model}`
+  );
+  const probes = calls.filter((c) => c.model === gone).length;
+  assert(probes === 1, `expected 1 probe of the retired slug across two angles, got ${probes}`);
+  return `${gone} probed ${probes}x across two angles`;
+});
+
+// The router slug is the one candidate with no upstream latency promise, and it
+// is the one that twice held an attempt open for the full timeout. It now gets a
+// short box of its own even when the surrounding deadline is generous.
+await check("the last-resort router slug is time-boxed", async () => {
+  resetStub();
+  setKeys({ or: "or-key" });
+  process.env.BLOG_ROUTER_MODEL_CAP_MS = "600";
+  try {
+    const router = OPENROUTER_FREE_MODELS[OPENROUTER_FREE_MODELS.length - 1];
+    for (const slug of OPENROUTER_FREE_MODELS) if (slug !== router) retired.add(slug);
+    behavior.or = "slow";
+    const started = Date.now();
+    const out = await ai(PROMPT, Date.now() + 3000);
+    const elapsed = Date.now() - started;
+    const err = getLastAiError() || "";
+    assert(out === null, `expected null, got ${JSON.stringify(out)}`);
+    assert(err.includes(router), `error should name the router slug, got: ${err}`);
+    assert(elapsed < 1500, `expected the 600ms cap to cut it, waited ${elapsed}ms`);
+    return `${router} cut at ${elapsed}ms against a 3000ms deadline`;
+  } finally {
+    delete process.env.BLOG_ROUTER_MODEL_CAP_MS;
+  }
 });
 
 server.close();

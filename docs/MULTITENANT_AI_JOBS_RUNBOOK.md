@@ -215,11 +215,47 @@ inactivity**: an upstream that trickles its response keeps the socket "active"
 and the value is never reached. `ai()` now arms an `AbortController` for
 `min(BLOG_AI_TIMEOUT_MS, remaining)` and destroys the socket itself when it
 fires, so a stalled or trickling provider is cut **at** the deadline
-(`[AI] openrouter <slug> aborted after Ns — run budget spent`). Regression test:
+(`[AI] openrouter <slug> aborted after Ns — time box spent`). Regression test:
 `test:ai-providers` → *"a slow provider is cut at the deadline, not at its own
 pace"* (1500 ms budget against a stub that needs 5000 ms must return in < 3 s,
 and an abort stays transient, never fatal). `[GEN] Done:` now ends the run with
 `posts in Ns of Ms budget`, so the host log alone proves the ceiling.
+
+**Why a provider that never answered could still spend the whole angle (fixed
+after `d921f7f`).** A 90 s run on 2026-10-22 18:03 UTC (offer `2442b8c8`, 45 s
+angle budget) returned nine composed pages with this log:
+
+```
+[AI] openrouter model google/gemma-4-31b-it:free unusable (429) — trying minimax…
+[AI] openrouter model minimax/minimax-m3.1-flash:free unusable (404) — trying nvidia…
+… four more 429s …
+[AI] openrouter openrouter/free aborted after 30.0s — run budget spent
+[AI] gemini gemini-flash-latest aborted after 6.3s  — run budget spent
+[AI] hf skipped — run budget spent
+[GEN] AI unavailable for [Awareness] (transient) — composed from the offer data
+```
+
+The deadline was respected but not **shared**: OpenRouter's queue (six `429/404`
+answers plus one 30 s stall on the router slug) took 37 s of a 45 s angle, so
+Gemini — never tried — was cut 6.3 s into its first call, and HF never ran. The
+tier then looked dry and all nine pages fell back to composed copy. Three
+fixes:
+
+1. **Fair share.** Each keyed provider owns an equal slice of whatever is left
+   (`remaining / providersWithAKeyLeft`), and time a provider does not use rolls
+   into the next slice. One keyed provider still owns the whole deadline, so
+   single-key hosts behave as before; three keys on a 45 s angle give ~15 s each.
+2. **Retired slugs are retired.** A `404` now removes that slug for the life of
+   the process (`[AI] openrouter retired <slug> (404) — dropped for this
+   process`) instead of re-paying the round-trip on all nine angles.
+3. **The router slug is time-boxed.** `openrouter/free` picks an upstream per
+   request and held the full attempt timeout on both 13:55 and 18:03, so it is
+   capped at `BLOG_ROUTER_MODEL_CAP_MS` (8 s) like the last resort it is.
+
+Regression tests in `test:ai-providers`: *"a stalled provider cannot spend the
+next provider's share"* (3 s deadline, stalled OpenRouter + healthy Gemini must
+return Gemini's content in ~1.5 s), *"a 404 slug is probed once per process, not
+once per angle"*, and *"the last-resort router slug is time-boxed"*.
 
 Exit `0` = no failures, `1` = at least one, `2` = missing config. A stale
 `build identity` FAIL means the host is serving an older commit — redeploy from
@@ -234,7 +270,7 @@ string is the diagnosis — you do not need host logs.
 | --- | --- | --- |
 | `openrouter/hf 402 no remaining credits` | key valid, account out of credits | set `GEMINI_API_KEY` (free, no card) or `OPENROUTER_API_KEY`, or buy credits |
 | `401` / `unauthor` | key revoked or wrong | rotate the key on Render |
-| `404` + `unavailable for free` | the free model slug was retired (2026-10-22: `llama-3.1-8b-instruct:free`) | nothing — the writer now falls through `OPENROUTER_FREE_MODELS` on `404`, including past a retired `OPENROUTER_MODEL` pin; clear the pin if the console logs show it leading every run |
+| `404` + `unavailable for free` | the free model slug was retired (2026-10-22: `llama-3.1-8b-instruct:free`, `minimax/minimax-m3.1-flash:free`) | nothing — the writer falls through `OPENROUTER_FREE_MODELS` on `404`, including past a retired `OPENROUTER_MODEL` pin, and drops the dead slug for the rest of the process; clear the pin if the console logs show it leading every run |
 | `404` (any other) | model route not available on that account | set `OPENROUTER_MODEL` / `HF_MODEL` |
 | `429` + `rate-limited upstream` | that one model's upstream pool is saturated; the key is fine | nothing — the writer advances to the next slug in `OPENROUTER_FREE_MODELS` (live 2026-10-22: gemma-4-31b was throttled while five siblings were healthy) |
 | `429` + `You exceeded your current quota` | your own free-tier quota (per day) | wait for the reset window, add a second key, or add credits (OpenRouter free tier: 50 req/day, 1000/day after a one-time $10 credit) |
@@ -266,7 +302,8 @@ Relevant env (all optional except one key):
 | `BLOG_AI_MAX_MISSES` | `2` — consecutive angles that return nothing from any provider before the rest of the run is composed without further AI calls. This is a latency budget, not a quorum rule: per-run only, so the next run tries AI again. `0` always walks every angle |
 | `BLOG_AI_TIMEOUT_MS` | `30000` per HTTP attempt (was `120000`). A provider that accepts the connection then stalls must not hold the tenant's request open for two minutes per model slug |
 | `BLOG_RUN_BUDGET_MS` | `90000` — hard wall-clock ceiling for the whole AI walk, counted from the first angle and applied to **every** AI call (compose, duplicate retry, review). When it is spent the remaining angles are composed from the offer data, so a run finishes in roughly this long with all nine pages. Live 2026-10-22: `1 of 9 pages in 6 minutes` while free slugs answered `429` and the stall burned the old 120 s per-attempt timeout; later that day a run that answered **one** angle out of nine still held the request `166 s` (`mode=mixed`, 8 pages composed anyway) because the ceiling was only applied after a miss. Fixed on `589d7d0` the same day: the deadline now applies to every call, and the same nine-angle run that previously took `166 s` returned in **`82.8 s`** with **9/9** unique pages (8 composed from the offer data, `mode=mixed`) — the verifier's **8c** check fails the suite if a run ever exceeds 120 s again. The ceiling is enforced *inside* each call by an `AbortController`, not only between calls (see *Why a run can still overshoot the budget…* above), so an overshoot is at most the page being saved, never a whole provider timeout. Raise the budget (e.g. `240000`) on a funded key where AI copy matters more than latency. `0` disables the ceiling |
-| `BLOG_ANGLE_BUDGET_MS` | `45000` — ceiling for **one angle's** provider walk. A single angle tries up to seven candidate model slugs on one key: live 2026-10-22 one angle cost 37 s (5 models, one stalled 23 s before returning `429`). Effective per-call deadline is `min(now + this, run deadline)`, and each call in an angle (compose, duplicate retry, review) gets its own slice. Set `0` to cap only per attempt. The review pass is skipped once 60 % of the run budget is spent, so the tail of the budget buys AI-written pages rather than polish on page three |
+| `BLOG_ANGLE_BUDGET_MS` | `45000` — ceiling for **one angle's** provider walk, split equally between the providers that have a key (see *Why a provider that never answered…*). A single angle tries up to seven candidate model slugs on one key: live 2026-10-22 one angle cost 37 s (5 models, one stalled 23 s before returning `429`). Effective per-call deadline is `min(now + this, run deadline)`, and each call in an angle (compose, duplicate retry, review) gets its own slice. Set `0` to cap only per attempt. The review pass is skipped once 60 % of the run budget is spent, so the tail of the budget buys AI-written pages rather than polish on page three |
+| `BLOG_ROUTER_MODEL_CAP_MS` | `8000` — time box for the `openrouter/free` router slug, the only candidate with no upstream latency promise (it held a full 30 s attempt on both 2026-10-22 incidents). Every other slug is bounded by `BLOG_AI_TIMEOUT_MS` and the provider's share of the deadline. `0` disables the extra cap |
 | `GEMINI_API_KEY` | — (free tier, no card) |
 | `GEMINI_MODEL` | `gemini-flash-latest` (pin `gemini-3.8-flash` to freeze) |
 | `OPENAI_API_KEY` / `OPENAI_MODEL` | — / `gpt-4o-mini` |

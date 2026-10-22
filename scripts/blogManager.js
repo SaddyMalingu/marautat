@@ -62,7 +62,10 @@ let lastAiError = null;
 // Free tier limits are per model AND per upstream pool, so the list is also the
 // rate-limit budget: a 429 on one slug must land on the next one (live 2026-10-22,
 // gemma-4-31b "temporarily rate-limited upstream" blocked all 9 angles). Every
-// slug below was verified free in https://openrouter.ai/api/v1/models.
+// slug below was free when it was added (https://openrouter.ai/api/v1/models),
+// which is not a promise: `minimax/minimax-m3.1-flash:free` answered 404 hours
+// later. A slug that 404s is retired for the life of the process by ai(), so a
+// dead entry costs one request per deploy instead of one per angle.
 export const OPENROUTER_FREE_MODELS = [
   'google/gemma-4-31b-it:free',
   'minimax/minimax-m3.1-flash:free',
@@ -76,6 +79,27 @@ export const OPENROUTER_FREE_MODELS = [
   // healthy right now (its 429s clear as the pool rotates).
   'openrouter/free',
 ];
+
+// A candidate that answers 404 is retired, not throttled: every later angle on
+// this process would pay the same round-trip for the same answer. Live
+// 2026-10-22 18:03: `minimax/minimax-m3.1-flash:free` 404'd on the first walk of
+// the run (it was verified free earlier the same day). Per-process, so a redeploy
+// re-probes the whole list.
+const retiredModels = new Set();
+export function getRetiredModels() { return Array.from(retiredModels); }
+// Exposed for the offline suite: process-level state must not leak between cases.
+export function resetRetiredModels() { retiredModels.clear(); }
+
+// A router slug carries no upstream latency promise: `openrouter/free` picks a
+// model per request, and it held the *whole* per-attempt timeout twice on
+// 2026-10-22 (13:55 → a 90s run took 109s; 18:03 → 30s of a 45s angle, after
+// which Gemini was cut at 6.3s and HF never ran). A last-resort candidate gets a
+// last-resort time box. 0 disables it.
+function modelAttemptCapMs(slug) {
+  if (slug !== 'openrouter/free') return Infinity;
+  const cap = Number(process.env.BLOG_ROUTER_MODEL_CAP_MS == null ? 8000 : process.env.BLOG_ROUTER_MODEL_CAP_MS);
+  return cap > 0 ? cap : Infinity;
+}
 
 const AI_PROVIDERS = [
   {
@@ -171,6 +195,16 @@ async function ai(prompt, deadline) {
   // minutes and counting). Cap each attempt, and when the caller passes a
   // deadline, never start an attempt that cannot finish before it.
   const baseTimeout = Number(process.env.BLOG_AI_TIMEOUT_MS == null ? 30000 : process.env.BLOG_AI_TIMEOUT_MS);
+  // The deadline also has to be *shared*, not merely respected by each call.
+  // Live 2026-10-22 18:03 (90s run, 45s angle budget): OpenRouter answered 429/404
+  // in a few seconds, then stalled 30s on the `openrouter/free` router — 37s of the
+  // angle gone. Gemini, never tried, was aborted after 6.3s mid-call and HF was
+  // skipped as "budget spent", so the tier reported dry and nine pages were
+  // composed from the offer data. One provider's queue must not own the next
+  // provider's chance: each keyed provider now gets an equal slice of what is
+  // left, and time it does not use rolls into the following slice.
+  const keyedProviders = AI_PROVIDERS.filter(function (q) { return !!q.key(); });
+  let providersLeft = keyedProviders.length;
   for (const p of AI_PROVIDERS) {
     const key = p.key();
     if (!key) continue;
@@ -178,10 +212,20 @@ async function ai(prompt, deadline) {
       failures.push({ name: p.name, status: 0, text: 'skipped — run budget spent', kind: 'transient' });
       continue;
     }
-    const models = typeof p.models === 'function' ? p.models() : [p.model()];
+    const shareEnd = deadline
+      ? Date.now() + Math.max(1000, Math.floor((deadline - Date.now()) / Math.max(1, providersLeft)))
+      : 0;
+    providersLeft--;
+    const models = (typeof p.models === 'function' ? p.models() : [p.model()])
+      .filter(function (m) { return !retiredModels.has(m); });
     let failure = null;
+    if (!models.length) {
+      failures.push({ name: p.name, status: 0, text: 'every model slug retired for this process', kind: 'transient' });
+      continue;
+    }
     for (let mi = 0; mi < models.length; mi++) {
-      const remaining = deadline ? deadline - Date.now() : baseTimeout;
+      const limit = deadline ? Math.min(deadline, shareEnd) : 0;
+      const remaining = limit ? limit - Date.now() : baseTimeout;
       if (deadline && remaining < 1000) {
         failure = { name: p.name, status: 0, text: 'out of time before ' + models[mi], kind: 'transient' };
         break;
@@ -193,7 +237,7 @@ async function ai(prompt, deadline) {
       // 30.7s later (the whole BLOG_AI_TIMEOUT_MS), so a 90s run finished in 108s
       // and the tenant waited 109s. The AbortController is the hard bound: it
       // destroys the socket at the deadline even mid-response.
-      const budget = Math.max(1, Math.min(baseTimeout, remaining));
+      const budget = Math.max(1, Math.min(baseTimeout, remaining, modelAttemptCapMs(models[mi])));
       const ctl = new AbortController();
       const timer = setTimeout(function () { ctl.abort(); }, budget);
       try {
@@ -225,10 +269,10 @@ async function ai(prompt, deadline) {
         if (ctl.signal.aborted) {
           failure = {
             name: p.name, status: 0, kind: 'transient',
-            text: 'aborted after ' + (budget / 1000).toFixed(1) + 's (' + models[mi] + ') — run budget spent',
+            text: 'aborted after ' + (budget / 1000).toFixed(1) + 's (' + models[mi] + ') — time box spent',
           };
           console.warn('[AI] ' + p.name + ' ' + models[mi] + ' aborted after ' + (budget / 1000).toFixed(1) +
-            's — run budget spent, composing the remaining angles from the offer data');
+            's — time box spent, next provider keeps its own share of the run budget');
           break;
         }
         const status = e.response?.status;
@@ -236,6 +280,12 @@ async function ai(prompt, deadline) {
         const body = raw ? (typeof raw === 'string' ? raw : JSON.stringify(raw)) : '';
         const text = (body || e.message || '').slice(0, 240);
         failure = { name: p.name, status: status || 0, text, kind: classifyFailure(status, text) };
+        // A 404 is deterministic for that slug, so remember it for the process
+        // instead of re-paying the round-trip on every angle of every run.
+        if (status === 404 && !retiredModels.has(models[mi])) {
+          retiredModels.add(models[mi]);
+          console.warn('[AI] ' + p.name + ' retired ' + models[mi] + ' (404) — dropped for this process');
+        }
         // A retired free slug answers 404 ("This model is unavailable for
         // free") and a throttled one answers 429 ("temporarily rate-limited
         // upstream"). Neither is a reason to abandon the other models on the
