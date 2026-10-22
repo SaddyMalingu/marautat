@@ -138,7 +138,7 @@ string is the diagnosis — you do not need host logs.
 
 | `Last AI error` contains | Meaning | Fix |
 | --- | --- | --- |
-| `openrouter/hf 402 no remaining credits` | key valid, account out of credits | buy credits or set `OPENROUTER_API_KEY` |
+| `openrouter/hf 402 no remaining credits` | key valid, account out of credits | set `GEMINI_API_KEY` (free, no card) or `OPENROUTER_API_KEY`, or buy credits |
 | `401` / `unauthor` | key revoked or wrong | rotate the key on Render |
 | `404` | model route not available on that account | set `OPENROUTER_MODEL` / `HF_MODEL` |
 | `429` | rate limited | retry later or add a second key |
