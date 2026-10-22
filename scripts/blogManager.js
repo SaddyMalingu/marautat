@@ -159,22 +159,36 @@ function classifyFailure(status, text) {
 export function getLastAiError() { return lastAiError; }
 export function isAiFailureFatal() { return lastAiFatal; }
 
-async function ai(prompt) {
+async function ai(prompt, deadline) {
   const axios = (await import('axios')).default;
   const failures = [];
+  // A stalled provider used to burn 120s per attempt, so a dry tier could hold
+  // the tenant's request open for many minutes (live 2026-10-22: 9 angles, 4+
+  // minutes and counting). Cap each attempt, and when the caller passes a
+  // deadline, never start an attempt that cannot finish before it.
+  const baseTimeout = Number(process.env.BLOG_AI_TIMEOUT_MS == null ? 30000 : process.env.BLOG_AI_TIMEOUT_MS);
   for (const p of AI_PROVIDERS) {
     const key = p.key();
     if (!key) continue;
+    if (deadline && Date.now() >= deadline) {
+      failures.push({ name: p.name, status: 0, text: 'skipped — run budget spent', kind: 'transient' });
+      continue;
+    }
     const models = typeof p.models === 'function' ? p.models() : [p.model()];
     let failure = null;
     for (let mi = 0; mi < models.length; mi++) {
+      const remaining = deadline ? deadline - Date.now() : baseTimeout;
+      if (deadline && remaining < 1000) {
+        failure = { name: p.name, status: 0, text: 'out of time before ' + models[mi], kind: 'transient' };
+        break;
+      }
       try {
         const r = await axios.post(p.url(), {
           model: models[mi],
           messages: [{ role: 'user', content: prompt }],
           max_tokens: 3000,
           temperature: 0.7,
-        }, { headers: p.headers(key), timeout: 120000 });
+        }, { headers: p.headers(key), timeout: Math.min(baseTimeout, remaining) });
         const content = r.data?.choices?.[0]?.message?.content || null;
         if (!content) {
           failure = { name: p.name, status: 200, text: 'empty content (' + models[mi] + ')', kind: 'transient' };
@@ -279,6 +293,25 @@ export async function generateBlogPostsForOpportunity(oppId, opts) {
   // be composed from the offer's own fields (utils/angleFallback.js). Set
   // BLOG_FALLBACK_MODE=off to restore the loud failure when diagnosing.
   var allowFallback = String(process.env.BLOG_FALLBACK_MODE == null ? 'auto' : process.env.BLOG_FALLBACK_MODE).toLowerCase() !== 'off';
+  // Latency budget: when the tier is throttled, every angle costs the full
+  // provider walk (7 OpenRouter slugs x up to 1.5s of 429 backoff) before it can
+  // be composed locally. Nine of those is a ~2 minute request in front of a
+  // tenant who is watching a spinner. Two consecutive angles with nothing from
+  // any provider is enough evidence that the tier is dry for this run: compose
+  // the rest immediately. This is a per-run decision only — the next run tries
+  // AI again. Set BLOG_AI_MAX_MISSES=0 to always walk every angle.
+  var maxMisses = Number(process.env.BLOG_AI_MAX_MISSES == null ? 2 : process.env.BLOG_AI_MAX_MISSES);
+  // A miss count cannot bound latency on its own: a provider that accepts the
+  // connection and then stalls burns a whole attempt (BLOG_AI_TIMEOUT_MS) before
+  // it counts as one miss. Live 2026-10-22 the journey wrote 1 of 9 pages in 6
+  // minutes and the tenant's request was still open. So a wall-clock budget also
+  // bounds the walk. It only bites a failing run: while every angle is
+  // answering (misses === 0) the AI tier is never cut short, so a healthy paid
+  // run keeps all its review passes.
+  var budgetMs = Number(process.env.BLOG_RUN_BUDGET_MS == null ? 90000 : process.env.BLOG_RUN_BUDGET_MS);
+  var runStart = Date.now();
+  var deadline = budgetMs > 0 ? runStart + budgetMs : 0;
+  var misses = 0;
   var aiUsable = true;
   var fromTemplate = 0;
   lastAiError = null;
@@ -287,10 +320,21 @@ export async function generateBlogPostsForOpportunity(oppId, opts) {
     console.log('[GEN] - [' + post.angleName + '] ' + post.title);
     attempts++;
     var content = null;
+    if (aiUsable && maxMisses > 0 && misses >= maxMisses) {
+      aiUsable = false;
+      console.warn('[GEN] AI returned nothing for ' + misses + ' angle(s) in a row — composing the rest from the offer data ' +
+        '(BLOG_AI_MAX_MISSES=' + maxMisses + ', last error: ' + (lastAiError || 'none') + ')');
+    } else if (aiUsable && misses > 0 && budgetMs > 0 && Date.now() - runStart > budgetMs) {
+      aiUsable = false;
+      console.warn('[GEN] AI budget spent (' + Math.round((Date.now() - runStart) / 1000) + 's of ' +
+        Math.round(budgetMs / 1000) + 's, BLOG_RUN_BUDGET_MS) — composing the rest from the offer data');
+    }
     if (aiUsable) {
       if (i > 0 && angleDelay > 0) await sleep(angleDelay);
-      content = await ai(post.prompt);
-      if (content) content = clean(content);
+      // Once an angle has failed, later calls may not overrun the budget; the
+      // first angle is capped too, so a stall on it cannot hang the request.
+      content = await ai(post.prompt, (i === 0 || misses > 0) ? deadline : 0);
+      if (content) { content = clean(content); misses = 0; } else { misses++; }
     }
     var composed = false;
     if (!content) {
@@ -312,12 +356,12 @@ export async function generateBlogPostsForOpportunity(oppId, opts) {
       console.warn('[GEN] AI unavailable for [' + post.angleName + '] (' + (aiUsable ? 'transient' : 'provider-wide') +
         ') — composed from the offer data');
     } else if (isDuplicate(content, existing)) {
-      content = await ai(post.prompt + ' Make this completely unique.');
+      content = await ai(post.prompt + ' Make this completely unique.', (i === 0 || misses > 0) ? deadline : 0);
       if (content) content = clean(content);
     }
     // The review pass is a second AI call per post. Skip it when the writer is
     // out of quota (lastAiError set) or when the text was composed locally.
-    if (rev && !composed && !lastAiError) content = await reviewContent(content, post.title);
+    if (rev && !composed && !lastAiError) content = await reviewContent(content, post.title, (i === 0 || misses > 0) ? deadline : 0);
     var thumb = null;
     if (img) thumb = await genImage(o.title + ' ' + post.angleName, post.slug);
     var postData = { title: post.title, slug: post.slug, content: content, thumb: thumb };
@@ -360,10 +404,10 @@ export async function generateBlogPostsForOpportunity(oppId, opts) {
 
 
 
-async function reviewContent(content, title) {
+async function reviewContent(content, title, deadline) {
   try {
     const prompt = `Review and improve this blog post. Remove ALL asterisks, markdown formatting, and AI patterns. Fix inconsistencies. Make it read like a professional human-written educational article. Ensure proper HTML structure with h2, h3, p, ul, li tags. Content:\n\n` + content;
-    const improved = await ai(prompt);
+    const improved = await ai(prompt, deadline);
     return improved || content;
   } catch (e) { return content; }
 }
