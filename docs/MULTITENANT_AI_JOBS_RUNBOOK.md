@@ -112,6 +112,25 @@ founder's-plan clients, with two tabs: **Research & Outreach** (placeholder) and
 3. Log into `/tenant-dashboard` → **Writer's Flow** → **Blogger** tab.
 4. Create an offer (any type) → Publish → open the public page (flag must be ON).
 
+### Verify a deployment — `npm run verify:writers-flow`
+End-to-end check of the live host (`scripts/verify_writers_flow.js`). It reports
+PASS / FAIL / WARN per check and always deletes the rows it creates.
+
+```bash
+BASE_URL=https://alphadome.onrender.com \
+TENANT_TEST_PHONE=<tenant phone> TENANT_DASHBOARD_PASS=<tenant key> \
+npm run verify:writers-flow
+```
+
+Checks: **build identity** (is the served bundle the latest commit?), route
+registration (401 not 404, plus a 404 control), login, context, offer create,
+**slug collision** (same title twice must yield two slugs), publish,
+**blog generation** (must never return 200 with 0 posts), public page, cleanup.
+
+Exit `0` = no failures, `1` = at least one, `2` = missing config. A stale
+`build identity` FAIL means the host is serving an older commit — redeploy from
+the Render dashboard (this repo has no CI deploy job).
+
 ### Phase B (next) — Research & Outreach
 Tenant-scope the original WF: add `wf_campaigns.tenant_id`, `/tenant/wf/*` endpoints,
 per-tenant SMTP, and the Research & Outreach tab UI.
