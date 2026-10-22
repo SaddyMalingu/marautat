@@ -4316,7 +4316,15 @@ app.post('/tenant/blogger/offers', tenantSessionAuth, async (req, res) => {
     const b = req.body || {};
     const title = String(b.title || '').trim();
     if (!title) return res.status(400).json({ error: 'Title is required' });
-    const slug = String(b.slug || title).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    // opportunities.slug is globally UNIQUE, so tenant offers must not collide
+    // with each other or with the legacy Mercor catalog.
+    const baseSlug = (String(b.slug || title).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60)) || 'offer';
+    let slug = baseSlug;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const { data: taken } = await supabase.from('opportunities').select('id').eq('slug', slug).maybeSingle();
+      if (!taken) break;
+      slug = `${baseSlug}-${Math.random().toString(36).slice(2, 6)}`;
+    }
     const row = {
       tenant_id: ctx.site.id,
       source_id: b.source_id || null,
