@@ -75,7 +75,6 @@ const AI_PROVIDERS = [
       const list = OPENROUTER_FREE_MODELS.slice();
       return pinned ? [pinned, ...list.filter((m) => m !== pinned)] : list;
     },
-
     headers: (k) => ({ Authorization: 'Bearer ' + k, 'Content-Type': 'application/json' }),
   },
   {
