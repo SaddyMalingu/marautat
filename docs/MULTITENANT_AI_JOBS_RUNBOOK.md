@@ -157,7 +157,10 @@ registration (401 not 404, plus a 404 control), login, context, offer create,
 time), **blog coverage** (warns when fewer than 9 unique angle pages were
 written, and reports `mode=ai|template|mixed`), **bounded run** (fails if the
 generation call exceeds 120 s wall clock, i.e. the `BLOG_RUN_BUDGET_MS` ceiling
-stopped being applied), public page, cleanup, **blog
+stopped being applied), **offer pages** (every slug the run produced must come
+back from `GET /tenant/blogger/offers/:id/posts` and the first page must serve
+200 HTML — this is the tenant's only handle on what it paid for), public page,
+cleanup, **blog
 cleanup** (generated `verify-writers-flow-*` posts are deleted).
 
 Live baseline on `589d7d0` (2026-10-22 13:42 UTC): 18 passed / 0 failed /
