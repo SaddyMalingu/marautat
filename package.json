@@ -17,6 +17,7 @@
     "campaign:send": "node sendTemplate.js",
     "test:tenant-session": "node test_tenant_session_flow.js",
     "test:tenant-session:auto": "AUTO_CREATE_TEST_TENANT=true node test_tenant_session_flow.js",
+    "verify:writers-flow": "node scripts/verify_writers_flow.js",
     "aboss:workbook": "node scripts/aboss_make_workbook.cjs",
     "aboss:workbook:extract": "node scripts/aboss_extract_workbook.cjs",
     "aboss:fast": "node scripts/aboss_fast_pipeline.cjs",
