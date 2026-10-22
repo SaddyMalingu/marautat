@@ -379,8 +379,9 @@ async function generateJourney(oppId, opts) {
     var angleDeadline = capFor();
     if (aiUsable) {
       if (i > 0 && angleDelay > 0) await sleep(angleDelay);
-      // Once an angle has failed, later calls may not overrun the budget; the
-      // first angle is capped too, so a stall on it cannot hang the request.
+      // The cap is recomputed per call and always includes the run deadline, so
+      // no single AI call — first angle, duplicate retry or review — can push the
+      // journey past BLOG_RUN_BUDGET_MS.
       content = await ai(post.prompt, angleDeadline);
       if (content) { content = clean(content); misses = 0; } else { misses++; }
     }
