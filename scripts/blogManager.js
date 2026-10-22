@@ -341,7 +341,9 @@ async function genContent(opp, type, existing) {
   return content;
 }
 
-function updateIndex() {
+// Rebuilds public/blog/index.html from the files on disk. Deleting a post must
+// call this too, otherwise /blog keeps linking to the removed page.
+export function updateIndex() {
   if (!fs.existsSync(BLOG)) return;
   const files = fs.readdirSync(BLOG).filter(function(x){return x.endsWith(".html") && x !== "index.html";});
   const posts = files.map(function(x){const s=x.replace(".html","");return {slug:s,title:s.replace(/-/g," ").replace(/\b\w/g,function(c){return c.toUpperCase();})};});

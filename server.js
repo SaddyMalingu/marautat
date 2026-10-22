@@ -4424,6 +4424,11 @@ app.delete('/tenant/blogger/posts/:slug', tenantSessionAuth, async (req, res) =>
       const file = path.join(process.cwd(), 'public', 'blog', slug + '.html');
       if (fs.existsSync(file)) fs.unlinkSync(file);
     } catch (e) { console.warn('[tenant/blogger/posts] file cleanup:', e.message); }
+    // /blog serves a prebuilt index, so rebuild it or the dead link survives.
+    try {
+      const { updateIndex } = await import('./scripts/blogManager.js');
+      updateIndex();
+    } catch (e) { console.warn('[tenant/blogger/posts] index rebuild:', e.message); }
     res.json({ ok: true, slug });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
