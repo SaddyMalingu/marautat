@@ -40,10 +40,14 @@ function clean(c) {
     .trim();
 }
 
+// Last failure reason from the AI provider, surfaced to callers so a tenant or
+// operator can see *why* generation produced nothing without reading host logs.
+let lastAiError = null;
+
 async function ai(prompt) {
   try {
     const k = process.env.HF_API_KEY || process.env.HF_API_KEY_WRITERS_FLOW;
-    if (!k) { console.log('[AI] No key'); return null; }
+    if (!k) { lastAiError = 'HF_API_KEY / HF_API_KEY_WRITERS_FLOW is not set'; console.log('[AI] No key'); return null; }
     const axios = (await import('axios')).default;
     const r = await axios.post('https://router.huggingface.co/v1/chat/completions', {
       model: 'meta-llama/Llama-3.1-8B-Instruct:novita',
@@ -51,8 +55,16 @@ async function ai(prompt) {
       max_tokens: 3000,
       temperature: 0.7
     }, { headers: { Authorization: 'Bearer ' + k }, timeout: 120000 });
-    return r.data?.choices?.[0]?.message?.content || null;
-  } catch (e) { console.error('[AI] Error:', e.message); return null; }
+    const content = r.data?.choices?.[0]?.message?.content || null;
+    if (!content) lastAiError = 'HF returned 200 with empty content';
+    return content;
+  } catch (e) {
+    const status = e.response?.status;
+    const body = e.response?.data ? (typeof e.response.data === 'string' ? e.response.data : JSON.stringify(e.response.data)) : '';
+    lastAiError = status ? `HF ${status} ${body}`.trim().slice(0, 300) : e.message;
+    console.error('[AI] Error:', lastAiError);
+    return null;
+  }
 }
 
 async function genImage(prompt, slug) {
@@ -98,6 +110,7 @@ export async function generateBlogPostsForOpportunity(oppId, opts) {
   }
   var journey = getContentJourney(o);
   var res = [];
+  lastAiError = null;
   for (var i = 0; i < journey.length; i++) {
     var post = journey[i];
     console.log('[GEN] - [' + post.angleName + '] ' + post.title);
@@ -129,7 +142,8 @@ export async function generateBlogPostsForOpportunity(oppId, opts) {
       posts: [],
       attempted: journey.length,
       error: 'No posts generated — the AI writer returned nothing for all ' +
-        journey.length + ' angles. Check HF_API_KEY and model availability.'
+        journey.length + ' angles. Check HF_API_KEY and model availability.' +
+        (lastAiError ? ' Last AI error: ' + lastAiError : '')
     };
   }
   return { success: true, posts: res };
