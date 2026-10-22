@@ -322,19 +322,86 @@ async function renderOnboarding() {
 let wfTab = 'blogger';
 
 function wfOfferRows(offers) {
-  if (!offers.length) return `<tr><td colspan="5" class="text-muted text-center p-3">No offers yet — create your first one above.</td></tr>`;
-  return offers.map(o => `
+  if (!offers.length) return `<tr><td colspan="6" class="text-muted text-center p-3">No offers yet — create your first one above.</td></tr>`;
+  return offers.map(o => {
+    // The pages are the deliverable, so they get a column of their own instead
+    // of ending as a toast the tenant cannot click.
+    const n = Number(o.page_count || 0);
+    return `
     <tr>
       <td><strong>${esc(o.title)}</strong><div class="text-muted" style="font-size:.72rem">/${esc(o.slug)}</div></td>
       <td><span class="badge-info">${esc(o.offer_type || 'job')}</span></td>
       <td>${badge(o.status)}</td>
       <td>${o.compensation_max != null ? esc(o.compensation_currency || 'KES') + ' ' + Number(o.compensation_max).toLocaleString() : '—'}</td>
+      <td class="text-center"><button class="btn btn-sm ${n ? 'btn-outline-info' : 'btn-outline-secondary'}" data-act="posts" data-id="${esc(o.id)}">${n ? n + ' page' + (n === 1 ? '' : 's') : 'Pages'}</button></td>
       <td class="text-end">
         ${o.status !== 'published' ? `<button class="btn btn-sm btn-success me-1" data-act="publish" data-id="${esc(o.id)}">Publish</button>` : ''}
-        <button class="btn btn-sm btn-outline-info me-1" data-act="blog" data-id="${esc(o.id)}">Blog</button>
+        <button class="btn btn-sm btn-outline-info me-1" data-act="blog" data-id="${esc(o.id)}">Optimize</button>
         <button class="btn btn-sm btn-outline-danger" data-act="del" data-id="${esc(o.id)}">Delete</button>
       </td>
-    </tr>`).join('');
+    </tr>
+    <tr class="wf-posts-row" data-for="${esc(o.id)}" style="display:none"><td colspan="6" class="wf-posts-cell"></td></tr>`;
+  }).join('');
+}
+
+// ─── Offer pages: the tenant must be able to reach what it generated ───────
+// Kept outside renderWritersFlow so expanding, deleting or reloading one
+// offer's list does not rebuild the table under the tenant's cursor.
+let wfOpenOffer = null;
+
+function wfPostsRowEl(id) {
+  // dataset comparison instead of a CSS attribute selector: ids are UUIDs today
+  // but the dashboard must not break if one ever contains a quote.
+  return Array.from(document.querySelectorAll('#wf-blogger .wf-posts-row'))
+    .find(r => r.dataset.for === id) || null;
+}
+
+function wfPostListHtml(d) {
+  const posts = Array.isArray(d.posts) ? d.posts : [];
+  const offerId = esc(d.offer?.id || '');
+  const hide = `<button class="btn btn-sm btn-outline-secondary" data-act="closeposts" data-id="${offerId}">Hide</button>`;
+  if (!posts.length) {
+    return `<div class="text-muted p-2" style="font-size:.86rem">No pages yet — press <strong>Optimize</strong> on this offer to write them.</div>
+      <div class="p-2 pt-0">${hide}</div>`;
+  }
+  return `
+    <div class="d-flex justify-content-between align-items-center p-2">
+      <div style="font-size:.86rem"><strong>${posts.length}</strong> page${posts.length === 1 ? '' : 's'} for ${esc(d.offer?.title || 'this offer')} — live on the public blog</div>
+      ${hide}
+    </div>
+    <ul class="list-unstyled mb-0 px-2 pb-2">${posts.map(p => `
+      <li class="d-flex justify-content-between align-items-center gap-2 py-1" style="border-top:1px solid var(--border)">
+        <div style="min-width:0">
+          <a href="${esc(p.url)}" target="_blank" rel="noopener" style="color:var(--accent)">${esc(p.title || p.slug)}</a>
+          <div class="text-muted" style="font-size:.72rem">${esc(p.angle || 'page')} · ${esc(p.slug)}${p.status && p.status !== 'published' ? ' · ' + esc(p.status) : ''}</div>
+        </div>
+        <div class="d-flex gap-1 flex-shrink-0">
+          <a class="btn btn-sm btn-outline-info" href="${esc(p.url)}" target="_blank" rel="noopener">Open</a>
+          <button class="btn btn-sm btn-outline-danger" data-act="delpost" data-id="${offerId}" data-slug="${esc(p.slug)}">Delete</button>
+        </div>
+      </li>`).join('')}</ul>`;
+}
+
+async function wfShowOfferPosts(id) {
+  const row = wfPostsRowEl(id);
+  if (!row) { if (wfOpenOffer === id) wfOpenOffer = null; return; }
+  wfOpenOffer = id;
+  row.style.display = '';
+  const cell = row.firstElementChild;
+  cell.innerHTML = `<div class="text-muted p-2" style="font-size:.86rem">Loading pages…</div>`;
+  const r = await apiJson(`/tenant/blogger/offers/${id}/posts`);
+  if (!r.ok || !r.data?.ok) {
+    cell.innerHTML = `<div class="p-2" style="color:var(--danger);font-size:.86rem">${esc(r.data?.error || 'Could not load pages')}</div>
+      <div class="p-2 pt-0"><button class="btn btn-sm btn-outline-secondary" data-act="closeposts" data-id="${esc(id)}">Hide</button></div>`;
+    return;
+  }
+  cell.innerHTML = wfPostListHtml(r.data);
+}
+
+function wfHideOfferPosts(id) {
+  const row = wfPostsRowEl(id);
+  if (row) row.style.display = 'none';
+  if (wfOpenOffer === id) wfOpenOffer = null;
 }
 
 function wfOutreachHtml() {
@@ -376,7 +443,7 @@ function wfBloggerHtml(ctx) {
     <div class="panel p-0">
       <div class="panel-title px-3 pt-3">Your Offers</div>
       <div class="table-responsive">
-        <table class="table table-sm mb-0 align-middle"><thead><tr><th>Title</th><th>Type</th><th>Status</th><th>Price</th><th></th></tr></thead><tbody>${wfOfferRows(offers)}</tbody></table>
+        <table class="table table-sm mb-0 align-middle"><thead><tr><th>Title</th><th>Type</th><th>Status</th><th>Price</th><th class="text-center">Pages</th><th></th></tr></thead><tbody>${wfOfferRows(offers)}</tbody></table>
       </div>
     </div>`;
 }
@@ -400,6 +467,10 @@ async function renderWritersFlow() {
     </ul>
     <div class="wf-tab" id="wf-outreach" style="display:${wfTab === 'outreach' ? '' : 'none'}">${wfOutreachHtml()}</div>
     <div class="wf-tab" id="wf-blogger" style="display:${wfTab === 'blogger' ? '' : 'none'}">${wfBloggerHtml(ctx)}</div>`;
+
+  // Reopen the list the tenant was already looking at — and the one generation
+  // just filled — so a re-render never hides the pages they paid for.
+  if (wfOpenOffer) wfShowOfferPosts(wfOpenOffer);
 
   const setTab = (tab) => {
     wfTab = tab;
@@ -429,16 +500,42 @@ async function renderWritersFlow() {
     const btn = ev.target.closest('button[data-act]');
     if (!btn) return;
     const act = btn.dataset.act, id = btn.dataset.id;
+    // Access actions: open/hide an offer's pages, or remove one page.
+    if (act === 'posts') {
+      const row = wfPostsRowEl(id);
+      if (row && row.style.display !== 'none') wfHideOfferPosts(id);
+      else await wfShowOfferPosts(id);
+      return;
+    }
+    if (act === 'closeposts') { wfHideOfferPosts(id); return; }
+    if (act === 'delpost') {
+      if (!confirm('Delete this page? Its public URL stops working.')) return;
+      btn.disabled = true;
+      const d = await apiJson(`/tenant/blogger/posts/${encodeURIComponent(btn.dataset.slug)}`, { method: 'DELETE' });
+      if (!d.ok) { toast(d.data?.error || 'Delete failed', 'err'); btn.disabled = false; return; }
+      toast('Page deleted', 'ok');
+      wfOpenOffer = id;           // reload the offer's list, still expanded
+      renderWritersFlow();
+      return;
+    }
     if (act === 'del' && !confirm('Delete this offer?')) return;
     const url = `/tenant/blogger/offers/${id}` + (act === 'publish' ? '/publish' : act === 'blog' ? '/blog' : '');
     btn.disabled = true;
     const r = await apiJson(url, { method: act === 'del' ? 'DELETE' : 'POST' });
     if (!r.ok) { toast(r.data?.error || 'Action failed', 'err'); btn.disabled = false; return; }
-    toast(act === 'blog'
-      // 'mode' says whether the posts came from a model or were composed from
+    if (act === 'blog') {
+      const n = r.data?.result?.posts?.length ?? 0;
+      // 'mode' says whether the pages came from a model or were composed from
       // the offer's own details because every AI provider was out of quota.
-      ? `Blog generated (${r.data?.result?.posts?.length ?? 0} posts${r.data?.result?.mode === 'ai' || !r.data?.result?.mode ? '' : r.data?.result?.mode === 'template' ? ', composed from offer details' : ', partly composed'})`
-      : act === 'publish' ? 'Published' : 'Deleted', 'ok');
+      const mode = r.data?.result?.mode;
+      const note = !mode || mode === 'ai' ? '' : mode === 'template' ? ', composed from offer details' : ', partly composed';
+      toast(`Optimized — ${n} page${n === 1 ? '' : 's'} ready${note}`, 'ok');
+      // Open the list straight away: the pages are the deliverable, so the
+      // tenant should land on clickable links, not a number in a toast.
+      wfOpenOffer = id;
+    } else {
+      toast(act === 'publish' ? 'Published' : 'Deleted', 'ok');
+    }
     renderWritersFlow();
   });
 }

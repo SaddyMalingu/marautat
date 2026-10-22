@@ -99,11 +99,22 @@ founder's-plan clients, with two tabs: **Research & Outreach** (placeholder) and
 - **Nav:** new "Growth → Writer's Flow" item (`data-sec="writers-flow"` → `renderWritersFlow`).
 - **Migration:** `2026-10-16_tenant_blogger.sql` adds `site_tenants.client_phone`
   (links a logged-in `bot_tenants` to its Blogger `site_tenants` row). **Run BEFORE deploy.**
-- **APIs (tenantSessionAuth, auto-scoped):** `GET /tenant/blogger`,
+- **APIs (tenantSessionAuth, auto-scoped):** `GET /tenant/blogger` (each offer now
+  carries `page_count`), `GET /tenant/blogger/offers/:id/posts` (the pages that
+  offer produced: `slug`, `title`, `angle`, `status`, `url`),
   `POST /tenant/blogger/offers`, `POST /tenant/blogger/offers/:id/publish`,
   `POST /tenant/blogger/offers/:id/blog`, `DELETE /tenant/blogger/offers/:id`,
   `DELETE /tenant/blogger/posts/:slug` (only posts with this tenant's `tenant_id`;
   removes the row and the static `public/blog/<slug>.html`).
+- **Reaching what was generated (2026-10-22):** the **Blog** button is now
+  **Optimize**, the offers table has a **Pages** column (`page_count`), and
+  expanding a row lists every page of that offer with an **Open** link
+  (`/blog/<slug>.html`) and a per-page **Delete**. A successful run expands the
+  list on its own, so the deliverable is clickable instead of a number in a toast —
+  before this a tenant generated 9/9 pages and had no handle on any of them (the
+  dashboard only re-rendered the table). Verifier check **8d** asserts that every
+  generated slug is listed for the offer and that the first page serves 200 HTML,
+  so "generated but unreachable" fails the suite.
 - **Scoping:** on first Blogger access, a `site_tenants` row is lazily created from the
   tenant's `bot_tenants` name/phone → public page at `/ai-jobs/t/<their-slug>`.
 - **One journey per offer:** `generateBlogPostsForOpportunity` holds an in-process

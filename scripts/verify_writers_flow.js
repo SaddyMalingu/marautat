@@ -17,6 +17,7 @@
  *   8a) double click         — a second concurrent run on the same offer is 409 busy
  *   8b) blog coverage        — WARN when fewer than every angle produced a post
  *   8c) bounded run          — the journey returns inside its wall-clock ceiling
+ *   8d) offer pages          — the generated pages are listed for the offer and serve
  *   9) public page           — /ai-jobs/t/<slug> (needs AI_JOBS_MULTITENANT)
  *  10) cleanup               — test rows removed, offer count restored to baseline
  *  10b) blog cleanup         — generated verify-writers-flow-* posts removed
@@ -124,11 +125,14 @@ async function main() {
   // markers reveal which commit is actually serving traffic.
   const spa = await http.get("/tenant-dashboard" + (DASHBOARD_PASS ? `?key=${encodeURIComponent(DASHBOARD_PASS)}` : ""));
   if (spa.status === 200 && typeof spa.data === "string") {
-    const hasNew = spa.data.includes("Blog generated (");
-    const hasOld = spa.data.includes("'Blog generated'");
-    if (hasNew) pass("build identity", "serving build with real blog-post count toast");
-    else if (hasOld) fail("build identity", "serving a build older than the blog-failure fix (host has not deployed latest commit)");
-    else warn("build identity", "no blog toast marker found — dashboard markup changed");
+    // The per-offer page list is the marker for this build: before it, the only
+    // trace of a run in the portal was a toast, so a tenant could not open any
+    // page it had generated.
+    const hasNew = spa.data.includes('data-act="posts"');
+    const hasOld = spa.data.includes("Blog generated (");
+    if (hasNew) pass("build identity", "serving build with per-offer page list (Optimize)");
+    else if (hasOld) fail("build identity", "serving a build without the offer page list (host has not deployed latest commit)");
+    else warn("build identity", "no page-list marker found — dashboard markup changed");
   } else {
     warn("build identity", `dashboard returned ${spa.status}; cannot identify build`);
   }
@@ -250,6 +254,31 @@ async function main() {
     pass("bounded run", `${(wallMs / 1000).toFixed(1)}s, inside the ${RUN_CEILING_MS / 1000}s ceiling`);
   } else {
     fail("bounded run", `${(wallMs / 1000).toFixed(1)}s — past ${RUN_CEILING_MS / 1000}s; check that BLOG_RUN_BUDGET_MS is applied to every AI call, not only after a miss`);
+  }
+
+  // 8d) Access — the pages must be reachable from the portal, not only on disk.
+  // Live 2026-10-22 14:22 a run wrote 9/9 and the dashboard reported a toast with
+  // no link, so the tenant had no way to open, share or remove what it had just
+  // generated. The offer's page list is that access path.
+  const pageList = await http.get(`/tenant/blogger/offers/${offerA.id}/posts`, { headers: authHeaders() });
+  const listed = Array.isArray(pageList.data?.posts) ? pageList.data.posts : [];
+  const listedSlugs = listed.map((p) => p.slug);
+  const missingPages = createdSlugs.filter((s) => !listedSlugs.includes(s));
+  if (pageList.status !== 200) {
+    fail("offer pages", `${pageList.status} ${JSON.stringify(pageList.data)?.slice(0, 160)} — the portal cannot list what it generated`);
+  } else if (!listed.length) {
+    warn("offer pages", "0 pages listed for the offer that just generated");
+  } else if (missingPages.length) {
+    fail("offer pages", `${listed.length} listed but ${missingPages.length} generated page(s) missing (e.g. ${missingPages[0]})`);
+  } else {
+    const first = listed[0];
+    const firstUrl = first.url || `/blog/${first.slug}.html`;
+    const served = await http.get(firstUrl);
+    if (served.status === 200 && /<html/i.test(String(served.data || ""))) {
+      pass("offer pages", `${listed.length} page(s) listed, ${firstUrl} → 200`);
+    } else {
+      fail("offer pages", `${firstUrl} → ${served.status} — listed for the tenant but not served`);
+    }
   }
 
   // 9) Public tenant page (flag-gated)

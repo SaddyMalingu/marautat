@@ -4298,11 +4298,27 @@ app.get('/tenant/blogger', tenantSessionAuth, async (req, res) => {
       .eq('tenant_id', ctx.site.id).order('created_at', { ascending: false }).limit(100);
     const { data: cats } = await supabase
       .from('opportunity_categories').select('id, name').eq('is_active', true).order('display_order');
+    // How many pages each offer already has. Generation used to end in a toast,
+    // so a tenant that produced nine pages had no handle on any of them: live
+    // 2026-10-22 a run wrote 9/9 and the portal showed no link at all. One query
+    // for every offer keeps this flat instead of a request per row.
+    const pageCounts = {};
+    const offerIds = (offers || []).map(function (o) { return o.id; }).filter(Boolean);
+    if (offerIds.length) {
+      const { data: pageRows, error: pageErr } = await supabase.from('blog_posts')
+        .select('opportunity_id').in('opportunity_id', offerIds);
+      // A missing blog_posts table must not take the whole portal down; the
+      // dashboard then simply shows 0 pages.
+      if (pageErr) console.warn('[tenant/blogger] page counts unavailable:', pageErr.message);
+      (pageRows || []).forEach(function (r) {
+        pageCounts[r.opportunity_id] = (pageCounts[r.opportunity_id] || 0) + 1;
+      });
+    }
     res.json({
       ok: true,
       site: { id: ctx.site.id, slug: ctx.site.slug, name: ctx.site.name },
       publicPath: `/ai-jobs/t/${ctx.site.slug}`,
-      offers: offers || [],
+      offers: (offers || []).map(function (o) { return Object.assign({}, o, { page_count: pageCounts[o.id] || 0 }); }),
       categories: cats || [],
     });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -4390,6 +4406,44 @@ app.post('/tenant/blogger/offers/:id/blog', tenantSessionAuth, async (req, res) 
       });
     }
     res.json({ ok: true, result });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /tenant/blogger/offers/:id/posts — the pages an offer produced.
+// Access contract: generation writes nine rows and nine static files, but the
+// portal only ever reported a count, so the tenant could not open, share or
+// remove what it had just generated. Scoped through the offer (already checked
+// against this tenant), so pages still appear on a host whose blog_posts has no
+// tenant_id column yet.
+app.get('/tenant/blogger/offers/:id/posts', tenantSessionAuth, async (req, res) => {
+  try {
+    const ctx = await tenantSiteFromSession(req);
+    if (!ctx) return res.status(404).json({ error: 'Tenant not found' });
+    const { data: offer } = await supabase.from('opportunities').select('id, title, slug')
+      .eq('id', req.params.id).eq('tenant_id', ctx.site.id).maybeSingle();
+    if (!offer) return res.status(404).json({ error: 'Offer not found' });
+    const { data: posts, error } = await supabase.from('blog_posts')
+      .select('slug, title, category, status, thumbnail_url, created_at')
+      .eq('opportunity_id', offer.id).order('created_at', { ascending: true });
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({
+      ok: true,
+      offer: { id: offer.id, title: offer.title, slug: offer.slug },
+      count: (posts || []).length,
+      posts: (posts || []).map(function (p) {
+        return {
+          slug: p.slug,
+          title: p.title,
+          angle: p.category || null,
+          status: p.status || null,
+          thumbnail_url: p.thumbnail_url || null,
+          created_at: p.created_at || null,
+          // Exactly the URL the public blog serves (static file, or the
+          // /blog/:slug route when the file is missing on a fresh host).
+          url: '/blog/' + p.slug + '.html',
+        };
+      }),
+    });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
