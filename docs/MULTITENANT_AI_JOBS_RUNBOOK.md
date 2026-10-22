@@ -144,7 +144,7 @@ string is the diagnosis — you do not need host logs.
 | --- | --- | --- |
 | `openrouter/hf 402 no remaining credits` | key valid, account out of credits | set `GEMINI_API_KEY` (free, no card) or `OPENROUTER_API_KEY`, or buy credits |
 | `401` / `unauthor` | key revoked or wrong | rotate the key on Render |
-| `404` + `unavailable for free` | the free model slug was retired (2026-10-22: `llama-3.1-8b-instruct:free`) | nothing — the writer now falls through `OPENROUTER_FREE_MODELS` on `404`; pin `OPENROUTER_MODEL` only to choose a specific model |
+| `404` + `unavailable for free` | the free model slug was retired (2026-10-22: `llama-3.1-8b-instruct:free`) | nothing — the writer now falls through `OPENROUTER_FREE_MODELS` on `404`, including past a retired `OPENROUTER_MODEL` pin; clear the pin if the console logs show it leading every run |
 | `404` (any other) | model route not available on that account | set `OPENROUTER_MODEL` / `HF_MODEL` |
 | `429` / `RESOURCE_EXHAUSTED` | free-tier quota | wait for the window to reset, or add `OPENROUTER_API_KEY` (free tier: 50 req/day, 1000/day after a one-time $10 credit) |
 | only 1 post written, run then stops | fail-fast matched one exhausted provider (e.g. `hf 402`) in the joined error string | fixed 2026-10-22: only an all-provider auth/billing failure aborts a journey; redeploy and re-run the verifier |
@@ -169,7 +169,7 @@ Relevant env (all optional except one key):
 | Var | Default |
 | --- | --- |
 | `OPENROUTER_API_KEY` | — (preferred; alias `OPENROUTER_KEY` accepted) |
-| `OPENROUTER_MODEL` | unset → falls through `google/gemma-4-31b-it:free`, `minimax/minimax-m3.1-flash:free`, `nvidia/nemotron-3-super-120b-a12b:free`, `poolside/laguna-s-2.1:free` (a retired `:free` slug answers `404` and the next one is tried) |
+| `OPENROUTER_MODEL` | unset → tries `google/gemma-4-31b-it:free`, `minimax/minimax-m3.1-flash:free`, `nvidia/nemotron-3-super-120b-a12b:free`, `poolside/laguna-s-2.1:free` in order. A pin is tried **first** and the free list still follows it, so a retired pin cannot starve the writer (2026-10-22: the host was pinned to `llama-3.1-8b-instruct:free`, OpenRouter retired it, and every angle 404'd while three healthy free models sat unused) |
 | `GEMINI_API_KEY` | — (free tier, no card) |
 | `GEMINI_MODEL` | `gemini-flash-latest` (pin `gemini-3.8-flash` to freeze) |
 | `OPENAI_API_KEY` / `OPENAI_MODEL` | — / `gpt-4o-mini` |
