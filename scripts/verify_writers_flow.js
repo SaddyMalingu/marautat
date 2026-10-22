@@ -139,7 +139,7 @@ async function main() {
 
   // 2) Route registration — 401 proves the route exists and is auth-gated;
   // 404 means the route is absent. The bogus control must stay 404.
-  for (const [method, path] of [["get", "/tenant/blogger"], ["post", "/tenant/blogger/offers"], ["delete", "/tenant/blogger/posts/deploy-probe"]]) {
+  for (const [method, path] of [["get", "/tenant/blogger"], ["post", "/tenant/blogger/offers"], ["get", "/tenant/blogger/offers/deploy-probe/posts"], ["delete", "/tenant/blogger/posts/deploy-probe"]]) {
     const r = await http[method](path, {});
     if (r.status === 401) pass(`route ${method.toUpperCase()} ${path}`, "401 auth-gated");
     else if (r.status === 404) fail(`route ${method.toUpperCase()} ${path}`, "404 — route not registered on this build");
