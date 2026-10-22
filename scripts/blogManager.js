@@ -6,6 +6,10 @@ import { getContentJourney, getAllAngles } from '../utils/contentJourney.js';
 // Composes angle copy from the offer's own fields when every AI provider is out
 // of quota. Imported as a pure function so it can be unit-tested without a host.
 import { composeAnglePost } from '../utils/angleFallback.js';
+// Share-card copy for one published page. Pure module: the AI tier writes the
+// hook/summary/excerpt when it is up, and the page's own words are used when it
+// is not, so the Share screen never comes back empty on a dry tier.
+import { deriveShareCard, buildSharePrompt, parseShareCard } from '../utils/postShare.js';
 const __f = fileURLToPath(import.meta.url);
 const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 const SITE = process.env.SITE_URL || 'https://alphadome.onrender.com';
@@ -482,12 +486,22 @@ async function generateJourney(oppId, opts) {
 
 
 
-async function reviewContent(content, title, deadline) {
+// The review pass, with the outcome it actually had. A tenant pressing Review
+// must not be told "polished" when every provider was dry and the page came back
+// byte-for-byte unchanged — so the caller gets `ai:false` instead of a silent
+// no-op. Generation still calls reviewContent() and only wants the copy.
+async function reviewContentWithStatus(content, title, deadline) {
   try {
     const prompt = `Review and improve this blog post. Remove ALL asterisks, markdown formatting, and AI patterns. Fix inconsistencies. Make it read like a professional human-written educational article. Ensure proper HTML structure with h2, h3, p, ul, li tags. Content:\n\n` + content;
     const improved = await ai(prompt, deadline);
-    return improved || content;
-  } catch (e) { return content; }
+    if (!improved || !String(improved).trim()) return { content, ai: false };
+    return { content: improved, ai: true };
+  } catch (e) { return { content, ai: false }; }
+}
+
+async function reviewContent(content, title, deadline) {
+  const result = await reviewContentWithStatus(content, title, deadline);
+  return result.content || content;
 }
 
 const OFFER_CTA = { job: 'Apply Now', product: 'Shop Now', service: 'Learn More', brand: 'Explore', affiliate: 'Get Deal', course: 'Enroll' };
@@ -649,8 +663,12 @@ export async function reviewBlog(slug) {
     if (!rawContent || !String(rawContent).trim()) {
       return { error: 'No reviewable content found for ' + cleanSlug };
     }
-    const improved = await reviewContent(rawContent, title);
-    const cleanedImproved = clean(improved) || rawContent;
+    // Bounded like the generation walk: an on-demand review must answer inside a
+    // browser-friendly window, so a dry tier falls back to "unchanged" instead of
+    // holding the button for a provider walk of several minutes.
+    const reviewBudget = Number(process.env.BLOG_REVIEW_AI_TIMEOUT_MS || 45000);
+    const reviewed = await reviewContentWithStatus(rawContent, title, Date.now() + reviewBudget);
+    const cleanedImproved = clean(reviewed.content) || rawContent;
 
     const postData = {
       title,
@@ -659,14 +677,30 @@ export async function reviewBlog(slug) {
       thumb: thumb || (htmlContent.match(/<img src="(\/images\/blog\/[^"]+)"/)?.[1] || null)
     };
 
-    const newHtml = buildHTML(postData, oppId);
+    // The offer row, not just its id: buildHTML needs id/cta_label/offer_type to
+    // link the page's CTA, and saveToDB needs tenant_id to keep the page
+    // deletable by the tenant that paid for it. Passing the bare id (as this did)
+    // rebuilt the CTA as /ai-jobs/apply/undefined on every reviewed page.
+    let offer = null;
+    if (oppId) {
+      const { data } = await sb.from('opportunities').select('*').eq('id', oppId).maybeSingle();
+      offer = data || null;
+    }
+
+    const newHtml = buildHTML(postData, offer || (oppId ? { id: oppId } : null));
 
     fs.writeFileSync(filePath, newHtml, 'utf8');
-    await saveToDB(postData, oppId, category);
+    await saveToDB(postData, offer, category);
     updateIndex();
 
-    console.log(`[REVIEW] Successfully reviewed: ${cleanSlug}`);
-    return { success: true, slug: cleanSlug, title };
+    console.log(`[REVIEW] Successfully reviewed: ${cleanSlug}` + (reviewed.ai ? '' : ' (AI tier unavailable — copy unchanged)'));
+    return {
+      success: true,
+      slug: cleanSlug,
+      title,
+      ai: reviewed.ai,
+      changed: cleanedImproved !== rawContent,
+    };
   } catch (err) {
     console.error(`[REVIEW] Error reviewing ${slug}:`, err.message);
     return { error: err.message };
@@ -708,4 +742,81 @@ export async function reviewAllBlogs() {
     return { error: err.message };
   }
 }
+
+// ─── Share cards ──────────────────────────────────────────────────────────────
+// One page, one card: the hook/summary/excerpt a tenant forwards on WhatsApp.
+// Cached per slug + updated_at for half an hour, because opening the Share screen
+// twice in a row must not buy the same AI answer twice. A review changes
+// updated_at (the trigger bumps it), so the stale card is dropped automatically.
+const SHARE_CACHE_TTL_MS = 30 * 60 * 1000;
+const SHARE_CACHE_MAX = 200;
+const shareCards = new Map();
+
+export function clearShareCache() { shareCards.clear(); }
+
+export async function getPostShareCard(slug, opts = {}) {
+  const cleanSlug = String(slug || '').replace(/\.html$/, '').trim();
+  if (!cleanSlug) return { error: 'Slug is required' };
+
+  const { data: post, error } = await sb.from('blog_posts')
+    .select('slug, title, content, html_content, category, meta_description, opportunity_id, tenant_id, updated_at')
+    .eq('slug', cleanSlug).maybeSingle();
+  if (error) return { error: error.message };
+  if (!post) return { error: `Blog post ${cleanSlug} not found` };
+
+  // Offer facts (type, price, location) keep the card honest on price and give
+  // the hashtags something better than the page title's filler words.
+  let offer = null;
+  if (post.opportunity_id) {
+    const { data } = await sb.from('opportunities')
+      .select('id, title, offer_type, cta_label, compensation_max, compensation_currency, location_text')
+      .eq('id', post.opportunity_id).maybeSingle();
+    offer = data || null;
+  }
+
+  const wantAi = opts.ai !== false;
+  const cacheKey = cleanSlug + '|' + (post.updated_at || '') + '|' + (wantAi ? 'ai' : 'plain');
+  const hit = shareCards.get(cacheKey);
+  if (hit && Date.now() - hit.at < SHARE_CACHE_TTL_MS) {
+    return Object.assign({}, hit.card, { cached: true });
+  }
+
+  const source = {
+    title: post.title,
+    angle: post.category,
+    // content is the article body; html_content is the whole page. Prefer the
+    // body so the card never quotes the nav or the CTA block.
+    content: post.content || post.html_content || post.meta_description || '',
+    offer,
+  };
+
+  let card = null;
+  if (wantAi) {
+    const budget = Number(process.env.BLOG_SHARE_AI_TIMEOUT_MS || 15000);
+    try {
+      const raw = await ai(buildSharePrompt(source), Date.now() + budget);
+      card = parseShareCard(raw);
+      if (!card && raw) console.warn('[SHARE] unparseable card for ' + cleanSlug + ' — composing from the page');
+    } catch (e) {
+      console.warn('[SHARE] AI card failed for ' + cleanSlug + ':', e.message);
+    }
+  }
+  if (!card) card = deriveShareCard(source);
+  if (!card.hook) return { error: `Page ${cleanSlug} has no readable text to share` };
+
+  const full = Object.assign({
+    slug: post.slug,
+    title: post.title,
+    angle: post.category || null,
+    updated_at: post.updated_at || null,
+  }, card);
+
+  shareCards.set(cacheKey, { at: Date.now(), card: full });
+  if (shareCards.size > SHARE_CACHE_MAX) {
+    const oldest = shareCards.keys().next().value;
+    if (oldest) shareCards.delete(oldest);
+  }
+  return Object.assign({}, full, { cached: false });
+}
+
 

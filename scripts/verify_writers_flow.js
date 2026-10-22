@@ -18,6 +18,8 @@
  *   8b) blog coverage        — WARN when fewer than every angle produced a post
  *   8c) bounded run          — the journey returns inside its wall-clock ceiling
  *   8d) offer pages          — the generated pages are listed for the offer and serve
+ *   8e) share card           — the page answers with a link + hook/summary/excerpt
+ *   8f) page review          — the review pass runs for one page and the page survives
  *   9) public page           — /ai-jobs/t/<slug> (needs AI_JOBS_MULTITENANT)
  *  10) cleanup               — test rows removed, offer count restored to baseline
  *  10b) blog cleanup         — generated verify-writers-flow-* posts removed
@@ -127,10 +129,12 @@ async function main() {
   if (spa.status === 200 && typeof spa.data === "string") {
     // The per-offer page list is the marker for this build: before it, the only
     // trace of a run in the portal was a toast, so a tenant could not open any
-    // page it had generated.
+    // page it had generated. The share/review buttons mark the build after it.
     const hasNew = spa.data.includes('data-act="posts"');
+    const hasShare = spa.data.includes('data-act="sharepost"') && spa.data.includes('data-act="reviewpost"');
     const hasOld = spa.data.includes("Blog generated (");
-    if (hasNew) pass("build identity", "serving build with per-offer page list (Optimize)");
+    if (hasNew && hasShare) pass("build identity", "serving build with per-offer page list, Share and Review");
+    else if (hasNew) fail("build identity", "serving the offer-page build without the Share/Review actions (host has not deployed latest commit)");
     else if (hasOld) fail("build identity", "serving a build without the offer page list (host has not deployed latest commit)");
     else warn("build identity", "no page-list marker found — dashboard markup changed");
   } else {
@@ -139,7 +143,7 @@ async function main() {
 
   // 2) Route registration — 401 proves the route exists and is auth-gated;
   // 404 means the route is absent. The bogus control must stay 404.
-  for (const [method, path] of [["get", "/tenant/blogger"], ["post", "/tenant/blogger/offers"], ["get", "/tenant/blogger/offers/deploy-probe/posts"], ["delete", "/tenant/blogger/posts/deploy-probe"]]) {
+  for (const [method, path] of [["get", "/tenant/blogger"], ["post", "/tenant/blogger/offers"], ["get", "/tenant/blogger/offers/deploy-probe/posts"], ["delete", "/tenant/blogger/posts/deploy-probe"], ["get", "/tenant/blogger/posts/deploy-probe/share"], ["post", "/tenant/blogger/posts/deploy-probe/review"]]) {
     const r = await http[method](path, {});
     if (r.status === 401) pass(`route ${method.toUpperCase()} ${path}`, "401 auth-gated");
     else if (r.status === 404) fail(`route ${method.toUpperCase()} ${path}`, "404 — route not registered on this build");
@@ -279,6 +283,58 @@ async function main() {
     } else {
       fail("offer pages", `${firstUrl} → ${served.status} — listed for the tenant but not served`);
     }
+  }
+
+  // 8e) Share card — the Share button must hand the tenant a link plus copy they
+  // can forward. `?ai=0` forces the deterministic card on purpose: the live host
+  // on 2026-10-22 had every AI provider dry, and a demo cannot depend on a model
+  // being up to show the buyer what sharing looks like.
+  if (listed.length) {
+    const shareSlug = encodeURIComponent(listed[0].slug);
+    const shared = await http.get(`/tenant/blogger/posts/${shareSlug}/share?ai=0`, { headers: authHeaders() });
+    const card = shared.data || {};
+    const missingFields = ["hook", "summary", "excerpt"].filter((k) => !String(card[k] || "").trim());
+    const absolute = String(card.absolute_url || "");
+    if (shared.status !== 200 || !card.ok) {
+      fail("share card", `${shared.status} ${JSON.stringify(card)?.slice(0, 160)}`);
+    } else if (missingFields.length) {
+      fail("share card", `missing ${missingFields.join(", ")} for ${listed[0].slug}`);
+    } else if (!/^https?:\/\//.test(absolute)) {
+      fail("share card", `absolute_url is not absolute: ${absolute}`);
+    } else if (!absolute.endsWith(`/blog/${listed[0].slug}.html`)) {
+      fail("share card", `absolute_url does not point at the page: ${absolute}`);
+    } else {
+      pass("share card", `${card.mode} card, ${String(card.hook).length}-char hook, ${absolute}`);
+    }
+  } else {
+    warn("share card", "skipped — no page was listed to share");
+  }
+
+  // 8f) Per-page review — the Review button re-runs the pass generation already
+  // runs per post. A dry tier is a WARN, not a FAIL: the page is rebuilt and the
+  // API says the copy is unchanged instead of claiming a polish.
+  if (listed.length) {
+    const target = listed[listed.length - 1];
+    const reviewed = await http.post(`/tenant/blogger/posts/${encodeURIComponent(target.slug)}/review`, {}, { headers: authHeaders(), timeout: 180000 });
+    const rr = reviewed.data || {};
+    if (reviewed.status !== 200 || !rr.ok) {
+      fail("page review", `${reviewed.status} ${JSON.stringify(rr)?.slice(0, 160)}`);
+    } else if (rr.mode === "unchanged") {
+      warn("page review", "review pass ran but no AI provider answered — page left as written (expected on a dry tier)");
+    } else {
+      pass("page review", `${target.slug} → ${rr.mode} (ai=${rr.ai}, changed=${rr.changed})`);
+    }
+    // The pass rewrites html_content and the static file, so the page the tenant
+    // shares must still be served afterwards — a rebuild with a broken CTA is
+    // invisible in the JSON above.
+    const afterReview = await http.get(`/blog/${target.slug}.html`);
+    if (afterReview.status === 200 && /<html/i.test(String(afterReview.data || ""))) {
+      pass("reviewed page serves", `/blog/${target.slug}.html → 200 after review`);
+    } else {
+      fail("reviewed page serves", `/blog/${target.slug}.html → ${afterReview.status} after review`);
+    }
+  } else {
+    warn("page review", "skipped — no page was listed to review");
   }
 
   // 9) Public tenant page (flag-gated)

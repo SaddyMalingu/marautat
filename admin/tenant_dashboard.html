@@ -104,6 +104,20 @@
     .kv-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 0.88rem; }
     .kv-row:last-child { border-bottom: none; }
     .kv-key { color: var(--text-muted); }
+    /* ─── Share card (Writer's Flow → page list) ─── */
+    .wf-share-backdrop { position: fixed; inset: 0; background: rgba(6,9,16,0.72); z-index: 9000; display: flex; align-items: flex-start; justify-content: center; padding: 44px 14px; overflow-y: auto; }
+    .wf-share-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; width: 100%; max-width: 560px; box-shadow: 0 24px 60px rgba(0,0,0,0.55); }
+    .wf-share-hd { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; padding: 16px 18px 12px; border-bottom: 1px solid var(--border); }
+    .wf-share-title { font-weight: 600; font-size: 1rem; color: var(--text-light); }
+    .wf-share-bd { padding: 14px 18px; display: flex; flex-direction: column; gap: 13px; }
+    .wf-share-lbl { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); font-weight: 600; margin-bottom: 5px; }
+    .wf-share-hook { font-size: 0.98rem; font-weight: 600; color: var(--text-light); line-height: 1.45; }
+    .wf-share-text { font-size: 0.88rem; color: var(--text-light); line-height: 1.5; margin: 0; }
+    .wf-share-quote { border-left: 3px solid var(--accent); background: rgba(56,189,248,0.06); padding: 9px 12px; border-radius: 0 8px 8px 0; font-size: 0.88rem; color: var(--text-light); line-height: 1.5; }
+    .wf-share-url { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.78rem !important; }
+    .wf-share-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+    .wf-share-tag { font-size: 0.74rem; color: var(--accent); background: rgba(56,189,248,0.1); border: 1px solid rgba(56,189,248,0.25); border-radius: 20px; padding: 2px 9px; }
+    .wf-share-actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 18px 16px; border-top: 1px solid var(--border); }
   </style>
 </head>
 <body>
@@ -375,8 +389,10 @@ function wfPostListHtml(d) {
           <a href="${esc(p.url)}" target="_blank" rel="noopener" style="color:var(--accent)">${esc(p.title || p.slug)}</a>
           <div class="text-muted" style="font-size:.72rem">${esc(p.angle || 'page')} · ${esc(p.slug)}${p.status && p.status !== 'published' ? ' · ' + esc(p.status) : ''}</div>
         </div>
-        <div class="d-flex gap-1 flex-shrink-0">
+        <div class="d-flex gap-1 flex-shrink-0 flex-wrap justify-content-end">
           <a class="btn btn-sm btn-outline-info" href="${esc(p.url)}" target="_blank" rel="noopener">Open</a>
+          <button class="btn btn-sm btn-outline-info" data-act="sharepost" data-id="${offerId}" data-slug="${esc(p.slug)}">Share</button>
+          <button class="btn btn-sm btn-outline-warning" data-act="reviewpost" data-id="${offerId}" data-slug="${esc(p.slug)}">Review</button>
           <button class="btn btn-sm btn-outline-danger" data-act="delpost" data-id="${offerId}" data-slug="${esc(p.slug)}">Delete</button>
         </div>
       </li>`).join('')}</ul>`;
@@ -403,6 +419,130 @@ function wfHideOfferPosts(id) {
   if (row) row.style.display = 'none';
   if (wfOpenOffer === id) wfOpenOffer = null;
 }
+
+// ─── Share card ──────────────────────────────────────────────────────────────
+// The link plus the copy a tenant forwards on WhatsApp. Built once and reused, so
+// opening Share twice does not stack overlays. Every value is escaped into the
+// markup, like the rest of this dashboard.
+function wfShareEl() {
+  let el = document.getElementById('wfShareModal');
+  if (el) return el;
+  el = document.createElement('div');
+  el.id = 'wfShareModal';
+  el.className = 'wf-share-backdrop';
+  el.style.display = 'none';
+  el.innerHTML = `
+    <div class="wf-share-card" role="dialog" aria-modal="true" aria-labelledby="wfShareTitle">
+      <div class="wf-share-hd">
+        <div style="min-width:0">
+          <div class="wf-share-title" id="wfShareTitle">Share this page</div>
+          <div class="text-muted" id="wfShareSub" style="font-size:.76rem"></div>
+        </div>
+        <button type="button" class="btn-close btn-close-white" id="wfShareClose" aria-label="Close"></button>
+      </div>
+      <div class="wf-share-bd" id="wfShareBody"></div>
+      <div class="wf-share-actions" id="wfShareActions"></div>
+    </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', (ev) => { if (ev.target === el) wfCloseShare(); });
+  el.querySelector('#wfShareClose').addEventListener('click', wfCloseShare);
+  document.addEventListener('keydown', (ev) => {
+    const open = document.getElementById('wfShareModal');
+    if (ev.key === 'Escape' && open && open.style.display !== 'none') wfCloseShare();
+  });
+  return el;
+}
+
+function wfCloseShare() {
+  const el = document.getElementById('wfShareModal');
+  if (el) el.style.display = 'none';
+}
+
+function wfCopyText(text, okMsg) {
+  const done = () => toast(okMsg, 'ok');
+  const fallback = () => {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); done(); }
+    catch (e) { toast('Copy failed — select the text manually', 'err'); }
+    ta.remove();
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done).catch(fallback);
+  } else fallback();
+}
+
+async function wfOpenShareCard(slug) {
+  if (!slug) return;
+  const el = wfShareEl();
+  el.style.display = 'flex';
+  document.getElementById('wfShareTitle').textContent = slug;
+  document.getElementById('wfShareSub').textContent = 'Writing the card…';
+  document.getElementById('wfShareBody').innerHTML = spinner('Reading this page…');
+  document.getElementById('wfShareActions').innerHTML = '';
+
+  const r = await apiJson(`/tenant/blogger/posts/${encodeURIComponent(slug)}/share`);
+  const actions = document.getElementById('wfShareActions');
+  if (!r.ok || !r.data?.ok) {
+    document.getElementById('wfShareSub').textContent = '';
+    document.getElementById('wfShareBody').innerHTML =
+      `<div style="color:var(--danger);font-size:.88rem">${esc(r.data?.error || 'Could not build the share card')}</div>`;
+    actions.innerHTML = `<button class="btn btn-sm btn-outline-secondary" id="wfShareErrClose">Close</button>`;
+    const b = document.getElementById('wfShareErrClose');
+    if (b) b.addEventListener('click', wfCloseShare);
+    return;
+  }
+  wfRenderShareCard(r.data);
+}
+function wfRenderShareCard(d) {
+  const caption = [d.hook, d.excerpt, d.absolute_url].filter(Boolean).join('\n\n');
+  const source = d.mode === 'ai' ? 'AI-written card' : 'Composed from the page';
+  document.getElementById('wfShareTitle').textContent = d.title || d.slug;
+  document.getElementById('wfShareSub').textContent =
+    [d.angle, source, d.cached ? 'cached' : ''].filter(Boolean).join(' · ');
+
+  const tags = (d.hashtags || []).map((t) => `<span class="wf-share-tag">${esc(t)}</span>`).join('');
+  const bullets = (d.bullets || [])
+    .map((b) => `<li><strong>${esc(b.heading)}</strong> — ${esc(b.text)}</li>`).join('');
+
+  document.getElementById('wfShareBody').innerHTML = `
+    <div>
+      <div class="wf-share-lbl">Page link</div>
+      <div class="input-group input-group-sm">
+        <input class="form-control wf-share-url" id="wfShareUrl" readonly value="${esc(d.absolute_url || '')}">
+        <button class="btn btn-outline-info" id="wfShareCopyUrl" type="button">Copy</button>
+      </div>
+    </div>
+    <div><div class="wf-share-lbl">Hook</div><div class="wf-share-hook">${esc(d.hook || '')}</div></div>
+    <div>
+      <div class="wf-share-lbl">Summary</div>
+      <p class="wf-share-text">${esc(d.summary || '')}</p>
+      ${bullets ? `<ul class="wf-share-text" style="padding-left:1.1rem;margin:7px 0 0">${bullets}</ul>` : ''}
+    </div>
+    <div><div class="wf-share-lbl">Excerpt · paste-ready</div><div class="wf-share-quote">${esc(d.excerpt || '')}</div></div>
+    ${tags ? `<div><div class="wf-share-lbl">Hashtags</div><div class="wf-share-tags">${tags}</div></div>` : ''}`;
+
+  const actions = document.getElementById('wfShareActions');
+  actions.innerHTML = `
+    <a class="btn btn-sm btn-info" href="${esc(d.url || '')}" target="_blank" rel="noopener">Open page</a>
+    <button class="btn btn-sm btn-outline-info" id="wfShareCopyCaption" type="button">Copy caption</button>
+    <a class="btn btn-sm btn-success" href="https://wa.me/?text=${encodeURIComponent(caption)}" target="_blank" rel="noopener">WhatsApp</a>
+    <a class="btn btn-sm btn-outline-secondary" href="https://twitter.com/intent/tweet?text=${encodeURIComponent(d.hook || '')}&url=${encodeURIComponent(d.absolute_url || '')}" target="_blank" rel="noopener">X</a>
+    <button class="btn btn-sm btn-outline-secondary" id="wfShareDone" type="button">Close</button>`;
+
+  const copyUrl = document.getElementById('wfShareCopyUrl');
+  if (copyUrl) copyUrl.addEventListener('click', () => wfCopyText(d.absolute_url || '', 'Link copied'));
+  const copyCaption = document.getElementById('wfShareCopyCaption');
+  if (copyCaption) copyCaption.addEventListener('click', () => wfCopyText(caption, 'Caption copied'));
+  const done = document.getElementById('wfShareDone');
+  if (done) done.addEventListener('click', wfCloseShare);
+}
+
+
 
 function wfOutreachHtml() {
   return `
@@ -508,6 +648,29 @@ async function renderWritersFlow() {
       return;
     }
     if (act === 'closeposts') { wfHideOfferPosts(id); return; }
+    if (act === 'sharepost') { await wfOpenShareCard(btn.dataset.slug); return; }
+    if (act === 'reviewpost') {
+      // The same review pass generation runs per post, on demand. It is a model
+      // call, so the button says what it is doing and refuses to claim a polish
+      // when every provider was dry (the API reports mode:'unchanged').
+      const label = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
+      const rev = await apiJson(`/tenant/blogger/posts/${encodeURIComponent(btn.dataset.slug)}/review`, { method: 'POST' });
+      if (!rev.ok) {
+        toast(rev.data?.error || 'Review failed', 'err');
+        btn.disabled = false;
+        btn.innerHTML = label;
+        return;
+      }
+      const rd = rev.data || {};
+      if (rd.mode === 'unchanged') toast('Review ran, but no AI provider was available — page left unchanged', 'err');
+      else if (rd.changed) toast('Reviewed — page copy polished', 'ok');
+      else toast('Reviewed — the model kept the copy as it was', 'ok');
+      wfOpenOffer = id;           // keep this offer's pages open across the refresh
+      renderWritersFlow();
+      return;
+    }
     if (act === 'delpost') {
       if (!confirm('Delete this page? Its public URL stops working.')) return;
       btn.disabled = true;

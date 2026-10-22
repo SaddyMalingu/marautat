@@ -115,6 +115,35 @@ founder's-plan clients, with two tabs: **Research & Outreach** (placeholder) and
   dashboard only re-rendered the table). Verifier check **8d** asserts that every
   generated slug is listed for the offer and that the first page serves 200 HTML,
   so "generated but unreachable" fails the suite.
+- **Share and Review (2026-10-22):** each page row now carries four actions —
+  **Open**, **Share**, **Review**, **Delete**.
+  - **Share** opens a mini card with the public URL (copy button), the AI-written
+    **hook** / **summary** / **excerpt**, 3 key points and hashtags, plus
+    *Copy caption*, WhatsApp and X targets. Backed by
+    `GET /tenant/blogger/posts/:slug/share`, which returns
+    `{ url, absolute_url, hook, summary, excerpt, bullets, hashtags, mode }`.
+    `mode='ai'` means a model wrote the card; `mode='template'` means every
+    provider was dry and it was composed from the page's own text by
+    `utils/postShare.js` (same honesty rule as the page composer). `?ai=0`
+    forces the deterministic card, which is what the verifier uses. Cards are
+    cached in-process for 30 min keyed by `slug|updated_at`, so re-opening Share
+    does not buy the same answer twice and a review invalidates it.
+  - **Review** re-runs the polish pass that generation already runs per post
+    (`reviewBlog`), for one page, via `POST /tenant/blogger/posts/:slug/review`.
+    It rewrites `content` + `html_content`, the static file and `/blog/` index.
+    The response is `{ ok, mode:'polished'|'unchanged', ai, changed }`; the
+    portal says *"no AI provider was available — page left unchanged"* rather
+    than claiming a polish that did not happen. The pass is bounded by
+    `BLOG_REVIEW_AI_TIMEOUT_MS` (default `45000`) so a dry tier answers instead
+    of holding the button for a multi-minute provider walk. That pass also used
+    to rebuild
+    the page CTA from a bare id (`/ai-jobs/apply/undefined`); it now loads the
+    offer row, so the CTA and `tenant_id` survive a review.
+  - Both routes scope through `tenantOwnsPost()`: the page's `tenant_id`, or the
+    offer it was generated from when `tenant_id` is still NULL (phase-1 schema).
+  - Verifier checks **8e** (card has hook/summary/excerpt + absolute URL) and
+    **8f** (review runs, then the page still serves 200) cover the two actions;
+    `npm run test:share-card` proves the composer offline (15 checks).
 - **Scoping:** on first Blogger access, a `site_tenants` row is lazily created from the
   tenant's `bot_tenants` name/phone → public page at `/ai-jobs/t/<their-slug>`.
 - **One journey per offer:** `generateBlogPostsForOpportunity` holds an in-process

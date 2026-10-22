@@ -4288,6 +4288,19 @@ async function tenantSiteFromSession(req) {
   return { tenant, site };
 }
 
+// A page belongs to the tenant when the page says so, or when the offer it was
+// generated from belongs to them. blog_posts.tenant_id is nullable (phase-1
+// schema), so pages written before that column existed still scope correctly
+// through their offer instead of 403-ing on a page the tenant can already list.
+async function tenantOwnsPost(post, siteId) {
+  if (!post) return false;
+  if (post.tenant_id) return post.tenant_id === siteId;
+  if (!post.opportunity_id) return false;
+  const { data: offer } = await supabase.from('opportunities').select('id')
+    .eq('id', post.opportunity_id).eq('tenant_id', siteId).maybeSingle();
+  return !!offer;
+}
+
 // GET /tenant/blogger — context: site, public path, offers, categories
 app.get('/tenant/blogger', tenantSessionAuth, async (req, res) => {
   try {
@@ -4443,6 +4456,81 @@ app.get('/tenant/blogger/offers/:id/posts', tenantSessionAuth, async (req, res) 
           url: '/blog/' + p.slug + '.html',
         };
       }),
+    });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /tenant/blogger/posts/:slug/share — the page link plus a share card.
+// The portal's Share button used to have nothing behind it: a tenant could open
+// a page or delete it, but forwarding it to a customer meant copying a slug out
+// of the browser bar and writing the copy by hand. This returns the public URL
+// with a hook/summary/excerpt the tenant can paste straight into WhatsApp.
+// `?ai=0` forces the deterministic card (used by the verifier so a run does not
+// spend an AI call per check).
+app.get('/tenant/blogger/posts/:slug/share', tenantSessionAuth, async (req, res) => {
+  try {
+    const ctx = await tenantSiteFromSession(req);
+    if (!ctx) return res.status(404).json({ error: 'Tenant not found' });
+    const slug = String(req.params.slug || '').replace(/\.html$/i, '');
+    if (!slug) return res.status(400).json({ error: 'Slug is required' });
+    const { data: post } = await supabase.from('blog_posts')
+      .select('slug, tenant_id, opportunity_id').eq('slug', slug).maybeSingle();
+    if (!post) return res.status(404).json({ error: 'Post not found' });
+    if (!(await tenantOwnsPost(post, ctx.site.id))) {
+      return res.status(403).json({ error: 'Post belongs to another tenant' });
+    }
+    const { getPostShareCard } = await import('./scripts/blogManager.js');
+    const card = await getPostShareCard(post.slug, { ai: String(req.query.ai || '') !== '0' });
+    if (!card || card.error) return res.status(502).json({ error: card?.error || 'Could not build the share card' });
+    const base = (process.env.SITE_URL || (req.protocol + '://' + req.get('host'))).replace(/\/+$/, '');
+    const url = '/blog/' + post.slug + '.html';
+    res.json({
+      ok: true,
+      url,
+      absolute_url: base + url,
+      slug: card.slug || post.slug,
+      title: card.title || null,
+      angle: card.angle || null,
+      hook: card.hook,
+      summary: card.summary,
+      excerpt: card.excerpt,
+      bullets: card.bullets || [],
+      hashtags: card.hashtags || [],
+      mode: card.mode || 'template',
+      cached: !!card.cached,
+      updated_at: card.updated_at || null,
+    });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /tenant/blogger/posts/:slug/review — run the review/polish pass that
+// generation already runs per post, on demand, for one page. The response says
+// whether a model actually rewrote the copy: on a dry tier the pass returns the
+// page unchanged, and the portal says so instead of claiming a polish.
+app.post('/tenant/blogger/posts/:slug/review', tenantSessionAuth, async (req, res) => {
+  try {
+    const ctx = await tenantSiteFromSession(req);
+    if (!ctx) return res.status(404).json({ error: 'Tenant not found' });
+    const slug = String(req.params.slug || '').replace(/\.html$/i, '');
+    if (!slug) return res.status(400).json({ error: 'Slug is required' });
+    const { data: post } = await supabase.from('blog_posts')
+      .select('slug, tenant_id, opportunity_id').eq('slug', slug).maybeSingle();
+    if (!post) return res.status(404).json({ error: 'Post not found' });
+    if (!(await tenantOwnsPost(post, ctx.site.id))) {
+      return res.status(403).json({ error: 'Post belongs to another tenant' });
+    }
+    const { reviewBlog } = await import('./scripts/blogManager.js');
+    const result = await reviewBlog(post.slug);
+    if (!result || result.error) {
+      return res.status(502).json({ error: result?.error || 'Review failed — the page could not be rebuilt' });
+    }
+    res.json({
+      ok: true,
+      slug: result.slug,
+      title: result.title,
+      ai: !!result.ai,
+      changed: !!result.changed,
+      mode: result.ai ? 'polished' : 'unchanged',
     });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
