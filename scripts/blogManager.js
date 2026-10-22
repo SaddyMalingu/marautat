@@ -268,7 +268,34 @@ function isDuplicate(content, existing) {
   return false;
 }
 
+// One offer must never run two journeys at once. Live 2026-10-22 a tenant's
+// double click (on top of an interrupted verifier run) put two walks on the same
+// offer: they rate-limited each other on the shared free tier, both stretched
+// past 14 minutes, and the pages that did get written could not be saved (the
+// offer had been deleted underneath them). A per-offer lock answers the second
+// call immediately instead of competing with the first.
+const inFlightOffers = new Set();
+
 export async function generateBlogPostsForOpportunity(oppId, opts) {
+  const runKey = oppId ? String(oppId) : null;
+  if (runKey && inFlightOffers.has(runKey)) {
+    console.warn('[GEN] Refused a second run for ' + runKey + ' — one is already in progress');
+    return {
+      success: false,
+      busy: true,
+      posts: [],
+      error: 'Blog generation is already running for this offer. Wait for it to finish — a second run would only rate-limit the first one.',
+    };
+  }
+  if (runKey) inFlightOffers.add(runKey);
+  try {
+    return await generateJourney(oppId, opts);
+  } finally {
+    if (runKey) inFlightOffers.delete(runKey);
+  }
+}
+
+async function generateJourney(oppId, opts) {
   opts = opts || {};
   var rev = opts.review !== false, img = opts.images !== false;
   var d = await sb.from('opportunities').select('*').eq('id', oppId).single();
@@ -309,6 +336,12 @@ export async function generateBlogPostsForOpportunity(oppId, opts) {
   // answering (misses === 0) the AI tier is never cut short, so a healthy paid
   // run keeps all its review passes.
   var budgetMs = Number(process.env.BLOG_RUN_BUDGET_MS == null ? 90000 : process.env.BLOG_RUN_BUDGET_MS);
+  // The run budget alone is not enough: it is only consulted between angles, and
+  // one angle walks up to seven candidate models of the same key. Live
+  // 2026-10-22 an angle cost 37s (5 models, one of them stalled 23s before the
+  // 429), so a single angle could hold the request for minutes before the miss
+  // counter even moved. Cap the angle, not just the attempt.
+  var angleBudget = Number(process.env.BLOG_ANGLE_BUDGET_MS == null ? 45000 : process.env.BLOG_ANGLE_BUDGET_MS);
   var runStart = Date.now();
   var deadline = budgetMs > 0 ? runStart + budgetMs : 0;
   var misses = 0;
@@ -329,11 +362,22 @@ export async function generateBlogPostsForOpportunity(oppId, opts) {
       console.warn('[GEN] AI budget spent (' + Math.round((Date.now() - runStart) / 1000) + 's of ' +
         Math.round(budgetMs / 1000) + 's, BLOG_RUN_BUDGET_MS) — composing the rest from the offer data');
     }
+    // Tightest cap that applies to this angle: the per-angle slice, plus the run
+    // budget once the tier has already missed (a healthy run is never cut short).
+    // Each AI call gets its own slice, so a fast compose never squeezes out the
+    // review pass.
+    var capFor = function () {
+      var cs = [];
+      if (angleBudget > 0) cs.push(Date.now() + angleBudget);
+      if (budgetMs > 0 && (i === 0 || misses > 0)) cs.push(deadline);
+      return cs.length ? Math.min.apply(null, cs) : 0;
+    };
+    var angleDeadline = capFor();
     if (aiUsable) {
       if (i > 0 && angleDelay > 0) await sleep(angleDelay);
       // Once an angle has failed, later calls may not overrun the budget; the
       // first angle is capped too, so a stall on it cannot hang the request.
-      content = await ai(post.prompt, (i === 0 || misses > 0) ? deadline : 0);
+      content = await ai(post.prompt, angleDeadline);
       if (content) { content = clean(content); misses = 0; } else { misses++; }
     }
     var composed = false;
@@ -356,12 +400,12 @@ export async function generateBlogPostsForOpportunity(oppId, opts) {
       console.warn('[GEN] AI unavailable for [' + post.angleName + '] (' + (aiUsable ? 'transient' : 'provider-wide') +
         ') — composed from the offer data');
     } else if (isDuplicate(content, existing)) {
-      content = await ai(post.prompt + ' Make this completely unique.', (i === 0 || misses > 0) ? deadline : 0);
+      content = await ai(post.prompt + ' Make this completely unique.', capFor());
       if (content) content = clean(content);
     }
     // The review pass is a second AI call per post. Skip it when the writer is
     // out of quota (lastAiError set) or when the text was composed locally.
-    if (rev && !composed && !lastAiError) content = await reviewContent(content, post.title, (i === 0 || misses > 0) ? deadline : 0);
+    if (rev && !composed && !lastAiError) content = await reviewContent(content, post.title, capFor());
     var thumb = null;
     if (img) thumb = await genImage(o.title + ' ' + post.angleName, post.slug);
     var postData = { title: post.title, slug: post.slug, content: content, thumb: thumb };
@@ -436,6 +480,17 @@ async function saveToDB(post, job, category) {
     // after the source offer is deleted. tenant_id is nullable (phase-1 schema).
     if (job?.tenant_id) row.tenant_id = job.tenant_id;
     let { error } = await sb.from("blog_posts").upsert(row, { onConflict: "slug" });
+    // The tenant (or an interrupted verification run) deleted the offer while
+    // this journey was still walking its angles. Live 2026-10-22 every later
+    // angle then died on blog_posts_opportunity_id_fkey: the page was written to
+    // disk and reported to the tenant, but the row never landed, so the blog list
+    // and the restore-on-boot both lost it. Keep the post and only drop the link
+    // to the offer that no longer exists.
+    if (error && row.opportunity_id && /opportunity_id/i.test(error.message)) {
+      console.warn('[DB] Offer ' + row.opportunity_id + ' is gone — saving ' + post.slug + ' without it');
+      delete row.opportunity_id;
+      ({ error } = await sb.from("blog_posts").upsert(row, { onConflict: "slug" }));
+    }
     if (error && row.tenant_id && /tenant_id/i.test(error.message)) {
       // Host predates the phase-1 multi-tenant migration — don't lose the post.
       delete row.tenant_id;

@@ -4375,6 +4375,11 @@ app.post('/tenant/blogger/offers/:id/blog', tenantSessionAuth, async (req, res) 
     if (!offer) return res.status(404).json({ error: 'Offer not found' });
     const { generateBlogPostsForOpportunity } = await import('./scripts/blogManager.js');
     const result = await generateBlogPostsForOpportunity(offer.id);
+    // A second click on the same offer must not start a competing walk: on the
+    // shared free tier the two runs rate-limit each other and both stall.
+    if (result && result.busy) {
+      return res.status(409).json({ ok: false, busy: true, error: result.error });
+    }
     // Never report success when nothing was written — the tenant would see a
     // "Blog generated" toast while no post exists.
     if (!result || result.success !== true) {

@@ -106,6 +106,15 @@ founder's-plan clients, with two tabs: **Research & Outreach** (placeholder) and
   removes the row and the static `public/blog/<slug>.html`).
 - **Scoping:** on first Blogger access, a `site_tenants` row is lazily created from the
   tenant's `bot_tenants` name/phone → public page at `/ai-jobs/t/<their-slug>`.
+- **One journey per offer:** `generateBlogPostsForOpportunity` holds an in-process
+  lock keyed by offer id and returns `{ success:false, busy:true }` for a second
+  concurrent call — the route answers **409** instead of starting a competing
+  walk. Live 2026-10-22 a double click ran two walks on the same offer; they
+  rate-limited each other on the shared free tier and both ran past 14 minutes.
+- **Posts outlive their offer:** if the offer row is deleted mid-run, the
+  `blog_posts_opportunity_id_fkey` insert is retried without `opportunity_id`
+  (the page stays on disk, in the tenant's list, and in restore-on-boot) instead
+  of being lost to a logged `[DB] Save error`.
 - **Public page requires** `AI_JOBS_MULTITENANT=true`.
 
 ### Deploy order (migration BEFORE code)
@@ -177,6 +186,7 @@ Relevant env (all optional except one key):
 | `BLOG_AI_MAX_MISSES` | `2` — consecutive angles that return nothing from any provider before the rest of the run is composed without further AI calls. This is a latency budget, not a quorum rule: per-run only, so the next run tries AI again. `0` always walks every angle |
 | `BLOG_AI_TIMEOUT_MS` | `30000` per HTTP attempt (was `120000`). A provider that accepts the connection then stalls must not hold the tenant's request open for two minutes per model slug |
 | `BLOG_RUN_BUDGET_MS` | `90000` — wall-clock ceiling for the AI walk, counted from the first angle. It only bites a *failing* run: while angles keep answering (`misses === 0`) the tier is never cut short, so a healthy paid run keeps every review pass. Live 2026-10-22 the journey wrote **1 of 9 pages in 6 minutes** with the request still open — every free slug answered `429` but the stall burned the old 120 s per-attempt timeout |
+| `BLOG_ANGLE_BUDGET_MS` | `45000` — ceiling for **one angle's** provider walk. The run budget is only consulted *between* angles, and a single angle tries up to seven candidate model slugs on one key: live 2026-10-22 one angle cost 37 s (5 models, one stalled 23 s before returning `429`). Effective per-angle deadline is `min(now + this, run deadline)`. Set `0` to cap only per attempt |
 | `GEMINI_API_KEY` | — (free tier, no card) |
 | `GEMINI_MODEL` | `gemini-flash-latest` (pin `gemini-3.8-flash` to freeze) |
 | `OPENAI_API_KEY` / `OPENAI_MODEL` | — / `gpt-4o-mini` |
