@@ -359,6 +359,27 @@ await check("402 still stops the model list immediately", async () => {
   return "402 -> provider abandoned, no slug burn";
 });
 
+// The run budget only works if an expired deadline is honoured *without* a
+// network round trip: that is what makes the tail of a journey free once
+// BLOG_RUN_BUDGET_MS is spent. Live 2026-10-22 a run held the tenant's request
+// for 166s and composed 8 of 9 pages locally anyway, so the waiting bought
+// nothing. Nine skipped angles must also stay non-fatal, or the journey would
+// abort on the budget instead of composing the remaining pages.
+await check("an expired deadline skips every provider without a request", async () => {
+  resetStub();
+  setKeys({ or: "or-key", gem: "gem-key", hf: "hf-key" });
+  const started = Date.now();
+  const out = await ai(PROMPT, Date.now() - 1);
+  const elapsed = Date.now() - started;
+  const err = getLastAiError() || "";
+  assert(out === null, `expected null, got ${JSON.stringify(out)}`);
+  assert(elapsed < 500, `expected no network wait, took ${elapsed}ms`);
+  assert(!seen.or && !seen.gem && !seen.hf, "no provider should have been called");
+  assert(/run budget spent/.test(err), `error should say the budget is spent, got: ${err}`);
+  assert(isAiFailureFatal() === false, `a spent budget must not abort the journey: ${err}`);
+  return `${elapsed}ms, zero requests, not fatal`;
+});
+
 server.close();
 
 const failed = results.filter((r) => r.status === "FAIL").length;
