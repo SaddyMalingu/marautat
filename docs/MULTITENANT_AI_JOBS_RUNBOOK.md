@@ -111,6 +111,10 @@ founder's-plan clients, with two tabs: **Research & Outreach** (placeholder) and
   concurrent call — the route answers **409** instead of starting a competing
   walk. Live 2026-10-22 a double click ran two walks on the same offer; they
   rate-limited each other on the shared free tier and both ran past 14 minutes.
+  Verified live the same day on `589d7d0`: `POST …/blog 409 - 217ms` while the
+  first run was still walking (client saw `409 busy` in 1.05 s). The verifier
+  asserts this on every run (check **8a**), so a regression to "two walks per
+  click" fails the suite rather than just costing minutes.
 - **Posts outlive their offer:** if the offer row is deleted mid-run, the
   `blog_posts_opportunity_id_fkey` insert is retried without `opportunity_id`
   (the page stays on disk, in the tenant's list, and in restore-on-boot) instead
@@ -136,10 +140,18 @@ npm run verify:writers-flow
 Checks: **build identity** (is the served bundle the latest commit?), route
 registration (401 not 404, plus a 404 control), login, context, offer create,
 **slug collision** (same title twice must yield two slugs), publish,
-**blog generation** (must never return 200 with 0 posts), **blog coverage**
-(warns when fewer than 9 unique angle pages were written, and reports
-`mode=ai|template|mixed`), public page, cleanup, **blog
+**blog generation** (must never return 200 with 0 posts), **double click**
+(a second run on the same offer while the first is live must answer
+`409 {busy:true}` immediately — probed 1.5 s into the run, so it costs no extra
+time), **blog coverage** (warns when fewer than 9 unique angle pages were
+written, and reports `mode=ai|template|mixed`), **bounded run** (fails if the
+generation call exceeds 120 s wall clock, i.e. the `BLOG_RUN_BUDGET_MS` ceiling
+stopped being applied), public page, cleanup, **blog
 cleanup** (generated `verify-writers-flow-*` posts are deleted).
+
+Live baseline on `589d7d0` (2026-10-22 13:42 UTC): 18 passed / 0 failed /
+0 warnings — `409 busy` in 1.05 s, 9 posts in 82.8 s, 9/9 unique pages, 9 posts
+deleted, offers back to 3.
 
 Exit `0` = no failures, `1` = at least one, `2` = missing config. A stale
 `build identity` FAIL means the host is serving an older commit — redeploy from
@@ -185,7 +197,7 @@ Relevant env (all optional except one key):
 | `BLOG_FALLBACK_MODE` | `auto` — when an angle gets nothing from every provider, compose it from the offer's own fields (`public/blog/<slug>.html` still gets a full page). `off` restores the loud 502 for diagnosis |
 | `BLOG_AI_MAX_MISSES` | `2` — consecutive angles that return nothing from any provider before the rest of the run is composed without further AI calls. This is a latency budget, not a quorum rule: per-run only, so the next run tries AI again. `0` always walks every angle |
 | `BLOG_AI_TIMEOUT_MS` | `30000` per HTTP attempt (was `120000`). A provider that accepts the connection then stalls must not hold the tenant's request open for two minutes per model slug |
-| `BLOG_RUN_BUDGET_MS` | `90000` — hard wall-clock ceiling for the whole AI walk, counted from the first angle and applied to **every** AI call (compose, duplicate retry, review). When it is spent the remaining angles are composed from the offer data, so a run finishes in roughly this long with all nine pages. Live 2026-10-22: `1 of 9 pages in 6 minutes` while free slugs answered `429` and the stall burned the old 120 s per-attempt timeout; later that day a run that answered **one** angle out of nine still held the request `166 s` (`mode=mixed`, 8 pages composed anyway) because the ceiling was only applied after a miss. Raise it (e.g. `240000`) on a funded key where AI copy matters more than latency. `0` disables the ceiling |
+| `BLOG_RUN_BUDGET_MS` | `90000` — hard wall-clock ceiling for the whole AI walk, counted from the first angle and applied to **every** AI call (compose, duplicate retry, review). When it is spent the remaining angles are composed from the offer data, so a run finishes in roughly this long with all nine pages. Live 2026-10-22: `1 of 9 pages in 6 minutes` while free slugs answered `429` and the stall burned the old 120 s per-attempt timeout; later that day a run that answered **one** angle out of nine still held the request `166 s` (`mode=mixed`, 8 pages composed anyway) because the ceiling was only applied after a miss. Fixed on `589d7d0` the same day: the deadline now applies to every call, and the same nine-angle run that previously took `166 s` returned in **`82.8 s`** with **9/9** unique pages (8 composed from the offer data, `mode=mixed`) — the verifier's **8c** check fails the suite if a run ever exceeds 120 s again. Raise the budget (e.g. `240000`) on a funded key where AI copy matters more than latency. `0` disables the ceiling |
 | `BLOG_ANGLE_BUDGET_MS` | `45000` — ceiling for **one angle's** provider walk. A single angle tries up to seven candidate model slugs on one key: live 2026-10-22 one angle cost 37 s (5 models, one stalled 23 s before returning `429`). Effective per-call deadline is `min(now + this, run deadline)`, and each call in an angle (compose, duplicate retry, review) gets its own slice. Set `0` to cap only per attempt. The review pass is skipped once 60 % of the run budget is spent, so the tail of the budget buys AI-written pages rather than polish on page three |
 | `GEMINI_API_KEY` | — (free tier, no card) |
 | `GEMINI_MODEL` | `gemini-flash-latest` (pin `gemini-3.8-flash` to freeze) |

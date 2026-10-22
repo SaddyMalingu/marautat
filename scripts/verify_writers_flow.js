@@ -14,7 +14,9 @@
  *   6) slug collision        — same title twice must yield two distinct slugs
  *   7) publish               — status flips to published
  *   8) blog generation       — must never return 200 with zero posts
+ *   8a) double click         — a second concurrent run on the same offer is 409 busy
  *   8b) blog coverage        — WARN when fewer than every angle produced a post
+ *   8c) bounded run          — the journey returns inside its wall-clock ceiling
  *   9) public page           — /ai-jobs/t/<slug> (needs AI_JOBS_MULTITENANT)
  *  10) cleanup               — test rows removed, offer count restored to baseline
  *  10b) blog cleanup         — generated verify-writers-flow-* posts removed
@@ -37,6 +39,14 @@ dotenv.config();
 
 // The writer walks one content angle per post, so a healthy run writes this many.
 const EXPECTED_ANGLES = getAllTemplates().length;
+
+// Hard wall-clock ceiling for one generation call, as observed by the client.
+// The server bounds itself with BLOG_RUN_BUDGET_MS (90s default) and then writes
+// the remaining angles from the offer data, so 90s plus DB writes and the
+// response body should land well under this. It is deliberately looser than the
+// budget: it catches a regression to an unbounded walk (live 2026-10-22 a run
+// took 166s because the deadline was only applied after a miss), not jitter.
+const RUN_CEILING_MS = 120000;
 
 const BASE_URL = (process.env.BASE_URL || "https://alphadome.onrender.com").replace(/\/+$/, "");
 const TENANT_PHONE = process.env.TENANT_TEST_PHONE || process.env.TENANT_PHONE || "";
@@ -184,15 +194,32 @@ async function main() {
   // 8) Blog generation — the core contract: never 200 with zero posts.
   // Free-tier models answer in 20-40s each and a journey is 9 angles plus a
   // review pass per post, so allow ten minutes: a 180s cap reports a timeout for
-  // a run that is still making progress.
-  const blog = await http.post(`/tenant/blogger/offers/${offerA.id}/blog`, {}, { headers: authHeaders(), timeout: 600000 });
+  // a run that is still making progress. The server bounds itself well before
+  // that (8c asserts it), so the timeout only matters if the bound regresses.
+  const startedAt = Date.now();
+  const blogPromise = http.post(`/tenant/blogger/offers/${offerA.id}/blog`, {}, { headers: authHeaders(), timeout: 600000 });
+  // 8a) Double click. Fire a second run at the same offer while the first is
+  // still walking and require an immediate 409 instead of a competing walk: live
+  // 2026-10-22 two walks on one offer shared the free tier, rate-limited each
+  // other and both stalled for minutes. Probing mid-run costs no extra time.
+  await new Promise((r) => setTimeout(r, 1500));
+  const dupeStart = Date.now();
+  const dupe = await http.post(`/tenant/blogger/offers/${offerA.id}/blog`, {}, { headers: authHeaders(), timeout: 30000 });
+  const dupeMs = Date.now() - dupeStart;
+  if (dupe.status === 409 && dupe.data?.busy === true) {
+    pass("double click", `409 busy in ${dupeMs}ms while the first run was live`);
+  } else {
+    fail("double click", `${dupe.status} ${JSON.stringify(dupe.data)?.slice(0, 160)} — a second concurrent run must be 409 busy:true`);
+  }
+  const blog = await blogPromise;
+  const wallMs = Date.now() - startedAt;
   const posts = blog.data?.result?.posts;
   if (Array.isArray(posts)) {
     for (const p of posts) if (p?.slug) createdSlugs.push(p.slug);
   }
   if (blog.status === 200 && Array.isArray(posts) && posts.length > 0) {
     const mode = blog.data?.result?.mode;
-    pass("blog generation", `${posts.length} post(s) written, e.g. ${posts[0]?.slug}${mode ? ` (mode=${mode})` : ""}`);
+    pass("blog generation", `${posts.length} post(s) written, e.g. ${posts[0]?.slug}${mode ? ` (mode=${mode})` : ""} in ${(wallMs / 1000).toFixed(1)}s`);
     // Coverage is about pages a visitor can open, not array entries: two
     // templates per angle shared one slug until 2026-10-22, so "9 of 9" could be
     // five real pages with later posts overwriting earlier ones.
@@ -214,6 +241,15 @@ async function main() {
     warn("blog root cause", "AI writer returned nothing for every angle and BLOG_FALLBACK_MODE=off — unset it to compose posts from the offer data, or check GEMINI_API_KEY / OPENROUTER_API_KEY / OPENAI_API_KEY / HF_API_KEY");
   } else {
     fail("blog generation", `${blog.status} ${JSON.stringify(blog.data)?.slice(0, 200)}`);
+  }
+
+  // 8c) The ceiling is a contract, not a hope: a tenant clicking Generate must
+  // get an answer inside the budget, with the remaining angles composed from the
+  // offer data rather than holding the request open for another minute.
+  if (wallMs <= RUN_CEILING_MS) {
+    pass("bounded run", `${(wallMs / 1000).toFixed(1)}s, inside the ${RUN_CEILING_MS / 1000}s ceiling`);
+  } else {
+    fail("bounded run", `${(wallMs / 1000).toFixed(1)}s — past ${RUN_CEILING_MS / 1000}s; check that BLOG_RUN_BUDGET_MS is applied to every AI call, not only after a miss`);
   }
 
   // 9) Public tenant page (flag-gated)
