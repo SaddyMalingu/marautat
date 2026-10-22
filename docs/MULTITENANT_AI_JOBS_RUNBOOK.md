@@ -101,7 +101,9 @@ founder's-plan clients, with two tabs: **Research & Outreach** (placeholder) and
   (links a logged-in `bot_tenants` to its Blogger `site_tenants` row). **Run BEFORE deploy.**
 - **APIs (tenantSessionAuth, auto-scoped):** `GET /tenant/blogger`,
   `POST /tenant/blogger/offers`, `POST /tenant/blogger/offers/:id/publish`,
-  `POST /tenant/blogger/offers/:id/blog`, `DELETE /tenant/blogger/offers/:id`.
+  `POST /tenant/blogger/offers/:id/blog`, `DELETE /tenant/blogger/offers/:id`,
+  `DELETE /tenant/blogger/posts/:slug` (only posts with this tenant's `tenant_id`;
+  removes the row and the static `public/blog/<slug>.html`).
 - **Scoping:** on first Blogger access, a `site_tenants` row is lazily created from the
   tenant's `bot_tenants` name/phone → public page at `/ai-jobs/t/<their-slug>`.
 - **Public page requires** `AI_JOBS_MULTITENANT=true`.
@@ -125,7 +127,9 @@ npm run verify:writers-flow
 Checks: **build identity** (is the served bundle the latest commit?), route
 registration (401 not 404, plus a 404 control), login, context, offer create,
 **slug collision** (same title twice must yield two slugs), publish,
-**blog generation** (must never return 200 with 0 posts), public page, cleanup.
+**blog generation** (must never return 200 with 0 posts), **blog coverage**
+(warns when fewer than 9 angles produced a post), public page, cleanup, **blog
+cleanup** (generated `verify-writers-flow-*` posts are deleted).
 
 Exit `0` = no failures, `1` = at least one, `2` = missing config. A stale
 `build identity` FAIL means the host is serving an older commit — redeploy from
@@ -140,9 +144,11 @@ string is the diagnosis — you do not need host logs.
 | --- | --- | --- |
 | `openrouter/hf 402 no remaining credits` | key valid, account out of credits | set `GEMINI_API_KEY` (free, no card) or `OPENROUTER_API_KEY`, or buy credits |
 | `401` / `unauthor` | key revoked or wrong | rotate the key on Render |
-| `404` | model route not available on that account | set `OPENROUTER_MODEL` / `HF_MODEL` |
-| `429` | rate limited | retry later or add a second key |
+| `404` + `unavailable for free` | the free model slug was retired (2026-10-22: `llama-3.1-8b-instruct:free`) | nothing — the writer now falls through `OPENROUTER_FREE_MODELS` on `404`; pin `OPENROUTER_MODEL` only to choose a specific model |
+| `404` (any other) | model route not available on that account | set `OPENROUTER_MODEL` / `HF_MODEL` |
+| `429` / `RESOURCE_EXHAUSTED` | free-tier quota | wait for the window to reset, or add `OPENROUTER_API_KEY` (free tier: 50 req/day, 1000/day after a one-time $10 credit) |
 | only 1 post written, run then stops | fail-fast matched one exhausted provider (e.g. `hf 402`) in the joined error string | fixed 2026-10-22: only an all-provider auth/billing failure aborts a journey; redeploy and re-run the verifier |
+| `verify-writers-flow-*` posts visible on `/blog` | verifier runs published real posts before the post-delete endpoint existed | run `node scripts/prune_verify_posts.js --apply` on the host (dry run without `--apply`) |
 | `no AI provider key configured` | no key at all | set one of the three keys |
 
 Providers are tried in order — **OpenRouter → Gemini → OpenAI → HuggingFace** —
@@ -163,7 +169,7 @@ Relevant env (all optional except one key):
 | Var | Default |
 | --- | --- |
 | `OPENROUTER_API_KEY` | — (preferred; alias `OPENROUTER_KEY` accepted) |
-| `OPENROUTER_MODEL` | `meta-llama/llama-3.1-8b-instruct:free` |
+| `OPENROUTER_MODEL` | unset → falls through `google/gemma-4-31b-it:free`, `minimax/minimax-m3.1-flash:free`, `nvidia/nemotron-3-super-120b-a12b:free`, `poolside/laguna-s-2.1:free` (a retired `:free` slug answers `404` and the next one is tried) |
 | `GEMINI_API_KEY` | — (free tier, no card) |
 | `GEMINI_MODEL` | `gemini-flash-latest` (pin `gemini-3.8-flash` to freeze) |
 | `OPENAI_API_KEY` / `OPENAI_MODEL` | — / `gpt-4o-mini` |
@@ -172,7 +178,14 @@ Relevant env (all optional except one key):
 
 `npm run test:ai-providers` proves the whole chain offline against a stub
 server — no keys, no network, no DB. It reproduces the 402 incident, verifies
-fallback order, empty-content handling, model override and the no-key message.
+fallback order, empty-content handling, model override, the retired-slug
+fallthrough (13 checks) and the no-key message.
+
+**Free-tier budget.** One journey is 9 sequential LLM calls (one per angle), so a
+handful of test runs exhausts a small free tier — a real `429` from Gemini after
+repeated runs is expected, not a code bug. OpenRouter's free tier (50 req/day,
+1000/day with a one-time $10 credit) is the sustainable demo path; keep it as the
+first provider and let Gemini sit second.
 
 ### Phase B (next) — Research & Outreach
 Tenant-scope the original WF: add `wf_campaigns.tenant_id`, `/tenant/wf/*` endpoints,

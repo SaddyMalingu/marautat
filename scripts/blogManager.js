@@ -47,6 +47,17 @@ let lastAiError = null;
 // Provider fallback order: OpenRouter → Gemini (free tier) → OpenAI → HuggingFace.
 // Any single key being present is enough to generate; set OPENROUTER_MODEL /
 // GEMINI_MODEL / OPENAI_MODEL / HF_MODEL to pin a specific model.
+// OpenRouter free-tier slugs are retired without notice — the 2026-10-22 outage
+// was llama-3.1-8b-instruct:free answering 404 "This model is unavailable for
+// free". Generation therefore falls through this list (see ai()) instead of
+// dying with whichever slug expires. Pin OPENROUTER_MODEL to freeze one.
+export const OPENROUTER_FREE_MODELS = [
+  'google/gemma-4-31b-it:free',
+  'minimax/minimax-m3.1-flash:free',
+  'nvidia/nemotron-3-super-120b-a12b:free',
+  'poolside/laguna-s-2.1:free',
+];
+
 const AI_PROVIDERS = [
   {
     name: 'openrouter',
@@ -54,7 +65,7 @@ const AI_PROVIDERS = [
     // uses for the same credential — accept both so one key serves everything.
     key: () => process.env.OPENROUTER_API_KEY || process.env.OPENROUTER_KEY,
     url: () => (process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1') + '/chat/completions',
-    model: () => process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.1-8b-instruct:free',
+    models: () => (process.env.OPENROUTER_MODEL ? [process.env.OPENROUTER_MODEL] : OPENROUTER_FREE_MODELS.slice()),
     headers: (k) => ({ Authorization: 'Bearer ' + k, 'Content-Type': 'application/json' }),
   },
   {
@@ -116,28 +127,45 @@ async function ai(prompt) {
   for (const p of AI_PROVIDERS) {
     const key = p.key();
     if (!key) continue;
-    try {
-      const r = await axios.post(p.url(), {
-        model: p.model(),
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: 3000,
-        temperature: 0.7,
-      }, { headers: p.headers(key), timeout: 120000 });
-      const content = r.data?.choices?.[0]?.message?.content || null;
-      if (content) {
-        if (failures.length) console.log('[AI] ' + p.name + ' served after ' + failures.length + ' failed provider(s)');
+    const models = typeof p.models === 'function' ? p.models() : [p.model()];
+    let failure = null;
+    for (let mi = 0; mi < models.length; mi++) {
+      try {
+        const r = await axios.post(p.url(), {
+          model: models[mi],
+          messages: [{ role: 'user', content: prompt }],
+          max_tokens: 3000,
+          temperature: 0.7,
+        }, { headers: p.headers(key), timeout: 120000 });
+        const content = r.data?.choices?.[0]?.message?.content || null;
+        if (!content) {
+          failure = { name: p.name, status: 200, text: 'empty content (' + models[mi] + ')', kind: 'transient' };
+          break;
+        }
+        if (failures.length || mi > 0) {
+          console.log('[AI] ' + p.name + ' served with ' + models[mi] +
+            (failures.length ? ' after ' + failures.length + ' failed provider(s)' : ''));
+        }
         lastAiError = null;
         lastAiFatal = false;
         return content;
+      } catch (e) {
+        const status = e.response?.status;
+        const raw = e.response?.data;
+        const body = raw ? (typeof raw === 'string' ? raw : JSON.stringify(raw)) : '';
+        const text = (body || e.message || '').slice(0, 240);
+        failure = { name: p.name, status: status || 0, text, kind: classifyFailure(status, text) };
+        // A retired free slug answers 404 ("This model is unavailable for
+        // free"). Try the next candidate before giving up on the provider.
+        if (status === 404 && mi < models.length - 1) {
+          console.warn('[AI] ' + p.name + ' model ' + models[mi] + ' is gone — trying ' + models[mi + 1]);
+          failure = null;
+          continue;
+        }
+        break;
       }
-      failures.push({ name: p.name, status: 200, text: 'empty content', kind: 'transient' });
-    } catch (e) {
-      const status = e.response?.status;
-      const raw = e.response?.data;
-      const body = raw ? (typeof raw === 'string' ? raw : JSON.stringify(raw)) : '';
-      const text = (body || e.message || '').slice(0, 240);
-      failures.push({ name: p.name, status: status || 0, text, kind: classifyFailure(status, text) });
     }
+    if (failure) failures.push(failure);
   }
   // Only hopeless when every provider we could try said auth/billing. A single
   // dead provider next to a healthy one must never stop the journey.
@@ -272,13 +300,22 @@ function buildHTML(post, job) {
 
 async function saveToDB(post, job, category) {
   try {
-    const { error } = await sb.from("blog_posts").upsert({
+    const row = {
       slug: post.slug, title: post.title, content: post.content,
       html_content: buildHTML(post, job), opportunity_id: job?.id,
       category: category, thumbnail_url: post.thumb,
       meta_description: post.content.replace(/<[^>]*>/g, "").substring(0, 160),
       status: "published"
-    }, { onConflict: "slug" });
+    };
+    // Ownership: a tenant must stay able to remove a post it paid for, even
+    // after the source offer is deleted. tenant_id is nullable (phase-1 schema).
+    if (job?.tenant_id) row.tenant_id = job.tenant_id;
+    let { error } = await sb.from("blog_posts").upsert(row, { onConflict: "slug" });
+    if (error && row.tenant_id && /tenant_id/i.test(error.message)) {
+      // Host predates the phase-1 multi-tenant migration — don't lose the post.
+      delete row.tenant_id;
+      ({ error } = await sb.from("blog_posts").upsert(row, { onConflict: "slug" }));
+    }
     if (error) console.error("[DB] Save error:", error.message);
     else console.log("[DB] Saved: " + post.slug);
   } catch (e) { console.error("[DB] Error:", e.message); }

@@ -35,6 +35,8 @@ function record(status, name, detail = "") {
 // ---------------------------------------------------------------------------
 const behavior = { or: "ok", gem: "ok", oa: "ok", hf: "ok" };
 const seen = {};
+// Model slugs the stub pretends OpenRouter has retired (404 "unavailable for free").
+const retired = new Set();
 
 const server = http.createServer((req, res) => {
   let raw = "";
@@ -52,6 +54,11 @@ const server = http.createServer((req, res) => {
     if (mode === "402") {
       return send(402, {
         error: "You have no remaining credits. Purchase pre-paid credits to continue using Inference Providers.",
+      });
+    }
+    if (retired.has(body.model)) {
+      return send(404, {
+        error: { message: "This model is unavailable for free. The paid version is available now.", code: 404 },
       });
     }
     if (mode === "429") {
@@ -103,10 +110,11 @@ function resetStub() {
   behavior.gem = "ok";
   behavior.oa = "ok";
   behavior.hf = "ok";
+  retired.clear();
   for (const k of Object.keys(seen)) delete seen[k];
 }
 
-const { ai, getLastAiError, isAiFailureFatal } = await import("./blogManager.js");
+const { ai, getLastAiError, isAiFailureFatal, OPENROUTER_FREE_MODELS } = await import("./blogManager.js");
 
 const PROMPT = "Write a short post about a salary guide.";
 
@@ -259,6 +267,19 @@ await check("free-tier 429 quota is transient, not fatal", async () => {
   assert(/429/.test(err), `error should surface the 429, got: ${err}`);
   assert(isAiFailureFatal() === false, `429/quota must not be treated as billing failure: ${err}`);
   return "429 RESOURCE_EXHAUSTED -> retry later";
+});
+
+await check("a retired free model falls through to the next candidate", async () => {
+  resetStub();
+  setKeys({ or: "or-key" });
+  retired.add(OPENROUTER_FREE_MODELS[0]);
+  const out = await ai(PROMPT);
+  assert(out === "OR OK", `expected OR OK, got ${JSON.stringify(out)}`);
+  assert(
+    seen.or && seen.or.body.model === OPENROUTER_FREE_MODELS[1],
+    `expected fallback to ${OPENROUTER_FREE_MODELS[1]}, got ${seen.or && seen.or.body.model}`
+  );
+  return `${OPENROUTER_FREE_MODELS[0]} gone -> ${OPENROUTER_FREE_MODELS[1]}`;
 });
 
 server.close();

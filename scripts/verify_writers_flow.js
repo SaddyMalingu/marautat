@@ -17,6 +17,7 @@
  *   8b) blog coverage        — WARN when fewer than every angle produced a post
  *   9) public page           — /ai-jobs/t/<slug> (needs AI_JOBS_MULTITENANT)
  *  10) cleanup               — test rows removed, offer count restored to baseline
+ *  10b) blog cleanup         — generated verify-writers-flow-* posts removed
  *
  * Usage:
  *   BASE_URL=https://alphadome.onrender.com \
@@ -61,6 +62,7 @@ const warn = (n, d) => record("WARN", n, d);
 const http = axios.create({ baseURL: BASE_URL, timeout: 30000, validateStatus: () => true });
 
 const createdIds = [];
+const createdSlugs = [];
 let token = "";
 const authHeaders = () => (token ? { Authorization: `Bearer ${token}` } : {});
 
@@ -74,15 +76,29 @@ async function createOffer(title, extra = {}) {
 }
 
 async function cleanup() {
-  if (!token || !createdIds.length) return;
-  let deleted = 0;
-  for (const id of createdIds) {
-    const r = await axios.delete(`${BASE_URL}/tenant/blogger/offers/${id}`,
-      { headers: authHeaders(), validateStatus: () => true, timeout: 30000 }).catch(() => ({ status: 0 }));
-    if (r.status === 200) deleted++;
+  if (!token) return;
+  if (createdIds.length) {
+    let deleted = 0;
+    for (const id of createdIds) {
+      const r = await axios.delete(`${BASE_URL}/tenant/blogger/offers/${id}`,
+        { headers: authHeaders(), validateStatus: () => true, timeout: 30000 }).catch(() => ({ status: 0 }));
+      if (r.status === 200) deleted++;
+    }
+    if (deleted === createdIds.length) pass("cleanup", `${deleted} test offer(s) deleted`);
+    else fail("cleanup", `${deleted}/${createdIds.length} test offers deleted — check manually`);
   }
-  if (deleted === createdIds.length) pass("cleanup", `${deleted} test offer(s) deleted`);
-  else fail("cleanup", `${deleted}/${createdIds.length} test offers deleted — check manually`);
+  // Generated posts are published to the real blog, so a verifier run must not
+  // leave "verify-writers-flow-…" pages behind for a prospect to find.
+  if (createdSlugs.length) {
+    let removed = 0;
+    for (const slug of createdSlugs) {
+      const r = await axios.delete(`${BASE_URL}/tenant/blogger/posts/${encodeURIComponent(slug)}`,
+        { headers: authHeaders(), validateStatus: () => true, timeout: 30000 }).catch(() => ({ status: 0 }));
+      if (r.status === 200) removed++;
+    }
+    if (removed === createdSlugs.length) pass("blog cleanup", `${removed} test post(s) removed from the public blog`);
+    else warn("blog cleanup", `${removed}/${createdSlugs.length} posts removed — 403 means the row has no tenant_id; run node scripts/prune_verify_posts.js on the host`);
+  }
 }
 
 
@@ -168,6 +184,9 @@ async function main() {
   // 8) Blog generation — the core contract: never 200 with zero posts.
   const blog = await http.post(`/tenant/blogger/offers/${offerA.id}/blog`, {}, { headers: authHeaders(), timeout: 180000 });
   const posts = blog.data?.result?.posts;
+  if (Array.isArray(posts)) {
+    for (const p of posts) if (p?.slug) createdSlugs.push(p.slug);
+  }
   if (blog.status === 200 && Array.isArray(posts) && posts.length > 0) {
     pass("blog generation", `${posts.length} post(s) written, e.g. ${posts[0]?.slug}`);
     // A partial journey still answers 200, so it used to report "all green"

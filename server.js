@@ -4401,6 +4401,33 @@ app.delete('/tenant/blogger/offers/:id', tenantSessionAuth, async (req, res) => 
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// DELETE /tenant/blogger/posts/:slug — remove a post this tenant generated.
+// Scoped by blog_posts.tenant_id, so a tenant can never delete another tenant's
+// page. Posts written before the phase-1 migration have a NULL tenant_id and are
+// refused (they belong to the legacy global blog).
+app.delete('/tenant/blogger/posts/:slug', tenantSessionAuth, async (req, res) => {
+  try {
+    const ctx = await tenantSiteFromSession(req);
+    if (!ctx) return res.status(404).json({ error: 'Tenant not found' });
+    const slug = String(req.params.slug || '').replace(/\.html$/i, '');
+    if (!slug) return res.status(400).json({ error: 'Slug is required' });
+    const { data: post } = await supabase.from('blog_posts').select('slug, tenant_id')
+      .eq('slug', slug).maybeSingle();
+    if (!post) return res.status(404).json({ error: 'Post not found' });
+    if (!post.tenant_id || post.tenant_id !== ctx.site.id) {
+      return res.status(403).json({ error: 'Post belongs to another tenant' });
+    }
+    const { error } = await supabase.from('blog_posts').delete().eq('slug', slug);
+    if (error) return res.status(500).json({ error: error.message });
+    // The static copy is what /blog/<slug>.html serves, so drop it too.
+    try {
+      const file = path.join(process.cwd(), 'public', 'blog', slug + '.html');
+      if (fs.existsSync(file)) fs.unlinkSync(file);
+    } catch (e) { console.warn('[tenant/blogger/posts] file cleanup:', e.message); }
+    res.json({ ok: true, slug });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ===== TENANT ANALYTICS API =====
 
 app.get("/tenant/analytics", tenantSessionAuth, async (req, res) => {
