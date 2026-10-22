@@ -14,6 +14,7 @@
  *   6) slug collision        — same title twice must yield two distinct slugs
  *   7) publish               — status flips to published
  *   8) blog generation       — must never return 200 with zero posts
+ *   8b) blog coverage        — WARN when fewer than every angle produced a post
  *   9) public page           — /ai-jobs/t/<slug> (needs AI_JOBS_MULTITENANT)
  *  10) cleanup               — test rows removed, offer count restored to baseline
  *
@@ -29,8 +30,12 @@
 import axios from "axios";
 import chalk from "chalk";
 import dotenv from "dotenv";
+import { getAllTemplates } from "../utils/contentJourney.js";
 
 dotenv.config();
+
+// The writer walks one content angle per post, so a healthy run writes this many.
+const EXPECTED_ANGLES = getAllTemplates().length;
 
 const BASE_URL = (process.env.BASE_URL || "https://alphadome.onrender.com").replace(/\/+$/, "");
 const TENANT_PHONE = process.env.TENANT_TEST_PHONE || process.env.TENANT_PHONE || "";
@@ -165,11 +170,16 @@ async function main() {
   const posts = blog.data?.result?.posts;
   if (blog.status === 200 && Array.isArray(posts) && posts.length > 0) {
     pass("blog generation", `${posts.length} post(s) written, e.g. ${posts[0]?.slug}`);
+    // A partial journey still answers 200, so it used to report "all green"
+    // (2026-10-22: 1 of 9 posts passed every check). Say so out loud.
+    if (posts.length < EXPECTED_ANGLES) {
+      warn("blog coverage", `${posts.length}/${EXPECTED_ANGLES} angles produced a post — the rest failed without aborting (rate limit? see the AI error in the 502 body)`);
+    }
   } else if (blog.status === 200 && Array.isArray(posts) && posts.length === 0) {
     fail("blog generation", "200 with 0 posts — false success (pre-fix behaviour)");
   } else if (blog.status === 502) {
     warn("blog generation", `failing loudly as designed: ${blog.data?.error || "no detail"}`);
-    warn("blog root cause", "AI writer returned nothing for every angle — verify HF_API_KEY / model on the host");
+    warn("blog root cause", "AI writer returned nothing for every angle — check GEMINI_API_KEY / OPENROUTER_API_KEY / OPENAI_API_KEY / HF_API_KEY and the model on the host");
   } else {
     fail("blog generation", `${blog.status} ${JSON.stringify(blog.data)?.slice(0, 200)}`);
   }
