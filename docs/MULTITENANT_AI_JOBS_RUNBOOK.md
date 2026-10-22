@@ -148,7 +148,7 @@ string is the diagnosis — you do not need host logs.
 | `404` (any other) | model route not available on that account | set `OPENROUTER_MODEL` / `HF_MODEL` |
 | `429` / `RESOURCE_EXHAUSTED` | free-tier quota | wait for the window to reset, or add `OPENROUTER_API_KEY` (free tier: 50 req/day, 1000/day after a one-time $10 credit) |
 | only 1 post written, run then stops | fail-fast matched one exhausted provider (e.g. `hf 402`) in the joined error string | fixed 2026-10-22: only an all-provider auth/billing failure aborts a journey; redeploy and re-run the verifier |
-| `verify-writers-flow-*` posts visible on `/blog` | verifier runs published real posts before the post-delete endpoint existed | run `node scripts/prune_verify_posts.js --apply` on the host (dry run without `--apply`) |
+| `verify-writers-flow-*` posts visible on `/blog` | verifier runs published real posts before the post-delete endpoint existed | `npm run prune:verify-posts` on the host to list them, `npm run prune:verify-posts -- --apply` to delete (needs `SUPABASE_SERVICE_ROLE_KEY`) |
 | `no AI provider key configured` | no key at all | set one of the three keys |
 
 Providers are tried in order — **OpenRouter → Gemini → OpenAI → HuggingFace** —

@@ -18,6 +18,7 @@
     "test:tenant-session": "node test_tenant_session_flow.js",
     "test:tenant-session:auto": "AUTO_CREATE_TEST_TENANT=true node test_tenant_session_flow.js",
     "verify:writers-flow": "node scripts/verify_writers_flow.js",
+    "prune:verify-posts": "node scripts/prune_verify_posts.js",
     "test:ai-providers": "node scripts/test_ai_providers.mjs",
     "aboss:workbook": "node scripts/aboss_make_workbook.cjs",
     "aboss:workbook:extract": "node scripts/aboss_extract_workbook.cjs",
