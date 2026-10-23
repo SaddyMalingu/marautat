@@ -1,0 +1,13 @@
+{
+  "culprit": "nvidia/nemotron-3.5-lightning:free",
+  "evidence": "Every click was waiting on one slug. It was handed 13.1s, then 30.0s, then 13.5s across the three attempts in the log, and each time it returned zero bytes before the time box closed: no status, no body, no error. The 404 slugs cost about a second each and were already dropped, and the 429s on gemma cost nothing, so the difference between a 16.2s click and a fast one is exactly this slug's time box. The 32.2s click is the same slug being given a bigger share of a Review budget.",
+  "why_it_was_missed": "The walk already remembered a 404 for the process, because a 404 is a deterministic answer about the slug. A silent upstream is not a status at all: the request is accepted and then nothing arrives until our own AbortController fires. The catch treated that abort as a timeout - 'the upstream is slow, try the next provider next time' - so the slug kept its place in the list and every click re-proved the same silence. Nothing in the log distinguished 'slow' from 'dead', because nothing was watching for whether any bytes had arrived.",
+  "fix": {
+    "retire_after_empty_boxes": 2,
+    "probe_timebox_ms": 8000,
+    "scope": "process",
+    "on_redeploy": "re-probe once"
+  },
+  "must_not_retire": "A provider that trickles bytes is slow, not dead. If the attempt was aborted after the upstream had already sent part of the body, that is evidence the model is alive and merely too slow for this deadline, so it must never be counted as an empty box. Only an attempt that produced no bytes at all inside a fair time box is a strike.",
+  "does_not_fix": "This only stops the wasted wait. It does not restore AI output: while HF has no credits and Gemini is out of quota, the click still comes back saying the copy is unchanged - it just comes back in a second instead of half a minute. Areas that still need an account fix: HF credits, Gemini quota, and the OpenRouter free slugs that answered 404."
+}

@@ -13140,8 +13140,15 @@ async function generateReply(
     content: getSystemPrompt(tenant, templates || [], combinedTrainingData || []),
   };
 
+  // The names here must match what the provider chain actually reads
+  // (scripts/blogManager.js): OPENROUTER_API_KEY *or* its OPENROUTER_KEY alias,
+  // and both spellings of the HuggingFace key. Until 2026-10-23 this line tested
+  // OPENROUTER_KEY alone while the host set OPENROUTER_API_KEY, so the boot log
+  // and the reply path both reported a key as missing that was right there.
+  const orKey = process.env.OPENROUTER_API_KEY || process.env.OPENROUTER_KEY;
+  const hfKey = process.env.HF_API_KEY || process.env.HF_API_KEY_WRITERS_FLOW;
   log(
-    `LLM providers: openai=${Boolean(creds.aiApiKey)} openrouter=${Boolean(process.env.OPENROUTER_KEY)} hf=${Boolean(process.env.HF_API_KEY)}`,
+    `LLM providers: openai=${Boolean(creds.aiApiKey || process.env.OPENAI_API_KEY)} openrouter=${Boolean(orKey)} gemini=${Boolean(process.env.GEMINI_API_KEY)} hf=${Boolean(hfKey)}`,
     "SYSTEM"
   );
 
@@ -13191,7 +13198,7 @@ async function generateReply(
 
 
   // If no LLM credentials at all, return static fallback
-  if (!creds.aiApiKey && !process.env.OPENROUTER_KEY && !process.env.HF_API_KEY) {
+  if (!creds.aiApiKey && !orKey && !process.env.OPENAI_API_KEY && !process.env.GEMINI_API_KEY && !hfKey) {
     log("No LLM credentials available; returning static fallback", "SYSTEM");
     return {
       type: "text",
@@ -13241,150 +13248,55 @@ async function generateReply(
     log("OpenAI key missing; skipping OpenAI call", "SYSTEM");
   }
 
-  // 2️⃣ Fallback to OpenRouter if key is present
-  if (process.env.OPENROUTER_KEY) {
-    try {
-      log("LLM path: OpenRouter", "SYSTEM");
-      const start = Date.now();
-      const routerResponse = await axios.post(
-        "https://api.openrouter.ai/v1/chat/completions",
-        {
-          model: "meta-llama/llama-3.3-70b-instruct:free",
-          messages: messageStack,
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${process.env.OPENROUTER_KEY}`,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-
-      if (routerResponse.data?.choices?.length > 0) {
-        const routerReply = routerResponse.data.choices[0].message.content;
-        const latency = Date.now() - start;
-        log(`✓ OpenRouter reply: ${routerReply.substring(0, 50)}...`, "AI");
-        return {
-          type: "text",
-          text: routerReply,
-          meta: { llm_used: true, llm_provider: "openrouter", llm_latency_ms: latency },
-        };
-      } else {
-        log("OpenRouter error: No choices returned", "ERROR");
-      }
-    } catch (routerErr) {
-      log(`OpenRouter error: ${routerErr.message}`, "ERROR");
-      // Continue to HF fallback below
-    }
-  } else {
-    log("OpenRouter key missing; skipping OpenRouter call", "SYSTEM");
-  }
-
-  // 3️⃣ Fallback to HuggingFace if key is present
-  if (process.env.HF_API_KEY) {
-    try {
-      log("LLM path: HuggingFace", "SYSTEM");
-      const start = Date.now();
-      const hfResponse = await axios.post(
-        "https://router.huggingface.co/v1/chat/completions",
-        {
-          model: "meta-llama/Llama-3.1-8B-Instruct:novita",
-          messages: messageStack,
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${process.env.HF_API_KEY}`,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-
-      if (hfResponse.data?.choices?.length > 0) {
-        const hfReply = hfResponse.data.choices[0].message.content;
-        const latency = Date.now() - start;
-        log(`✓ HuggingFace reply: ${hfReply.substring(0, 50)}...`, "AI");
-        return {
-          type: "text",
-          text: hfReply,
-          meta: { llm_used: true, llm_provider: "huggingface", llm_latency_ms: latency },
-        };
-      } else {
-        log("HuggingFace error: No choices returned", "ERROR");
-      }
-    } catch (hfErr) {
-      log(`HuggingFace error: ${hfErr.message}`, "ERROR");
-    }
-  } else {
-    log("HuggingFace key missing; skipping HuggingFace call", "SYSTEM");
-  }
-
-  // 2️⃣ Fallback to OpenRouter Meta Llama 3.3 free
+  // 2️⃣ Platform AI chain — the same walk the Writers' Flow uses.
+  // This reply path used to carry its own copy of the provider list and it had
+  // drifted from the one generation uses. Live 2026-10-23 06:36, a customer
+  // texted "Hello" and the bot answered from the static fallback:
+  //   [SYSTEM] LLM providers: openai=false openrouter=false hf=true
+  //   [SYSTEM] LLM path: HuggingFace  → 402 no remaining credits
+  //   [SYSTEM] LLM path: OpenRouter   → getaddrinfo ENOTFOUND api.openrouter.ai
+  // Three defects in that one block: it read OPENROUTER_KEY while the host sets
+  // OPENROUTER_API_KEY (so the key it needed looked absent), it posted to
+  // `api.openrouter.ai` — no such host, the API is `openrouter.ai/api/v1` — and
+  // it pinned `meta-llama/llama-3.3-70b-instruct:free`, a slug OpenRouter had
+  // already retired for free use. A working Gemini key sat unused the whole time,
+  // because this path never tried Gemini at all.
+  // blogManager.ai() already owns the verified free-slug list, the per-key
+  // cooldowns, the silent-slug retirement and the shared deadline, so the reply
+  // path borrows that walk instead of keeping a second, stale one.
   try {
-    log("LLM path: OpenRouter", "SYSTEM");
+    log("LLM path: platform chain (openrouter → gemini → openai → hf)", "SYSTEM");
+    const { ai, getLastAiProvider } = await import("./scripts/blogManager.js");
     const start = Date.now();
-    const routerResponse = await axios.post(
-      "https://api.openrouter.ai/v1/chat/completions",
-      {
-        model: "meta-llama/llama-3.3-70b-instruct:free",
-        messages: messageStack,
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.OPENROUTER_KEY}`,
-          "Content-Type": "application/json",
-        },
-      }
+    const budgetMs = Number(
+      process.env.WHATSAPP_AI_BUDGET_MS == null ? 12000 : process.env.WHATSAPP_AI_BUDGET_MS
     );
+    const reply = await ai(userMessage, start + Math.max(2000, budgetMs), messageStack);
 
-    if (routerResponse.data?.choices?.length > 0) {
-      const routerReply = routerResponse.data.choices[0].message.content;
+    if (reply && String(reply).trim()) {
       const latency = Date.now() - start;
-      log(`✓ OpenRouter reply: ${routerReply.substring(0, 50)}...`, "AI");
+      const provider = getLastAiProvider() || "chain";
+      log(`✓ AI reply (${provider}): ${String(reply).substring(0, 50)}...`, "AI");
       return {
         type: "text",
-        text: routerReply,
-        meta: { llm_used: true, llm_provider: "openrouter", llm_latency_ms: latency },
+        text: reply,
+        meta: { llm_used: true, llm_provider: provider, llm_latency_ms: latency },
       };
-    } else {
-      log("OpenRouter error: No choices returned", "ERROR");
     }
-  } catch (routerErr) {
-    log(`OpenRouter error: ${routerErr.message}`, "ERROR");
+    log("AI chain returned nothing; falling back to the static welcome", "ERROR");
+  } catch (chainErr) {
+    log(`AI chain error: ${chainErr.message}`, "ERROR");
   }
 
-  // 3️⃣ Fallback to Hugging Face (new router-based API)
-  try {
-    log("LLM path: HuggingFace", "SYSTEM");
-    const start = Date.now();
-    const hfResponse = await axios.post(
-      "https://router.huggingface.co/v1/chat/completions",
-      {
-        model: "meta-llama/Llama-3.1-8B-Instruct:novita", // ✅ new inference model
-        messages: messageStack,
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.HF_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-      }
-    );
+  // (the reply path's own OpenRouter/HF walks used to live here — removed: they
+  //  read a key name this host does not set, posted to a host that does not
+  //  exist, and pinned a retired slug. blogManager.ai() owns that chain now.)
 
-    if (hfResponse.data?.choices?.length > 0) {
-      const hfReply = hfResponse.data.choices[0].message.content;
-      const latency = Date.now() - start;
-      log(`✓ HuggingFace reply: ${hfReply.substring(0, 50)}...`, "AI");
-      return {
-        type: "text",
-        text: hfReply,
-        meta: { llm_used: true, llm_provider: "huggingface", llm_latency_ms: latency },
-      };
-    } else {
-      log("HuggingFace error: No choices returned", "ERROR");
-    }
-  } catch (hfErr) {
-    log(`HuggingFace error: ${hfErr.message}`, "ERROR");
-  }
+  // (duplicate OpenRouter walk removed — it posted to api.openrouter.ai, a host
+  //  that does not resolve, and pinned a free slug OpenRouter had retired.)
+
+  // (duplicate HuggingFace walk removed — one HF call on a 402 account was
+  //  already enough; it now shares the chain's cooldown instead of re-probing.)
 
   // 4️⃣ Static fallback message (guaranteed response)
   try {

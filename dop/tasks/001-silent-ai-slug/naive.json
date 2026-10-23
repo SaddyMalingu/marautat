@@ -1,0 +1,12 @@
+{
+  "culprit": "openrouter free tier",
+  "evidence": "The gemma slugs answer 429 on every click, so OpenRouter is rate limiting the account and each attempt has to wait out the upstream limiter before moving on.",
+  "why_it_was_missed": "The free tier is oversubscribed at that hour. The provider list needs more free models on it so a throttled slug is not the last one standing.",
+  "fix": {
+    "retire_after_empty_boxes": 0,
+    "probe_timebox_ms": 30000,
+    "scope": "global"
+  },
+  "must_not_retire": "",
+  "does_not_fix": "Nothing much - once the account is topped up and the rate limit clears, Share and Review answer normally again."
+}

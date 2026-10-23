@@ -1,0 +1,50 @@
+Comment block carried in scripts/blogManager.js next to the provider list, as it
+stood before this incident. Reproduced here because it is the file an engineer
+would have open while reading the log above.
+
+------------------------------------------------------------------
+// Free tier limits are per model AND per upstream pool, so the list is also the
+// rate-limit budget: a 429 on one slug must land on the next one (live 2026-10-22,
+// gemma-4-31b "temporarily rate-limited upstream" blocked all 9 angles). Every
+// slug below was free when it was added (https://openrouter.ai/api/v1/models),
+// which is not a promise: `minimax/minimax-m3.1-flash:free` answered 404 hours
+// later. A slug that 404s is retired for the life of the process by ai(), so a
+// dead entry costs one request per deploy instead of one per angle.
+
+// A candidate that answers 404 is retired, not throttled: every later angle on
+// this process would pay the same round-trip for the same answer. Per-process,
+// so a redeploy re-probes the whole list.
+
+// A *key* can die for reasons that outlive the angle. Live 2026-10-23 04:24-04:27:
+// HF answered 402 "You have no remaining credits" on every call and Gemini's free
+// tier answered 429 "You exceeded your current quota" on every call, yet each walk
+// — nine angles, every Share, every Review — paid a fresh round trip to rediscover
+// it. `POST .../review 200 - 31336ms` ended in "AI tier unavailable — copy unchanged".
+// Worse, the fair share above counted those dead keys as providers that could still
+// answer, so the one key that might work was left with a third of the deadline
+// (Share: 15s/3 = 5s slices; Review: 45s/3 = 15s slices).
+//   auth/billing (401/402/403, "no remaining credits") -> out for this process
+//   daily free-tier quota (429 "exceeded your current quota") -> out for a while
+// A plain 429 ("rate limit", "temporarily rate-limited upstream") is per-minute and
+// stays eligible: that one really does clear, and the slug walk below handles it.
+
+// A router slug carries no upstream latency promise: `openrouter/free` picks a
+// model per request, and it held the *whole* per-attempt timeout twice on
+// 2026-10-22 (13:55 -> a 90s run took 109s; 18:03 -> 30s of a 45s angle, after
+// which Gemini was cut at 6.3s and HF never ran). A last-resort candidate gets a
+// last-resort time box.
+
+// `timeout` alone is not a wall-clock bound: in Node it is a *socket
+// inactivity* timeout, so a provider that trickles its response keeps the
+// socket "active" and the value is never reached. Live 2026-10-22 13:55 the
+// openrouter/free attempt started with 12.8s of run budget left and answered
+// 30.7s later (the whole BLOG_AI_TIMEOUT_MS), so a 90s run finished in 108s
+// and the tenant waited 109s. The AbortController is the hard bound: it
+// destroys the socket at the deadline even mid-response.
+------------------------------------------------------------------
+
+Relevant environment knobs at the time:
+  BLOG_AI_TIMEOUT_MS            base per-attempt timeout, default 30000
+  BLOG_ROUTER_MODEL_CAP_MS      cap for the `openrouter/free` router, default 8000
+  BLOG_PROVIDER_QUOTA_COOLDOWN_MS  429-quota cooldown, default 300000
+  OPENROUTER_MODEL              optional pin, tried before the free list

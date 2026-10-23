@@ -1,0 +1,39 @@
+Excerpt of the host log for one tenant session, 2026-10-23 05:17-05:18 UTC.
+Names of the tenant and the post have been left in; the plugin/credential values
+have not. Timings and slugs are verbatim.
+
+05:17:03 [AI] openrouter model google/gemma-4-31b-it:free unusable (429) — trying minimax/minimax-m3.1-flash:free
+05:17:03 [AI] openrouter retired minimax/minimax-m3.1-flash:free (404) — dropped for this process
+05:17:03 [AI] openrouter model minimax/minimax-m3.1-flash:free unusable (404) — trying nvidia/nemotron-3-super-120b-a12b:free
+05:17:03 [AI] openrouter retired nvidia/nemotron-3-super-120b-a12b:free (404) — dropped for this process
+05:17:03 [AI] openrouter model nvidia/nemotron-3-super-120b-a12b:free unusable (404) — trying google/gemma-4-26b-a4b-it:free
+05:17:03 [AI] openrouter model google/gemma-4-26b-a4b-it:free unusable (429) — trying nvidia/nemotron-3.5-lightning:free
+05:17:16 [AI] openrouter nvidia/nemotron-3.5-lightning:free aborted after 13.1s — time box spent, next provider keeps its own share of the run budget
+05:17:16 [AI] gemini cooling down for 300s (429) — the other keys keep their full share
+05:17:16 [AI] hf retired for this process (402) — no point re-probing every angle
+05:17:16 [AI] All providers failed → openrouter aborted after 13.0s (nvidia/nemotron-3.5-lightning:free) — time box spent | gemini 429 {"error":{"code":429,"message":"You exceeded your current quota, please check your plan and billing details."}} | hf 402 {"error":"You have no remaining credits. Purchase pre-paid credits to continue using Inference Providers."} (fatal=false)
+05:17:16 [DB] Saved: life-sciences-research-scientist-phd-wet-lab-computational-b-awareness-1
+05:17:16 [REVIEW] Successfully reviewed: life-sciences-research-scientist-phd-wet-lab-computational-b-awareness-1 (AI tier unavailable — copy unchanged)
+05:17:16 [HTTP] POST /tenant/blogger/posts/life-sciences-research-scientist-phd-wet-lab-computational-b-awareness-1/review 200 - 16209ms
+
+05:18:04 [AI] openrouter model google/gemma-4-31b-it:free unusable (429) — trying google/gemma-4-26b-a4b-it:free
+05:18:04 [AI] openrouter model google/gemma-4-26b-a4b-it:free unusable (429) — trying nvidia/nemotron-3.5-lightning:free
+05:18:34 [AI] openrouter nvidia/nemotron-3.5-lightning:free aborted after 30.0s — time box spent, next provider keeps its own share of the run budget
+05:18:34 [AI] gemini cooling down for 296s (429) — the other keys keep their full share
+05:18:34 [AI] hf retired for this process (402) — no point re-probing every angle
+05:18:34 [AI] All providers failed → openrouter aborted after 30.0s (nvidia/nemotron-3.5-lightning:free) — time box spent | gemini 429 | hf 402 (fatal=false)
+05:18:34 [REVIEW] Successfully reviewed: life-sciences-research-scientist-phd-wet-lab-computational-b-awareness-1 (AI tier unavailable — copy unchanged)
+05:18:34 [HTTP] POST /tenant/blogger/posts/life-sciences-research-scientist-phd-wet-lab-computational-b-awareness-1/review 200 - 32230ms
+
+05:18:39 [AI] openrouter model google/gemma-4-31b-it:free unusable (429) — trying google/gemma-4-26b-a4b-it:free
+05:18:39 [AI] openrouter model google/gemma-4-26b-a4b-it:free unusable (429) — trying nvidia/nemotron-3.5-lightning:free
+05:18:52 [AI] openrouter nvidia/nemotron-3.5-lightning:free aborted after 13.5s — time box spent, next provider keeps its own share of the run budget
+05:18:52 [HTTP] POST /tenant/blogger/posts/life-sciences-research-scientist-phd-wet-lab-computational-b-awareness-1/share 200 - 16230ms
+
+Notes an operator added while reading this:
+  - the 404 slugs cost about a second each and are already dropped after the first walk.
+  - the 429s come and go; gemma answered 200 on other tenants' clicks that afternoon.
+  - the 13.1s / 30.0s / 13.5s attempts never produced a single byte of response body,
+    which is why nothing else on that key was tried: the box closed first.
+  - a different tenant whose click hit a slow-but-streaming model did get an answer,
+    just later than the tenant wanted.

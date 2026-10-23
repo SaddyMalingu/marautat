@@ -266,14 +266,27 @@ function classifyFailure(status, text) {
   return 'unknown';
 }
 
+// Which provider served the last successful call. The WhatsApp reply path writes
+// it to conversations.llm_provider, so a tenant's chat history says who answered
+// instead of a generic "openrouter" label that may not be the one that ran.
+let lastAiProvider = null;
+
 // Exposed so verification scripts (scripts/test_ai_providers.mjs) can drive the
 // fallback chain against a local stub instead of the real providers.
 export function getLastAiError() { return lastAiError; }
 export function isAiFailureFatal() { return lastAiFatal; }
+export function getLastAiProvider() { return lastAiProvider; }
 
-async function ai(prompt, deadline) {
+// `messages` is optional: callers that already build a chat stack (the WhatsApp
+// reply path, which carries system prompt + tenant context + history) pass it in
+// so they get *this* provider walk instead of keeping one of their own. The
+// writers keep passing a single prompt string, exactly as before.
+async function ai(prompt, deadline, messages) {
   const axios = (await import('axios')).default;
   const failures = [];
+  const chatMessages = Array.isArray(messages) && messages.length
+    ? messages
+    : [{ role: 'user', content: prompt }];
   // A stalled provider used to burn 120s per attempt, so a dry tier could hold
   // the tenant's request open for many minutes (live 2026-10-22: 9 angles, 4+
   // minutes and counting). Cap each attempt, and when the caller passes a
@@ -362,7 +375,7 @@ async function ai(prompt, deadline) {
       try {
         const r = await axios.post(p.url(), {
           model: models[mi],
-          messages: [{ role: 'user', content: prompt }],
+          messages: chatMessages,
           max_tokens: 3000,
           temperature: 0.7,
         }, {

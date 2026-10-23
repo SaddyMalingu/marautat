@@ -20,6 +20,7 @@
     "verify:writers-flow": "node scripts/verify_writers_flow.js",
     "prune:verify-posts": "node scripts/prune_verify_posts.js",
     "test:ai-providers": "node scripts/test_ai_providers.mjs",
+    "dop:proof": "node dop/proof-all.mjs",
     "test:blog-fallback": "node scripts/test_blog_fallback.mjs",
     "test:share-card": "node scripts/test_post_share.mjs",
     "aboss:workbook": "node scripts/aboss_make_workbook.cjs",
