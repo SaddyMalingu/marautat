@@ -406,6 +406,23 @@ add the same var on Render → **Manual Deploy** (auto-deploy is off on this hos
 boot log must say `gemini=true` → click Review on the Writers tab and confirm the
 API body says `mode:"polished"` → `npm run verify:writers-flow`.
 
+**A deploy that builds the wrong commit looks exactly like a broken fix.** Live
+2026-10-23 14:56: `main` was two commits ahead of `origin/main`. Render built
+`origin/main` (`facc1404`), booted with the four-provider line
+(`openai openrouter gemini hf` — no `groq`, `cerebras`, `mistral`) and the old
+`OPENROUTER_KEY`-only read, and the first Review after "deploy" still ended
+`AI tier unavailable — copy unchanged` in 16.4 s. The fix was never wrong, it was
+never deployed. Before a Manual Deploy:
+
+```
+git status -sb                      # must be "## main...origin/main" with no "ahead"
+git --no-pager log --oneline -1 origin/main
+```
+
+After it, the first `[SYSTEM] LLM providers:` line is the proof of which code is
+live — `Deployed commit:` in the same block names the SHA, so a stale build is
+one line away from being obvious.
+
 Relevant env (all optional except one key):
 
 | Var | Default |
