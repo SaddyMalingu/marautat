@@ -88,6 +88,25 @@ export const OPENROUTER_FREE_MODELS = [
 const retiredModels = new Set();
 export function getRetiredModels() { return Array.from(retiredModels); }
 
+// A slug that emits no byte before its box closes is not slow, it is unusable.
+// Live 2026-10-23 05:17-05:18, one tenant clicking Review, Review, Share:
+// `nvidia/nemotron-3.5-lightning:free` was handed 13.1s, then 30.0s, then 13.5s
+// and answered none of them — 56s of a three-click session re-proving the same
+// silence, `POST …/review 200 - 16209ms` and `32230ms` both ending in "AI tier
+// unavailable — copy unchanged". Two *fair* boxes with no byte retire the slug
+// for the process, exactly like a 404. A *trickling* upstream is a different
+// animal — it does emit bytes, just too slowly, and is cut by the box without
+// ever being counted here.
+const silentBoxes = new Map();
+// Once a slug has sat out a fair box, the next attempt is a probe for recovery,
+// not another full share of the deadline.
+const STALL_PROBE_MS = 8000;
+// 0 disables stall retirement (a silent slug is then re-boxed on every click).
+function stallRetireAfter() {
+  const n = Number(process.env.BLOG_AI_STALL_RETIRE_AFTER == null ? 2 : process.env.BLOG_AI_STALL_RETIRE_AFTER);
+  return n > 0 ? n : 0;
+}
+
 // A *key* can die for reasons that outlive the angle. Live 2026-10-23 04:24-04:27:
 // HF answered 402 "You have no remaining credits" on every call and Gemini's free
 // tier answered 429 "You exceeded your current quota" on every call, yet each walk
@@ -107,7 +126,7 @@ export function getProviderCooldowns() {
   });
 }
 // Exposed for the offline suite: process-level state must not leak between cases.
-export function resetRetiredModels() { retiredModels.clear(); providerCooldowns.clear(); }
+export function resetRetiredModels() { retiredModels.clear(); providerCooldowns.clear(); silentBoxes.clear(); }
 
 // Gemini's free tier resets daily, but a 429 can also be a per-minute limiter; five
 // minutes stops a nine-angle run from re-probing without hiding a fast recovery.
@@ -327,16 +346,29 @@ async function ai(prompt, deadline) {
       // 30.7s later (the whole BLOG_AI_TIMEOUT_MS), so a 90s run finished in 108s
       // and the tenant waited 109s. The AbortController is the hard bound: it
       // destroys the socket at the deadline even mid-response.
-      const budget = Math.max(1, Math.min(baseTimeout, remaining, modelAttemptCapMs(models[mi])));
+      const budget = Math.max(1, Math.min(
+        baseTimeout,
+        remaining,
+        modelAttemptCapMs(models[mi]),
+        silentBoxes.has(models[mi]) ? STALL_PROBE_MS : Infinity
+      ));
       const ctl = new AbortController();
       const timer = setTimeout(function () { ctl.abort(); }, budget);
+      // Did the upstream send anything at all? An abort with bytes behind it is a
+      // slow model; an abort with nothing is a dead one. axios reports progress per
+      // chunk, before the body is parsed — exactly the signal needed to tell them
+      // apart (live 2026-10-23: nemotron-3.5-lightning sent 0 bytes in 30s).
+      let sawBytes = false;
       try {
         const r = await axios.post(p.url(), {
           model: models[mi],
           messages: [{ role: 'user', content: prompt }],
           max_tokens: 3000,
           temperature: 0.7,
-        }, { headers: p.headers(key), timeout: budget, signal: ctl.signal });
+        }, {
+          headers: p.headers(key), timeout: budget, signal: ctl.signal,
+          onDownloadProgress: function (e) { if (e && e.loaded > 0) sawBytes = true; },
+        });
         const content = r.data?.choices?.[0]?.message?.content || null;
         if (!content) {
           failure = { name: p.name, status: 200, text: 'empty content (' + models[mi] + ')', kind: 'transient' };
@@ -357,12 +389,29 @@ async function ai(prompt, deadline) {
         // Our own timer fired, not the provider: the run budget ran out mid-call.
         // Nothing else on this key can finish, so stop walking its models.
         if (ctl.signal.aborted) {
+          const slug = models[mi];
+          const strikes = silentBoxes.get(slug) || 0;
+          // Only a box that was a real chance is evidence: an attempt cut to 2s by a
+          // neighbour's share says nothing about the model behind it.
+          const fair = budget >= Math.min(baseTimeout, STALL_PROBE_MS);
+          const silent = !sawBytes && fair;
+          const silentCount = silent ? strikes + 1 : strikes;
+          if (silent) silentBoxes.set(slug, silentCount);
           failure = {
             name: p.name, status: 0, kind: 'transient',
-            text: 'aborted after ' + (budget / 1000).toFixed(1) + 's (' + models[mi] + ') — time box spent',
+            text: 'aborted after ' + (budget / 1000).toFixed(1) + 's (' + slug + ') — time box spent',
           };
-          console.warn('[AI] ' + p.name + ' ' + models[mi] + ' aborted after ' + (budget / 1000).toFixed(1) +
-            's — time box spent, next provider keeps its own share of the run budget');
+          const retireAfter = stallRetireAfter();
+          if (silent && retireAfter && silentCount >= retireAfter) {
+            // Same verdict as a 404, different evidence: the slug had its time and
+            // produced nothing, so the next click must not pay for it again.
+            retiredModels.add(slug);
+            console.warn('[AI] ' + p.name + ' retired ' + slug + ' (no bytes in ' + silentCount +
+              ' time boxes) — dropped for this process');
+          } else {
+            console.warn('[AI] ' + p.name + ' ' + slug + ' aborted after ' + (budget / 1000).toFixed(1) +
+              's — time box spent, next provider keeps its own share of the run budget');
+          }
           break;
         }
         const status = e.response?.status;
@@ -417,7 +466,7 @@ async function ai(prompt, deadline) {
   // dead provider next to a healthy one must never stop the journey.
   lastAiFatal = failures.length === 0 || failures.every(function (f) { return f.kind === 'fatal'; });
   lastAiError = failures.length
-    ? failures.map(function (f) { return (f.name + ' ' + (f.status || '') + ' ' + f.text).trim().slice(0, 240); }).join(' | ')
+    ? failures.map(function (f) { return ((String(f.name) + ' ' + (f.status || '')).trim() + ' ' + f.text).slice(0, 240); }).join(' | ').slice(0, 900)
     : 'no AI provider key configured (OPENROUTER_API_KEY / GEMINI_API_KEY / OPENAI_API_KEY / HF_API_KEY)';
   console.error('[AI] All providers failed →', lastAiError, '(fatal=' + lastAiFatal + ')');
   return null;

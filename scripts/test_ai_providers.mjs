@@ -42,6 +42,10 @@ const calls = [];
 const retired = new Set();
 // Model slugs whose upstream is throttled (429 "temporarily rate-limited upstream").
 const throttled = new Set();
+// Model slugs whose upstream accepts the request and never answers (live
+// 2026-10-23: `nvidia/nemotron-3.5-lightning:free` sent zero bytes for 13.1s,
+// then 30.0s, then 13.5s — only the client's own box can cut this).
+const silent = new Set();
 
 const server = http.createServer((req, res) => {
   let raw = "";
@@ -61,6 +65,11 @@ const server = http.createServer((req, res) => {
       return send(402, {
         error: "You have no remaining credits. Purchase pre-paid credits to continue using Inference Providers.",
       });
+    }
+    if (silent.has(body.model)) {
+      // Accept the request and answer nothing at all: no headers, no body, no bytes.
+      // (A trickling upstream is `behavior = "slow"`, which does emit bytes.)
+      return;
     }
     if (retired.has(body.model)) {
       return send(404, {
@@ -142,6 +151,7 @@ function resetStub() {
   behavior.hf = "ok";
   retired.clear();
   throttled.clear();
+  silent.clear();
   calls.length = 0;
   // Retired slugs live on the module (per process), so a case that proves a 404
   // is remembered must start from a clean set.
@@ -149,7 +159,7 @@ function resetStub() {
   for (const k of Object.keys(seen)) delete seen[k];
 }
 
-const { ai, getLastAiError, isAiFailureFatal, OPENROUTER_FREE_MODELS, resetRetiredModels, getProviderCooldowns } = await import("./blogManager.js");
+const { ai, getLastAiError, isAiFailureFatal, OPENROUTER_FREE_MODELS, resetRetiredModels, getProviderCooldowns, getRetiredModels } = await import("./blogManager.js");
 
 const PROMPT = "Write a short post about a salary guide.";
 
@@ -485,6 +495,42 @@ await check("the last-resort router slug is time-boxed", async () => {
     return `${router} cut at ${elapsed}ms against a 3000ms deadline`;
   } finally {
     delete process.env.BLOG_ROUTER_MODEL_CAP_MS;
+  }
+});
+
+// Live 2026-10-23 05:17-05:18 (first click on the cooldown build): the dead
+// *keys* were skipped instantly, but `nvidia/nemotron-3.5-lightning:free` stayed
+// in the OpenRouter walk and was handed 13.1s, then 30.0s, then 13.5s while
+// emitting zero bytes — `POST …/review 200 - 16209ms`, then `32230ms`, both
+// "AI tier unavailable — copy unchanged". A slug that answers nothing is exactly
+// as unusable as one that 404s, and one box is enough evidence to be wary of it:
+// the retry is a short probe, and a second silent box drops it for the process.
+await check("a slug that answers nothing twice is retired, not re-boxed every click", async () => {
+  resetStub();
+  setKeys({ or: "or-key", gem: "gem-key" });
+  const savedTimeout = process.env.BLOG_AI_TIMEOUT_MS;
+  process.env.BLOG_AI_TIMEOUT_MS = "400";
+  try {
+    // Walk past the healthy slugs so the silent one is the one actually dialled.
+    const mute = OPENROUTER_FREE_MODELS[4];
+    for (const slug of OPENROUTER_FREE_MODELS.slice(0, 4)) retired.add(slug);
+    silent.add(mute);
+    const first = await ai(PROMPT);
+    const afterFirst = calls.filter((c) => c.model === mute).length;
+    const second = await ai(PROMPT);
+    const afterSecond = calls.filter((c) => c.model === mute).length;
+    assert(first === "GEM OK" && second === "GEM OK",
+      `expected gemini to serve both clicks, got ${first}/${second}`);
+    assert(afterFirst === 1, `expected one box on the first click, got ${afterFirst}`);
+    assert(getRetiredModels().includes(mute), `expected ${mute} retired after two silent boxes`);
+    const third = await ai(PROMPT);
+    const afterThird = calls.filter((c) => c.model === mute).length;
+    assert(afterThird === afterSecond, `the retired slug was dialled again (${afterSecond} -> ${afterThird})`);
+    assert(third === "OR OK", `expected the walk to fall through to the next live slug, got ${JSON.stringify(third)}`);
+    return `${mute} boxed ${afterSecond}x, then retired — click 3 answered by the next slug`;
+  } finally {
+    if (savedTimeout == null) delete process.env.BLOG_AI_TIMEOUT_MS;
+    else process.env.BLOG_AI_TIMEOUT_MS = savedTimeout;
   }
 });
 

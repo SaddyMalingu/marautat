@@ -292,7 +292,37 @@ the table below.
 
 Exit `0` = no failures, `1` = at least one, `2` = missing config. A stale
 `build identity` FAIL means the host is serving an older commit — redeploy from
-the Render dashboard (this repo has no CI deploy job).
+the Render dashboard (this repo has no CI deploy script).
+
+**Why the first click on the cooldown build still cost 15-32 s (`95ef246`).**
+Keys were now skipped, but one *slug* kept being paid for: live 2026-10-23
+05:17-05:18, `nvidia/nemotron-3.5-lightning:free` accepted the request and sent
+**zero bytes** — 13.1 s of a Share slice, then 30.0 s alone (gemini and hf were
+already out of rotation, so it owned the whole deadline), then 13.5 s on the next
+Share. `POST …/review 200 - 16209ms` and `32230ms`, both *AI tier unavailable —
+copy unchanged*: 56 s of three clicks re-proving one silence. A `404` retired the
+slug; silence retired nothing. Now:
+
+1. **Silence is evidence.** An attempt that is cut by its box with no byte
+   received (axios `onDownloadProgress`, so a response that merely trickles is
+   *not* counted) and that got a *fair* box (≥ `min(BLOG_AI_TIMEOUT_MS, 8 s)`;
+   a slice cut to 2 s by a neighbour says nothing about the model) counts as a
+   silent box for that slug.
+2. **Two silent boxes retire the slug** for the process, exactly like a `404`:
+   `[AI] openrouter retired nvidia/nemotron-3.5-lightning:free (no bytes in 2
+   time boxes) — dropped for this process`. Set
+   `BLOG_AI_STALL_RETIRE_AFTER=0` to disable.
+3. **The second attempt is a probe, not another share.** A slug that already sat
+   out a fair box gets `min(remaining, 8 s)` next time (constant `STALL_PROBE_MS`),
+   so the live sequence becomes 13.1 s + 8 s once, then nothing on every later
+   click instead of 30 s per click forever.
+
+Regression test in `test:ai-providers`: *"a slug that answers nothing twice is
+retired, not re-boxed every click"* (silent OpenRouter slug, Gemini serving both
+clicks, third click answered by the next live slug with **no** further probe of
+the dead one). Again this only stops paying for a dead thing — a silent free
+slug is an OpenRouter-side problem, and the fix per provider is to top up or
+rotate the key, or drop the provider.
 
 ### When blog generation fails — `npm run test:ai-providers`
 The writer never fabricates posts: if the LLM returns nothing it fails loudly
@@ -338,6 +368,7 @@ Relevant env (all optional except one key):
 | `BLOG_ANGLE_BUDGET_MS` | `45000` — ceiling for **one angle's** provider walk, split equally between the providers that have a key (see *Why a provider that never answered…*). A single angle tries up to seven candidate model slugs on one key: live 2026-10-22 one angle cost 37 s (5 models, one stalled 23 s before returning `429`). Effective per-call deadline is `min(now + this, run deadline)`, and each call in an angle (compose, duplicate retry, review) gets its own slice. Set `0` to cap only per attempt. The review pass is skipped once 60 % of the run budget is spent, so the tail of the budget buys AI-written pages rather than polish on page three |
 | `BLOG_ROUTER_MODEL_CAP_MS` | `8000` — time box for the `openrouter/free` router slug, the only candidate with no upstream latency promise (it held a full 30 s attempt on both 2026-10-22 incidents). Every other slug is bounded by `BLOG_AI_TIMEOUT_MS` and the provider's share of the deadline. `0` disables the extra cap |
 | `BLOG_PROVIDER_QUOTA_COOLDOWN_MS` | `300000` — how long a provider that answered a **daily-quota** `429` ("You exceeded your current quota", "check your plan and billing") is skipped. Live 2026-10-23: nine angles plus every Share and Review each paid a fresh `429` to Gemini, and each dead key still claimed a third of the deadline. `0` re-probes it on the next angle |
+| `BLOG_AI_STALL_RETIRE_AFTER` | `2` — how many *fair* time boxes a model slug may spend sending **zero bytes** before it is retired for the process (a slug that only trickles is never counted). Live 2026-10-23 05:17-05:18: `nvidia/nemotron-3.5-lightning:free` was handed 13.1 s, 30.0 s, then 13.5 s across three tenant clicks and answered none. The first retry after a silent box is a probe capped at 8 s. `0` disables it |
 | `GEMINI_API_KEY` | — (free tier, no card) |
 | `GEMINI_MODEL` | `gemini-flash-latest` (pin `gemini-3.8-flash` to freeze) |
 | `OPENAI_API_KEY` / `OPENAI_MODEL` | — / `gpt-4o-mini` |
@@ -348,8 +379,8 @@ Relevant env (all optional except one key):
 server — no keys, no network, no DB. It reproduces the 402 incident and the
 2026-10-22 live failures, and verifies fallback order, empty-content handling,
 model override, retired-slug fallthrough, throttled-slug (`429`) fallthrough, the
-402-still-aborts rule, provider cooldowns and the fast-fail when every key is out
-of rotation (25 checks), plus the no-key message.
+402-still-aborts rule, provider cooldowns, silent-slug retirement and the fast-fail
+when every key is out of rotation (26 checks), plus the no-key message.
 
 **Free-tier budget.** One journey is 9 sequential generation calls plus one
 review call per post, so a handful of test runs exhausts a small free tier — a
