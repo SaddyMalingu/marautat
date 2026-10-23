@@ -12,7 +12,7 @@ dotenv.config();
 try {
   const openrouterKey = process.env.OPENROUTER_API_KEY || process.env.OPENROUTER_KEY;
   const hfKey = process.env.HF_API_KEY || process.env.HF_API_KEY_WRITERS_FLOW;
-  const envLog = `[${new Date().toISOString()}] [SYSTEM] ENV LLM keys: openai=${Boolean(process.env.OPENAI_API_KEY)} openrouter=${Boolean(openrouterKey)} gemini=${Boolean(process.env.GEMINI_API_KEY)} hf=${Boolean(hfKey)}`;
+  const envLog = `[${new Date().toISOString()}] [SYSTEM] ENV LLM keys: openai=${Boolean(process.env.OPENAI_API_KEY)} openrouter=${Boolean(openrouterKey)} gemini=${Boolean(process.env.GEMINI_API_KEY)} groq=${Boolean(process.env.GROQ_API_KEY)} cerebras=${Boolean(process.env.CEREBRAS_API_KEY)} hf=${Boolean(hfKey)}`;
   console.log(envLog);
 } catch (err) {
   console.log(`[${new Date().toISOString()}] [WARN] ENV LLM keys log failed: ${err?.message || err}`);

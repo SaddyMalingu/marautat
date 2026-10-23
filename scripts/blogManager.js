@@ -51,9 +51,20 @@ function clean(c) {
 // operator can see *why* generation produced nothing without reading host logs.
 let lastAiError = null;
 
-// Provider fallback order: OpenRouter → Gemini (free tier) → OpenAI → HuggingFace.
-// Any single key being present is enough to generate; set OPENROUTER_MODEL /
-// GEMINI_MODEL / OPENAI_MODEL / HF_MODEL to pin a specific model.
+// Provider fallback order: OpenRouter → Gemini → Groq → Cerebras → OpenAI →
+// HuggingFace. Any single key being present is enough to generate; set
+// OPENROUTER_MODEL / GEMINI_MODEL / GROQ_MODEL / CEREBRAS_MODEL / OPENAI_MODEL /
+// HF_MODEL to pin a specific model. Every provider below speaks the same
+// OpenAI-compatible shape, so adding one is a key + a URL + a model list, not a
+// new code path.
+//
+// Why the list got longer (live 2026-10-23, four keys on the host): "multi-model
+// fallback" was true inside OpenRouter and false everywhere else — Gemini had one
+// alias, so a tenant click could only ever land on `gemini-flash-latest`. When
+// that alias went quiet for 15s the tier was dry with three other keys in hand
+// (HF 402, OpenRouter's free pool 429/404). Two independent free tiers (Groq,
+// Cerebras) mean a Gemini-side quota or a slow alias is now a detour, not an
+// outage.
 // OpenRouter free-tier slugs are retired without notice — the 2026-10-22 outage
 // was llama-3.1-8b-instruct:free answering 404 "This model is unavailable for
 // free". Generation therefore falls through this list (see ai()) instead of
@@ -79,6 +90,49 @@ export const OPENROUTER_FREE_MODELS = [
   // healthy right now (its 429s clear as the pool rotates).
   'openrouter/free',
 ];
+
+// Gemini's free tier is the zero-spend recovery path, so it gets the same
+// treatment OpenRouter's slugs already had: a *list*, fastest first, not one
+// alias to bet the run on.
+//   gemini-flash-lite-latest  the light path — answers copy in ~1-2s
+//   gemini-flash-latest       the alias the host ran on 2026-10-23; stronger and
+//                             markedly slower (it burned a whole 15s slice with
+//                             zero bytes on a Review that day)
+// Both are the same free quota, so a 429 on one is a 429 on the other (the quota
+// belongs to the Google Cloud project, not the slug) — but a *slow* or *retired*
+// alias is slug-specific, which is exactly the failure that was unfixable with a
+// single model. GEMINI_MODEL pins a model and still leads the list, same rule as
+// OPENROUTER_MODEL: a pin is a preference, never a trap.
+export const GEMINI_MODELS = [
+  'gemini-flash-lite-latest',
+  'gemini-flash-latest',
+];
+
+// Groq: free tier, no card, OpenAI-compatible, and the fastest first token of
+// anything in this file (LPU inference). Its free limit is a *rate* limit, which
+// is the cheap kind — it clears in a minute and the walk advances to the next
+// slug meanwhile. Added 2026-10-23 10:40 after a live Review spent 15s on a silent
+// Gemini alias and 13s on OpenRouter's throttled free pool with no copy produced.
+export const GROQ_MODELS = [
+  'llama-3.3-70b-versatile',
+  // Smaller and separate pool: a 70B throttle must not take out the whole key.
+  'llama-3.1-8b-instant',
+  'openai/gpt-oss-20b',
+];
+
+// Cerebras: free tier, no card, OpenAI-compatible, wafer-scale inference (again
+// very fast). Kept last among the free tiers because its free quota is the
+// smallest of the three, so it is the backstop rather than the workhorse.
+export const CEREBRAS_MODELS = [
+  'llama3.1-8b',
+  'gpt-oss-120b',
+];
+
+// A pin leads its provider's list. Shared by every provider so the rule is one
+// function instead of five copies that drift (the lesson of `54931a4`).
+function pinnedFirst(pin, list) {
+  return pin ? [pin, ...list.filter((m) => m !== pin)] : list.slice();
+}
 
 // A candidate that answers 404 is retired, not throttled: every later angle on
 // this process would pay the same round-trip for the same answer. Live
@@ -199,20 +253,44 @@ const AI_PROVIDERS = [
       // working free models sat right here in the list. So the pin leads and the
       // verified free models still act as fallback.
       const pinned = process.env.OPENROUTER_MODEL;
-      const list = OPENROUTER_FREE_MODELS.slice();
-      return pinned ? [pinned, ...list.filter((m) => m !== pinned)] : list;
+      return pinnedFirst(pinned, OPENROUTER_FREE_MODELS);
     },
     headers: (k) => ({ Authorization: 'Bearer ' + k, 'Content-Type': 'application/json' }),
   },
   {
     // Google AI Studio: free tier, no credit card, OpenAI-compatible endpoint.
     // This is the zero-spend recovery path when a paid account runs dry (the
-    // 2026-10-22 HF 402 incident). GEMINI_MODEL pins a stable flash model
-    // (e.g. gemini-3.8-flash); the default alias survives model shutdowns.
+    // 2026-10-22 HF 402 incident). Two slugs, fastest first (see GEMINI_MODELS):
+    // live 2026-10-23 10:40 the key was healthy — the daily quota had reset, no
+    // 429 anywhere — but `gemini-flash-latest` sent zero bytes for the whole 15s
+    // slice, so Review still answered "AI tier unavailable — copy unchanged". One
+    // alias is a single point of failure; a list makes it a slow candidate.
     name: 'gemini',
     key: () => process.env.GEMINI_API_KEY,
     url: () => (process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/openai') + '/chat/completions',
-    model: () => process.env.GEMINI_MODEL || 'gemini-flash-latest',
+    models: () => pinnedFirst(process.env.GEMINI_MODEL, GEMINI_MODELS),
+    headers: (k) => ({ Authorization: 'Bearer ' + k, 'Content-Type': 'application/json' }),
+  },
+  {
+    // Groq (https://console.groq.com/keys): free tier, no card, OpenAI-compatible.
+    // Fastest of the free tiers and the first fallback for Gemini because it fails
+    // *fast* — a throttled Groq key answers 429 in ~100ms, so a dead free tier
+    // costs the tenant a fraction of a second instead of 15s of silence.
+    name: 'groq',
+    key: () => process.env.GROQ_API_KEY,
+    url: () => (process.env.GROQ_BASE_URL || 'https://api.groq.com/openai/v1') + '/chat/completions',
+    models: () => pinnedFirst(process.env.GROQ_MODEL, GROQ_MODELS),
+    headers: (k) => ({ Authorization: 'Bearer ' + k, 'Content-Type': 'application/json' }),
+  },
+  {
+    // Cerebras (https://cloud.cerebras.ai): free tier, no card, OpenAI-compatible.
+    // A different company, a different quota, a different speed profile — which is
+    // the whole point: "the provider is down" and "our account on that provider is
+    // down" are different failures, and this is the cheapest way to survive both.
+    name: 'cerebras',
+    key: () => process.env.CEREBRAS_API_KEY,
+    url: () => (process.env.CEREBRAS_BASE_URL || 'https://api.cerebras.ai/v1') + '/chat/completions',
+    models: () => pinnedFirst(process.env.CEREBRAS_MODEL, CEREBRAS_MODELS),
     headers: (k) => ({ Authorization: 'Bearer ' + k, 'Content-Type': 'application/json' }),
   },
   {
@@ -397,6 +475,12 @@ async function ai(prompt, deadline, messages) {
         }
         lastAiError = null;
         lastAiFatal = false;
+        // Which provider actually served. This was declared (line 350) and never
+        // assigned, so the WhatsApp path's `conversations.llm_provider` recorded
+        // "chain" for every reply — including the ones OpenRouter and Gemini
+        // answered. Set before returning so the caller's log cannot disagree with
+        // the walk that ran.
+        lastAiProvider = p.name;
         return content;
       } catch (e) {
         // Our own timer fired, not the provider: the run budget ran out mid-call.
@@ -480,7 +564,7 @@ async function ai(prompt, deadline, messages) {
   lastAiFatal = failures.length === 0 || failures.every(function (f) { return f.kind === 'fatal'; });
   lastAiError = failures.length
     ? failures.map(function (f) { return ((String(f.name) + ' ' + (f.status || '')).trim() + ' ' + f.text).slice(0, 240); }).join(' | ').slice(0, 900)
-    : 'no AI provider key configured (OPENROUTER_API_KEY / GEMINI_API_KEY / OPENAI_API_KEY / HF_API_KEY)';
+    : 'no AI provider key configured (OPENROUTER_API_KEY / GEMINI_API_KEY / GROQ_API_KEY / CEREBRAS_API_KEY / OPENAI_API_KEY / HF_API_KEY)';
   console.error('[AI] All providers failed →', lastAiError, '(fatal=' + lastAiFatal + ')');
   return null;
 }

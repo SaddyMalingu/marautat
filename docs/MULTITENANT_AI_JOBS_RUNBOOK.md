@@ -336,23 +336,75 @@ string is the diagnosis — you do not need host logs.
 | `404` + `unavailable for free` | the free model slug was retired (2026-10-22: `llama-3.1-8b-instruct:free`, `minimax/minimax-m3.1-flash:free`) | nothing — the writer falls through `OPENROUTER_FREE_MODELS` on `404`, including past a retired `OPENROUTER_MODEL` pin, and drops the dead slug for the rest of the process; clear the pin if the console logs show it leading every run |
 | `404` (any other) | model route not available on that account | set `OPENROUTER_MODEL` / `HF_MODEL` |
 | `429` + `rate-limited upstream` | that one model's upstream pool is saturated; the key is fine | nothing — the writer advances to the next slug in `OPENROUTER_FREE_MODELS` (live 2026-10-22: gemma-4-31b was throttled while five siblings were healthy) |
-| `429` + `You exceeded your current quota` | your own free-tier quota (per day) | wait for the reset window, add a second key, or add credits (OpenRouter free tier: 50 req/day, 1000/day after a one-time $10 credit) |
+| `429` + `You exceeded your current quota` | your own free-tier quota (per day) | wait for the reset window, add a second key, or add credits (OpenRouter free tier: 50 req/day, 1000/day after a one-time $10 credit). **Gemini quota belongs to the Google Cloud project, not the key**, and resets at midnight Pacific (10:00 EAT): a freshly created key in the *same* project pours from the same exhausted daily bucket, so it fixes nothing. A new project, billing on the old one, or another provider does |
 | only 1 post written, run then stops | fail-fast matched one exhausted provider (e.g. `hf 402`) in the joined error string | fixed 2026-10-22: only an all-provider auth/billing failure aborts a journey; redeploy and re-run the verifier |
 | `verify-writers-flow-*` posts visible on `/blog` | verifier runs published real posts before the post-delete endpoint existed | `npm run prune:verify-posts` on the host to list them, `npm run prune:verify-posts -- --apply` to delete (needs `SUPABASE_SERVICE_ROLE_KEY`) |
 | `no AI provider key configured` | no key at all | set one of the three keys |
 
-Providers are tried in order — **OpenRouter → Gemini → OpenAI → HuggingFace** —
-so any single key is enough. The journey only aborts when **every** provider it
-could try failed on auth/billing (`401/402/403`, "no remaining credits"). One
-exhausted provider next to a healthy one, or a `429` / `RESOURCE_EXHAUSTED`
-quota reply, lets the remaining angles continue — otherwise a permanently dead
-HuggingFace `402` in the chain caps every run at one post.
+Providers are tried in order — **OpenRouter → Gemini → Groq → Cerebras →
+OpenAI → HuggingFace** — so any single key is enough. The journey only aborts
+when **every** provider it could try failed on auth/billing (`401/402/403`, "no
+remaining credits"). One exhausted provider next to a healthy one, or a `429` /
+`RESOURCE_EXHAUSTED` quota reply, lets the remaining angles continue — otherwise
+a permanently dead HuggingFace `402` in the chain caps every run at one post.
+Within a provider, the models are a list too (OpenRouter's free slugs, Gemini's
+two flash aliases, Groq's three), and a `404`/silent alias advances to the next
+one instead of ending the run.
 
 **Zero-spend recovery.** Google AI Studio issues a `GEMINI_API_KEY` with a free
 tier and no credit card (https://aistudio.google.com/apikey). The writer talks to
 Gemini through its OpenAI-compatible endpoint
 (`https://generativelanguage.googleapis.com/v1beta/openai`), so setting only that
 one var restores generation on the next restart — no code change and no purchase.
+
+**The keys live on the host, not in the repo.** A fresh clone has no `.env` (it is
+gitignored; this tier's keys exist only as Render environment variables), so
+`npm run check:ai-key` printing `(no key)` on your machine says nothing about the
+host — do not "add a key" because the local probe is empty. To test the key the
+host is *actually* using, reveal it in Render → **Environment** and pass it
+in-process:
+
+```
+npm run check:ai-key -- --only=gemini --key GEMINI_API_KEY=AIza...
+```
+
+Nothing is written to a file and only a masked form is printed. The value is read
+by the same `ai()` walk the host runs, so `SERVED` here means the host's key will
+serve; a `429 quota` here means the host will not, and no amount of redeploying
+changes that. `scripts/render_env_sync.ps1` reads the live set before it PUTs, so
+it re-asserts whatever key is already there rather than blanking it — but never
+run it with `-DeleteOptional`, which deliberately drops `GEMINI_API_KEY`,
+`OPENROUTER_*` and `HF_*`.
+
+#### Prove a key before you deploy it — `npm run check:ai-key`
+Rotating a key used to be a guess: the only feedback was the Writers tab, or the
+host log after the fact. On 2026-10-23 the tier held four keys and served no
+copy — HF `402`, Gemini `429` daily quota, four of five OpenRouter free slugs
+`429`/`404` — and every click still came back `200` in ~31 s. This check asks the
+provider directly, through the same `ai()` walk that serves Writers, Share,
+Review and replies, so its verdict cannot drift from production:
+
+```
+npm run check:ai-key                       # every provider that has a key
+npm run check:ai-key -- --only=gemini      # just one
+npm run check:ai-key -- --key GEMINI_API_KEY=AIza...   # no file, no .env needed
+```
+
+It prints the masked key it used, then per provider either
+`SERVED in 0.4s — "OK"` or the chain's own status/body *plus the fix*
+(`out of credits`, `key rejected`, `daily quota spent`, `slug retired`,
+`no answer inside the time box`). Exit code `0` = at least one provider wrote
+copy, `1` = none did — so it can gate a deploy.
+
+Sequence when the tier is already keyed — the usual case, because the keys are
+Render variables: reveal the var in Render → **Environment**, then run
+`npm run check:ai-key -- --only=<provider> --key <VAR>=<value>` until it says
+**SERVED** or names the account problem. If it names quota, wait for the reset
+(Gemini: midnight Pacific, 10:00 EAT) or change project/provider — redeploying
+does not help. Sequence for a brand-new key: create it → probe it with `--key` →
+add the same var on Render → **Manual Deploy** (auto-deploy is off on this host) →
+boot log must say `gemini=true` → click Review on the Writers tab and confirm the
+API body says `mode:"polished"` → `npm run verify:writers-flow`.
 
 Relevant env (all optional except one key):
 
@@ -371,9 +423,11 @@ Relevant env (all optional except one key):
 | `BLOG_AI_STALL_RETIRE_AFTER` | `2` — how many *fair* time boxes a model slug may spend sending **zero bytes** before it is retired for the process (a slug that only trickles is never counted). Live 2026-10-23 05:17-05:18: `nvidia/nemotron-3.5-lightning:free` was handed 13.1 s, 30.0 s, then 13.5 s across three tenant clicks and answered none. The first retry after a silent box is a probe capped at 8 s. `0` disables it |
 | `WHATSAPP_AI_BUDGET_MS` | `12000` — wall-clock ceiling for one WhatsApp reply's walk through the same provider chain (`scripts/blogManager.js`, `ai(prompt, deadline, messages)`). The reply path used to keep its own copy of the provider list and it drifted: it read `OPENROUTER_KEY` (the host sets `OPENROUTER_API_KEY`), posted to `api.openrouter.ai` (no such host — `getaddrinfo ENOTFOUND`), pinned `meta-llama/llama-3.3-70b-instruct:free` (retired), and never tried Gemini at all, so a live Gemini key sat unused while the bot answered "Hello" from the static welcome (live 2026-10-23 06:36). One chain now serves writers, Share, Review and replies; `0`/unset keeps the 12 s default |
 | `GEMINI_API_KEY` | — (free tier, no card) |
-| `GEMINI_MODEL` | `gemini-flash-latest` (pin `gemini-3.8-flash` to freeze) |
+| `GEMINI_MODEL` | unset → tries `gemini-flash-lite-latest` then `gemini-flash-latest`. A pin is tried **first** and the alias list still follows it (same rule as `OPENROUTER_MODEL`). Live 2026-10-23 10:40: the daily quota had reset and no request `429`'d, yet `gemini-flash-latest` sent **zero bytes for its whole 15 s slice** and the click still ended "AI tier unavailable — copy unchanged" — one alias was a single point of failure, so the light alias now leads |
+| `GROQ_API_KEY` / `GROQ_MODEL` | — / unset → `llama-3.3-70b-versatile`, `llama-3.1-8b-instant`, `openai/gpt-oss-20b`. Free tier, no card (https://console.groq.com/keys). Fastest first token in the chain, and it fails *fast*: a throttled key answers `429` in ~100 ms instead of eating the slice |
+| `CEREBRAS_API_KEY` / `CEREBRAS_MODEL` | — / unset → `llama3.1-8b`, `gpt-oss-120b`. Free tier, no card (https://cloud.cerebras.ai). A different company with a different quota, so a Gemini *and* Groq dry spell still leaves one answer |
 | `OPENAI_API_KEY` / `OPENAI_MODEL` | — / `gpt-4o-mini` |
-| `HF_API_KEY` / `HF_MODEL` | — / `meta-llama/Llama-3.1-8B-Instruct:novita` |
+| `HF_API_KEY` / `HF_MODEL` | — / `meta-llama/Llama-3.1-8B-Instruct:novita`. **Not a free tier in practice**: a valid key on an unfunded account answers `402 "You have no remaining credits"` (live 2026-10-23) and is retired for the process. `HF_API_KEY_WRITERS_FLOW` is an *alias name* for the same credential, not a second account — if your two HF keys are different accounts, unset the dry one so the alias is actually read (the walk takes the first non-empty var) |
 | `*_BASE_URL` | provider default (used by the offline test) |
 
 `npm run test:ai-providers` proves the whole chain offline against a stub
@@ -381,15 +435,42 @@ server — no keys, no network, no DB. It reproduces the 402 incident and the
 2026-10-22 live failures, and verifies fallback order, empty-content handling,
 model override, retired-slug fallthrough, throttled-slug (`429`) fallthrough, the
 402-still-aborts rule, provider cooldowns, silent-slug retirement and the fast-fail
-when every key is out of rotation (26 checks), plus the no-key message.
+when every key is out of rotation (**30 checks**), plus the no-key message — the
+newest four cover Gemini's light→full alias fallback, the `GEMINI_MODEL` pin,
+Groq serving when OpenRouter+Gemini are out, and Cerebras as the backstop when
+three earlier keys are `402`.
+
+**Which free tiers to wire (and why this order).** Every provider below speaks
+the same OpenAI-compatible shape, so support is a key + a URL + a model list in
+`scripts/blogManager.js` — no new code path, no adapter. Limits move; check the
+console before you promise a buyer a number. What matters for a live demo is that
+a *key that answers* exists in more than one company.
+
+| Provider | Get a key | Free tier | Why it is in this chain | Watch out |
+| --- | --- | --- | --- | --- |
+| Groq | https://console.groq.com/keys | rate-limited, no card | fastest first token (LPU) and ~100 ms `429`s, so a dry key costs a fraction of a second instead of a slice | per-minute caps: a 9-angle run can hit one, which is what the slug walk absorbs |
+| Google AI Studio (Gemini) | https://aistudio.google.com/apikey | daily quota, no card | the zero-spend workhorse; two flash aliases | the quota belongs to the Cloud **project**, resets midnight PT; the heavy alias can send zero bytes for 15 s |
+| Cerebras | https://cloud.cerebras.ai | small daily quota, no card | a third, independent pool with a different speed profile | smallest free quota of the three — backstop, not workhorse |
+| OpenRouter `:free` slugs | https://openrouter.ai/keys | ~50 req/day, ~1000/day after a one-time $10 | widest model menu, and `openrouter/free` routes to whatever is healthy | slugs get retired (`404`) and throttled (`429`) with no notice — never the only key (live 2026-10-23: 2×429 + 2×404 in one walk) |
+| GitHub Models | https://github.com/settings/tokens (PAT) | per-model request caps with a GitHub account | GPT-class copy on a free tier, OpenAI-compatible endpoint | PAT, not an API key; per-model caps are low |
+| Mistral La Plateforme | https://console.mistral.ai | rate-limited experiment tier | EU-hosted, OpenAI-compatible | free tier is opt-in and rate-limited |
+| Cloudflare Workers AI | https://dash.cloudflare.com | daily free "neurons" | one more independent pool | **not** OpenAI-compatible — needs an adapter, so it is *not* a drop-in like the rest |
+| Together AI | https://api.together.ai | small starter allowance | many open models | not a durable free tier; it becomes paid |
+
+**Do not** plan on HuggingFace Inference Providers as the free tier: an unfunded
+account answers `402 "You have no remaining credits"` no matter how valid the key
+is (live 2026-10-23, twice). Prepaid credits or PRO are required. OpenAI is paid;
+Anthropic, xAI and DeepSeek have no durable free API tier.
 
 **Free-tier budget.** One journey is 9 sequential generation calls plus one
 review call per post, so a handful of test runs exhausts a small free tier — a
 real `429` from Gemini after repeated runs is expected, not a code bug. Angles
 are paced by `BLOG_ANGLE_DELAY_MS` (default 1200 ms) and each throttled slug
 falls through to the next model, so nine angles can complete on free slugs alone.
-OpenRouter's free tier (50 req/day, 1000/day with a one-time $10 credit) is the
-sustainable demo path; keep it as the first provider and let Gemini sit second.
+Keep at least **three keyed providers**: on 2026-10-23 this host had four keys and
+still served no copy, because all four were the same two failures (a dry HF
+account and a Gemini project out of quota) plus a free pool that was throttled —
+and only one of those keys was ever dialled inside a slice.
 
 **When every tier is dry at once** (live 2026-10-22: OpenRouter `429` on the
 remaining free slugs, Gemini daily quota spent, HuggingFace `402`), the journey

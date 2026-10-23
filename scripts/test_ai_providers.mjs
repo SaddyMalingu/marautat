@@ -33,7 +33,7 @@ function record(status, name, detail = "") {
 // ---------------------------------------------------------------------------
 // Stub provider: behaviour per provider is flipped by each test.
 // ---------------------------------------------------------------------------
-const behavior = { or: "ok", gem: "ok", oa: "ok", hf: "ok" };
+const behavior = { or: "ok", gem: "ok", groq: "ok", cere: "ok", oa: "ok", hf: "ok" };
 const seen = {};
 // Every request the stub received, in order — lets a test prove which slugs were
 // *not* tried (retired ones, or a provider whose time box was already spent).
@@ -128,17 +128,23 @@ process.env.SUPABASE_URL = "http://127.0.0.1:1";
 process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-role-key";
 process.env.OPENROUTER_BASE_URL = base + "/or";
 process.env.GEMINI_BASE_URL = base + "/gem";
+process.env.GROQ_BASE_URL = base + "/groq";
+process.env.CEREBRAS_BASE_URL = base + "/cere";
 process.env.OPENAI_BASE_URL = base + "/oa";
 process.env.HF_BASE_URL = base + "/hf";
 delete process.env.OPENROUTER_MODEL;
 delete process.env.GEMINI_MODEL;
+delete process.env.GROQ_MODEL;
+delete process.env.CEREBRAS_MODEL;
 delete process.env.OPENAI_MODEL;
 delete process.env.HF_MODEL;
 
-function setKeys({ or, gem, oa, hf } = {}) {
+function setKeys({ or, gem, groq, cere, oa, hf } = {}) {
   if (or) process.env.OPENROUTER_API_KEY = or; else delete process.env.OPENROUTER_API_KEY;
   delete process.env.OPENROUTER_KEY;
   if (gem) process.env.GEMINI_API_KEY = gem; else delete process.env.GEMINI_API_KEY;
+  if (groq) process.env.GROQ_API_KEY = groq; else delete process.env.GROQ_API_KEY;
+  if (cere) process.env.CEREBRAS_API_KEY = cere; else delete process.env.CEREBRAS_API_KEY;
   if (oa) process.env.OPENAI_API_KEY = oa; else delete process.env.OPENAI_API_KEY;
   if (hf) process.env.HF_API_KEY = hf; else delete process.env.HF_API_KEY;
   delete process.env.HF_API_KEY_WRITERS_FLOW;
@@ -147,6 +153,8 @@ function setKeys({ or, gem, oa, hf } = {}) {
 function resetStub() {
   behavior.or = "ok";
   behavior.gem = "ok";
+  behavior.groq = "ok";
+  behavior.cere = "ok";
   behavior.oa = "ok";
   behavior.hf = "ok";
   retired.clear();
@@ -159,7 +167,7 @@ function resetStub() {
   for (const k of Object.keys(seen)) delete seen[k];
 }
 
-const { ai, getLastAiError, isAiFailureFatal, OPENROUTER_FREE_MODELS, resetRetiredModels, getProviderCooldowns, getRetiredModels } = await import("./blogManager.js");
+const { ai, getLastAiError, isAiFailureFatal, OPENROUTER_FREE_MODELS, GEMINI_MODELS, GROQ_MODELS, CEREBRAS_MODELS, resetRetiredModels, getProviderCooldowns, getRetiredModels, getLastAiProvider } = await import("./blogManager.js");
 
 const PROMPT = "Write a short post about a salary guide.";
 
@@ -226,7 +234,7 @@ await check("gemini recovers the run when paid providers are out of credits", as
   assert(out === "GEM OK", `expected GEM OK, got ${JSON.stringify(out)}`);
   assert(getLastAiError() === null, `lastAiError should be cleared, got ${getLastAiError()}`);
   assert(seen.gem && seen.gem.auth === "Bearer gem-key", "gemini call missing or bad bearer token");
-  assert(seen.gem.body.model === "gemini-flash-latest", `unexpected default model: ${seen.gem.body.model}`);
+  assert(seen.gem.body.model === GEMINI_MODELS[0], `unexpected default model: ${seen.gem.body.model} — expected the light alias ${GEMINI_MODELS[0]}`);
   return "402 x2 -> gemini (free tier) served content";
 });
 
@@ -236,7 +244,11 @@ await check("no keys configured is self-describing", async () => {
   const out = await ai(PROMPT);
   const err = getLastAiError() || "";
   assert(out === null, `expected null, got ${JSON.stringify(out)}`);
-  assert(/OPENROUTER_API_KEY/.test(err) && /GEMINI_API_KEY/.test(err) && /HF_API_KEY/.test(err), `unhelpful error: ${err}`);
+  assert(
+    /OPENROUTER_API_KEY/.test(err) && /GEMINI_API_KEY/.test(err) && /GROQ_API_KEY/.test(err) &&
+      /CEREBRAS_API_KEY/.test(err) && /HF_API_KEY/.test(err),
+    `unhelpful error: ${err}`
+  );
   return err.slice(0, 90) + "…";
 });
 
@@ -599,6 +611,69 @@ await check("a known-dead tier answers immediately instead of holding the button
   assert(/cooling down/i.test(err), `error should name the cooldowns, got: ${err}`);
   assert(isAiFailureFatal() === true, "a permanently dead tier must still abort the journey");
   return `${elapsed}ms and zero requests against a 45s Review budget`;
+});
+
+// Live 2026-10-23 10:40 (a tenant clicking Review with a *healthy* key): Gemini's
+// daily quota had reset — no 429 anywhere in the log — but `gemini-flash-latest`
+// sent zero bytes for its whole 15s slice, so the click still answered
+// "AI tier unavailable — copy unchanged". A single alias was a single point of
+// failure; the light alias now leads and a throttled lite slug advances to the
+// full one instead of ending the run.
+await check("gemini falls from the light alias to the full alias", async () => {
+  resetStub();
+  setKeys({ gem: "gem-key" });
+  throttled.add(GEMINI_MODELS[0]);
+  const out = await ai(PROMPT);
+  assert(out === "GEM OK", `expected GEM OK, got ${JSON.stringify(out)}`);
+  assert(
+    seen.gem.body.model === GEMINI_MODELS[1],
+    `expected ${GEMINI_MODELS[1]}, got ${seen.gem && seen.gem.body.model}`
+  );
+  return `${GEMINI_MODELS[0]} 429 -> ${GEMINI_MODELS[1]} served`;
+});
+
+await check("GEMINI_MODEL pins a model without hiding the alias list", async () => {
+  resetStub();
+  setKeys({ gem: "gem-key" });
+  process.env.GEMINI_MODEL = "gemini-3.8-flash";
+  try {
+    await ai(PROMPT);
+    assert(seen.gem.body.model === "gemini-3.8-flash", `got ${seen.gem.body.model}`);
+    return "pin tried first";
+  } finally {
+    delete process.env.GEMINI_MODEL;
+  }
+});
+
+// The point of adding providers: a dry account must be a detour, not an outage.
+// Live 2026-10-23 the tier held four keys and could still only ever dial one
+// Gemini alias — HF `402`, OpenRouter's free pool `429`/`404`, Gemini silent.
+await check("groq serves when openrouter and gemini are out", async () => {
+  resetStub();
+  setKeys({ or: "or-key", gem: "gem-key", groq: "groq-key" });
+  behavior.or = "402";
+  behavior.gem = "429"; // daily quota spent -> cools down, is not re-asked
+  const out = await ai(PROMPT);
+  assert(out === "GROQ OK", `expected GROQ OK, got ${JSON.stringify(out)}`);
+  assert(seen.groq && seen.groq.auth === "Bearer groq-key", `groq call missing or bad bearer: ${seen.groq && seen.groq.auth}`);
+  assert(seen.groq.body.model === GROQ_MODELS[0], `groq should lead with ${GROQ_MODELS[0]}, got ${seen.groq.body.model}`);
+  assert(getLastAiProvider() === "groq", `lastAiProvider should name who served, got ${getLastAiProvider()}`);
+  return "or 402 + gem quota 429 -> groq";
+});
+
+await check("cerebras is the backstop when every earlier provider is dry", async () => {
+  resetStub();
+  setKeys({ or: "or-key", gem: "gem-key", groq: "groq-key", cere: "cere-key", hf: "hf-key" });
+  behavior.or = "402";
+  behavior.gem = "402";
+  behavior.groq = "402";
+  behavior.hf = "402";
+  const out = await ai(PROMPT);
+  assert(out === "CERE OK", `expected CERE OK, got ${JSON.stringify(out)}`);
+  assert(seen.cere && seen.cere.auth === "Bearer cere-key", "cerebras key not forwarded");
+  assert(seen.cere.body.model === CEREBRAS_MODELS[0], `cerebras should lead with ${CEREBRAS_MODELS[0]}, got ${seen.cere.body.model}`);
+  assert(isAiFailureFatal() === false, "one live provider must keep the journey alive");
+  return "three 402s -> cerebras";
 });
 
 server.close();

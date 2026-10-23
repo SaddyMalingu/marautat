@@ -13148,7 +13148,7 @@ async function generateReply(
   const orKey = process.env.OPENROUTER_API_KEY || process.env.OPENROUTER_KEY;
   const hfKey = process.env.HF_API_KEY || process.env.HF_API_KEY_WRITERS_FLOW;
   log(
-    `LLM providers: openai=${Boolean(creds.aiApiKey || process.env.OPENAI_API_KEY)} openrouter=${Boolean(orKey)} gemini=${Boolean(process.env.GEMINI_API_KEY)} hf=${Boolean(hfKey)}`,
+    `LLM providers: openai=${Boolean(creds.aiApiKey || process.env.OPENAI_API_KEY)} openrouter=${Boolean(orKey)} gemini=${Boolean(process.env.GEMINI_API_KEY)} groq=${Boolean(process.env.GROQ_API_KEY)} cerebras=${Boolean(process.env.CEREBRAS_API_KEY)} hf=${Boolean(hfKey)}`,
     "SYSTEM"
   );
 
@@ -13265,7 +13265,7 @@ async function generateReply(
   // cooldowns, the silent-slug retirement and the shared deadline, so the reply
   // path borrows that walk instead of keeping a second, stale one.
   try {
-    log("LLM path: platform chain (openrouter → gemini → openai → hf)", "SYSTEM");
+    log("LLM path: platform chain (openrouter → gemini → groq → cerebras → openai → hf)", "SYSTEM");
     const { ai, getLastAiProvider } = await import("./scripts/blogManager.js");
     const start = Date.now();
     const budgetMs = Number(
