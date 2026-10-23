@@ -149,7 +149,7 @@ function resetStub() {
   for (const k of Object.keys(seen)) delete seen[k];
 }
 
-const { ai, getLastAiError, isAiFailureFatal, OPENROUTER_FREE_MODELS, resetRetiredModels } = await import("./blogManager.js");
+const { ai, getLastAiError, isAiFailureFatal, OPENROUTER_FREE_MODELS, resetRetiredModels, getProviderCooldowns } = await import("./blogManager.js");
 
 const PROMPT = "Write a short post about a salary guide.";
 
@@ -486,6 +486,73 @@ await check("the last-resort router slug is time-boxed", async () => {
   } finally {
     delete process.env.BLOG_ROUTER_MODEL_CAP_MS;
   }
+});
+
+// Live 2026-10-23 04:24-04:27 (all three keys in the live env, two of them dead):
+// HF answered 402 "no remaining credits" on every walk and Gemini answered 429
+// "You exceeded your current quota" on every walk, yet each of the nine angles,
+// every Share and every Review paid a fresh round trip to rediscover it. A key
+// that cannot answer must stop being dialled, and must stop claiming a slice of
+// the deadline that a healthy key could use.
+await check("an out-of-credits key is not dialled again on the next angle", async () => {
+  resetStub();
+  setKeys({ or: "or-key", hf: "hf-key" });
+  behavior.or = "500";
+  behavior.hf = "402";
+  const first = await ai(PROMPT);
+  const second = await ai(PROMPT);
+  const err = getLastAiError() || "";
+  assert(first === null && second === null, `expected both angles to fail, got ${first}/${second}`);
+  const hfCalls = calls.filter((c) => c.provider === "hf").length;
+  assert(hfCalls === 1, `expected hf to be dialled once across two angles, got ${hfCalls}`);
+  assert(/cooling down/i.test(err), `error should say the key is cooling down, got: ${err}`);
+  const cooled = getProviderCooldowns().map((c) => c.name);
+  assert(cooled.includes("hf"), `hf should be out of rotation, cooled: ${cooled.join(",")}`);
+  return `hf 402 dialled ${hfCalls}x across two angles`;
+});
+
+await check("a cooling provider stops claiming a share of the deadline", async () => {
+  resetStub();
+  setKeys({ or: "or-key", gem: "gem-key" });
+  // Gemini's free-tier quota shape: OpenRouter is the one that is done for the day.
+  behavior.or = "429";
+  const first = await ai(PROMPT, Date.now() + 3000);
+  const orAfterFirst = calls.filter((c) => c.provider === "or").length;
+  const second = await ai(PROMPT, Date.now() + 3000);
+  const orAfterSecond = calls.filter((c) => c.provider === "or").length;
+  assert(first === "GEM OK", `expected the live key to serve angle 1, got ${JSON.stringify(first)}`);
+  assert(second === "GEM OK", `expected the live key to serve angle 2, got ${JSON.stringify(second)}`);
+  assert(orAfterFirst === 1, `expected the quota-dead key to be asked once, not once per slug, got ${orAfterFirst}`);
+  assert(
+    orAfterSecond === orAfterFirst,
+    `openrouter was dialled again after cooling down (${orAfterFirst} -> ${orAfterSecond})`
+  );
+  const orCooldown = getProviderCooldowns().find((c) => c.name === "openrouter");
+  assert(orCooldown && !orCooldown.permanent, "a quota 429 must cool down temporarily, not retire the key");
+  return `openrouter ${orAfterFirst} calls on angle 1, ${orAfterSecond - orAfterFirst} on angle 2`;
+});
+
+// The tenant-facing cost of the dead tier was latency: `POST …/review 200 - 31336ms`
+// to end in "AI tier unavailable — copy unchanged". Once every key is known dead,
+// the walk must answer immediately so Share and Review stay instant.
+await check("a known-dead tier answers immediately instead of holding the button", async () => {
+  resetStub();
+  setKeys({ or: "or-key", gem: "gem-key", hf: "hf-key" });
+  behavior.or = "402";
+  behavior.gem = "402";
+  behavior.hf = "402";
+  const first = await ai(PROMPT);
+  const callsAfterFirst = calls.length;
+  const started = Date.now();
+  const second = await ai(PROMPT, Date.now() + 45000);
+  const elapsed = Date.now() - started;
+  const err = getLastAiError() || "";
+  assert(first === null && second === null, `expected null both times, got ${first}/${second}`);
+  assert(calls.length === callsAfterFirst, `expected zero requests on the second call, got ${calls.length - callsAfterFirst}`);
+  assert(elapsed < 250, `expected an instant answer, took ${elapsed}ms`);
+  assert(/cooling down/i.test(err), `error should name the cooldowns, got: ${err}`);
+  assert(isAiFailureFatal() === true, "a permanently dead tier must still abort the journey");
+  return `${elapsed}ms and zero requests against a 45s Review budget`;
 });
 
 server.close();

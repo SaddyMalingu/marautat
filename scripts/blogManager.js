@@ -87,8 +87,73 @@ export const OPENROUTER_FREE_MODELS = [
 // re-probes the whole list.
 const retiredModels = new Set();
 export function getRetiredModels() { return Array.from(retiredModels); }
+
+// A *key* can die for reasons that outlive the angle. Live 2026-10-23 04:24-04:27:
+// HF answered 402 "You have no remaining credits" on every call and Gemini's free
+// tier answered 429 "You exceeded your current quota" on every call, yet each walk
+// — nine angles, every Share, every Review — paid a fresh round trip to rediscover
+// it. `POST …/review 200 - 31336ms` ended in "AI tier unavailable — copy unchanged".
+// Worse, the fair share above counted those dead keys as providers that could still
+// answer, so the one key that might work was left with a third of the deadline
+// (Share: 15s/3 = 5s slices; Review: 45s/3 = 15s slices).
+//   auth/billing (401/402/403, "no remaining credits") -> out for this process
+//   daily free-tier quota (429 "exceeded your current quota") -> out for a while
+// A plain 429 ("rate limit", "temporarily rate-limited upstream") is per-minute and
+// stays eligible: that one really does clear, and the slug walk below handles it.
+const providerCooldowns = new Map();
+export function getProviderCooldowns() {
+  return Array.from(providerCooldowns.entries()).map(function (entry) {
+    return { name: entry[0], reason: entry[1].reason, permanent: !!entry[1].permanent };
+  });
+}
 // Exposed for the offline suite: process-level state must not leak between cases.
-export function resetRetiredModels() { retiredModels.clear(); }
+export function resetRetiredModels() { retiredModels.clear(); providerCooldowns.clear(); }
+
+// Gemini's free tier resets daily, but a 429 can also be a per-minute limiter; five
+// minutes stops a nine-angle run from re-probing without hiding a fast recovery.
+// 0 disables the quota cooldown (every 429 is retried on the next angle).
+function quotaCooldownMs() {
+  const ms = Number(process.env.BLOG_PROVIDER_QUOTA_COOLDOWN_MS == null ? 300000 : process.env.BLOG_PROVIDER_QUOTA_COOLDOWN_MS);
+  return ms > 0 ? ms : 0;
+}
+
+// 0 = retry this provider on the next angle; Infinity = not again this process.
+function providerCooldownMs(status, text) {
+  const probe = String(text || '') + ' ' + String(status || '');
+  if (status === 401 || status === 403) return Infinity;
+  if (status === 402 || /no remaining credits|insufficient.*(credit|balance)|invalid.*api[_ ]?key/i.test(probe)) return Infinity;
+  if (/exceeded your current quota|check your plan and billing|daily limit/i.test(probe)) return quotaCooldownMs();
+  return 0;
+}
+
+function coolDownProvider(name, status, text) {
+  const ms = providerCooldownMs(status, text);
+  if (!ms) return false;
+  const existing = providerCooldowns.get(name);
+  if (existing && existing.permanent) return true;
+  const permanent = ms === Infinity;
+  providerCooldowns.set(name, {
+    until: permanent ? Infinity : Date.now() + ms,
+    permanent,
+    reason: permanent ? String(status || 'auth') + ' needs an account fix, not a retry' : 'quota ' + String(status || ''),
+  });
+  // Only on the transition: the walk asks once per slug during the same angle and
+  // seven identical "cooling down" lines per angle is just noise.
+  if (!existing) {
+    console.warn('[AI] ' + name + (permanent
+      ? ' retired for this process (' + (status || 'auth') + ') — no point re-probing every angle'
+      : ' cooling down for ' + Math.round(ms / 1000) + 's (' + (status || 'quota') + ') — the other keys keep their full share'));
+  }
+  return true;
+}
+
+// 0 when the provider may be dialled now, else the moment it may be again.
+function coolingUntil(p) {
+  const c = providerCooldowns.get(p.name);
+  if (!c) return 0;
+  if (c.until !== Infinity && Date.now() >= c.until) { providerCooldowns.delete(p.name); return 0; }
+  return c.until;
+}
 
 // A router slug carries no upstream latency promise: `openrouter/free` picks a
 // model per request, and it held the *whole* per-attempt timeout twice on
@@ -204,10 +269,35 @@ async function ai(prompt, deadline) {
   // provider's chance: each keyed provider now gets an equal slice of what is
   // left, and time it does not use rolls into the following slice.
   const keyedProviders = AI_PROVIDERS.filter(function (q) { return !!q.key(); });
-  let providersLeft = keyedProviders.length;
+  // Only providers that could still answer claim a slice: a key that is out of
+  // credits or out of daily quota must not shrink a healthy key's share. Live
+  // 2026-10-23, three keyed providers and one alive meant Share got 5s slices and
+  // Review 15s slices — the live key was cut mid-call while two corpses held the
+  // rest of the deadline.
+  let providersLeft = keyedProviders.filter(function (q) { return !coolingUntil(q); }).length;
+  if (keyedProviders.length && !providersLeft) {
+    // Nothing left to walk. Answer now instead of holding a Share/Review button
+    // (or an angle) for 16-31s to rediscover a tier that is already known dead.
+    const cooling = getProviderCooldowns();
+    lastAiFatal = cooling.every(function (c) { return c.permanent; });
+    lastAiError = 'every keyed provider is cooling down — ' +
+      cooling.map(function (c) { return c.name + ' (' + c.reason + ')'; }).join(', ');
+    console.error('[AI] ' + lastAiError + (lastAiFatal ? ' (fatal)' : ''));
+    return null;
+  }
   for (const p of AI_PROVIDERS) {
     const key = p.key();
     if (!key) continue;
+    const until = coolingUntil(p);
+    if (until) {
+      const cool = providerCooldowns.get(p.name);
+      failures.push({
+        name: p.name, status: 0, kind: cool.permanent ? 'fatal' : 'transient',
+        text: 'cooling down — ' + cool.reason +
+          (until === Infinity ? ' (this process)' : ' (' + Math.ceil((until - Date.now()) / 1000) + 's left)'),
+      });
+      continue;
+    }
     if (deadline && Date.now() >= deadline) {
       failures.push({ name: p.name, status: 0, text: 'skipped — run budget spent', kind: 'transient' });
       continue;
@@ -280,6 +370,15 @@ async function ai(prompt, deadline) {
         const body = raw ? (typeof raw === 'string' ? raw : JSON.stringify(raw)) : '';
         const text = (body || e.message || '').slice(0, 240);
         failure = { name: p.name, status: status || 0, text, kind: classifyFailure(status, text) };
+        // A key that says "no remaining credits" or "exceeded your current quota"
+        // will say the same on the next angle, and until it is skipped it keeps
+        // claiming a third of somebody else's deadline.
+        const cooled = coolDownProvider(p.name, status, text);
+        // Every slug on one key reads the same billing/quota counter, so once the
+        // key is out the rest of the list is dead too: don't spend the provider's
+        // whole share proving it seven times (live 2026-10-23: 6.9s of naps and
+        // seven 429s per angle, on three dead keys, per angle, forever).
+        if (cooled) break;
         // A 404 is deterministic for that slug, so remember it for the process
         // instead of re-paying the round-trip on every angle of every run.
         if (status === 404 && !retiredModels.has(models[mi])) {
@@ -295,7 +394,15 @@ async function ai(prompt, deadline) {
           const step = 400 * (mi + 1);
           console.warn('[AI] ' + p.name + ' model ' + models[mi] + ' unusable (' + (status || 'err') +
             ') — trying ' + models[mi + 1]);
-          if (status === 429) await sleep(Math.min(step, 1500));
+          if (status === 429) {
+            // Pause so the retry does not hit the same limiter, but never nap away
+            // the last second of the slice: live 2026-10-23 the 400-1500ms naps
+            // (6.9s across seven slugs) ate most of a 5s Share slice before the
+            // walk was halfway down the list.
+            const nap = Math.min(step, 800);
+            const left = limit ? limit - Date.now() : Infinity;
+            if (left > nap + 400) await sleep(nap);
+          }
           failure = null;
           continue;
         }

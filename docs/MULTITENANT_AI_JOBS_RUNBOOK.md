@@ -257,6 +257,39 @@ next provider's share"* (3 s deadline, stalled OpenRouter + healthy Gemini must
 return Gemini's content in ~1.5 s), *"a 404 slug is probed once per process, not
 once per angle"*, and *"the last-resort router slug is time-boxed"*.
 
+**Why a dead key still cost 16-31 s per Share/Review (fixed after `a7eef63`).** The
+fair share above decided *who* owns the deadline, not *whether* a provider had
+earned one. Live 2026-10-23 04:24-04:27 every keyed provider was dead in a
+different way — OpenRouter's free slugs `429/404`, `gemini-flash-latest` `429 You
+exceeded your current quota`, `hf` `402 You have no remaining credits` — and each
+walk re-probed all three: `POST …/posts/<slug>/review 200 - 31336ms`, then another
+at `16896ms`, both ending in *AI tier unavailable — copy unchanged*. Three fixes:
+
+1. **A dead key is skipped, not re-probed.** Auth/billing (`401/402/403`, "no
+   remaining credits") retires the provider for the life of the process
+   (`[AI] hf retired for this process (402) — no point re-probing every angle`); a
+   daily-quota `429` ("exceeded your current quota", "plan and billing") puts it on
+   a `BLOG_PROVIDER_QUOTA_COOLDOWN_MS` cooldown (default 5 min). A plain `429`
+   ("temporarily rate-limited upstream") stays eligible — that one clears in
+   seconds and the slug walk already handles it.
+2. **A cooling key stops claiming a share.** `remaining / providersLeft` counted
+   corpses as candidates, so a healthy key was handed one third of the deadline.
+   Only providers that can still answer are counted now, and time they do not use
+   rolls to the next one.
+3. **One key = one quota.** A billing/quota answer stops that provider's slug walk
+   instead of burning its whole share on the remaining six slugs — the `429` naps
+   alone were 6.9 s of a 5 s Share slice. With nothing eligible the walk answers
+   immediately: `[AI] every keyed provider is cooling down — openrouter (402 needs
+   an account fix, not a retry), gemini (quota 429), hf (402 …)` in ~1 ms.
+
+Regression tests in `test:ai-providers`: *"an out-of-credits key is not dialled
+again on the next angle"*, *"a cooling provider stops claiming a share of the
+deadline"* (quota-dead OpenRouter asked **once**, healthy Gemini serves both
+angles), and *"a known-dead tier answers immediately instead of holding the
+button"* (zero requests, < 250 ms against a 45 s Review budget). None of this
+repairs a dead key — it only stops paying for the answer. The fix per status is in
+the table below.
+
 Exit `0` = no failures, `1` = at least one, `2` = missing config. A stale
 `build identity` FAIL means the host is serving an older commit — redeploy from
 the Render dashboard (this repo has no CI deploy job).
@@ -304,6 +337,7 @@ Relevant env (all optional except one key):
 | `BLOG_RUN_BUDGET_MS` | `90000` — hard wall-clock ceiling for the whole AI walk, counted from the first angle and applied to **every** AI call (compose, duplicate retry, review). When it is spent the remaining angles are composed from the offer data, so a run finishes in roughly this long with all nine pages. Live 2026-10-22: `1 of 9 pages in 6 minutes` while free slugs answered `429` and the stall burned the old 120 s per-attempt timeout; later that day a run that answered **one** angle out of nine still held the request `166 s` (`mode=mixed`, 8 pages composed anyway) because the ceiling was only applied after a miss. Fixed on `589d7d0` the same day: the deadline now applies to every call, and the same nine-angle run that previously took `166 s` returned in **`82.8 s`** with **9/9** unique pages (8 composed from the offer data, `mode=mixed`) — the verifier's **8c** check fails the suite if a run ever exceeds 120 s again. The ceiling is enforced *inside* each call by an `AbortController`, not only between calls (see *Why a run can still overshoot the budget…* above), so an overshoot is at most the page being saved, never a whole provider timeout. Raise the budget (e.g. `240000`) on a funded key where AI copy matters more than latency. `0` disables the ceiling |
 | `BLOG_ANGLE_BUDGET_MS` | `45000` — ceiling for **one angle's** provider walk, split equally between the providers that have a key (see *Why a provider that never answered…*). A single angle tries up to seven candidate model slugs on one key: live 2026-10-22 one angle cost 37 s (5 models, one stalled 23 s before returning `429`). Effective per-call deadline is `min(now + this, run deadline)`, and each call in an angle (compose, duplicate retry, review) gets its own slice. Set `0` to cap only per attempt. The review pass is skipped once 60 % of the run budget is spent, so the tail of the budget buys AI-written pages rather than polish on page three |
 | `BLOG_ROUTER_MODEL_CAP_MS` | `8000` — time box for the `openrouter/free` router slug, the only candidate with no upstream latency promise (it held a full 30 s attempt on both 2026-10-22 incidents). Every other slug is bounded by `BLOG_AI_TIMEOUT_MS` and the provider's share of the deadline. `0` disables the extra cap |
+| `BLOG_PROVIDER_QUOTA_COOLDOWN_MS` | `300000` — how long a provider that answered a **daily-quota** `429` ("You exceeded your current quota", "check your plan and billing") is skipped. Live 2026-10-23: nine angles plus every Share and Review each paid a fresh `429` to Gemini, and each dead key still claimed a third of the deadline. `0` re-probes it on the next angle |
 | `GEMINI_API_KEY` | — (free tier, no card) |
 | `GEMINI_MODEL` | `gemini-flash-latest` (pin `gemini-3.8-flash` to freeze) |
 | `OPENAI_API_KEY` / `OPENAI_MODEL` | — / `gpt-4o-mini` |
@@ -313,8 +347,9 @@ Relevant env (all optional except one key):
 `npm run test:ai-providers` proves the whole chain offline against a stub
 server — no keys, no network, no DB. It reproduces the 402 incident and the
 2026-10-22 live failures, and verifies fallback order, empty-content handling,
-model override, retired-slug fallthrough, throttled-slug (`429`) fallthrough and
-the 402-still-aborts rule (17 checks), plus the no-key message.
+model override, retired-slug fallthrough, throttled-slug (`429`) fallthrough, the
+402-still-aborts rule, provider cooldowns and the fast-fail when every key is out
+of rotation (25 checks), plus the no-key message.
 
 **Free-tier budget.** One journey is 9 sequential generation calls plus one
 review call per post, so a handful of test runs exhausts a small free tier — a
