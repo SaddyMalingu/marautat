@@ -342,7 +342,7 @@ string is the diagnosis — you do not need host logs.
 | `no AI provider key configured` | no key at all | set one of the three keys |
 
 Providers are tried in order — **OpenRouter → Gemini → Groq → Cerebras →
-OpenAI → HuggingFace** — so any single key is enough. The journey only aborts
+Mistral → OpenAI → HuggingFace** — so any single key is enough. The journey only aborts
 when **every** provider it could try failed on auth/billing (`401/402/403`, "no
 remaining credits"). One exhausted provider next to a healthy one, or a `429` /
 `RESOURCE_EXHAUSTED` quota reply, lets the remaining angles continue — otherwise
@@ -410,7 +410,7 @@ Relevant env (all optional except one key):
 
 | Var | Default |
 | --- | --- |
-| `OPENROUTER_API_KEY` | — (preferred; alias `OPENROUTER_KEY` accepted) |
+| `OPENROUTER_API_KEY` | — (preferred; aliases `OPENROUTER_KEY`, `OPEN_ROUTER_API_KEY`) |
 | `OPENROUTER_MODEL` | unset → tries `google/gemma-4-31b-it:free`, `minimax/minimax-m3.1-flash:free`, `nvidia/nemotron-3-super-120b-a12b:free`, `google/gemma-4-26b-a4b-it:free`, `nvidia/nemotron-3.5-lightning:free`, `poolside/laguna-s-2.1:free`, `openrouter/free` in order. A pin is tried **first** and the free list still follows it, so a retired pin cannot starve the writer (2026-10-22: the host was pinned to `llama-3.1-8b-instruct:free`, OpenRouter retired it, and every angle 404'd while three healthy free models sat unused). Retired (`404`) and throttled (`429`) slugs advance to the next model; only `401/402/403` stops the list |
 | `BLOG_ANGLE_DELAY_MS` | `1200` — pause between angles so nine sequential calls stay inside per-minute free limits; set `0` on a paid key |
 | `BLOG_FALLBACK_MODE` | `auto` — when an angle gets nothing from every provider, compose it from the offer's own fields (`public/blog/<slug>.html` still gets a full page). `off` restores the loud 502 for diagnosis |
@@ -424,21 +424,46 @@ Relevant env (all optional except one key):
 | `WHATSAPP_AI_BUDGET_MS` | `12000` — wall-clock ceiling for one WhatsApp reply's walk through the same provider chain (`scripts/blogManager.js`, `ai(prompt, deadline, messages)`). The reply path used to keep its own copy of the provider list and it drifted: it read `OPENROUTER_KEY` (the host sets `OPENROUTER_API_KEY`), posted to `api.openrouter.ai` (no such host — `getaddrinfo ENOTFOUND`), pinned `meta-llama/llama-3.3-70b-instruct:free` (retired), and never tried Gemini at all, so a live Gemini key sat unused while the bot answered "Hello" from the static welcome (live 2026-10-23 06:36). One chain now serves writers, Share, Review and replies; `0`/unset keeps the 12 s default |
 | `GEMINI_API_KEY` | — (free tier, no card) |
 | `GEMINI_MODEL` | unset → tries `gemini-flash-lite-latest` then `gemini-flash-latest`. A pin is tried **first** and the alias list still follows it (same rule as `OPENROUTER_MODEL`). Live 2026-10-23 10:40: the daily quota had reset and no request `429`'d, yet `gemini-flash-latest` sent **zero bytes for its whole 15 s slice** and the click still ended "AI tier unavailable — copy unchanged" — one alias was a single point of failure, so the light alias now leads |
-| `GROQ_API_KEY` / `GROQ_MODEL` | — / unset → `llama-3.3-70b-versatile`, `llama-3.1-8b-instant`, `openai/gpt-oss-20b`. Free tier, no card (https://console.groq.com/keys). Fastest first token in the chain, and it fails *fast*: a throttled key answers `429` in ~100 ms instead of eating the slice |
+| `GROQ_API_KEY` / `GROQ_MODEL` | — / unset → `llama-3.3-70b-versatile`, `llama-3.1-8b-instant`, `openai/gpt-oss-20b`. Free tier, no card (https://console.groq.com/keys). Fastest first token in the chain, and it fails *fast*: a throttled key answers `429` in ~100 ms instead of eating the slice. `GROK_API_KEY` is accepted as an alias (see *The variable name is part of the wiring*) |
 | `CEREBRAS_API_KEY` / `CEREBRAS_MODEL` | — / unset → `llama3.1-8b`, `gpt-oss-120b`. Free tier, no card (https://cloud.cerebras.ai). A different company with a different quota, so a Gemini *and* Groq dry spell still leaves one answer |
+| `MISTRAL_API_KEY` / `MISTRAL_MODEL` | — / unset → `mistral-small-latest`, `open-mistral-nemo`, `mistral-large-latest`. Free "experiment" tier (https://console.mistral.ai), EU-hosted, OpenAI-compatible. Last free step before paid OpenAI; alias `MISTRALAI_API_KEY` accepted |
 | `OPENAI_API_KEY` / `OPENAI_MODEL` | — / `gpt-4o-mini` |
 | `HF_API_KEY` / `HF_MODEL` | — / `meta-llama/Llama-3.1-8B-Instruct:novita`. **Not a free tier in practice**: a valid key on an unfunded account answers `402 "You have no remaining credits"` (live 2026-10-23) and is retired for the process. `HF_API_KEY_WRITERS_FLOW` is an *alias name* for the same credential, not a second account — if your two HF keys are different accounts, unset the dry one so the alias is actually read (the walk takes the first non-empty var) |
 | `*_BASE_URL` | provider default (used by the offline test) |
+
+**The variable name is part of the wiring.** On 2026-10-23 this host was
+provisioned with `GROK_API_KEY` (for Groq), `OPEN_ROUTER_API_KEY` (for OpenRouter)
+and `MISTRAL_API_KEY`. All three keys were valid; two of the names were read by
+nothing, so two tiers were invisible and the only symptom was a boot line saying
+`groq=false openrouter=false` while the Render dashboard showed the variable
+sitting there. A key that exists and is never read is the same outage as no key —
+the 2026-10-22 incident hid behind exactly that kind of false signal (`hf=true`
+on a `402` account). Two answers are now in the code:
+
+1. **Canonical name first, dashboard spellings accepted** — `OPENROUTER_API_KEY`
+   → `OPENROUTER_KEY` → `OPEN_ROUTER_API_KEY`, `GROQ_API_KEY` → `GROK_API_KEY`,
+   `MISTRAL_API_KEY` → `MISTRALAI_API_KEY`, `HF_API_KEY` →
+   `HF_API_KEY_WRITERS_FLOW` (one `keyFrom()` helper in `scripts/blogManager.js`,
+   so the boot log, the probe and the walk cannot disagree).
+2. **The probe prints the var it read** — `npm run check:ai-key` shows
+   `Groq  gsk_…only (26 chars) via GROK_API_KEY`, which is how you see a
+   misspelling in one line instead of guessing why a saved key does nothing.
+
+Canonical names are still the ones to use on a new service, and `render.yaml`
+should carry them. Any *other* name (`OPENROUTER_KEY_ID`, `GROQ_KEY`, …) is still
+a key nobody reads.
 
 `npm run test:ai-providers` proves the whole chain offline against a stub
 server — no keys, no network, no DB. It reproduces the 402 incident and the
 2026-10-22 live failures, and verifies fallback order, empty-content handling,
 model override, retired-slug fallthrough, throttled-slug (`429`) fallthrough, the
 402-still-aborts rule, provider cooldowns, silent-slug retirement and the fast-fail
-when every key is out of rotation (**30 checks**), plus the no-key message — the
-newest four cover Gemini's light→full alias fallback, the `GEMINI_MODEL` pin,
-Groq serving when OpenRouter+Gemini are out, and Cerebras as the backstop when
-three earlier keys are `402`.
+when every key is out of rotation (**33 checks**), plus the no-key message — the
+newest seven cover Gemini's light→full alias fallback, the `GEMINI_MODEL` pin,
+Groq serving when OpenRouter+Gemini are out, Cerebras as the backstop when three
+earlier keys are `402`, the two dashboard spellings (`GROK_API_KEY`,
+`OPEN_ROUTER_API_KEY`) reaching their provider, and Mistral answering after four
+`402`s.
 
 **Which free tiers to wire (and why this order).** Every provider below speaks
 the same OpenAI-compatible shape, so support is a key + a URL + a model list in
@@ -448,12 +473,12 @@ a *key that answers* exists in more than one company.
 
 | Provider | Get a key | Free tier | Why it is in this chain | Watch out |
 | --- | --- | --- | --- | --- |
-| Groq | https://console.groq.com/keys | rate-limited, no card | fastest first token (LPU) and ~100 ms `429`s, so a dry key costs a fraction of a second instead of a slice | per-minute caps: a 9-angle run can hit one, which is what the slug walk absorbs |
-| Google AI Studio (Gemini) | https://aistudio.google.com/apikey | daily quota, no card | the zero-spend workhorse; two flash aliases | the quota belongs to the Cloud **project**, resets midnight PT; the heavy alias can send zero bytes for 15 s |
-| Cerebras | https://cloud.cerebras.ai | small daily quota, no card | a third, independent pool with a different speed profile | smallest free quota of the three — backstop, not workhorse |
-| OpenRouter `:free` slugs | https://openrouter.ai/keys | ~50 req/day, ~1000/day after a one-time $10 | widest model menu, and `openrouter/free` routes to whatever is healthy | slugs get retired (`404`) and throttled (`429`) with no notice — never the only key (live 2026-10-23: 2×429 + 2×404 in one walk) |
+| Groq **(wired)** | https://console.groq.com/keys | rate-limited, no card | fastest first token (LPU) and ~100 ms `429`s, so a dry key costs a fraction of a second instead of a slice | per-minute caps: a 9-angle run can hit one, which is what the slug walk absorbs |
+| Google AI Studio (Gemini) **(wired)** | https://aistudio.google.com/apikey | daily quota, no card | the zero-spend workhorse; two flash aliases | the quota belongs to the Cloud **project**, resets midnight PT; the heavy alias can send zero bytes for 15 s |
+| Cerebras **(wired)** | https://cloud.cerebras.ai | small daily quota, no card | a third, independent pool with a different speed profile | smallest free quota of the three — backstop, not workhorse |
+| Mistral La Plateforme **(wired)** | https://console.mistral.ai | rate-limited experiment tier | EU-hosted, OpenAI-compatible, a fourth independent company | free tier is opt-in and rate-limited; `mistral-large-latest` is slow |
+| OpenRouter `:free` slugs **(wired)** | https://openrouter.ai/keys | ~50 req/day, ~1000/day after a one-time $10 | widest model menu, and `openrouter/free` routes to whatever is healthy | slugs get retired (`404`) and throttled (`429`) with no notice — never the only key (live 2026-10-23: 2×429 + 2×404 in one walk) |
 | GitHub Models | https://github.com/settings/tokens (PAT) | per-model request caps with a GitHub account | GPT-class copy on a free tier, OpenAI-compatible endpoint | PAT, not an API key; per-model caps are low |
-| Mistral La Plateforme | https://console.mistral.ai | rate-limited experiment tier | EU-hosted, OpenAI-compatible | free tier is opt-in and rate-limited |
 | Cloudflare Workers AI | https://dash.cloudflare.com | daily free "neurons" | one more independent pool | **not** OpenAI-compatible — needs an adapter, so it is *not* a drop-in like the rest |
 | Together AI | https://api.together.ai | small starter allowance | many open models | not a durable free tier; it becomes paid |
 

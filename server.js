@@ -13145,10 +13145,16 @@ async function generateReply(
   // and both spellings of the HuggingFace key. Until 2026-10-23 this line tested
   // OPENROUTER_KEY alone while the host set OPENROUTER_API_KEY, so the boot log
   // and the reply path both reported a key as missing that was right there.
-  const orKey = process.env.OPENROUTER_API_KEY || process.env.OPENROUTER_KEY;
+  // 2026-10-23: the render.yaml for this host was given `GROK_API_KEY` and
+  // `OPEN_ROUTER_API_KEY` — valid keys under spellings nothing read. The canonical
+  // name leads; the spellings that actually arrive in the dashboard still count,
+  // because the only other symptom is a tier that silently stays missing.
+  const orKey = process.env.OPENROUTER_API_KEY || process.env.OPENROUTER_KEY || process.env.OPEN_ROUTER_API_KEY;
   const hfKey = process.env.HF_API_KEY || process.env.HF_API_KEY_WRITERS_FLOW;
+  const groqKey = process.env.GROQ_API_KEY || process.env.GROK_API_KEY;
+  const mistralKey = process.env.MISTRAL_API_KEY || process.env.MISTRALAI_API_KEY;
   log(
-    `LLM providers: openai=${Boolean(creds.aiApiKey || process.env.OPENAI_API_KEY)} openrouter=${Boolean(orKey)} gemini=${Boolean(process.env.GEMINI_API_KEY)} groq=${Boolean(process.env.GROQ_API_KEY)} cerebras=${Boolean(process.env.CEREBRAS_API_KEY)} hf=${Boolean(hfKey)}`,
+    `LLM providers: openai=${Boolean(creds.aiApiKey || process.env.OPENAI_API_KEY)} openrouter=${Boolean(orKey)} gemini=${Boolean(process.env.GEMINI_API_KEY)} groq=${Boolean(groqKey)} cerebras=${Boolean(process.env.CEREBRAS_API_KEY)} mistral=${Boolean(mistralKey)} hf=${Boolean(hfKey)}`,
     "SYSTEM"
   );
 
@@ -13265,7 +13271,7 @@ async function generateReply(
   // cooldowns, the silent-slug retirement and the shared deadline, so the reply
   // path borrows that walk instead of keeping a second, stale one.
   try {
-    log("LLM path: platform chain (openrouter → gemini → groq → cerebras → openai → hf)", "SYSTEM");
+    log("LLM path: platform chain (openrouter → gemini → groq → cerebras → mistral → openai → hf)", "SYSTEM");
     const { ai, getLastAiProvider } = await import("./scripts/blogManager.js");
     const start = Date.now();
     const budgetMs = Number(

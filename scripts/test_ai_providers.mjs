@@ -33,7 +33,7 @@ function record(status, name, detail = "") {
 // ---------------------------------------------------------------------------
 // Stub provider: behaviour per provider is flipped by each test.
 // ---------------------------------------------------------------------------
-const behavior = { or: "ok", gem: "ok", groq: "ok", cere: "ok", oa: "ok", hf: "ok" };
+const behavior = { or: "ok", gem: "ok", groq: "ok", cere: "ok", mis: "ok", oa: "ok", hf: "ok" };
 const seen = {};
 // Every request the stub received, in order — lets a test prove which slugs were
 // *not* tried (retired ones, or a provider whose time box was already spent).
@@ -130,21 +130,29 @@ process.env.OPENROUTER_BASE_URL = base + "/or";
 process.env.GEMINI_BASE_URL = base + "/gem";
 process.env.GROQ_BASE_URL = base + "/groq";
 process.env.CEREBRAS_BASE_URL = base + "/cere";
+process.env.MISTRAL_BASE_URL = base + "/mis";
 process.env.OPENAI_BASE_URL = base + "/oa";
 process.env.HF_BASE_URL = base + "/hf";
 delete process.env.OPENROUTER_MODEL;
 delete process.env.GEMINI_MODEL;
 delete process.env.GROQ_MODEL;
 delete process.env.CEREBRAS_MODEL;
+delete process.env.MISTRAL_MODEL;
 delete process.env.OPENAI_MODEL;
 delete process.env.HF_MODEL;
 
-function setKeys({ or, gem, groq, cere, oa, hf } = {}) {
+function setKeys({ or, gem, groq, cere, mis, oa, hf } = {}) {
   if (or) process.env.OPENROUTER_API_KEY = or; else delete process.env.OPENROUTER_API_KEY;
   delete process.env.OPENROUTER_KEY;
+  // The spellings the Render dashboard actually received (2026-10-23). Cleared
+  // here so a case that sets one of them by hand cannot leak into the next.
+  delete process.env.OPEN_ROUTER_API_KEY;
   if (gem) process.env.GEMINI_API_KEY = gem; else delete process.env.GEMINI_API_KEY;
   if (groq) process.env.GROQ_API_KEY = groq; else delete process.env.GROQ_API_KEY;
+  delete process.env.GROK_API_KEY;
   if (cere) process.env.CEREBRAS_API_KEY = cere; else delete process.env.CEREBRAS_API_KEY;
+  if (mis) process.env.MISTRAL_API_KEY = mis; else delete process.env.MISTRAL_API_KEY;
+  delete process.env.MISTRALAI_API_KEY;
   if (oa) process.env.OPENAI_API_KEY = oa; else delete process.env.OPENAI_API_KEY;
   if (hf) process.env.HF_API_KEY = hf; else delete process.env.HF_API_KEY;
   delete process.env.HF_API_KEY_WRITERS_FLOW;
@@ -155,6 +163,7 @@ function resetStub() {
   behavior.gem = "ok";
   behavior.groq = "ok";
   behavior.cere = "ok";
+  behavior.mis = "ok";
   behavior.oa = "ok";
   behavior.hf = "ok";
   retired.clear();
@@ -167,7 +176,7 @@ function resetStub() {
   for (const k of Object.keys(seen)) delete seen[k];
 }
 
-const { ai, getLastAiError, isAiFailureFatal, OPENROUTER_FREE_MODELS, GEMINI_MODELS, GROQ_MODELS, CEREBRAS_MODELS, resetRetiredModels, getProviderCooldowns, getRetiredModels, getLastAiProvider } = await import("./blogManager.js");
+const { ai, getLastAiError, isAiFailureFatal, OPENROUTER_FREE_MODELS, GEMINI_MODELS, GROQ_MODELS, CEREBRAS_MODELS, MISTRAL_MODELS, resetRetiredModels, getProviderCooldowns, getRetiredModels, getLastAiProvider } = await import("./blogManager.js");
 
 const PROMPT = "Write a short post about a salary guide.";
 
@@ -246,7 +255,7 @@ await check("no keys configured is self-describing", async () => {
   assert(out === null, `expected null, got ${JSON.stringify(out)}`);
   assert(
     /OPENROUTER_API_KEY/.test(err) && /GEMINI_API_KEY/.test(err) && /GROQ_API_KEY/.test(err) &&
-      /CEREBRAS_API_KEY/.test(err) && /HF_API_KEY/.test(err),
+      /CEREBRAS_API_KEY/.test(err) && /MISTRAL_API_KEY/.test(err) && /HF_API_KEY/.test(err),
     `unhelpful error: ${err}`
   );
   return err.slice(0, 90) + "…";
@@ -674,6 +683,61 @@ await check("cerebras is the backstop when every earlier provider is dry", async
   assert(seen.cere.body.model === CEREBRAS_MODELS[0], `cerebras should lead with ${CEREBRAS_MODELS[0]}, got ${seen.cere.body.model}`);
   assert(isAiFailureFatal() === false, "one live provider must keep the journey alive");
   return "three 402s -> cerebras";
+});
+
+// Live 2026-10-23: the host was provisioned with `GROK_API_KEY` (for Groq) and
+// `OPEN_ROUTER_API_KEY` (for OpenRouter). Both keys were valid, both names were
+// read by nothing, and the only symptom would have been a boot log saying
+// `groq=false openrouter=false` while the Render dashboard showed the variable
+// sitting there. A key that exists and is never read is the same outage as no key
+// at all, so the spellings a dashboard actually receives are dialled.
+await check("GROK_API_KEY (the host's spelling) still reaches groq", async () => {
+  resetStub();
+  setKeys({});
+  process.env.GROK_API_KEY = "groq-typo-key";
+  try {
+    const out = await ai(PROMPT);
+    assert(out === "GROQ OK", `expected GROQ OK, got ${JSON.stringify(out)}`);
+    assert(seen.groq && seen.groq.auth === "Bearer groq-typo-key", `GROK_API_KEY not forwarded: ${seen.groq && seen.groq.auth}`);
+    assert(getLastAiProvider() === "groq", `lastAiProvider should name groq, got ${getLastAiProvider()}`);
+    return "GROK_API_KEY -> groq";
+  } finally {
+    delete process.env.GROK_API_KEY;
+  }
+});
+
+await check("OPEN_ROUTER_API_KEY (the host's spelling) still reaches openrouter", async () => {
+  resetStub();
+  setKeys({});
+  process.env.OPEN_ROUTER_API_KEY = "or-typo-key";
+  try {
+    const out = await ai(PROMPT);
+    assert(out === "OR OK", `expected OR OK, got ${JSON.stringify(out)}`);
+    assert(seen.or && seen.or.auth === "Bearer or-typo-key", `OPEN_ROUTER_API_KEY not forwarded: ${seen.or && seen.or.auth}`);
+    return "OPEN_ROUTER_API_KEY -> openrouter";
+  } finally {
+    delete process.env.OPEN_ROUTER_API_KEY;
+  }
+});
+
+// Mistral is the fourth independent free tier: it only earns its slot if it can
+// still answer after the four providers ahead of it are all out of quota.
+await check("mistral serves when the four earlier providers are out", async () => {
+  resetStub();
+  setKeys({ or: "or-key", gem: "gem-key", groq: "groq-key", cere: "cere-key", mis: "mis-key" });
+  behavior.or = "402";
+  behavior.gem = "402";
+  behavior.groq = "402";
+  behavior.cere = "402";
+  const out = await ai(PROMPT);
+  assert(out === "MIS OK", `expected MIS OK, got ${JSON.stringify(out)}`);
+  assert(seen.mis && seen.mis.auth === "Bearer mis-key", "mistral key not forwarded");
+  assert(
+    seen.mis.body.model === MISTRAL_MODELS[0],
+    `mistral should lead with ${MISTRAL_MODELS[0]}, got ${seen.mis.body.model}`
+  );
+  assert(getLastAiProvider() === "mistral", `lastAiProvider should name mistral, got ${getLastAiProvider()}`);
+  return "four 402s -> mistral";
 });
 
 server.close();

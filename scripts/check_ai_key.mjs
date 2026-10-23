@@ -42,14 +42,18 @@ const root = path.resolve(here, '..');
 
 dotenv.config({ path: path.join(root, '.env'), quiet: true });
 
-// Keep in sync with the PROVIDERS list in scripts/blogManager.js. Only the env
+// Keep in sync with the AI_PROVIDERS list in scripts/blogManager.js. Only the env
 // *names* are repeated here; the request shape, model walk, retirement and
-// cooldown logic all come from blogManager.
+// cooldown logic all come from blogManager. The alternates are the spellings that
+// a human actually types into the Render dashboard (`GROK_API_KEY`,
+// `OPEN_ROUTER_API_KEY` arrived that way on 2026-10-23) — the chain accepts them,
+// so this check must see them too or it reports "(no key)" for a key that works.
 const PROVIDERS = [
-  { name: 'openrouter', label: 'OpenRouter', keys: ['OPENROUTER_API_KEY', 'OPENROUTER_KEY'] },
+  { name: 'openrouter', label: 'OpenRouter', keys: ['OPENROUTER_API_KEY', 'OPENROUTER_KEY', 'OPEN_ROUTER_API_KEY'] },
   { name: 'gemini', label: 'Gemini', keys: ['GEMINI_API_KEY'] },
-  { name: 'groq', label: 'Groq', keys: ['GROQ_API_KEY'] },
+  { name: 'groq', label: 'Groq', keys: ['GROQ_API_KEY', 'GROK_API_KEY'] },
   { name: 'cerebras', label: 'Cerebras', keys: ['CEREBRAS_API_KEY'] },
+  { name: 'mistral', label: 'Mistral', keys: ['MISTRAL_API_KEY', 'MISTRALAI_API_KEY'] },
   { name: 'openai', label: 'OpenAI', keys: ['OPENAI_API_KEY'] },
   { name: 'hf', label: 'HuggingFace', keys: ['HF_API_KEY', 'HF_API_KEY_WRITERS_FLOW'] },
 ];
@@ -158,8 +162,11 @@ const { ai, getLastAiError, resetRetiredModels } = await import('./blogManager.j
 
 console.log(chalk.blue(`i Blog AI keys — probing ${only.length ? only.join(', ') : 'every keyed provider'}`));
 for (const p of PROVIDERS) {
-  const v = keyFor(p);
-  console.log(`  ${p.label.padEnd(12)} ${v ? chalk.green(mask(String(v).trim())) : chalk.gray('(no key)')}`);
+  const varName = p.keys.find((k) => process.env[k] && String(process.env[k]).trim());
+  const v = varName ? process.env[varName] : null;
+  console.log(
+    `  ${p.label.padEnd(12)} ${v ? chalk.green(mask(String(v).trim())) + chalk.gray(` via ${varName}`) : chalk.gray('(no key)')}`
+  );
 }
 console.log(chalk.gray(`i one prompt per provider, ${timeoutMs}ms box each, through scripts/blogManager.js ai()`));
 console.log('');
@@ -222,8 +229,13 @@ console.log('');
 console.log('Add a second, independent free tier (docs/MULTITENANT_AI_JOBS_RUNBOOK.md):');
 console.log('  Groq      https://console.groq.com/keys    -> GROQ_API_KEY     (fastest, rate-limited)');
 console.log('  Cerebras  https://cloud.cerebras.ai        -> CEREBRAS_API_KEY (smallest free quota)');
+console.log('  Mistral   https://console.mistral.ai       -> MISTRAL_API_KEY  (EU-hosted, rate-limited)');
 console.log('  Gemini    https://aistudio.google.com/apikey -> GEMINI_API_KEY (daily quota, per project)');
 console.log('Each one is another pool: a quota on one is now a detour, not a dry tier.');
+console.log('');
+console.log(chalk.gray('Names matter: the chain and this check accept GROK_API_KEY (for GROQ) and'));
+console.log(chalk.gray('OPEN_ROUTER_API_KEY (for OPENROUTER), but only GROQ_API_KEY / OPENROUTER_API_KEY'));
+console.log(chalk.gray('are canonical. Anything else is a key that exists and is never read.'));
 console.log('');
 console.log(chalk.gray('A quota 429 resets at midnight Pacific (10:00 EAT) and belongs to the Google'));
 console.log(chalk.gray('Cloud project, not the key: a new key in the same project changes nothing.'));

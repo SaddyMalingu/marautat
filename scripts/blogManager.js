@@ -51,20 +51,20 @@ function clean(c) {
 // operator can see *why* generation produced nothing without reading host logs.
 let lastAiError = null;
 
-// Provider fallback order: OpenRouter → Gemini → Groq → Cerebras → OpenAI →
-// HuggingFace. Any single key being present is enough to generate; set
-// OPENROUTER_MODEL / GEMINI_MODEL / GROQ_MODEL / CEREBRAS_MODEL / OPENAI_MODEL /
-// HF_MODEL to pin a specific model. Every provider below speaks the same
-// OpenAI-compatible shape, so adding one is a key + a URL + a model list, not a
-// new code path.
+// Provider fallback order: OpenRouter → Gemini → Groq → Cerebras → Mistral →
+// OpenAI → HuggingFace. Any single key being present is enough to generate; set
+// OPENROUTER_MODEL / GEMINI_MODEL / GROQ_MODEL / CEREBRAS_MODEL / MISTRAL_MODEL /
+// OPENAI_MODEL / HF_MODEL to pin a specific model. Every provider below speaks the
+// same OpenAI-compatible shape, so adding one is a key + a URL + a model list, not
+// a new code path.
 //
 // Why the list got longer (live 2026-10-23, four keys on the host): "multi-model
 // fallback" was true inside OpenRouter and false everywhere else — Gemini had one
 // alias, so a tenant click could only ever land on `gemini-flash-latest`. When
 // that alias went quiet for 15s the tier was dry with three other keys in hand
-// (HF 402, OpenRouter's free pool 429/404). Two independent free tiers (Groq,
-// Cerebras) mean a Gemini-side quota or a slow alias is now a detour, not an
-// outage.
+// (HF 402, OpenRouter's free pool 429/404). Three independent free tiers (Groq,
+// Cerebras, Mistral) mean a Gemini-side quota or a slow alias is now a detour, not
+// an outage.
 // OpenRouter free-tier slugs are retired without notice — the 2026-10-22 outage
 // was llama-3.1-8b-instruct:free answering 404 "This model is unavailable for
 // free". Generation therefore falls through this list (see ai()) instead of
@@ -127,6 +127,34 @@ export const CEREBRAS_MODELS = [
   'llama3.1-8b',
   'gpt-oss-120b',
 ];
+
+// Mistral La Plateforme (https://console.mistral.ai): free "experiment" tier, no
+// card, OpenAI-compatible — a fourth independent company and the only one of them
+// hosted in the EU. Slotted after Cerebras because its free tier is the most
+// tightly rate-limited of the free options: a good last free step before paid
+// OpenAI. Small models lead because a 9-angle run has to fit inside a per-minute
+// cap; `mistral-large-latest` is the strongest and slowest fallback.
+export const MISTRAL_MODELS = [
+  'mistral-small-latest',
+  'open-mistral-nemo',
+  'mistral-large-latest',
+];
+
+// Which env var holds each provider's key. The Render dashboard is a text box, so
+// a plausible spelling is a real risk, not a hypothetical: on 2026-10-23 the host
+// was given `GROK_API_KEY` and `OPEN_ROUTER_API_KEY` — both keys valid, both
+// invisible to this chain, and the only symptom would have been a tier that
+// silently stayed missing (exactly how the 2026-10-22 outage hid behind a healthy
+// `hf=true`). The canonical name leads; the spellings a human actually types still
+// count. Keep in sync with PROVIDERS in scripts/check_ai_key.mjs and the boot log
+// in server.js / utils/logger.js.
+function keyFrom() {
+  for (let i = 0; i < arguments.length; i++) {
+    const v = process.env[arguments[i]];
+    if (v && String(v).trim()) return String(v).trim();
+  }
+  return undefined;
+}
 
 // A pin leads its provider's list. Shared by every provider so the rule is one
 // function instead of five copies that drift (the lesson of `54931a4`).
@@ -244,7 +272,9 @@ const AI_PROVIDERS = [
     name: 'openrouter',
     // OPENROUTER_KEY is the name the rest of the platform (server.js, kernel)
     // uses for the same credential — accept both so one key serves everything.
-    key: () => process.env.OPENROUTER_API_KEY || process.env.OPENROUTER_KEY,
+    // `OPEN_ROUTER_API_KEY` is the spelling the Render dashboard actually received
+    // on 2026-10-23; see keyFrom().
+    key: () => keyFrom('OPENROUTER_API_KEY', 'OPENROUTER_KEY', 'OPEN_ROUTER_API_KEY'),
     url: () => (process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1') + '/chat/completions',
     models: () => {
       // A pin is a *preference*, not a trap. Live outage (2026-10-22): the host
@@ -277,7 +307,9 @@ const AI_PROVIDERS = [
     // *fast* — a throttled Groq key answers 429 in ~100ms, so a dead free tier
     // costs the tenant a fraction of a second instead of 15s of silence.
     name: 'groq',
-    key: () => process.env.GROQ_API_KEY,
+    // GROK_API_KEY is the misspelling the host was provisioned with on 2026-10-23;
+    // a valid key under a wrong name is a silent outage, so it still counts.
+    key: () => keyFrom('GROQ_API_KEY', 'GROK_API_KEY'),
     url: () => (process.env.GROQ_BASE_URL || 'https://api.groq.com/openai/v1') + '/chat/completions',
     models: () => pinnedFirst(process.env.GROQ_MODEL, GROQ_MODELS),
     headers: (k) => ({ Authorization: 'Bearer ' + k, 'Content-Type': 'application/json' }),
@@ -294,6 +326,18 @@ const AI_PROVIDERS = [
     headers: (k) => ({ Authorization: 'Bearer ' + k, 'Content-Type': 'application/json' }),
   },
   {
+    // Mistral La Plateforme (https://console.mistral.ai): free experiment tier,
+    // OpenAI-compatible. Slotted after Cerebras because its free tier is the most
+    // tightly rate-limited of the free options — the last free step before paid
+    // OpenAI. Added 2026-10-23, when a fourth key was provisioned on a host whose
+    // tier had just answered zero copy from three of them.
+    name: 'mistral',
+    key: () => keyFrom('MISTRAL_API_KEY', 'MISTRALAI_API_KEY'),
+    url: () => (process.env.MISTRAL_BASE_URL || 'https://api.mistral.ai/v1') + '/chat/completions',
+    models: () => pinnedFirst(process.env.MISTRAL_MODEL, MISTRAL_MODELS),
+    headers: (k) => ({ Authorization: 'Bearer ' + k, 'Content-Type': 'application/json' }),
+  },
+  {
     name: 'openai',
     key: () => process.env.OPENAI_API_KEY,
     url: () => (process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1') + '/chat/completions',
@@ -302,7 +346,7 @@ const AI_PROVIDERS = [
   },
   {
     name: 'hf',
-    key: () => process.env.HF_API_KEY || process.env.HF_API_KEY_WRITERS_FLOW,
+    key: () => keyFrom('HF_API_KEY', 'HF_API_KEY_WRITERS_FLOW'),
     url: () => (process.env.HF_BASE_URL || 'https://router.huggingface.co/v1') + '/chat/completions',
     model: () => process.env.HF_MODEL || 'meta-llama/Llama-3.1-8B-Instruct:novita',
     headers: (k) => ({ Authorization: 'Bearer ' + k, 'Content-Type': 'application/json' }),
@@ -564,7 +608,7 @@ async function ai(prompt, deadline, messages) {
   lastAiFatal = failures.length === 0 || failures.every(function (f) { return f.kind === 'fatal'; });
   lastAiError = failures.length
     ? failures.map(function (f) { return ((String(f.name) + ' ' + (f.status || '')).trim() + ' ' + f.text).slice(0, 240); }).join(' | ').slice(0, 900)
-    : 'no AI provider key configured (OPENROUTER_API_KEY / GEMINI_API_KEY / GROQ_API_KEY / CEREBRAS_API_KEY / OPENAI_API_KEY / HF_API_KEY)';
+    : 'no AI provider key configured (OPENROUTER_API_KEY / GEMINI_API_KEY / GROQ_API_KEY / CEREBRAS_API_KEY / MISTRAL_API_KEY / OPENAI_API_KEY / HF_API_KEY)';
   console.error('[AI] All providers failed →', lastAiError, '(fatal=' + lastAiFatal + ')');
   return null;
 }
