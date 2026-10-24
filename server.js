@@ -39,6 +39,16 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
+
+// Render terminates TLS at its load balancer and forwards over HTTP, so the socket
+// peer of every public request is the in-instance proxy. Without this line `req.ip`
+// is `::1` for a real visitor too: the 2026-10-24 03:55 log shows "Landing page
+// loaded by ::1" followed one second later by 40 MB of range requests and a
+// track-visit POST from the same peer — a browser, not a health check. Every
+// `ip`/`source_ip` field written by the analytics and admin-audit endpoints
+// inherits this, so visitor IPs were all one address. `1` (not `true`) trusts
+// exactly the Render hop, so a client-supplied X-Forwarded-For cannot spoof it.
+app.set('trust proxy', 1);
 app.use(express.json({
   verify: (req, res, buf) => {
     req.rawBody = buf ? buf.toString("utf8") : "";
@@ -305,6 +315,18 @@ app.get('/admin/api/slo-board', adminAuth, async (req, res) => {
 
 // Serve static files from public directory
 const publicDir = path.join(process.cwd(), 'public');
+
+// Browsers request /favicon.ico for every page that does not declare an icon, and
+// until 2026-10-24 that answered 404 twice per demo visit (the log shows the pair
+// around the landing page load). Serve the brand mark instead of a 404 so the tab,
+// the bookmark and the "site is finished" first impression all agree.
+app.get('/favicon.ico', (req, res) => {
+  res.setHeader('Cache-Control', 'public, max-age=604800');
+  res.type('image/svg+xml');
+  return res.sendFile(path.join(publicDir, 'favicon.svg'), (err) => {
+    if (err && !res.headersSent) res.status(204).end();
+  });
+});
 
 // Track blog page views that are served straight from disk.
 // express.static below answers /blog/<slug>.html before the /blog/:slug route

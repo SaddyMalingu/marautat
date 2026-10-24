@@ -423,6 +423,39 @@ After it, the first `[SYSTEM] LLM providers:` line is the proof of which code is
 live — `Deployed commit:` in the same block names the SHA, so a stale build is
 one line away from being obvious.
 
+**A visitor and a health check look the same in this log — until you count what
+they fetch.** Live 2026-10-24 03:55, on a host with no `[SYSTEM]` block in view:
+
+```
+[PAGE] Landing page loaded by ::1 at 2026-10-24T03:54:36.466Z   GET / 200 - 4ms
+[PAGE] Landing page loaded by ::1 at 2026-10-24T03:55:36.216Z   GET / 200 - 4ms
+POST /api/kassangas/track-visit 200 - 6ms
+GET /media/tmp5_0ryzre.mp4 206 - 95ms   (×10 clips, ~40 MB, inside 13 s)
+```
+
+`::1` is Render's in-instance proxy, not the visitor: `app.set('trust proxy', 1)`
+had never been set, so `req.ip` — and therefore every `ip` / `source_ip` column in
+the analytics and admin-audit logs — was `::1` for everybody. The fix is one line
+at the top of `server.js`; `npm run test:site-hygiene` proves that a forwarded
+`X-Forwarded-For: 203.0.113.9` resolves to the visitor, that a forged prefix
+cannot move it, and that `/favicon.ico` no longer 404s twice per demo visit.
+
+Rules for reading this log:
+
+- A `/` hit with **no follow-up requests** is a pinger or the Render health check.
+  A `/` hit followed by `track-visit` + media ranges is a person.
+- `206` on `/media/*.mp4` and `CLOSED BEFORE END` on the same file is a browser
+  swapping `src` mid-stream, not a server bug — count the clips instead: the
+  landing carousel is set to 24 s per clip, so ten clips inside 13 s means the
+  `error` / `load-timeout` path is advancing it, and the visitor never finishes a
+  clip. `public/media` is 47 MB across 11 files (eight still named `tmp*.mp4`,
+  plus a byte-identical copy of the same clip under both a dashed and a spaced
+  filename), and every visit pulls most of it.
+- A landing page whose payload is 47 MB cannot be shown on a bad connection: it
+  is the first thing a prospect sees. Cut the carousel to three clips under 3 MB
+  each before a demo — the server side of the page is fine.
+
+
 Relevant env (all optional except one key):
 
 | Var | Default |
