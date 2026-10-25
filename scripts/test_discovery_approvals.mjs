@@ -291,7 +291,38 @@ if (fs.existsSync(migration)) {
   ok('migration indexes the portal-token lookup', /create index if not exists/i.test(sql));
   ok('migration makes the portal token unique (one tenant per link)', /unique/i.test(sql));
 }
-// ---- 10. The admin scripts must compile -------------------------------------
+// ---- 10. A reload must not lock the tenant out ------------------------------
+// The portal is a full page load behind tenantDashboardAuth, so the login has to
+// leave something the browser sends by itself. Without it, F5 on a client's
+// phone is an unrecoverable "Unauthorized" page — the worst possible first
+// impression on the first paying tenant.
+const cookieGateSrc = server.slice(
+  server.indexOf('async function tenantDashboardAuth'),
+  server.indexOf('async function tenantDashboardAuth') + 2200,
+);
+ok('the dashboard gate accepts a session cookie', /getTenantSessionCookie\(req\)/.test(cookieGateSrc));
+ok('the callback index reads the cookie', /function getTenantSessionToken[\s\S]{0,400}getTenantSessionCookie\(req\)/.test(server));
+ok('login sets the session cookie',
+  /buildTenantSessionCookie\(req, session\.token, session\.expiresAt\)/.test(loginSrc));
+ok('the cookie is HttpOnly + SameSite', /HttpOnly/.test(server) && /SameSite=Lax/.test(server) && /Secure/.test(server));
+ok('logout clears the cookie', /clearTenantSessionCookie\(res, req\)/.test(server));
+ok('an expired cookie is cleared instead of dead-ending the page',
+  /clearTenantSessionCookie\(res, req\);\s*\n\s*return next\(\);/.test(cookieGateSrc));
+ok('/tenant/session/me rehydrates a session from the cookie',
+  /app\.get\("\/tenant\/session\/me", tenantSessionAuth/.test(server));
+ok('a stored session is honoured before the missing-key guard',
+  /if \(loadSession\(\)\) \{ showApp\(\); go\('home'\); return; \}\s*\n\s*if \(await restoreSessionFromCookie\(\)\)/.test(tenantDash),
+  'F5 used to fall through to the key guard');
+ok('boot is async so it can await the cookie restore', /async function boot\(\)/.test(tenantDash));
+ok('the portal rehydrates from the cookie over same-origin fetch',
+  /credentials: 'same-origin'/.test(tenantDash));
+ok('the access key and phone survive a session expiry in the tab',
+  /KEY_SLOT/.test(tenantDash) && /PHONE_SLOT/.test(tenantDash) && /function rememberCredentials/.test(tenantDash));
+ok('the login form is prefilled from what we already know',
+  /const keyEl = document\.getElementById\('lKey'\);[\s\S]{0,120}S\.key/.test(tenantDash) &&
+  /const phoneEl = document\.getElementById\('lPhone'\);[\s\S]{0,120}S\.phone/.test(tenantDash));
+
+// ---- 11. The admin scripts must compile -------------------------------------
 // A broken template literal in the queue would only surface as a blank page in
 // front of the owner, so compile every inline script block here first.
 import vm from 'vm';

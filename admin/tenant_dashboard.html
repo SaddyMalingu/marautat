@@ -212,12 +212,20 @@
 "use strict";
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• STATE â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 const STORAGE_KEY = 'td_v3';
+// A signed-in client must not have to find the original message again just
+// because the session expired, so the key and phone they used are remembered for
+// the life of the tab (never a longer-lived store on a shared phone).
+const KEY_SLOT = STORAGE_KEY + '_key';
+const PHONE_SLOT = STORAGE_KEY + '_phone';
 const URL_PARAMS = new URLSearchParams(location.search);
 // Per-tenant invite token issued by the owner on approval. It identifies the
 // tenant by itself, so the client never copies a password out of WhatsApp.
 const INVITE_TOKEN = (URL_PARAMS.get('t') || '').trim();
 const INVITE_PHONE = (URL_PARAMS.get('phone') || '').trim();
-const S = { key: URL_PARAMS.get('key') || '', token: '', phone: '', name: '', expires: null };
+const S = {
+  key: URL_PARAMS.get('key') || sessionStorage.getItem(KEY_SLOT) || '',
+  token: '', phone: sessionStorage.getItem(PHONE_SLOT) || '', name: '', expires: null,
+};
 let curSec = 'home';
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• TOAST â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -244,19 +252,42 @@ function spinner(text='Loadingâ€¦') { return `<div class="text-center p-5"><
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• SESSION â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 function saveSession(d) {
-  Object.assign(S, { token: d.token, phone: d.tenant_phone, name: d.tenant_name || '', expires: d.expires_at });
+  Object.assign(S, { token: d.token, phone: d.tenant_phone || S.phone, name: d.tenant_name || '', expires: d.expires_at });
   sessionStorage.setItem(STORAGE_KEY, JSON.stringify(d));
+  rememberCredentials();
 }
-function clearSession() { Object.assign(S, { token:'', phone:'', name:'', expires:null }); sessionStorage.removeItem(STORAGE_KEY); }
+function rememberCredentials() {
+  try {
+    if (S.key) sessionStorage.setItem(KEY_SLOT, S.key);
+    if (S.phone) sessionStorage.setItem(PHONE_SLOT, S.phone);
+  } catch { /* private mode: the session still works for this page */ }
+}
+function forgetCredentials() {
+  try { sessionStorage.removeItem(KEY_SLOT); sessionStorage.removeItem(PHONE_SLOT); } catch { /* nothing to forget */ }
+}
+function clearSession() { Object.assign(S, { token:'', phone:S.phone, name:'', expires:null }); sessionStorage.removeItem(STORAGE_KEY); }
 function loadSession() {
   const raw = sessionStorage.getItem(STORAGE_KEY);
   if (!raw) return false;
   try {
     const d = JSON.parse(raw);
     if (!d?.token || Date.parse(d.expires_at) <= Date.now()) { sessionStorage.removeItem(STORAGE_KEY); return false; }
-    Object.assign(S, { token: d.token, phone: d.tenant_phone || '', name: d.tenant_name || '', expires: d.expires_at });
+    Object.assign(S, { token: d.token, phone: d.tenant_phone || S.phone, name: d.tenant_name || '', expires: d.expires_at });
     return true;
   } catch { sessionStorage.removeItem(STORAGE_KEY); return false; }
+}
+// The login response also sets an HttpOnly cookie, so a reload in a tab whose
+// storage is gone (restored tab, cleared site data) can still recover the
+// session without asking the client for anything.
+async function restoreSessionFromCookie() {
+  try {
+    const r = await fetch('/tenant/session/me', { credentials: 'same-origin' });
+    if (!r.ok) return false;
+    const d = await r.json().catch(() => null);
+    if (!d?.ok || !d.token) return false;
+    saveSession(d);
+    return true;
+  } catch { return false; }
 }
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• API â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -281,7 +312,9 @@ async function doLogin(phone, key) {
   return { ok: r.ok, data: d };
 }
 async function doLogout() {
-  if (S.token) fetch('/tenant/session/logout', { method: 'POST', headers: {'x-tenant-session': S.token} }).catch(()=>{});
+  if (S.token) fetch('/tenant/session/logout', { method: 'POST', headers: {'x-tenant-session': S.token}, credentials: 'same-origin' }).catch(()=>{});
+  forgetCredentials();
+  S.key = '';
   clearSession(); showLogin();
 }
 
@@ -289,6 +322,12 @@ async function doLogout() {
 function showLogin(msg = '') {
   document.getElementById('loginScreen').classList.remove('app-hidden');
   document.getElementById('appShell').classList.add('app-hidden');
+  // Whatever we already know is filled in, so a session timeout is one tap and
+  // not a support call.
+  const phoneEl = document.getElementById('lPhone');
+  if (phoneEl && !phoneEl.value && S.phone) phoneEl.value = S.phone;
+  const keyEl = document.getElementById('lKey');
+  if (keyEl && !keyEl.value && S.key) keyEl.value = S.key;
   const al = document.getElementById('loginAlert');
   if (msg) { al.innerHTML = `<div class="alert alert-warning py-2 mb-0">${esc(msg)}</div>`; al.style.display = ''; }
   else al.style.display = 'none';
@@ -2978,7 +3017,7 @@ async function signInWithInvite() {
 }
 
 // ══════════════════════════════════ BOOT ══════════════════════════════════
-function boot() {
+async function boot() {
   document.querySelectorAll('.nav-item[data-sec]').forEach(el => el.addEventListener('click', () => go(el.dataset.sec)));
   document.getElementById('menuBtn').addEventListener('click', () => document.getElementById('sidebar').classList.toggle('open'));
   document.getElementById('logoutBtn').addEventListener('click', doLogout);
@@ -3004,8 +3043,12 @@ function boot() {
 
   // An invite link signs the client in on first open — no key to type.
   if (INVITE_TOKEN) { signInWithInvite(); return; }
-  if (!S.key) { showLogin('Missing key in URL. Open /tenant-dashboard?key=YOUR_KEY'); return; }
+  // Order matters: a refresh keeps the session (and the login cookie), so it has
+  // to be honoured before the missing-key guard. The old order turned every F5
+  // into "Missing key in URL" for a client who was already signed in.
   if (loadSession()) { showApp(); go('home'); return; }
+  if (await restoreSessionFromCookie()) { showApp(); go('home'); return; }
+  if (!S.key) { showLogin('Missing key in URL. Open /tenant-dashboard?key=YOUR_KEY'); return; }
   showLogin();
 }
 

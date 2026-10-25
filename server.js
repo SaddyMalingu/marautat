@@ -2174,12 +2174,53 @@ function getTenantPhoneFromRequest(req) {
   );
 }
 
+// The portal is a full page load behind tenantDashboardAuth, so a reload has to
+// be authenticated by something the browser sends on its own. A header only
+// exists while JS is running; the cookie is what survives F5 (and a tab
+// restored from history). HttpOnly keeps the token out of reach of page script.
+const TENANT_SESSION_COOKIE = "td_session";
+
+function parseCookieHeader(header) {
+  const out = {};
+  String(header || "").split(";").forEach((part) => {
+    const idx = part.indexOf("=");
+    if (idx < 1) return;
+    const name = part.slice(0, idx).trim();
+    if (!name) return;
+    const raw = part.slice(idx + 1).trim();
+    try {
+      out[name] = decodeURIComponent(raw);
+    } catch {
+      out[name] = raw;
+    }
+  });
+  return out;
+}
+
+function getTenantSessionCookie(req) {
+  return parseCookieHeader(req.headers?.cookie)[TENANT_SESSION_COOKIE] || "";
+}
+
+function tenantCookieAttributes(req) {
+  const forwardedProto = String(req.headers?.["x-forwarded-proto"] || "").split(",")[0].trim();
+  const secure = req.secure || forwardedProto === "https";
+  return ["Path=/", "HttpOnly", "SameSite=Lax"].concat(secure ? ["Secure"] : []).join("; ");
+}
+
+function buildTenantSessionCookie(req, token, expiresAt) {
+  return `${TENANT_SESSION_COOKIE}=${encodeURIComponent(token)}; ${tenantCookieAttributes(req)}; Expires=${new Date(expiresAt).toUTCString()}`;
+}
+
+function clearTenantSessionCookie(res, req) {
+  res.setHeader("Set-Cookie", `${TENANT_SESSION_COOKIE}=; ${tenantCookieAttributes(req)}; Max-Age=0`);
+}
+
 function getTenantSessionToken(req) {
   const authHeader = req.headers.authorization || "";
   if (authHeader.toLowerCase().startsWith("bearer ")) {
     return authHeader.slice(7).trim();
   }
-  return req.headers["x-tenant-session"] || req.query.session || "";
+  return req.headers["x-tenant-session"] || req.query.session || getTenantSessionCookie(req) || "";
 }
 
 function cleanupExpiredTenantSessions() {
@@ -2198,6 +2239,7 @@ function createTenantSession(tenant) {
   tenantSessions.set(token, {
     tenantId: tenant.id,
     tenantPhone: tenant.client_phone,
+    tenantName: tenant.client_name || "",
     expiresAt,
   });
   return {
@@ -2375,6 +2417,21 @@ async function tenantDashboardAuth(req, res, next) {
     return res.status(401).send("Unauthorized");
   }
 
+  // Reload safety: the login route also sets an HttpOnly cookie, because a
+  // header cannot survive F5 on a full page load. A cookie that is past its TTL
+  // is cleared and the page is served so the client sees the sign-in form
+  // instead of a dead "Unauthorized" page they cannot recover from.
+  const cookieToken = getTenantSessionCookie(req);
+  if (cookieToken) {
+    cleanupExpiredTenantSessions();
+    const session = tenantSessions.get(cookieToken);
+    if (session && session.expiresAt > Date.now()) return next();
+    // Serving the shell is safe: it is static markup and every data route is
+    // behind tenantSessionAuth, so an expired session can only show the form.
+    clearTenantSessionCookie(res, req);
+    return next();
+  }
+
   return res.status(401).send("Unauthorized");
 }
 
@@ -2419,6 +2476,7 @@ app.post("/tenant/session/login", async (req, res) => {
         return res.status(403).json({ error: "This invite belongs to a different phone number" });
       }
       const session = createTenantSession(inviteTenant);
+      res.setHeader("Set-Cookie", buildTenantSessionCookie(req, session.token, session.expiresAt));
       return res.json(tenantSessionPayload(inviteTenant, session));
     }
 
@@ -2436,6 +2494,7 @@ app.post("/tenant/session/login", async (req, res) => {
     }
 
     const session = createTenantSession(tenant);
+    res.setHeader("Set-Cookie", buildTenantSessionCookie(req, session.token, session.expiresAt));
     return res.json(tenantSessionPayload(tenant, session));
   } catch (error) {
     return res.status(500).json({ error: error.message });
@@ -2466,6 +2525,17 @@ function tenantSessionAuth(req, res, next) {
   next();
 }
 
+app.get("/tenant/session/me", tenantSessionAuth, (req, res) => {
+  const session = req.tenantSession || {};
+  return res.json({
+    ok: true,
+    token: String(getTenantSessionToken(req) || "").trim(),
+    tenant_phone: session.tenantPhone || "",
+    tenant_name: session.tenantName || "",
+    expires_at: new Date(session.expiresAt).toISOString(),
+  });
+});
+
 app.post("/tenant/session/logout", (req, res) => {
   const token = String(getTenantSessionToken(req) || "").trim();
   if (!token) {
@@ -2473,6 +2543,7 @@ app.post("/tenant/session/logout", (req, res) => {
   }
 
   const revoked = tenantSessions.delete(token);
+  clearTenantSessionCookie(res, req);
   return res.json({ ok: true, revoked });
 });
 
