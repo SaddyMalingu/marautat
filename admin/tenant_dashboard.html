@@ -212,7 +212,12 @@
 "use strict";
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• STATE â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 const STORAGE_KEY = 'td_v3';
-const S = { key: new URLSearchParams(location.search).get('key') || '', token: '', phone: '', name: '', expires: null };
+const URL_PARAMS = new URLSearchParams(location.search);
+// Per-tenant invite token issued by the owner on approval. It identifies the
+// tenant by itself, so the client never copies a password out of WhatsApp.
+const INVITE_TOKEN = (URL_PARAMS.get('t') || '').trim();
+const INVITE_PHONE = (URL_PARAMS.get('phone') || '').trim();
+const S = { key: URL_PARAMS.get('key') || '', token: '', phone: '', name: '', expires: null };
 let curSec = 'home';
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• TOAST â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -546,13 +551,173 @@ function wfRenderShareCard(d) {
 
 function wfOutreachHtml() {
   return `
-    <div class="panel p-5 text-center">
-      <i class="fa-solid fa-magnifying-glass fa-2x mb-3" style="color:var(--accent)"></i>
-      <h5 class="mb-2">Research &amp; Outreach Manager</h5>
-      <p class="text-muted mb-2">Automated lead discovery and outreach is coming to your portal soon.</p>
-      <span class="badge-mid">Coming soon</span>
+    <div class="panel mb-3">
+      <div class="panel-title">Find and contact new clients</div>
+      <p class="text-muted mb-3" style="font-size:.85rem">
+        Describe who you want to reach. We research matching companies, qualify them, and email the
+        best ones. Emails send from your own mailbox once Email Setup is configured, otherwise from
+        Alphadome on your behalf.
+      </p>
+      <form id="wfOutreachForm" class="row g-2">
+        <div class="col-md-5"><input class="form-control form-control-sm" name="name" placeholder="Campaign name (e.g. Kitengela hardware distributors)" required></div>
+        <div class="col-md-4"><input class="form-control form-control-sm" name="keywords" placeholder="Keywords, comma separated (e.g. hardware, distributors)" required></div>
+        <div class="col-md-3"><input class="form-control form-control-sm" name="industries" placeholder="Industries (optional)"></div>
+        <div class="col-6 col-md-2"><input class="form-control form-control-sm" name="target_count" type="number" min="1" max="100" value="20" title="How many leads to find"></div>
+        <div class="col-6 col-md-2"><input class="form-control form-control-sm" name="quality_threshold" type="number" min="40" max="100" value="70" title="Minimum quality score"></div>
+        <div class="col-md-8 d-flex align-items-end"><button class="btn btn-info btn-sm" type="submit" id="wfOutreachCreateBtn">Create campaign</button></div>
+      </form>
+      <div class="text-muted mt-2" style="font-size:.75rem">Leads below 40 are never contacted.</div>
+    </div>
+    <div class="panel mb-3">
+      <div class="panel-title d-flex justify-content-between align-items-center">
+        <span>Your campaigns</span>
+        <button class="btn btn-sm btn-outline-info" type="button" id="wfOutreachRefreshBtn">Refresh</button>
+      </div>
+      <div id="wfOutreachCampaigns" class="text-muted">Loading campaigns...</div>
+    </div>
+    <div class="panel" id="wfOutreachLeadsPanel" style="display:none">
+      <div class="panel-title d-flex justify-content-between align-items-center">
+        <span id="wfOutreachLeadsTitle">Leads</span>
+        <button class="btn btn-sm btn-outline-secondary" type="button" id="wfOutreachLeadsClose">Close</button>
+      </div>
+      <div id="wfOutreachLeads" class="table-responsive"></div>
     </div>`;
 }
+function wfOutreachCampaignRow(c) {
+  const running = String(c.status || '') === 'running';
+  const found = Number(c.total_leads_found || 0);
+  const sent = Number(c.total_outreach_sent || 0);
+  const lastRun = c.last_run_at ? String(c.last_run_at).slice(0, 16).replace('T', ' ') : '';
+  return `
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 py-2" style="border-bottom:1px solid rgba(255,255,255,.06)">
+      <div>
+        <div><strong>${esc(c.name)}</strong> ${badge(c.status || 'draft')}</div>
+        <div class="text-muted" style="font-size:.78rem">
+          ${esc((c.keywords || []).join(', ') || 'no keywords')} ·
+          ${found} lead${found === 1 ? '' : 's'} found · ${sent} emailed
+          ${lastRun ? ' · last run ' + esc(lastRun) : ''}
+        </div>
+      </div>
+      <div class="d-flex gap-2">
+        <button class="btn btn-sm btn-outline-info" data-wfact="leads" data-id="${esc(c.id)}" data-name="${esc(c.name)}">Leads</button>
+        <button class="btn btn-sm ${running ? 'btn-outline-secondary' : 'btn-success'}" data-wfact="run" data-id="${esc(c.id)}" ${running ? 'disabled' : ''}>${running ? 'Running…' : 'Run'}</button>
+      </div>
+    </div>`;
+}
+
+async function wfLoadOutreach() {
+  const box = document.getElementById('wfOutreachCampaigns');
+  if (!box) return;
+  const r = await apiJson('/tenant/wf/campaigns');
+  if (!r.ok) {
+    const d = r.data || {};
+    // A missing tenant_id column is a deploy problem, not the client's mistake.
+    const cls = d.migration_required ? 'alert alert-warning mb-0' : 'text-danger';
+    box.innerHTML = `<div class="${cls}" style="font-size:.85rem">${esc(d.error || 'Could not load campaigns')}</div>`;
+    return;
+  }
+  const campaigns = r.data?.campaigns || [];
+  if (!campaigns.length) {
+    box.innerHTML = '<div class="text-muted">No campaigns yet. Create one above to start finding leads.</div>';
+    return;
+  }
+  box.innerHTML = campaigns.map(wfOutreachCampaignRow).join('');
+}
+
+async function wfCreateOutreachCampaign(ev) {
+  ev.preventDefault();
+  const form = ev.target;
+  const btn = document.getElementById('wfOutreachCreateBtn');
+  const keywords = String(form.keywords.value || '').split(',').map(s => s.trim()).filter(Boolean);
+  const industries = String(form.industries.value || '').split(',').map(s => s.trim()).filter(Boolean);
+  const payload = {
+    name: String(form.name.value || '').trim(),
+    keywords,
+    industries,
+    target_count: Number(form.target_count.value || 20),
+    quality_threshold: Number(form.quality_threshold.value || 70),
+  };
+  if (!payload.name || !keywords.length) { toast('Add a campaign name and at least one keyword', 'err'); return; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Creating...'; }
+  try {
+    const r = await apiJson('/tenant/wf/campaigns', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    if (!r.ok) { toast(r.data?.error || 'Could not create campaign', 'err'); return; }
+    toast('Campaign created', 'ok');
+    form.reset();
+    await wfLoadOutreach();
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Create campaign'; }
+  }
+}
+
+async function wfRunOutreachCampaign(id) {
+  const r = await apiJson(`/tenant/wf/campaigns/${encodeURIComponent(id)}/run`, { method: 'POST' });
+  if (!r.ok) { toast(r.data?.error || 'Could not start the run', 'err'); return; }
+  const sender = r.data?.sender === 'tenant' ? 'your own mailbox' : 'the Alphadome mailbox';
+  toast(`Run started — emails will send from ${sender}`, 'ok');
+  await wfLoadOutreach();
+  // The run is asynchronous: poll a few times so leads appear without a reload.
+  let ticks = 0;
+  const timer = setInterval(async () => {
+    ticks += 1;
+    await wfLoadOutreach();
+    if (ticks >= 10) clearInterval(timer);
+  }, 6000);
+}
+
+async function wfShowOutreachLeads(id, name) {
+  const panel = document.getElementById('wfOutreachLeadsPanel');
+  const box = document.getElementById('wfOutreachLeads');
+  const title = document.getElementById('wfOutreachLeadsTitle');
+  if (!panel || !box) return;
+  panel.style.display = '';
+  if (title) title.textContent = `Leads · ${name || 'campaign'}`;
+  box.innerHTML = spinner('Loading leads...');
+  const r = await apiJson(`/tenant/wf/campaigns/${encodeURIComponent(id)}/leads`);
+  if (!r.ok) { box.innerHTML = `<div class="text-danger" style="font-size:.85rem">${esc(r.data?.error || 'Could not load leads')}</div>`; return; }
+  const leads = r.data?.leads || [];
+  if (!leads.length) {
+    box.innerHTML = '<div class="text-muted">No leads yet. Run the campaign and check back in a few minutes.</div>';
+    return;
+  }
+  box.innerHTML = `
+    <table class="table table-sm mb-0 align-middle">
+      <thead><tr><th>Name</th><th>Organisation</th><th>Contact</th><th>Industry</th><th class="text-center">Score</th><th>Status</th></tr></thead>
+      <tbody>${leads.map(l => `
+        <tr>
+          <td>${esc(l.name || '—')}</td>
+          <td>${esc(l.organization || '—')}</td>
+          <td>${esc(l.email || l.phone || '—')}</td>
+          <td>${esc(l.industry || '—')}</td>
+          <td class="text-center">${Number(l.relevance_score || 0)}</td>
+          <td>${badge(l.status || 'new')}</td>
+        </tr>`).join('')}</tbody>
+    </table>`;
+  panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function wfWireOutreach() {
+  const form = document.getElementById('wfOutreachForm');
+  if (form) form.onsubmit = wfCreateOutreachCampaign;
+  const list = document.getElementById('wfOutreachCampaigns');
+  if (list) list.addEventListener('click', (ev) => {
+    const btn = ev.target.closest('button[data-wfact]');
+    if (!btn) return;
+    if (btn.dataset.wfact === 'run') wfRunOutreachCampaign(btn.dataset.id);
+    else wfShowOutreachLeads(btn.dataset.id, btn.dataset.name);
+  });
+  const refresh = document.getElementById('wfOutreachRefreshBtn');
+  if (refresh) refresh.onclick = wfLoadOutreach;
+  const close = document.getElementById('wfOutreachLeadsClose');
+  if (close) close.onclick = () => {
+    const panel = document.getElementById('wfOutreachLeadsPanel');
+    if (panel) panel.style.display = 'none';
+  };
+  wfLoadOutreach();
+}
+
+
+
 
 function wfBloggerHtml(ctx) {
   const offers = ctx.offers || [];
@@ -619,6 +784,9 @@ async function renderWritersFlow() {
     document.getElementById('wf-blogger').style.display = tab === 'blogger' ? '' : 'none';
   };
   sp.querySelectorAll('[data-tab]').forEach(btn => btn.addEventListener('click', () => setTab(btn.dataset.tab)));
+  // The outreach tab is only reachable by click, but the campaign list should be
+  // warm when they get there; wiring here keeps the panel inert until rendered.
+  wfWireOutreach();
 
   const form = document.getElementById('wfOfferForm');
   if (form) form.onsubmit = async (ev) => {
@@ -2781,7 +2949,35 @@ function renderHelp() {
     </div>`;
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• BOOT â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ══════════════════════════════════ INVITE AUTO-LOGIN ══════════════════════════════════
+// The owner's approval email/WhatsApp carries /tenant-dashboard?t=<token>&phone=<phone>.
+// Exchange it for a session on first open, then strip it from the address bar and
+// history so the link cannot be re-used from a shared screenshot.
+async function signInWithInvite() {
+  showLogin('Opening your workspace…');
+  const { ok, data } = await doLogin(INVITE_PHONE, INVITE_TOKEN);
+  if (!ok || data?.error) {
+    showLogin('This invite link is not valid or has expired. Ask for a fresh link, or sign in with your phone number below.');
+    return false;
+  }
+  // The invite token doubles as the portal key, so a session timeout can be
+  // recovered without the client digging the original message out again.
+  if (!S.key) S.key = INVITE_TOKEN;
+  saveSession(data);
+  showApp();
+  go('home');
+  const phoneEl = document.getElementById('lPhone');
+  if (phoneEl && data.tenant_phone) phoneEl.value = data.tenant_phone;
+  try {
+    const clean = new URL(location.href);
+    clean.searchParams.delete('t');
+    clean.searchParams.delete('phone');
+    history.replaceState({}, '', clean.pathname + clean.search + clean.hash);
+  } catch { /* history is best-effort only */ }
+  return true;
+}
+
+// ══════════════════════════════════ BOOT ══════════════════════════════════
 function boot() {
   document.querySelectorAll('.nav-item[data-sec]').forEach(el => el.addEventListener('click', () => go(el.dataset.sec)));
   document.getElementById('menuBtn').addEventListener('click', () => document.getElementById('sidebar').classList.toggle('open'));
@@ -2806,6 +3002,8 @@ function boot() {
     saveSession(data); showApp(); go('home');
   });
 
+  // An invite link signs the client in on first open — no key to type.
+  if (INVITE_TOKEN) { signInWithInvite(); return; }
   if (!S.key) { showLogin('Missing key in URL. Open /tenant-dashboard?key=YOUR_KEY'); return; }
   if (loadSession()) { showApp(); go('home'); return; }
   showLogin();

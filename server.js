@@ -29,6 +29,19 @@ import { sendMessage, sendImage, sendInteractiveList } from "./utils/messenger.j
 import { startHealthMonitor, runHealthCheck, incrementErrorCount } from "./utils/healthMonitor.js";
 import { buildAlphadomeBrandPromptBlock, buildAlphadomeBrandTrainingEntries, normalizeKenyanPhone } from "./utils/alphadomeBrandContext.js";
 import { isStopCommand } from "./writers_flow/intentHandler.js";
+import {
+  normalizeKePhone,
+  isValidKeMobile,
+  newSubmissionId,
+  newPortalToken,
+  buildPortalUrl,
+  buildInviteMessage,
+  buildWhatsAppInviteLink,
+  parseSubmissionLog,
+  mergeSubmissions,
+  normalizeSubmission,
+  findSubmission,
+} from "./utils/discoveryApprovals.js";
 import aiJobsRouter from "./routes/aiJobs.js";
 import sitemapRouter from "./routes/sitemap.js";
 import aiJobsAdminRouter from "./routes/aiJobsAdmin.js";
@@ -2322,18 +2335,113 @@ async function deleteAlphadomeProductByTenantPhoneAndSku(tenantPhone, sku) {
   return { id: knownItem.id };
 }
 
-function tenantDashboardAuth(req, res, next) {
+// The portal shell is gated by the shared TENANT_DASHBOARD_PASS *or* by a
+// per-tenant invite token (`?t=`), which the owner issues when approving a
+// discovery submission. Tokens identify one tenant only, so an approved client
+// never receives the master key.
+async function findTenantByPortalToken(token) {
+  const value = String(token || "").trim();
+  if (!value) return null;
+  const { data, error } = await supabase
+    .from("bot_tenants")
+    .select("*")
+    .eq("portal_token", value)
+    .limit(1);
+  if (error) {
+    if (isMissingColumnError(error)) {
+      log("[TENANT AUTH] bot_tenants.portal_token is missing - run migrations/2026-10-24_discovery_tenant_approvals.sql", "WARN");
+    } else {
+      log(`[TENANT AUTH] portal token lookup failed: ${error.message}`, "WARN");
+    }
+    return null;
+  }
+  return (data && data[0]) || null;
+}
+
+async function tenantDashboardAuth(req, res, next) {
   if (!TENANT_DASHBOARD_PASS) {
     return res.status(500).send("TENANT_DASHBOARD_PASS environment variable must be set (separate from ADMIN_PASS)");
   }
 
-  const key = req.query.key || req.headers["x-tenant-key"];
-  if (key !== TENANT_DASHBOARD_PASS) {
+  const key = String(req.query.key || req.headers["x-tenant-key"] || "").trim();
+  if (key && key === TENANT_DASHBOARD_PASS) {
+    return next();
+  }
+
+  const invite = String(req.query.t || "").trim();
+  if (invite) {
+    const tenant = await findTenantByPortalToken(invite);
+    if (tenant && isTenantRecordActive(tenant)) return next();
     return res.status(401).send("Unauthorized");
   }
 
-  next();
+  return res.status(401).send("Unauthorized");
 }
+
+function tenantSessionPayload(tenant, session) {
+  return {
+    ok: true,
+    token: session.token,
+    tenant_phone: tenant.client_phone,
+    tenant_name: tenant.client_name,
+    expires_at: new Date(session.expiresAt).toISOString(),
+  };
+}
+
+function phoneMatchesTenant(tenant, phone) {
+  const wanted = normalizeKePhone(phone);
+  if (!wanted) return true;
+  const stored = normalizeKePhone(tenant?.client_phone);
+  if (stored && stored === wanted) return true;
+  return buildPhoneCandidates(phone).includes(String(tenant?.client_phone || "").replace(/\D/g, ""));
+}
+
+app.post("/tenant/session/login", async (req, res) => {
+  try {
+    const tenantPhone = String(req.body?.tenant_phone || "").trim();
+    const key = String(req.body?.key || req.query.key || "").trim();
+
+    if (!key) {
+      return res.status(400).json({ error: "key is required" });
+    }
+
+    // Per-tenant invite token: identifies the tenant on its own, so the client
+    // only has to open the link. A supplied phone must still match.
+    if (!TENANT_DASHBOARD_PASS || key !== TENANT_DASHBOARD_PASS) {
+      const inviteTenant = await findTenantByPortalToken(key);
+      if (!inviteTenant) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      if (!isTenantRecordActive(inviteTenant)) {
+        return res.status(403).json({ error: "Tenant found but inactive" });
+      }
+      if (tenantPhone && !phoneMatchesTenant(inviteTenant, tenantPhone)) {
+        return res.status(403).json({ error: "This invite belongs to a different phone number" });
+      }
+      const session = createTenantSession(inviteTenant);
+      return res.json(tenantSessionPayload(inviteTenant, session));
+    }
+
+    if (!tenantPhone) {
+      return res.status(400).json({ error: "tenant_phone and key are required" });
+    }
+
+    const tenant = await findTenantByPhone(tenantPhone, true);
+    if (!tenant) {
+      const existingTenant = await findTenantByPhone(tenantPhone, false);
+      if (existingTenant) {
+        return res.status(403).json({ error: "Tenant found but inactive" });
+      }
+      return res.status(404).json({ error: "Tenant not found for provided phone" });
+    }
+
+    const session = createTenantSession(tenant);
+    return res.json(tenantSessionPayload(tenant, session));
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
 
 function tenantSessionAuth(req, res, next) {
   cleanupExpiredTenantSessions();
@@ -2358,41 +2466,6 @@ function tenantSessionAuth(req, res, next) {
   next();
 }
 
-app.post("/tenant/session/login", async (req, res) => {
-  try {
-    const tenantPhone = String(req.body?.tenant_phone || "").trim();
-    const key = req.body?.key || req.query.key;
-
-    if (!tenantPhone || !key) {
-      return res.status(400).json({ error: "tenant_phone and key are required" });
-    }
-
-    if (!TENANT_DASHBOARD_PASS || key !== TENANT_DASHBOARD_PASS) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    const tenant = await findTenantByPhone(tenantPhone, true);
-    if (!tenant) {
-      const existingTenant = await findTenantByPhone(tenantPhone, false);
-      if (existingTenant) {
-        return res.status(403).json({ error: "Tenant found but inactive" });
-      }
-      return res.status(404).json({ error: "Tenant not found for provided phone" });
-    }
-
-    const session = createTenantSession(tenant);
-    return res.json({
-      ok: true,
-      token: session.token,
-      tenant_phone: tenant.client_phone,
-      tenant_name: tenant.client_name,
-      expires_at: new Date(session.expiresAt).toISOString(),
-    });
-  } catch (error) {
-    return res.status(500).json({ error: error.message });
-  }
-});
-
 app.post("/tenant/session/logout", (req, res) => {
   const token = String(getTenantSessionToken(req) || "").trim();
   if (!token) {
@@ -2401,6 +2474,268 @@ app.post("/tenant/session/logout", (req, res) => {
 
   const revoked = tenantSessions.delete(token);
   return res.json({ ok: true, revoked });
+});
+
+// ===== TENANT: Writer's Flow — Research & Outreach =====
+// Same engine the owner runs in /admin, scoped to one tenant. Every query filters
+// wf_campaigns.tenant_id, so a client can only see and run their own campaigns.
+// Requires migrations/2026-10-24_discovery_tenant_approvals.sql; without the
+// column the routes answer 503 with the migration name instead of falling back to
+// the global campaign list.
+const TENANT_WF_DEFAULT_TARGET = 10;
+const TENANT_WF_MAX_TARGET = 25;
+const tenantWfActiveRuns = new Set();
+
+function tenantWfMigrationResponse(error) {
+  const detail = String(error?.message || "");
+  const migrationRequired = isMissingColumnError(error) || /relation .* does not exist/i.test(detail);
+  if (!migrationRequired) return null;
+  return {
+    ok: false,
+    error: "Tenant Writer's Flow is not enabled on this database yet. Run migrations/2026-10-24_discovery_tenant_approvals.sql, then retry.",
+    migration_required: true,
+    detail: detail || null,
+  };
+}
+
+async function listTenantWfCampaigns(tenantId, limit = 50) {
+  let { data, error } = await supabase
+    .from("wf_campaigns")
+    .select("*")
+    .eq("tenant_id", tenantId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error && isMissingColumnError(error)) {
+    ({ data, error } = await supabase
+      .from("wf_campaigns")
+      .select("*")
+      .eq("tenant_id", tenantId)
+      .limit(limit));
+  }
+  if (error) throw error;
+  return data || [];
+}
+
+async function loadTenantWfCampaign(tenantId, campaignId) {
+  const { data, error } = await supabase
+    .from("wf_campaigns")
+    .select("*")
+    .eq("id", campaignId)
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+  if (error) {
+    if (isMissingColumnError(error)) {
+      const err = new Error("tenant_id column missing on wf_campaigns");
+      err.migrationRequired = true;
+      throw err;
+    }
+    throw error;
+  }
+  return data || null;
+}
+
+function summarizeTenantCampaign(campaign) {
+  return {
+    id: campaign.id,
+    name: campaign.name || "Untitled campaign",
+    status: campaign.status || "draft",
+    keywords: wfNormalizeList(campaign.keywords),
+    industries: wfNormalizeList(campaign.industries),
+    target_count: Number(campaign.target_count || TENANT_WF_DEFAULT_TARGET),
+    total_leads_found: Number(campaign.total_leads_found || 0),
+    total_outreach_sent: Number(campaign.total_outreach_sent || 0),
+    last_run_at: campaign.last_run_at || null,
+    created_at: campaign.created_at || null,
+    error_log: campaign.error_log || null,
+  };
+}
+
+app.get("/tenant/wf/campaigns", tenantSessionAuth, async (req, res) => {
+  try {
+    const tenantId = req.tenantSession.tenantId;
+    const campaigns = await listTenantWfCampaigns(tenantId);
+    return res.json({
+      ok: true,
+      campaigns: campaigns.map(summarizeTenantCampaign),
+      running: tenantWfActiveRuns.has(tenantId),
+      defaults: { target_count: TENANT_WF_DEFAULT_TARGET, max_target: TENANT_WF_MAX_TARGET },
+    });
+  } catch (err) {
+    const migration = tenantWfMigrationResponse(err);
+    if (migration) return res.status(503).json(migration);
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+app.post("/tenant/wf/campaigns", tenantSessionAuth, async (req, res) => {
+  try {
+    const tenantId = req.tenantSession.tenantId;
+    const name = String(req.body?.name || "").trim();
+    const keywords = wfNormalizeList(req.body?.keywords);
+    const industries = wfNormalizeList(req.body?.industries);
+    if (!name || !keywords.length) {
+      return res.status(400).json({ ok: false, error: "name and at least one keyword are required" });
+    }
+    const targetCount = Math.min(
+      TENANT_WF_MAX_TARGET,
+      Math.max(1, parseInt(req.body?.target_count, 10) || TENANT_WF_DEFAULT_TARGET)
+    );
+
+    let payload = {
+      name,
+      keywords,
+      industries,
+      outreach_types: ["pitch"],
+      channels: ["email"],
+      target_count: targetCount,
+      quality_threshold: 70,
+      status: "draft",
+      tenant_id: tenantId,
+    };
+
+    let data = null;
+    let error = null;
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      ({ data, error } = await supabase.from("wf_campaigns").insert([payload]).select().maybeSingle());
+      if (!error) break;
+      const missingColumn = extractMissingColumnName(error);
+      if (!isMissingColumnError(error) || !missingColumn || missingColumn === "tenant_id" || !(missingColumn in payload)) break;
+      delete payload[missingColumn];
+    }
+    if (error) {
+      const migration = tenantWfMigrationResponse(error);
+      if (migration) return res.status(503).json(migration);
+      throw error;
+    }
+    return res.status(201).json({ ok: true, campaign: summarizeTenantCampaign(data || payload) });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+app.post("/tenant/wf/campaigns/:id/run", tenantSessionAuth, async (req, res) => {
+  try {
+    const tenantId = req.tenantSession.tenantId;
+    if (tenantWfActiveRuns.has(tenantId)) {
+      return res.status(409).json({ ok: false, error: "A Writer's Flow run is already in progress for your workspace." });
+    }
+
+    const campaign = await loadTenantWfCampaign(tenantId, req.params.id);
+    if (!campaign) return res.status(404).json({ ok: false, error: "Campaign not found" });
+    if (campaign.status === "running") {
+      return res.status(409).json({ ok: false, error: "This campaign is already running." });
+    }
+
+    const keywords = wfNormalizeList(campaign.keywords);
+    if (!keywords.length) {
+      return res.status(400).json({ ok: false, error: "Add at least one keyword before running this campaign." });
+    }
+
+    // Send from the client's own mailbox when they configured one (Email Setup);
+    // otherwise the platform mailbox is the sender and the response says so.
+    let smtpConfig = {
+      smtp_host: process.env.SMTP_HOST,
+      smtp_port: process.env.SMTP_PORT,
+      smtp_user: process.env.SMTP_USER,
+      smtp_pass: process.env.SMTP_PASS,
+      smtp_from_name: process.env.SMTP_FROM_NAME || "Alphadome",
+    };
+    let sender = "platform";
+    try {
+      const { fetchTenantSmtpConfig } = await import("./utils/tenantSmtpConfig.js");
+      const smtp = await fetchTenantSmtpConfig({ tenantId });
+      if (smtp?.smtp_host && smtp?.smtp_user) {
+        smtpConfig = {
+          smtp_host: smtp.smtp_host,
+          smtp_port: smtp.smtp_port,
+          smtp_user: smtp.smtp_user,
+          smtp_pass: smtp.smtp_pass,
+          smtp_from_name: smtp.smtp_from_name || campaign.name || "Alphadome",
+        };
+        sender = "tenant";
+      }
+    } catch (err) {
+      log(`[TENANT WF] SMTP lookup failed: ${err.message}`, "WARN");
+    }
+
+    const targetCount = Math.min(
+      TENANT_WF_MAX_TARGET,
+      Math.max(1, parseInt(campaign.target_count, 10) || TENANT_WF_DEFAULT_TARGET)
+    );
+    const qualityThreshold = parseInt(campaign.quality_threshold, 10) || 70;
+    const industries = wfNormalizeList(campaign.industries);
+
+    tenantWfActiveRuns.add(tenantId);
+    await supabase
+      .from("wf_campaigns")
+      .update({ status: "running", last_run_at: new Date().toISOString() })
+      .eq("id", campaign.id)
+      .eq("tenant_id", tenantId);
+
+    res.status(202).json({
+      ok: true,
+      message: "Run started. Leads will appear here as they are found.",
+      campaign_id: campaign.id,
+      sender,
+      target_count: targetCount,
+      keywords,
+    });
+
+    import("./writers_flow/orchestrator.js")
+      .then(({ default: runWritersFlow }) =>
+        runWritersFlow({
+          campaignId: campaign.id,
+          keywords,
+          industries,
+          outreachTypes: ["pitch"],
+          channels: ["email"],
+          targetCount,
+          qualityThreshold,
+          smtpConfig,
+          supabase,
+          testMode: req.query.test === "1",
+        })
+      )
+      .catch((err) => {
+        log(`[TENANT WF] Campaign ${campaign.id} failed: ${err.message}`, "ERROR");
+      })
+      .finally(() => {
+        tenantWfActiveRuns.delete(tenantId);
+      });
+  } catch (err) {
+    tenantWfActiveRuns.delete(req.tenantSession?.tenantId);
+    const migration = tenantWfMigrationResponse(err);
+    if (migration || err.migrationRequired) return res.status(503).json(migration || tenantWfMigrationResponse(new Error("tenant_id column missing")));
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+app.get("/tenant/wf/campaigns/:id/leads", tenantSessionAuth, async (req, res) => {
+  try {
+    const tenantId = req.tenantSession.tenantId;
+    const campaign = await loadTenantWfCampaign(tenantId, req.params.id);
+    if (!campaign) return res.status(404).json({ ok: false, error: "Campaign not found" });
+
+    let { data, error } = await supabase
+      .from("wf_leads")
+      .select("id,name,organization,email,phone,industry,relevance_score,status,created_at")
+      .eq("campaign_id", campaign.id)
+      .order("relevance_score", { ascending: false })
+      .limit(50);
+    if (error && isMissingColumnError(error)) {
+      ({ data, error } = await supabase
+        .from("wf_leads")
+        .select("*")
+        .eq("campaign_id", campaign.id)
+        .limit(50));
+    }
+    if (error) throw error;
+    return res.json({ ok: true, campaign: summarizeTenantCampaign(campaign), leads: data || [] });
+  } catch (err) {
+    const migration = tenantWfMigrationResponse(err);
+    if (migration) return res.status(503).json(migration);
+    return res.status(500).json({ ok: false, error: err.message });
+  }
 });
 
 // ===== TENANT TRAINING DATA/FAQ MANAGEMENT API =====
@@ -11588,8 +11923,25 @@ app.post("/api/kassangas/track-event", async (req, res) => {
 });
 
 // POST /api/kassangas/save-visitor-journey - Save complete visitor session journey
-app.post("/api/kassangas/save-visitor-journey", async (req, res) => {
+// The landing page flushes this with navigator.sendBeacon(), which sends
+// `text/plain;charset=UTF-8`; express.json() skips that content type, so req.body
+// was undefined and every visit logged
+// "SAVE_VISITOR_JOURNEY_ERROR: Cannot destructure property 'visitorId'".
+// Parse the beacon body explicitly and never destructure an absent body.
+app.post(
+  "/api/kassangas/save-visitor-journey",
+  express.text({ type: ["text/plain", "application/csp-report"], limit: "64kb" }),
+  async (req, res) => {
   try {
+    let body = req.body;
+    if (typeof body === "string") {
+      try {
+        body = JSON.parse(body || "{}");
+      } catch {
+        body = {};
+      }
+    }
+    body = body && typeof body === "object" ? body : {};
     const {
       visitorId,
       sessionStart,
@@ -11603,7 +11955,13 @@ app.post("/api/kassangas/save-visitor-journey", async (req, res) => {
       language,
       timezone,
       screenResolution,
-    } = req.body;
+    } = body;
+
+    if (!visitorId) {
+      // A body-less beacon or a non-JSON post: answer 200 (the browser is
+      // unloading) but do not write an "anon" row into the analytics log.
+      return res.json({ success: true, skipped: true, reason: "missing visitorId" });
+    }
 
     const journeyPayload = {
       timestamp: new Date().toISOString(),
@@ -14265,6 +14623,7 @@ app.post("/admin/test-email", adminAuth, async (req, res) => {
 });
 
 // Phase 1: discovery intake endpoint with notification + confirmation email
+const DISCOVERY_LOG_FILE = path.join(process.cwd(), "logs", "discovery_submissions.jsonl");
 app.post('/discovery', async (req, res) => {
   try {
     const payload = req.body || {};
@@ -14283,51 +14642,64 @@ app.post('/discovery', async (req, res) => {
     const challenges = normalizeMulti(payload.challenges);
     const capabilities = normalizeMulti(payload.capabilities);
 
-    // Persist in DB where available; if table doesn't exist, fall back to file log.
+    // Persist in Supabase; if the table (or a column) is unavailable the record
+    // still lands in logs/discovery_submissions.jsonl so the owner can approve it
+    // from /admin. The id is returned either way: it is the key the approval
+    // endpoint and the queue view use.
+    const submissionId = newSubmissionId();
+    const submittedAt = new Date().toISOString();
+    const submissionRow = {
+      name: payload.name,
+      email: payload.email,
+      phone: normalizeKePhone(payload.phone) || payload.phone,
+      business_name: payload.business_name,
+      industry: payload.industry,
+      business_description: payload.business_description || null,
+      team_size: payload.team_size,
+      challenges,
+      challenges_other: payload.challenges_other || null,
+      whatsapp_usage: payload.whatsapp_usage,
+      capabilities,
+      revenue_target: payload.revenue_target,
+      ownership_interest: payload.ownership_interest,
+      timeline: payload.timeline,
+      budget: payload.budget,
+      blockers: payload.blockers || null,
+      source: payload.source || null,
+      additional_notes: payload.additional_notes || null,
+      status: 'new',
+      submitted_at: submittedAt,
+    };
+
     let dbSaved = false;
     let dbError = null;
-    try {
-      const { error } = await supabase
-        .from('discovery_submissions')
-        .insert([{ 
-          name: payload.name,
-          email: payload.email,
-          phone: payload.phone,
-          business_name: payload.business_name,
-          industry: payload.industry,
-          business_description: payload.business_description || null,
-          team_size: payload.team_size,
-          challenges,
-          challenges_other: payload.challenges_other || null,
-          whatsapp_usage: payload.whatsapp_usage,
-          capabilities,
-          revenue_target: payload.revenue_target,
-          ownership_interest: payload.ownership_interest,
-          timeline: payload.timeline,
-          budget: payload.budget,
-          blockers: payload.blockers || null,
-          source: payload.source || null,
-          additional_notes: payload.additional_notes || null,
-          status: 'new',
-          submitted_at: new Date().toISOString(),
-        }]);
-      if (error) throw error;
-      dbSaved = true;
-    } catch (err) {
-      dbError = err;
+    let savedId = submissionId;
+    for (const row of [{ id: submissionId, ...submissionRow }, submissionRow]) {
       try {
-        const logDir = path.join(process.cwd(), 'logs');
-        if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
-        const line = JSON.stringify({
-          event: 'discovery_submission',
-          at: new Date().toISOString(),
-          payload: { ...payload, challenges, capabilities },
-          db_error: err.message || String(err),
-        });
-        fs.appendFileSync(path.join(logDir, 'discovery_submissions.jsonl'), `${line}\n`, 'utf8');
-      } catch (fileErr) {
-        console.error('[Discovery] Failed to write fallback log:', fileErr.message || fileErr);
+        const { data, error } = await supabase
+          .from('discovery_submissions')
+          .insert([row])
+          .select('id')
+          .maybeSingle();
+        if (error) throw error;
+        dbSaved = true;
+        savedId = String(data?.id || row.id || submissionId);
+        break;
+      } catch (err) {
+        dbError = err;
       }
+    }
+
+    if (!dbSaved) {
+      await appendJsonlRecord(DISCOVERY_LOG_FILE, {
+        event: 'discovery_submission',
+        id: savedId,
+        status: 'new',
+        at: submittedAt,
+        submitted_at: submittedAt,
+        payload: { ...payload, challenges, capabilities },
+        db_error: dbError?.message || String(dbError || ''),
+      });
     }
 
     // Slack notification (optional)
@@ -14378,11 +14750,450 @@ app.post('/discovery', async (req, res) => {
       ok: true,
       saved: dbSaved,
       db_warning: dbSaved ? null : (dbError?.message || 'Saved to fallback log only'),
+      submission_id: savedId,
+      status: 'new',
       message: 'Discovery form submitted successfully.',
     });
   } catch (err) {
     console.error('[Discovery] Unexpected error:', err.message || err);
     return res.status(500).json({ ok: false, error: err.message || 'Failed to submit discovery form.' });
+  }
+});
+
+// ===== OWNER: discovery approvals =====
+// The queue reads Supabase *and* the fallback log, so a submission is never lost
+// just because the table/migration was missing when the client pressed Submit.
+async function loadDiscoveryQueue() {
+  let dbRows = [];
+  let dbWarning = null;
+  try {
+    let { data, error } = await supabase
+      .from("discovery_submissions")
+      .select("*")
+      .order("submitted_at", { ascending: false })
+      .limit(200);
+    if (error && isMissingColumnError(error)) {
+      ({ data, error } = await supabase.from("discovery_submissions").select("*").limit(200));
+    }
+    if (error) throw error;
+    dbRows = Array.isArray(data) ? data : [];
+  } catch (err) {
+    dbWarning = err.message || String(err);
+  }
+
+  let logRows = [];
+  try {
+    const text = await fs.promises.readFile(DISCOVERY_LOG_FILE, "utf8");
+    logRows = parseSubmissionLog(text);
+  } catch (err) {
+    if (err.code !== "ENOENT") log(`DISCOVERY_LOG_READ_WARN: ${err.message}`, "WARN");
+  }
+
+  return { submissions: mergeSubmissions(dbRows, logRows), db_warning: dbWarning };
+}
+
+app.get("/admin/api/discovery/submissions", adminAuth, async (req, res) => {
+  try {
+    const status = String(req.query.status || "").trim().toLowerCase();
+    const { submissions, db_warning } = await loadDiscoveryQueue();
+    const counts = submissions.reduce((acc, row) => {
+      const key = row.status || "new";
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+    const filtered = !status || status === "all"
+      ? submissions
+      : submissions.filter((row) => (row.status || "new") === status);
+    // Approved rows carry a ready-to-send invite (message + WhatsApp deep link) so
+    // the queue can re-share an existing link without minting a new one.
+    const enriched = filtered.map((row) => {
+      if (!row.portal_url) return row;
+      const message = buildInviteMessage({
+        contactName: row.contact_name,
+        businessName: row.business_name,
+        portalUrl: row.portal_url,
+      });
+      let whatsapp_url = null;
+      try {
+        whatsapp_url = buildWhatsAppInviteLink({ phone: row.phone, message });
+      } catch {
+        whatsapp_url = null;
+      }
+      return { ...row, invite_message: message, whatsapp_url };
+    });
+    return res.json({ ok: true, submissions: enriched, counts, total: submissions.length, db_warning });
+  } catch (err) {
+    log(`DISCOVERY_QUEUE_ERROR: ${err.message}`, "ERROR");
+    return res.status(500).json({ ok: false, error: "Failed to load discovery submissions" });
+  }
+});
+
+// Column-tolerant writes: a deployment can be missing optional columns (is_active,
+// description, smtp_*). A missing `portal_token` is never stripped — that would
+// hand back a link nobody can use — it fails with the migration name instead.
+const PROTECTED_TENANT_COLUMNS = new Set(["portal_token", "client_name", "client_phone"]);
+
+async function writeBotTenantRecord(tenantId, patch) {
+  const payload = { ...patch };
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const { data, error } = await supabase
+      .from("bot_tenants")
+      .update(payload)
+      .eq("id", tenantId)
+      .select()
+      .maybeSingle();
+    if (!error) return data;
+    const missingColumn = extractMissingColumnName(error);
+    if (!isMissingColumnError(error) || !missingColumn || !(missingColumn in payload)) throw error;
+    if (PROTECTED_TENANT_COLUMNS.has(missingColumn)) {
+      throw new Error(`bot_tenants.${missingColumn} is missing - run migrations/2026-10-24_discovery_tenant_approvals.sql`);
+    }
+    delete payload[missingColumn];
+  }
+  throw new Error("Could not update the tenant record");
+}
+
+async function insertBotTenantRecord(record) {
+  const payload = { ...record };
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const { data, error } = await supabase.from("bot_tenants").insert([payload]).select().maybeSingle();
+    if (!error) return data;
+    const missingColumn = extractMissingColumnName(error);
+    if (!isMissingColumnError(error) || !missingColumn || !(missingColumn in payload)) throw error;
+    if (PROTECTED_TENANT_COLUMNS.has(missingColumn)) {
+      throw new Error(`bot_tenants.${missingColumn} is missing - run migrations/2026-10-24_discovery_tenant_approvals.sql`);
+    }
+    delete payload[missingColumn];
+  }
+  throw new Error("Could not create the tenant record");
+}
+
+function discoveryBaseUrl(req) {
+  return process.env.PUBLIC_BASE_URL || process.env.SITE_URL || `${req.protocol}://${req.get("host")}`;
+}
+
+app.post("/admin/api/discovery/submissions/:id/approve", adminAuth, async (req, res) => {
+  try {
+    const id = decodeURIComponent(String(req.params.id || ""));
+    const { submissions } = await loadDiscoveryQueue();
+    const submission = findSubmission(submissions, id, req.body?.phone);
+    if (!submission) return res.status(404).json({ ok: false, error: "Submission not found" });
+
+    const phone = normalizeKePhone(req.body?.phone || submission.phone);
+    if (!isValidKeMobile(phone)) {
+      return res.status(400).json({
+        ok: false,
+        error: "This submission has no usable Kenyan mobile number (2547XXXXXXXX). Ask the client to resubmit with a valid phone.",
+      });
+    }
+
+    if (submission.status === "approved" && submission.portal_url) {
+      const message = buildInviteMessage({
+        contactName: submission.contact_name,
+        businessName: submission.business_name,
+        portalUrl: submission.portal_url,
+      });
+      return res.json({
+        ok: true,
+        already_approved: true,
+        submission_id: submission.id,
+        tenant_id: submission.tenant_id,
+        tenant_phone: submission.phone,
+        portal_url: submission.portal_url,
+        whatsapp_url: buildWhatsAppInviteLink({ phone: submission.phone, message }),
+        invite_message: message,
+        email_sent: false,
+        email_error: null,
+      });
+    }
+
+    const businessName = submission.business_name || submission.contact_name || `Client ${phone.slice(-4)}`;
+    const approvedAt = new Date().toISOString();
+    const token = newPortalToken();
+    const portalUrl = buildPortalUrl(discoveryBaseUrl(req), { token, phone });
+
+    const existing = await findTenantByPhone(phone, false);
+    const tenantPatch = {
+      client_name: businessName,
+      client_phone: phone,
+      point_of_contact_name: submission.contact_name || null,
+      description: submission.notes ? String(submission.notes).slice(0, 500) : null,
+      status: "active",
+      is_active: true,
+      portal_token: token,
+      portal_token_issued_at: approvedAt,
+      metadata: {
+        ...(existing?.metadata && typeof existing.metadata === "object" ? existing.metadata : {}),
+        source: "discovery_form",
+        discovery_submission_id: submission.id,
+        industry: submission.industry || null,
+        budget: submission.budget || null,
+        timeline: submission.timeline || null,
+        approved_at: approvedAt,
+      },
+    };
+
+    const tenant = existing?.id
+      ? await writeBotTenantRecord(existing.id, tenantPatch)
+      : await insertBotTenantRecord(tenantPatch);
+
+    const approvedBy = String(req.headers["x-admin-actor"] || req.query.actor || "owner").slice(0, 80);
+    const approvalRecord = {
+      id: submission.id,
+      status: "approved",
+      tenant_id: tenant?.id || null,
+      portal_token: token,
+      portal_url: portalUrl,
+      approved_at: approvedAt,
+      approved_by: approvedBy,
+      submitted_at: submission.submitted_at,
+      payload: {
+        name: submission.contact_name,
+        business_name: submission.business_name,
+        phone,
+        email: submission.email,
+        industry: submission.industry,
+        budget: submission.budget,
+        timeline: submission.timeline,
+        challenges: submission.challenges,
+        capabilities: submission.capabilities,
+      },
+    };
+
+    try {
+      const { error } = await supabase
+        .from("discovery_submissions")
+        .update({
+          status: "approved",
+          tenant_id: tenant?.id || null,
+          portal_token: token,
+          portal_url: portalUrl,
+          approved_at: approvedAt,
+          approved_by: approvedBy,
+        })
+        .eq("id", submission.id);
+      if (error) throw error;
+    } catch (err) {
+      log(`DISCOVERY_APPROVE_DB_WARN: ${err.message}`, "WARN");
+    }
+    await appendJsonlRecord(DISCOVERY_LOG_FILE, { event: "discovery_approved", ...approvalRecord });
+
+    const message = buildInviteMessage({ contactName: submission.contact_name, businessName, portalUrl });
+    let emailSent = false;
+    let emailError = null;
+    if (submission.email) {
+      try {
+        const { default: sendEmail } = await import("./writers_flow/emailSender.js");
+        await sendEmail({
+          to: submission.email,
+          subject: "Your Alphadome workspace is approved — portal link inside",
+          text: message,
+        });
+        emailSent = true;
+      } catch (err) {
+        emailError = err.message || String(err);
+      }
+    }
+
+    log(`[DISCOVERY] Approved ${submission.id} for ${businessName} (${phone}) → tenant ${tenant?.id || "?"}`, "SYSTEM");
+    return res.json({
+      ok: true,
+      submission_id: submission.id,
+      tenant_id: tenant?.id || null,
+      tenant_phone: phone,
+      portal_url: portalUrl,
+      whatsapp_url: buildWhatsAppInviteLink({ phone, message }),
+      invite_message: message,
+      email_sent: emailSent,
+      email_error: emailError,
+    });
+  } catch (err) {
+    log(`DISCOVERY_APPROVE_ERROR: ${err.message}`, "ERROR");
+    return res.status(500).json({ ok: false, error: err.message || "Failed to approve submission" });
+  }
+});
+
+app.post("/admin/api/discovery/submissions/:id/reject", adminAuth, async (req, res) => {
+  try {
+    const id = decodeURIComponent(String(req.params.id || ""));
+    const { submissions } = await loadDiscoveryQueue();
+    const submission = findSubmission(submissions, id, req.body?.phone);
+    if (!submission) return res.status(404).json({ ok: false, error: "Submission not found" });
+
+    const reason = String(req.body?.reason || "").trim().slice(0, 300);
+    const rejectedAt = new Date().toISOString();
+    try {
+      const { error } = await supabase
+        .from("discovery_submissions")
+        .update({ status: "rejected", rejected_at: rejectedAt, rejection_reason: reason || null })
+        .eq("id", submission.id);
+      if (error) throw error;
+    } catch (err) {
+      log(`DISCOVERY_REJECT_DB_WARN: ${err.message}`, "WARN");
+    }
+    await appendJsonlRecord(DISCOVERY_LOG_FILE, {
+      event: "discovery_rejected",
+      id: submission.id,
+      status: "rejected",
+      rejected_at: rejectedAt,
+      rejection_reason: reason || null,
+      submitted_at: submission.submitted_at,
+      payload: { name: submission.contact_name, business_name: submission.business_name, phone: submission.phone },
+    });
+
+    return res.json({ ok: true, submission_id: submission.id, status: "rejected" });
+  } catch (err) {
+    log(`DISCOVERY_REJECT_ERROR: ${err.message}`, "ERROR");
+    return res.status(500).json({ ok: false, error: "Failed to reject submission" });
+  }
+});
+
+// Re-issue (rotate) the portal link for an approved tenant. The previous link
+// stops working, which is the point when a phone changes hands or a message is
+// forwarded to the wrong person.
+app.post("/admin/api/discovery/submissions/:id/portal-link", adminAuth, async (req, res) => {
+  try {
+    const id = decodeURIComponent(String(req.params.id || ""));
+    const { submissions } = await loadDiscoveryQueue();
+    const submission = findSubmission(submissions, id, req.body?.phone);
+    if (!submission) return res.status(404).json({ ok: false, error: "Submission not found" });
+
+    const phone = normalizeKePhone(req.body?.phone || submission.phone);
+    if (!isValidKeMobile(phone)) {
+      return res.status(400).json({ ok: false, error: "This submission has no usable Kenyan mobile number." });
+    }
+
+    const tenant = submission.tenant_id
+      ? (await supabase.from("bot_tenants").select("*").eq("id", submission.tenant_id).maybeSingle()).data
+      : await findTenantByPhone(phone, false);
+    if (!tenant?.id) {
+      return res.status(409).json({ ok: false, error: "Approve this submission first — there is no tenant to link to yet." });
+    }
+
+    const token = newPortalToken();
+    const issuedAt = new Date().toISOString();
+    const portalUrl = buildPortalUrl(discoveryBaseUrl(req), { token, phone });
+    await writeBotTenantRecord(tenant.id, { portal_token: token, portal_token_issued_at: issuedAt });
+
+    try {
+      const { error } = await supabase
+        .from("discovery_submissions")
+        .update({ status: "approved", tenant_id: tenant.id, portal_token: token, portal_url: portalUrl })
+        .eq("id", submission.id);
+      if (error) throw error;
+    } catch (err) {
+      log(`DISCOVERY_LINK_DB_WARN: ${err.message}`, "WARN");
+    }
+    await appendJsonlRecord(DISCOVERY_LOG_FILE, {
+      event: "discovery_link_issued",
+      id: submission.id,
+      status: "approved",
+      tenant_id: tenant.id,
+      portal_token: token,
+      portal_url: portalUrl,
+      approved_at: submission.approved_at || issuedAt,
+      submitted_at: submission.submitted_at,
+      payload: { business_name: submission.business_name, name: submission.contact_name, phone },
+    });
+
+    const message = buildInviteMessage({
+      contactName: submission.contact_name,
+      businessName: submission.business_name,
+      portalUrl,
+    });
+    return res.json({
+      ok: true,
+      submission_id: submission.id,
+      tenant_id: tenant.id,
+      tenant_phone: phone,
+      portal_url: portalUrl,
+      whatsapp_url: buildWhatsAppInviteLink({ phone, message }),
+      invite_message: message,
+    });
+  } catch (err) {
+    log(`DISCOVERY_LINK_ERROR: ${err.message}`, "ERROR");
+    return res.status(500).json({ ok: false, error: err.message || "Failed to issue a portal link" });
+  }
+});
+
+// Issue (or rotate) a portal invite straight from a tenant record. The discovery
+// routes above all start from a questionnaire submission, which leaves tenants
+// onboarded before the form existed (Kassangas and the manually added ones) with
+// no way into the portal. Same token, link and message builders as approval, so
+// there is exactly one kind of invite in the system.
+app.post("/admin/api/tenants/:tenantId/portal-link", adminAuth, async (req, res) => {
+  try {
+    const tenantId = decodeURIComponent(String(req.params.tenantId || ""));
+    if (!tenantId) return res.status(400).json({ ok: false, error: "tenantId is required" });
+
+    const { data: tenant, error } = await supabase
+      .from("bot_tenants")
+      .select("*")
+      .eq("id", tenantId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!tenant?.id) return res.status(404).json({ ok: false, error: "Tenant not found" });
+
+    const phone = normalizeKePhone(req.body?.phone || tenant.client_phone);
+    if (!isValidKeMobile(phone)) {
+      return res.status(400).json({
+        ok: false,
+        error: "This tenant has no usable Kenyan mobile number. Add one first — the invite signs the client in with it.",
+      });
+    }
+
+    const token = newPortalToken();
+    const issuedAt = new Date().toISOString();
+    const portalUrl = buildPortalUrl(discoveryBaseUrl(req), { token, phone });
+    const rotated = Boolean(tenant.portal_token);
+
+    // The login checks the invite phone against the tenant record, so a corrected
+    // number has to land on the tenant too or the first click fails.
+    const tenantPatch = { portal_token: token, portal_token_issued_at: issuedAt };
+    if (normalizeKePhone(tenant.client_phone) !== phone) tenantPatch.client_phone = phone;
+    await writeBotTenantRecord(tenant.id, tenantPatch);
+
+    // Keep the discovery card pointing at the link that actually works, when this
+    // tenant came from the questionnaire. Best effort: the invite is already valid.
+    try {
+      const { error: linkError } = await supabase
+        .from("discovery_submissions")
+        .update({ status: "approved", tenant_id: tenant.id, portal_token: token, portal_url: portalUrl })
+        .eq("tenant_id", tenant.id);
+      if (linkError) throw linkError;
+    } catch (err) {
+      log(`TENANT_PORTAL_LINK_DB_WARN: ${err.message}`, "WARN");
+    }
+
+    const businessName = tenant.client_name || `Client ${phone.slice(-4)}`;
+    await appendJsonlRecord(DISCOVERY_LOG_FILE, {
+      event: "tenant_portal_link_issued",
+      tenant_id: tenant.id,
+      portal_token: token,
+      portal_url: portalUrl,
+      issued_at: issuedAt,
+      rotated,
+      payload: { business_name: businessName, phone },
+    });
+
+    const message = buildInviteMessage({
+      contactName: tenant.point_of_contact_name || tenant.client_name || "",
+      businessName,
+      portalUrl,
+    });
+    return res.json({
+      ok: true,
+      tenant_id: tenant.id,
+      tenant_name: businessName,
+      tenant_phone: phone,
+      rotated,
+      portal_url: portalUrl,
+      whatsapp_url: buildWhatsAppInviteLink({ phone, message }),
+      invite_message: message,
+    });
+  } catch (err) {
+    log(`TENANT_PORTAL_LINK_ERROR: ${err.message}`, "ERROR");
+    return res.status(500).json({ ok: false, error: err.message || "Failed to issue a portal link" });
   }
 });
 

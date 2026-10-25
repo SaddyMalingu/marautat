@@ -376,6 +376,7 @@
           <li class="nav-item"><a class="nav-link" href="#logs"><i class="fa-solid fa-wave-square"></i> Live Logs</a></li>
           <li class="nav-item"><a class="nav-link" href="#onboarding"><i class="fa-solid fa-user-plus"></i> Tenant Onboarding</a></li>
           <li class="nav-item"><a class="nav-link" href="#writers-flow"><i class="fa-solid fa-rocket"></i> Writer's Flow</a></li>
+          <li class="nav-item"><a class="nav-link" href="#discovery"><i class="fa-solid fa-user-check"></i> Discovery Approvals</a></li>
       </ul>
     </nav>
     <main class="main-content flex-grow-1">
@@ -841,6 +842,7 @@
           <li class="nav-item"><a class="nav-link" href="#catalog"><i class="fa-solid fa-table-list"></i> Catalog Viewer</a></li>
           <li class="nav-item"><a class="nav-link" href="#logs"><i class="fa-solid fa-wave-square"></i> Live Logs</a></li>
           <li class="nav-item"><a class="nav-link" href="#onboarding"><i class="fa-solid fa-user-plus"></i> Tenant Onboarding</a></li>
+          <li class="nav-item"><a class="nav-link" href="#discovery"><i class="fa-solid fa-user-check"></i> Discovery Approvals</a></li>
           <li class="nav-item"><a class="nav-link" href="#writers-flow"><i class="fa-solid fa-rocket"></i> Writer's Flow</a></li>
       </ul>
     </nav>
@@ -918,6 +920,7 @@
       else if (hash === '#upload') url = 'dashboard.html#upload';
       else if (hash === '#logs') url = '/logs/live';
       else if (hash === '#onboarding') url = 'tenant_onboarding.html';
+      else if (hash === '#discovery') { renderDiscoveryPage(); return; }
       else if (hash === '#dashboard' || hash === '' || hash === '#') url = '';
       else if (hash === '#writers-flow') { renderWritersFlowPage(); return; }
       else url = '';
@@ -3538,6 +3541,7 @@
             <div class="meta">${tenantPhone || 'No phone'} • Updated: ${updatedAt}</div>
             <div class="actions">
               <button class="btn btn-sm btn-outline-primary" type="button" onclick="openTenantEditModal('${escapeHtml(String(tenant.id || ''))}')">Edit Tenant</button>
+              <button class="btn btn-sm btn-success" type="button" onclick="issueTenantPortalLink('${escapeHtml(String(tenant.id || ''))}')">Portal Invite</button>
               <a class="btn btn-sm btn-outline-info" href="${catalogUrl}" target="_blank" rel="noreferrer">Open Catalog</a>
               <a class="btn btn-sm btn-outline-success" href="${simpleUrl}" target="_blank" rel="noreferrer">Simple Upload</a>
               <a class="btn btn-sm btn-outline-light" href="${whatsappUrl}" target="_blank" rel="noreferrer">Open WhatsApp</a>
@@ -3554,6 +3558,41 @@
         showAlert('Tenant Phone Copied', `Copied ${phone} to clipboard.`, 'success');
       } catch (error) {
         showAlert('Copy Failed', 'Clipboard access is not available in this browser session.', 'warning');
+      }
+    }
+
+    // Existing tenants (onboarded before the questionnaire) get the same
+    // passwordless invite as approved submissions: mint a token, copy the link,
+    // offer the prefilled WhatsApp message. No password ever leaves the server.
+    async function issueTenantPortalLink(tenantId) {
+      if (!tenantId) {
+        showAlert('Portal Invite', 'Tenant id is missing.', 'warning');
+        return;
+      }
+      const tenant = (dashboardOpsState.tenants || []).find((item) => String(item.id) === String(tenantId)) || {};
+      const phone = String(tenant.client_phone || '').trim();
+      try {
+        const data = await fetchJsonOrThrow(`/admin/api/tenants/${encodeURIComponent(tenantId)}/portal-link`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(phone ? { phone } : {}),
+        });
+        try {
+          await navigator.clipboard.writeText(data.portal_url);
+        } catch {
+          window.prompt('Copy this invite link:', data.portal_url);
+        }
+        showAlert(
+          'Portal Invite Ready',
+          `${data.tenant_name || 'Tenant'}: link copied. ${data.rotated ? 'The previous link no longer works. ' : ''}Paste it into WhatsApp — the client lands signed in, no password.`,
+          'success'
+        );
+        if (data.whatsapp_url && window.confirm('Open WhatsApp with the invite message already written?')) {
+          window.open(data.whatsapp_url, '_blank', 'noopener');
+        }
+        loadAdminActionTrail();
+      } catch (error) {
+        showAlert('Portal Invite Failed', error.message || 'Unable to issue a portal link.', 'danger');
       }
     }
 
@@ -3635,6 +3674,289 @@
       leads: [],
       outreach: [],
     };
+    // ═══ DISCOVERY APPROVALS ═══
+    // One queue for the questionnaire submissions that become paying tenants:
+    // approve → tenant + invite link → the client opens /tenant-dashboard signed in.
+    const discoveryState = { submissions: [], counts: {}, filter: 'new', busy: new Set() };
+
+    function renderDiscoveryPage() {
+      const spaContent = document.getElementById('spa-content');
+      if (!spaContent) return;
+      spaContent.innerHTML = `
+        <div class="mb-4 d-flex flex-wrap align-items-center justify-content-between gap-3">
+          <div>
+            <h2 class="mb-1"><i class="fa-solid fa-user-check"></i> Discovery Approvals</h2>
+            <div class="text-muted">Questionnaire submissions waiting for an owner decision</div>
+          </div>
+          <div class="d-flex gap-2 align-items-center">
+            <select class="form-select form-select-sm" id="discoveryFilter" style="width:auto">
+              <option value="new">Waiting for approval</option>
+              <option value="approved">Approved</option>
+              <option value="rejected">Rejected</option>
+              <option value="all">All submissions</option>
+            </select>
+            <button class="btn btn-sm btn-outline-info" id="discoveryRefreshBtn"><i class="fa-solid fa-arrows-rotate"></i> Refresh</button>
+          </div>
+        </div>
+        <div class="dashboard-cards mb-3">
+          <div class="dashboard-card"><h3>Waiting</h3><div class="value" id="discoveryNewCount">--</div><div class="desc">Needs a decision</div></div>
+          <div class="dashboard-card"><h3>Approved</h3><div class="value" id="discoveryApprovedCount">--</div><div class="desc">Tenants with portal access</div></div>
+          <div class="dashboard-card"><h3>Rejected</h3><div class="value" id="discoveryRejectedCount">--</div><div class="desc">Not a fit</div></div>
+          <div class="dashboard-card"><h3>Total</h3><div class="value" id="discoveryTotalCount">--</div><div class="desc">All submissions</div></div>
+        </div>
+        <div id="discoveryBanner"></div>
+        <div id="discoveryList" class="ops-empty">Loading submissions...</div>`;
+      const filter = document.getElementById('discoveryFilter');
+      if (filter) {
+        filter.value = discoveryState.filter;
+        filter.addEventListener('change', () => { discoveryState.filter = filter.value; renderDiscoveryList(); });
+      }
+      document.getElementById('discoveryRefreshBtn')?.addEventListener('click', loadDiscoveryQueue);
+      const list = document.getElementById('discoveryList');
+      if (list) list.addEventListener('click', handleDiscoveryAction);
+      loadDiscoveryQueue();
+    }
+
+    async function loadDiscoveryQueue() {
+      const container = document.getElementById('discoveryList');
+      try {
+        const data = await fetchJsonOrThrow('/admin/api/discovery/submissions?status=all');
+        discoveryState.submissions = Array.isArray(data.submissions) ? data.submissions : [];
+        discoveryState.counts = data.counts || {};
+        const counts = discoveryState.counts;
+        const setVal = (id, value) => { const el = document.getElementById(id); if (el) el.textContent = String(value); };
+        setVal('discoveryNewCount', counts.new || 0);
+        setVal('discoveryApprovedCount', counts.approved || 0);
+        setVal('discoveryRejectedCount', counts.rejected || 0);
+        setVal('discoveryTotalCount', data.total ?? discoveryState.submissions.length);
+        const banner = document.getElementById('discoveryBanner');
+        if (banner) {
+          // A missing table is a deploy problem: say so instead of showing an empty queue.
+          banner.innerHTML = data.db_warning
+            ? `<div class="alert alert-warning py-2" style="font-size:.85rem"><strong>Database not migrated:</strong> ${escapeHtml(data.db_warning)}. Submissions are still readable from the fallback log.</div>`
+            : '';
+        }
+        renderDiscoveryList();
+      } catch (err) {
+        if (container) container.innerHTML = `<div class="ops-empty text-danger">${escapeHtml(err.message || 'Failed to load submissions')}</div>`;
+      }
+    }
+    function discoveryField(label, value) {
+      if (!value) return '';
+      return `<div class="meta"><span class="text-muted">${escapeHtml(label)}:</span> ${escapeHtml(String(value))}</div>`;
+    }
+
+    function discoveryChips(label, list) {
+      const items = Array.isArray(list) ? list.filter(Boolean) : [];
+      if (!items.length) return '';
+      return `<div class="meta"><span class="text-muted">${escapeHtml(label)}:</span> ${items
+        .map((item) => `<span class="badge bg-secondary me-1">${escapeHtml(String(item))}</span>`).join('')}</div>`;
+    }
+
+    function renderDiscoveryList() {
+      const container = document.getElementById('discoveryList');
+      if (!container) return;
+      const rows = discoveryState.filter === 'all'
+        ? discoveryState.submissions
+        : discoveryState.submissions.filter((row) => (row.status || 'new') === discoveryState.filter);
+      if (!rows.length) {
+        const empty = discoveryState.filter === 'new'
+          ? 'No submissions are waiting for approval. New questionnaire answers appear here automatically.'
+          : 'Nothing in this view yet.';
+        container.className = 'ops-empty';
+        container.innerHTML = escapeHtml(empty);
+        return;
+      }
+      container.className = '';
+      container.innerHTML = rows.map(renderDiscoveryCard).join('');
+    }
+
+    function renderDiscoveryCard(row) {
+      const id = String(row.id || '');
+      const status = String(row.status || 'new');
+      const busy = discoveryState.busy.has(id);
+      const phone = String(row.phone || '');
+      const name = row.business_name || row.contact_name || 'Unnamed business';
+      const submitted = row.submitted_at ? new Date(row.submitted_at).toLocaleString() : '';
+      const approvedBlock = row.portal_url ? `
+        <div class="mt-2 p-2 rounded" style="background:rgba(56,189,248,.08)">
+          <div class="small text-muted mb-1">Portal invite link ${row.approved_at ? '· issued ' + escapeHtml(new Date(row.approved_at).toLocaleString()) : ''}</div>
+          <input class="form-control form-control-sm" readonly value="${escapeHtml(row.portal_url)}" onclick="this.select()">
+          <div class="d-flex flex-wrap gap-2 mt-2">
+            <button class="btn btn-sm btn-outline-info" data-disc-action="copy" data-id="${escapeHtml(id)}">Copy link</button>
+            ${row.whatsapp_url ? `<a class="btn btn-sm btn-success" href="${escapeHtml(row.whatsapp_url)}" target="_blank" rel="noopener" data-disc-action="whatsapp" data-id="${escapeHtml(id)}">WhatsApp</a>` : ''}
+            <button class="btn btn-sm btn-outline-secondary" data-disc-action="rotate" data-id="${escapeHtml(id)}" ${busy ? 'disabled' : ''}>New link</button>
+          </div>
+        </div>` : '';
+      return `
+        <div class="tenant-card mb-3" data-disc-id="${escapeHtml(id)}">
+          <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
+            <div>
+              <div class="fw-semibold">${escapeHtml(name)} <span class="status-pill ${status === 'approved' ? 'active' : 'inactive'}">${escapeHtml(status)}</span></div>
+              <div class="meta">${escapeHtml(row.contact_name || '')} ${phone ? '· ' + escapeHtml(phone) : ''} ${row.email ? '· ' + escapeHtml(row.email) : ''}</div>
+            </div>
+            <div class="text-muted small">${escapeHtml(submitted)}</div>
+          </div>
+          ${row.business_description ? `<div class="meta mt-2">${escapeHtml(String(row.business_description).slice(0, 400))}</div>` : ''}
+          <div class="mt-2">
+            ${discoveryField('Industry', row.industry)}
+            ${discoveryField('Team', row.team_size)}
+            ${discoveryField('Budget', row.budget)}
+            ${discoveryField('Timeline', row.timeline)}
+            ${discoveryField('Revenue target', row.revenue_target)}
+            ${discoveryField('WhatsApp use', row.whatsapp_usage)}
+            ${discoveryField('Ownership interest', row.ownership_interest)}
+            ${discoveryField('Source', row.source)}
+            ${discoveryChips('Challenges', row.challenges)}
+            ${discoveryChips('Capabilities', row.capabilities)}
+            ${discoveryField('Notes', row.notes)}
+            ${row.rejection_reason ? discoveryField('Rejected because', row.rejection_reason) : ''}
+          </div>
+          ${approvedBlock}
+          <div class="actions mt-3">
+            ${status !== 'approved'
+              ? `<button class="btn btn-sm btn-success" data-disc-action="approve" data-id="${escapeHtml(id)}" ${busy ? 'disabled' : ''}>${busy ? 'Approving...' : 'Approve &amp; issue link'}</button>`
+              : `<button class="btn btn-sm btn-outline-success" data-disc-action="approve" data-id="${escapeHtml(id)}" ${busy ? 'disabled' : ''}>Resend invite</button>`}
+            ${status !== 'rejected'
+              ? `<button class="btn btn-sm btn-outline-danger" data-disc-action="reject" data-id="${escapeHtml(id)}" ${busy ? 'disabled' : ''}>Reject</button>`
+              : ''}
+          </div>
+        </div>`;
+    }
+
+
+
+
+
+    function discoveryRow(id) {
+      return discoveryState.submissions.find((row) => String(row.id) === String(id)) || null;
+    }
+
+    async function copyDiscoveryLink(row, silent = false) {
+      if (!row?.portal_url) return;
+      try {
+        await navigator.clipboard.writeText(row.portal_url);
+        if (!silent) showAlert('Invite Link', 'Link copied. Paste it into the client WhatsApp chat.', 'success');
+      } catch {
+        window.prompt('Copy this invite link:', row.portal_url);
+      }
+    }
+
+    function handleDiscoveryAction(event) {
+      const btn = event.target.closest('[data-disc-action]');
+      if (!btn) return;
+      // The WhatsApp anchor has a real href: let the browser open it untouched.
+      if (btn.dataset.discAction === 'whatsapp') return;
+      const id = btn.dataset.id;
+      const row = discoveryRow(id);
+      if (!row) return;
+      if (btn.dataset.discAction === 'copy') { copyDiscoveryLink(row); return; }
+      if (btn.dataset.discAction === 'approve') { approveDiscoverySubmission(row, btn); return; }
+      if (btn.dataset.discAction === 'reject') { rejectDiscoverySubmission(row, btn); return; }
+      if (btn.dataset.discAction === 'rotate') { rotateDiscoveryLink(row, btn); return; }
+    }
+
+    function markDiscoveryBusy(id, busy, label) {
+      if (busy) discoveryState.busy.add(String(id));
+      else discoveryState.busy.delete(String(id));
+      // Re-rendering the whole queue keeps counters and buttons consistent; the
+      // submitted card keeps its position because the list order does not change.
+      renderDiscoveryList();
+      if (busy) {
+        const btn = document.querySelector(`[data-disc-action="approve"][data-id="${CSS.escape(String(id))}"]`);
+        if (btn) { btn.disabled = true; btn.textContent = label || 'Approving...'; }
+      }
+    }
+
+    function applyDiscoveryResult(id, patch) {
+      discoveryState.submissions = discoveryState.submissions.map((row) => (
+        String(row.id) === String(id) ? { ...row, ...patch } : row
+      ));
+    }
+
+    async function approveDiscoverySubmission(row, btn) {
+      const id = String(row.id);
+      markDiscoveryBusy(id, true, 'Approving...');
+      try {
+        const data = await fetchJsonOrThrow(`/admin/api/discovery/submissions/${encodeURIComponent(id)}/approve`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        applyDiscoveryResult(id, {
+          status: 'approved',
+          tenant_id: data.tenant_id,
+          portal_url: data.portal_url,
+          whatsapp_url: data.whatsapp_url,
+          invite_message: data.invite_message,
+          approved_at: new Date().toISOString(),
+        });
+        discoveryState.counts = { ...discoveryState.counts };
+        const emailNote = data.email_sent
+          ? 'The invite was emailed and copied to your clipboard.'
+          : data.email_error
+            ? `Email failed (${data.email_error}) — the link is copied, send it on WhatsApp.`
+            : 'No email on file — the link is copied, send it on WhatsApp.';
+        showAlert(
+          data.already_approved ? 'Already Approved' : 'Client Approved',
+          `${emailNote} It signs them in to their own tenant dashboard.`,
+          data.already_approved ? 'info' : 'success'
+        );
+        copyDiscoveryLink({ portal_url: data.portal_url }, true);
+        await loadDiscoveryQueue();
+        discoveryState.filter = 'approved';
+        const filterEl = document.getElementById('discoveryFilter');
+        if (filterEl) filterEl.value = 'approved';
+        renderDiscoveryList();
+      } catch (err) {
+        showAlert('Approval Failed', err.message || 'Could not approve this submission.', 'danger');
+      } finally {
+        markDiscoveryBusy(id, false);
+      }
+    }
+
+    async function rejectDiscoverySubmission(row, btn) {
+      const reason = window.prompt(`Reject ${row.business_name || row.contact_name || 'this submission'}?\nReason (optional, kept for the record):`, '');
+      if (reason === null) return;
+      const id = String(row.id);
+      markDiscoveryBusy(id, true, 'Rejecting...');
+      try {
+        await fetchJsonOrThrow(`/admin/api/discovery/submissions/${encodeURIComponent(id)}/reject`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason }),
+        });
+        applyDiscoveryResult(id, { status: 'rejected', rejection_reason: reason || null, rejected_at: new Date().toISOString() });
+        showAlert('Submission Rejected', 'The submission is archived with the reason you entered.', 'info');
+        await loadDiscoveryQueue();
+      } catch (err) {
+        showAlert('Reject Failed', err.message || 'Could not reject this submission.', 'danger');
+      } finally {
+        markDiscoveryBusy(id, false);
+      }
+    }
+
+    async function rotateDiscoveryLink(row, btn) {
+      if (!window.confirm('Issue a new invite link? The old link stops working immediately.')) return;
+      const id = String(row.id);
+      markDiscoveryBusy(id, true, 'Issuing...');
+      try {
+        const data = await fetchJsonOrThrow(`/admin/api/discovery/submissions/${encodeURIComponent(id)}/portal-link`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        applyDiscoveryResult(id, { portal_url: data.portal_url, whatsapp_url: data.whatsapp_url });
+        showAlert('New Link Issued', 'The previous link is now dead. The new one is copied.', 'success');
+        copyDiscoveryLink({ portal_url: data.portal_url }, true);
+        renderDiscoveryList();
+      } catch (err) {
+        showAlert('Link Not Issued', err.message || 'Could not issue a new link.', 'danger');
+      } finally {
+        markDiscoveryBusy(id, false);
+      }
+    }
+
 
     function renderWritersFlowPage() {
       const spaContent = document.getElementById('spa-content');
@@ -3985,6 +4307,7 @@
     window.runWfCampaign = runWfCampaign;
     window.deleteWfCampaign = deleteWfCampaign;
     window.sendWfOutreach = sendWfOutreach;
+    window.issueTenantPortalLink = issueTenantPortalLink;
 
     function showAlert(title, message, type = 'info') {
       const banner = document.getElementById('alertBanner');
