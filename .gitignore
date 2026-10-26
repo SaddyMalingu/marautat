@@ -1,3 +1,13 @@
 # Ignore environment variable files
 .env
 .env.*
+
+# Scratch files from live verification runs. These carried the canary output, the
+# deploy poller and byte-level checks; they are evidence, not source, and they were
+# dirtying every `git status` during the admin-console work.
+.canary*.txt
+.v_*.txt
+.live_*.txt
+.ps*.txt
+.wait_deploy.ps1
+.run_live.ps1

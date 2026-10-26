@@ -114,6 +114,53 @@ Live run against the pre-fix deployment: `submit took 121222ms`,
 `catalogue_warning` **absent** (old code), tenant `656831d8-…` created. Keep that
 tenant as the permanent regression tenant; do not delete it.
 
+## The regression guard: `scripts/test_admin_console_html.mjs`
+
+The reason this bug survived a 400-assertion suite is simple: nothing in the repo
+ever read `admin/dashboard.html`. Every test exercised `server.js`, SQL, or a live
+endpoint, so a document whose first 144 lines sat above ` <!DOCTYPE html>` was
+invisible to all of them.
+
+```
+node scripts/test_admin_console_html.mjs                    # npm run test:admin-console
+node scripts/test_admin_console_html.mjs --file=other.html  # any candidate document
+```
+
+23 assertions, all structural, no browser and no network:
+
+| Check | The defect it catches |
+| --- | --- |
+| line 1 is the doctype, nothing above it | the quirks-mode / raw-source shift |
+| `<html>`/`<head>`/`<body>` counts, `<script>`/`<style>`/`<div>` balance | a stray tag swallowing the cards |
+| every `getElementById()` id is declared in the markup | a card deleted while its handler survives |
+| the three widget loaders are defined *and* called from `loadDashboardWidgets()` | a restored card that never fetches |
+| exactly one `setDiscoveryFilter()` owner, chips via `data-disc-filter`, delegate routes through the owner | filter state with two writers |
+| every `var(--token)` is defined in the document | an undefined `--line` that voids each declaration |
+
+Proof it fails on the original defect: a scratch copy with orphaned markup above the
+doctype and one card removed reports
+
+```
+FAIL  line 1 is the doctype
+FAIL  nothing at all sits above the doctype
+FAIL  all 183 ids used by getElementById are declared  -> governancePolicies
+20 passed, 3 failed          (exit 1)
+```
+
+and the repaired document reports `23 passed, 0 failed` (exit 0). Run it before
+every push that touches the console; it is the cheapest defence the console has.
+
+## Status at 2026-10-26
+
+- Production is still serving the pre-fix document: `/admin` answers 255 139 bytes,
+  `loadDashboardWidgets` absent, `fetchGovernance` present. Two commits are pushed
+  to `origin/main` (`2a46be04`, `8b7e0196`); Render has not rebuilt from them.
+  Dependency resolution is not the cause (`nodemailer` 8.0.7 installs cleanly), so
+  check the service's branch, auto-deploy toggle and build log.
+- Kassangas (`0702245555`) is invited: the live invite returned a signed portal
+  token and 26 of 27 smoke checks passed, the only failure being the catalogue
+  health field that the live build does not have yet.
+
 ## Still open
 
 - Render must rebuild from `main` before any of this is live. `catalogue_warning`
