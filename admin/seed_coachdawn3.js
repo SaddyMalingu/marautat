@@ -4,9 +4,15 @@
 
 import { createClient } from '@supabase/supabase-js';
 
+// The schema has to be stated. Without `db.schema` the client defaults to
+// public, which is how the orphan `cfc89b88-cc67-4655-ab06-b823b93a73e2` row
+// appeared: a Coach Dawn tenant sitting in public that no alphadome lookup
+// (get_tenant_by_wa, get_catalog, every bot_* table) could ever find.
+// See docs/BOT_SCHEMA_RECONCILE_2026-10-25.md.
 const supabase = createClient(
   process.env.SB_URL,
-  process.env.SB_SERVICE_ROLE_KEY
+  process.env.SB_SERVICE_ROLE_KEY,
+  { auth: { persistSession: false }, db: { schema: 'alphadome' } }
 );
 
 async function seedCoachDawn() {
@@ -29,10 +35,18 @@ async function seedCoachDawn() {
       }
     ], { onConflict: ['client_phone'] });
   if (error) {
-    console.error('Error inserting Coach Dawn 3.0:', error.message);
-  } else {
-    console.log('Coach Dawn 3.0 tenant seeded:', data);
+    console.error('Error inserting Coach Dawn 3.0 into alphadome.bot_tenants:', error.message);
+    if (error.code === '42P10') {
+      console.error('upsert needs a UNIQUE constraint on client_phone in alphadome; '
+        + 'add one, or rewrite this step as select-then-insert.');
+    } else if (error.code === 'PGRST204') {
+      console.error('alphadome.bot_tenants is missing one of the columns in the payload above.');
+    }
+    process.exitCode = 1;
+    return;
   }
+  console.log('Coach Dawn 3.0 tenant seeded into alphadome:',
+    (data || []).map((row) => row.id));
 }
 
 seedCoachDawn();
