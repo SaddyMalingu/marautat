@@ -1,147 +1,3 @@
-                              <div class="dashboard-card position-relative" id="governanceCard">
-                                <span class="position-absolute top-0 end-0 badge bg-dark text-light m-2" title="Governance, Security & Compliance"><i class="fa-solid fa-shield-halved"></i></span>
-                                <h3><i class="fa-solid fa-shield-halved"></i> Governance & Security</h3>
-                                <div class="value" id="governanceSummary">--</div>
-                                <div class="desc">RBAC, Audit, Policy, Session Security</div>
-                                <div class="mt-2" id="governancePolicies"></div>
-                                <ul class="small mt-2 mb-1" id="governanceAuditList" style="padding-left:18px;"></ul>
-                                <button class="btn btn-sm btn-outline-dark mt-2 w-100" id="refreshGovernanceBtn">Refresh</button>
-                              </div>
-                                  async function fetchGovernance() {
-                                    try {
-                                      // Policies
-                                      const polRes = await fetch('/admin/api/policies');
-                                      const polData = await polRes.ok ? await polRes.json() : { policies: {} };
-                                      const policies = polData.policies || {};
-                                      document.getElementById('governancePolicies').innerHTML = Object.entries(policies).length
-                                        ? `<strong>Policies:</strong> ` + Object.entries(policies).map(([k,v]) => `${k}: ${v}`).join(' | ')
-                                        : '<span class="text-muted">No policies found.</span>';
-                                      // Audit actions (top 3)
-                                      const auditRes = await fetch('/admin/api/audit/actions?limit=3');
-                                      const auditData = await auditRes.ok ? await auditRes.json() : { actions: [] };
-                                      const auditList = document.getElementById('governanceAuditList');
-                                      auditList.innerHTML = '';
-                                      (auditData.actions || []).forEach(a => {
-                                        const li = document.createElement('li');
-                                        li.innerHTML = `<strong>${a.action || 'Action'}</strong> <span class='text-secondary small ms-2'>${a.status || ''}</span> <span class='text-muted small ms-2'>${a.actor || ''}</span>`;
-                                        auditList.appendChild(li);
-                                      });
-                                      if (!auditData.actions || auditData.actions.length === 0) {
-                                        const li = document.createElement('li');
-                                        li.textContent = 'No recent admin actions.';
-                                        li.className = 'text-muted';
-                                        auditList.appendChild(li);
-                                      }
-                                      // Summary
-                                      document.getElementById('governanceSummary').textContent = `Policies: ${Object.keys(policies).length} | Audit: ${(auditData.actions||[]).length}`;
-                                    } catch (e) {
-                                      document.getElementById('governanceSummary').textContent = '--';
-                                      document.getElementById('governancePolicies').innerHTML = '';
-                                      document.getElementById('governanceAuditList').innerHTML = '<li class="text-danger">Unavailable</li>';
-                                    }
-                                  }
-                                  document.getElementById('refreshGovernanceBtn').onclick = fetchGovernance;
-                                  window.addEventListener('DOMContentLoaded', fetchGovernance);
-                    <div class="dashboard-card position-relative" id="revenueLabCard">
-                      <span class="position-absolute top-0 end-0 badge bg-success text-light m-2" title="Revenue Performance Lab"><i class="fa-solid fa-flask-vial"></i></span>
-                      <h3><i class="fa-solid fa-flask-vial"></i> Revenue Performance Lab</h3>
-                      <div class="value" id="revenueLabSummary">--</div>
-                      <div class="desc">Campaign Experiments, Funnel, Cohort</div>
-                      <div class="mt-2" id="revenueLabFunnel"></div>
-                      <div class="mt-2" id="revenueLabCohort"></div>
-                      <div class="mt-2" id="revenueLabRecovery"></div>
-                      <ul class="small mt-2 mb-1" id="revenueLabCampaigns" style="padding-left:18px;"></ul>
-                      <button class="btn btn-sm btn-outline-success mt-2 w-100" id="refreshRevenueLabBtn">Refresh</button>
-                    </div>
-                        async function fetchRevenueLab() {
-                          try {
-                            const res = await fetch('/admin/api/revenue-lab');
-                            if (!res.ok) throw new Error('Failed to load revenue lab');
-                            const data = await res.json();
-                            // Summary
-                            document.getElementById('revenueLabSummary').textContent = `Campaigns: ${(data.campaigns||[]).length} | Funnel: ${data.funnel.success}/${data.funnel.attempts} | Cohorts: ${Object.keys(data.cohort||{}).length}`;
-                            // Funnel
-                            const f = data.funnel || {};
-                            document.getElementById('revenueLabFunnel').innerHTML = `<strong>Funnel:</strong> Attempts: ${f.attempts}, Success: ${f.success}, Failed: ${f.failed}, Pending: ${f.pending}`;
-                            // Cohort
-                            const cohort = data.cohort || {};
-                            document.getElementById('revenueLabCohort').innerHTML = `<strong>Cohort:</strong> ` + Object.entries(cohort).map(([k,v]) => `${k}: ${v}`).join(' | ');
-                            // Recovery ladder
-                            const recovery = data.recovery || {};
-                            document.getElementById('revenueLabRecovery').innerHTML = `<strong>Recovery Ladder:</strong> ` + Object.entries(recovery).map(([k,v]) => `${k}: ${v}`).join(' | ');
-                            // Campaign experiments (top 3)
-                            const campaignsList = document.getElementById('revenueLabCampaigns');
-                            campaignsList.innerHTML = '';
-                            (data.campaigns || []).slice(0, 3).forEach(c => {
-                              const li = document.createElement('li');
-                              li.innerHTML = `<strong>${c.name || c.template || 'Campaign'}</strong> <span class='text-secondary small ms-2'>${c.status || ''}</span> <span class='text-success small ms-2'>${c.success || 0}/${c.total || 0}</span>`;
-                              campaignsList.appendChild(li);
-                            });
-                            if (!data.campaigns || data.campaigns.length === 0) {
-                              const li = document.createElement('li');
-                              li.textContent = 'No campaign experiments.';
-                              li.className = 'text-muted';
-                              campaignsList.appendChild(li);
-                            }
-                          } catch (e) {
-                            document.getElementById('revenueLabSummary').textContent = '--';
-                            document.getElementById('revenueLabFunnel').innerHTML = '';
-                            document.getElementById('revenueLabCohort').innerHTML = '';
-                            document.getElementById('revenueLabRecovery').innerHTML = '';
-                            document.getElementById('revenueLabCampaigns').innerHTML = '<li class="text-danger">Unavailable</li>';
-                          }
-                        }
-                        document.getElementById('refreshRevenueLabBtn').onclick = fetchRevenueLab;
-                        window.addEventListener('DOMContentLoaded', fetchRevenueLab);
-          <div class="dashboard-card position-relative" id="tenantSuccessCard">
-            <span class="position-absolute top-0 end-0 badge bg-warning text-dark m-2" title="Tenant Success & Churn"><i class="fa-solid fa-heart-pulse"></i></span>
-            <h3><i class="fa-solid fa-heart-pulse"></i> Tenant Success & Churn</h3>
-            <div class="value" id="tenantSuccessSummary">--</div>
-            <div class="desc">Health, Churn Risk, Onboarding</div>
-            <div class="mt-2" id="tenantChurnSpark"></div>
-            <ul class="small mt-2 mb-1" id="tenantAtRiskList" style="padding-left:18px;"></ul>
-            <button class="btn btn-sm btn-outline-warning mt-2 w-100" id="refreshTenantSuccessBtn">Refresh</button>
-          </div>
-              async function fetchTenantSuccess() {
-                try {
-                  const res = await fetch('/admin/api/tenant-success');
-                  if (!res.ok) throw new Error('Failed to load tenant success');
-                  const data = await res.json();
-                  // Summary
-                  document.getElementById('tenantSuccessSummary').textContent = `Healthy: ${data.summary.healthy} / ${data.summary.total} | At Risk: ${data.summary.at_risk} | Onboarding: ${data.summary.onboarding_stuck}`;
-                  // Churn sparkline (simple text sparkline)
-                  const spark = data.churn_spark || [];
-                  const sparkHtml = spark.length ? `<span style='font-family:monospace;font-size:1.2em;'>${spark.map(v => {
-                    if (v >= 0.7) return '█';
-                    if (v >= 0.4) return '▓';
-                    if (v >= 0.2) return '▒';
-                    return '░';
-                  }).join('')}</span> <span class='small ms-2'>Avg: ${data.summary.avg_churn_risk}</span>` : '';
-                  document.getElementById('tenantChurnSpark').innerHTML = sparkHtml;
-                  // At risk list (top 3)
-                  const atRiskList = document.getElementById('tenantAtRiskList');
-                  atRiskList.innerHTML = '';
-                  (data.at_risk || []).slice(0, 3).forEach(t => {
-                    const li = document.createElement('li');
-                    li.innerHTML = `<strong>${t.name || t.phone}</strong> <span class='text-warning small ms-2'>Risk: ${(t.churn_risk * 100).toFixed(0)}%</span> <span class='text-secondary small ms-2'>${t.onboarding !== 'completed' ? 'Onboarding: ' + t.onboarding : ''}</span>`;
-                    li.className = 'text-warning';
-                    atRiskList.appendChild(li);
-                  });
-                  if (!data.at_risk || data.at_risk.length === 0) {
-                    const li = document.createElement('li');
-                    li.textContent = 'No tenants at risk.';
-                    li.className = 'text-success';
-                    atRiskList.appendChild(li);
-                  }
-                } catch (e) {
-                  document.getElementById('tenantSuccessSummary').textContent = '--';
-                  document.getElementById('tenantChurnSpark').innerHTML = '';
-                  document.getElementById('tenantAtRiskList').innerHTML = '<li class="text-danger">Unavailable</li>';
-                }
-              }
-              document.getElementById('refreshTenantSuccessBtn').onclick = fetchTenantSuccess;
-              window.addEventListener('DOMContentLoaded', fetchTenantSuccess);
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -350,6 +206,297 @@
       .campaign-proof-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .campaign-proof-toolbar { grid-template-columns: 1fr 1fr; }
     }
+    /* ==========================================================================
+       Admin console v2 — one visual language.
+       Appended late on purpose: these override the older per-component rules
+       without having to touch every declaration above.
+       ========================================================================== */
+    :root {
+      --bg-0: #0a0e1c;
+      --bg-1: #10162b;
+      --panel: rgba(19, 26, 51, 0.94);
+      --panel-2: rgba(24, 32, 65, 0.92);
+      --line-strong: rgba(120, 144, 196, 0.32);
+      --ink-1: #f4f7ff;
+      --ink-2: #c2cbe4;
+      --ink-3: #8892b3;
+      --brand: #38bdf8;
+      --accent: #6366f1;
+      --ok: #34d399;
+      --warn: #fbbf24;
+      --bad: #f87171;
+      --r-sm: 10px;
+      --r-md: 14px;
+      --r-lg: 18px;
+      --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.3), 0 10px 28px rgba(0, 0, 0, 0.26);
+      --shadow-2: 0 2px 6px rgba(0, 0, 0, 0.34), 0 18px 44px rgba(0, 0, 0, 0.34);
+      --ring: 0 0 0 3px rgba(56, 189, 248, 0.34);
+      --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+    }
+    html { color-scheme: dark; scrollbar-color: #2b3560 transparent; }
+    body {
+      background:
+        radial-gradient(1100px 620px at 6% -10%, rgba(56, 189, 248, 0.12), transparent 60%),
+        radial-gradient(920px 540px at 98% 0%, rgba(99, 102, 241, 0.16), transparent 62%),
+        linear-gradient(160deg, var(--bg-0) 0%, #121a33 58%, #0d1428 100%);
+      background-attachment: fixed;
+      color: var(--ink-2);
+      -webkit-font-smoothing: antialiased;
+    }
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-thumb { background: #2b3560; border-radius: 999px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    a { color: var(--brand); }
+    :focus-visible { outline: none; box-shadow: var(--ring); border-radius: 8px; }
+
+    /* ---- Top bar: sticky, quiet, and not a second logo ---- */
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 1030;
+      background: rgba(10, 14, 28, 0.82);
+      backdrop-filter: blur(14px) saturate(140%);
+      border-bottom: 1px solid var(--line);
+      box-shadow: none;
+      padding: 0 20px;
+      min-height: 56px;
+      color: var(--ink-2);
+    }
+    .topbar .logo { font-size: 1.05rem; font-weight: 700; letter-spacing: 0.02em; color: var(--ink-1); }
+    .topbar .user {
+      font-size: 0.82rem;
+      color: var(--ink-3);
+      gap: 8px;
+      padding: 5px 11px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.03);
+    }
+    .topbar-actions { display: flex; align-items: center; gap: 10px; }
+
+    /* ---- Owner brief: readable strip instead of a neon gradient ---- */
+    #ownerBriefStrip {
+      background: linear-gradient(90deg, rgba(56, 189, 248, 0.14), rgba(99, 102, 241, 0.08) 55%, transparent) !important;
+      color: var(--ink-1) !important;
+      border: none !important;
+      border-bottom: 1px solid var(--line) !important;
+      border-radius: 0 !important;
+      box-shadow: none !important;
+      font-weight: 500 !important;
+      font-size: 0.88rem !important;
+      padding: 9px 20px !important;
+      margin-bottom: 0 !important;
+      gap: 12px;
+    }
+    #ownerBriefStrip #ownerBriefText { color: var(--ink-2); }
+    #ownerBriefStrip .btn { color: var(--ink-2); border-color: var(--line-strong); }
+
+    /* ---- Sidebar: grouping, scroll, and a real active state ---- */
+    .sidebar {
+      background: linear-gradient(180deg, rgba(16, 22, 43, 0.98), rgba(10, 14, 28, 0.98));
+      border-right: 1px solid var(--line);
+      box-shadow: none;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+    }
+    .sidebar .logo {
+      font-size: 1.12rem;
+      margin: 18px 14px 10px 14px;
+      color: var(--ink-1);
+      letter-spacing: 0.01em;
+      padding: 0 6px;
+    }
+    .sidebar .nav { padding: 6px 8px 24px 8px; gap: 2px; }
+    .nav-section {
+      font-size: 0.66rem;
+      font-weight: 700;
+      letter-spacing: 0.13em;
+      text-transform: uppercase;
+      color: #65719a;
+      padding: 16px 10px 6px 10px;
+      list-style: none;
+    }
+    .sidebar .nav-link {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      color: var(--ink-2);
+      padding: 8px 12px;
+      margin: 0;
+      border-left: 3px solid transparent;
+      border-radius: 0 10px 10px 0;
+      transition: background 0.16s var(--ease), color 0.16s var(--ease);
+    }
+    .sidebar .nav-link i { width: 18px; text-align: center; font-size: 0.86rem; color: var(--ink-3); transition: color 0.16s var(--ease); }
+    .sidebar .nav-link:hover { background: rgba(255, 255, 255, 0.045); color: var(--ink-1); box-shadow: none; }
+    .sidebar .nav-link:hover i { color: var(--brand); }
+    .sidebar .nav-link.active {
+      background: linear-gradient(90deg, rgba(56, 189, 248, 0.16), rgba(56, 189, 248, 0.02));
+      border-left-color: var(--brand);
+      color: #fff;
+      box-shadow: none;
+    }
+    .sidebar .nav-link.active i { color: var(--brand); }
+    .nav-badge {
+      margin-left: auto;
+      min-width: 20px;
+      text-align: center;
+      font-size: 0.68rem;
+      font-weight: 700;
+      line-height: 1;
+      padding: 3px 6px;
+      border-radius: 999px;
+      background: var(--brand);
+      color: #06263a;
+    }
+    .nav-badge[hidden] { display: none; }
+
+    /* ---- Layout ---- */
+    .main-content { padding: 26px 30px 64px 30px; max-width: 1340px; }
+    @media (min-width: 992px) {
+      .sidebar { width: 264px; position: fixed; left: 0; top: 0; bottom: 0; z-index: 10; }
+      .main-content { margin-left: 264px; }
+    }
+    @media (max-width: 991px) {
+      .main-content { margin-left: 0; padding: 16px 14px 48px; }
+      #mobileSidebar { width: 82vw !important; max-width: 320px; }
+    }
+    footer { background: transparent !important; border-color: var(--line) !important; color: var(--ink-3); }
+
+    /* ---- Cards: a real grid instead of flex + max-width ---- */
+    .dashboard-cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(215px, 1fr));
+      gap: 16px;
+      margin-top: 22px;
+      justify-content: stretch;
+    }
+    .dashboard-card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      box-shadow: var(--shadow-1);
+      padding: 16px 18px 15px 18px;
+      max-width: none;
+      min-width: 0;
+      margin-bottom: 0;
+      transition: transform 0.18s var(--ease), box-shadow 0.18s var(--ease), border-color 0.18s var(--ease);
+    }
+    .dashboard-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-2); border-color: var(--line-strong); }
+    .dashboard-card h3 {
+      font-size: 0.74rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--ink-3);
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .dashboard-card h3 i { color: var(--brand); font-size: 0.82rem; }
+    .dashboard-card .value {
+      font-size: 1.85rem;
+      font-weight: 700;
+      color: var(--ink-1);
+      line-height: 1.12;
+      margin-bottom: 2px;
+      font-variant-numeric: tabular-nums;
+    }
+    .dashboard-card .desc { font-size: 0.78rem; color: var(--ink-3); }
+
+    /* ---- Shared surfaces ---- */
+    section, .card, .tenant-card, .ops-kpi-card, .suite-card { border-radius: var(--r-lg); }
+    section { background: var(--panel) !important; border: 1px solid var(--line) !important; box-shadow: var(--shadow-1) !important; }
+    .ops-empty {
+      border: 1px dashed var(--line-strong);
+      border-radius: var(--r-md);
+      padding: 26px 18px;
+      text-align: center;
+      color: var(--ink-3);
+      background: rgba(255, 255, 255, 0.015);
+      font-size: 0.9rem;
+    }
+    h1, h2, h3, h4, h5 { color: var(--ink-1); }
+    h2 { font-size: 1.5rem; letter-spacing: -0.01em; margin-top: 0; }
+    .btn { border-radius: var(--r-sm); font-weight: 600; font-size: 0.85rem; }
+    .btn-sm { border-radius: 8px; font-size: 0.79rem; }
+    .form-control, .form-select { background: rgba(9, 13, 26, 0.72); border-color: var(--line-strong); color: var(--ink-1); border-radius: var(--r-sm); }
+    .form-control:focus, .form-select:focus { background: rgba(9, 13, 26, 0.9); border-color: var(--brand); color: var(--ink-1); box-shadow: var(--ring); }
+    .form-control::placeholder { color: #6b7699; }
+    .badge { border-radius: 999px; font-weight: 600; }
+
+    /* ---- Discovery approvals ---- */
+    .chip-filter {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line-strong);
+      background: transparent;
+      color: var(--ink-2);
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s var(--ease);
+    }
+    .chip-filter:hover { border-color: var(--brand); color: var(--ink-1); }
+    .chip-filter.is-active { background: rgba(56, 189, 248, 0.16); border-color: var(--brand); color: #fff; }
+    .chip-filter .n {
+      font-variant-numeric: tabular-nums;
+      font-size: 0.72rem;
+      padding: 1px 6px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.1);
+    }
+    .chip-filter.is-active .n { background: var(--brand); color: #06263a; }
+    .disc-card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-left: 3px solid var(--line-strong);
+      border-radius: var(--r-md);
+      padding: 16px 18px;
+      margin-bottom: 12px;
+      transition: border-color 0.16s var(--ease), box-shadow 0.16s var(--ease);
+    }
+    .disc-card:hover { box-shadow: var(--shadow-1); }
+    .disc-card.is-new { border-left-color: var(--warn); }
+    .disc-card.is-approved { border-left-color: var(--ok); }
+    .disc-card.is-rejected { border-left-color: var(--bad); opacity: 0.88; }
+    .disc-card .disc-title { font-weight: 650; color: var(--ink-1); font-size: 1rem; }
+    .disc-card .meta { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+    .disc-facts {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 6px 16px;
+      margin-top: 10px;
+    }
+    .disc-facts .fact { font-size: 0.79rem; color: var(--ink-2); }
+    .disc-facts .fact small { display: block; font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-3); }
+    .disc-invite {
+      margin-top: 12px;
+      padding: 12px;
+      border-radius: var(--r-sm);
+      background: rgba(56, 189, 248, 0.07);
+      border: 1px solid rgba(56, 189, 248, 0.2);
+    }
+
+    /* ---- Motion + a11y ---- */
+    .skeleton {
+      border-radius: 8px;
+      background: linear-gradient(90deg, rgba(255, 255, 255, 0.05) 25%, rgba(255, 255, 255, 0.1) 37%, rgba(255, 255, 255, 0.05) 63%);
+      background-size: 400% 100%;
+      animation: sk 1.3s ease-in-out infinite;
+      height: 12px;
+    }
+    @keyframes sk { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { transition: none !important; animation: none !important; }
+    }
+
   </style>
 </head>
 <body>
@@ -369,14 +516,18 @@
     <nav class="sidebar flex-column p-0 d-lg-flex d-none" id="sidebarNav">
       <div class="logo d-none d-lg-flex"><i class="fa-solid fa-cube"></i> Alphadome</div>
       <ul class="nav flex-column w-100">
+          <li class="nav-section">Start</li>
           <li class="nav-item"><a class="nav-link active" href="#dashboard"><i class="fa-solid fa-gauge"></i> Dashboard</a></li>
+          <li class="nav-section">Clients</li>
+          <li class="nav-item"><a class="nav-link" href="#discovery"><i class="fa-solid fa-user-check"></i> Discovery Approvals <span class="nav-badge" data-nav-badge hidden>0</span></a></li>
+          <li class="nav-item"><a class="nav-link" href="#onboarding"><i class="fa-solid fa-user-plus"></i> Tenant Onboarding</a></li>
+          <li class="nav-section">Catalogue</li>
           <li class="nav-item"><a class="nav-link" href="#upload"><i class="fa-solid fa-upload"></i> Upload</a></li>
           <li class="nav-item"><a class="nav-link" href="#simple"><i class="fa-solid fa-plus"></i> Simple Upload</a></li>
           <li class="nav-item"><a class="nav-link" href="#catalog"><i class="fa-solid fa-table-list"></i> Catalog Viewer</a></li>
-          <li class="nav-item"><a class="nav-link" href="#logs"><i class="fa-solid fa-wave-square"></i> Live Logs</a></li>
-          <li class="nav-item"><a class="nav-link" href="#onboarding"><i class="fa-solid fa-user-plus"></i> Tenant Onboarding</a></li>
+          <li class="nav-section">Operations</li>
           <li class="nav-item"><a class="nav-link" href="#writers-flow"><i class="fa-solid fa-rocket"></i> Writer's Flow</a></li>
-          <li class="nav-item"><a class="nav-link" href="#discovery"><i class="fa-solid fa-user-check"></i> Discovery Approvals</a></li>
+          <li class="nav-item"><a class="nav-link" href="#logs"><i class="fa-solid fa-wave-square"></i> Live Logs</a></li>
       </ul>
     </nav>
     <main class="main-content flex-grow-1">
@@ -835,16 +986,8 @@
     <div id="sidebarOverlay" class="position-fixed top-0 start-0 w-100 h-100 bg-dark bg-opacity-50 d-lg-none d-none" style="z-index:1050;"></div>
     <nav class="sidebar flex-column p-0 d-lg-none d-none position-fixed top-0 start-0 w-75 h-100" id="mobileSidebar" style="z-index:1100;">
       <div class="logo"><i class="fa-solid fa-cube"></i> Alphadome</div>
-      <ul class="nav flex-column w-100">
-          <li class="nav-item"><a class="nav-link active" href="#dashboard"><i class="fa-solid fa-gauge"></i> Dashboard</a></li>
-          <li class="nav-item"><a class="nav-link" href="#upload"><i class="fa-solid fa-upload"></i> Upload</a></li>
-          <li class="nav-item"><a class="nav-link" href="#simple"><i class="fa-solid fa-plus"></i> Simple Upload</a></li>
-          <li class="nav-item"><a class="nav-link" href="#catalog"><i class="fa-solid fa-table-list"></i> Catalog Viewer</a></li>
-          <li class="nav-item"><a class="nav-link" href="#logs"><i class="fa-solid fa-wave-square"></i> Live Logs</a></li>
-          <li class="nav-item"><a class="nav-link" href="#onboarding"><i class="fa-solid fa-user-plus"></i> Tenant Onboarding</a></li>
-          <li class="nav-item"><a class="nav-link" href="#discovery"><i class="fa-solid fa-user-check"></i> Discovery Approvals</a></li>
-          <li class="nav-item"><a class="nav-link" href="#writers-flow"><i class="fa-solid fa-rocket"></i> Writer's Flow</a></li>
-      </ul>
+      <!-- Mirrored from the desktop sidebar at runtime so the two cannot drift. -->
+      <ul class="nav flex-column w-100"></ul>
     </nav>
   </div>
   <footer class="text-center py-3 mt-4 small text-muted bg-dark border-top border-info" style="letter-spacing:0.5px;">
@@ -866,6 +1009,11 @@
       sidebarOverlay.classList.add('d-none');
       document.body.style.overflow = '';
     }
+    // The phone drawer mirrors the desktop sidebar at runtime so the two lists
+    // cannot drift apart every time a page is added.
+    const desktopNavList = document.querySelector('#sidebarNav .nav');
+    const mobileNavList = document.querySelector('#mobileSidebar .nav');
+    if (desktopNavList && mobileNavList) mobileNavList.innerHTML = desktopNavList.innerHTML;
     if (sidebarToggle) sidebarToggle.addEventListener('click', openMobileSidebar);
     if (sidebarOverlay) sidebarOverlay.addEventListener('click', closeMobileSidebar);
     // Close sidebar on nav click (mobile)
@@ -945,14 +1093,14 @@
             <div class="desc">Active tenants</div>
           </div>
           <div class="dashboard-card">
-            <h3><i class="fa-solid fa-robot"></i> LLM Usage</h3>
+            <h3><i class="fa-solid fa-robot"></i> LLM usage</h3>
             <div class="value" id="llmUsage">--</div>
-            <div class="desc">LLM requests (24h)</div>
+            <div class="desc">Requests, last 24h</div>
           </div>
           <div class="dashboard-card">
             <h3><i class="fa-solid fa-bug"></i> Errors</h3>
             <div class="value" id="errorCount">--</div>
-            <div class="desc">Errors (24h)</div>
+            <div class="desc">Last 24h</div>
           </div>
           <div class="dashboard-card">
             <h3><i class="fa-solid fa-heart-pulse"></i> Health</h3>
@@ -960,9 +1108,30 @@
             <div class="desc">System health</div>
           </div>
         </div>
-        <div class="mt-5">
-          <h2>Welcome to the Alphadome Admin Portal</h2>
-          <p class="text-muted">Use the sidebar to manage tenants, upload catalogs, view logs, and monitor LLM usage. All features are optimized for desktop and mobile.</p>
+        <!-- These three were orphaned above the doctype and never rendered. -->
+        <div class="dashboard-cards">
+          <div class="dashboard-card" id="governanceCard">
+            <h3><i class="fa-solid fa-shield-halved"></i> Governance</h3>
+            <div class="value" id="governanceSummary">--</div>
+            <div class="desc">RBAC, audit trail, policy</div>
+            <div class="mt-2" id="governancePolicies"><span class="skeleton d-block" style="width:70%"></span></div>
+            <ul class="small mt-2 mb-0" id="governanceAuditList" style="padding-left:16px;"></ul>
+          </div>
+          <div class="dashboard-card" id="revenueLabCard">
+            <h3><i class="fa-solid fa-flask-vial"></i> Revenue lab</h3>
+            <div class="value" id="revenueLabSummary">--</div>
+            <div class="desc">Campaigns, funnel, cohorts</div>
+            <div class="mt-2 small" id="revenueLabFunnel"></div>
+            <div class="mt-1 small text-muted" id="revenueLabCohort"></div>
+            <ul class="small mt-2 mb-0" id="revenueLabCampaigns" style="padding-left:16px;"></ul>
+          </div>
+          <div class="dashboard-card" id="tenantSuccessCard">
+            <h3><i class="fa-solid fa-heart-pulse"></i> Tenant success</h3>
+            <div class="value" id="tenantSuccessSummary">--</div>
+            <div class="desc">Health and churn risk</div>
+            <div class="mt-2" id="tenantChurnSpark"></div>
+            <ul class="small mt-2 mb-0" id="tenantAtRiskList" style="padding-left:16px;"></ul>
+          </div>
         </div>
         <div class="alert-banner mb-4" id="alertBanner" style="display:none;">
           <div class="d-flex align-items-center gap-3">
@@ -1558,6 +1727,7 @@
         </div>
         `;
         bindDashboardActions();
+        loadDashboardWidgets();
       } else if (hash === '#logs') {
         // For logs, open in new tab for now
         window.open('/logs/live', '_blank');
@@ -2957,6 +3127,84 @@
         setTimeout(() => loadPerformanceReport('daily'), 250);
       }
     });
+    // --- Dashboard widgets ---------------------------------------------------
+    // The governance, revenue-lab and tenant-success cards used to sit above
+    // <!DOCTYPE html>, so they never rendered and their handlers never ran. The
+    // admin API already produced this data; the cards only needed a home.
+    const widgetText = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+    const widgetHtml = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
+    const widgetFail = (ids) => ids.forEach((id) => widgetHtml(id, '<span class="text-danger small">Unavailable</span>'));
+
+    async function loadGovernanceWidget() {
+      try {
+        const [policies, audit] = await Promise.all([
+          fetchJsonWithFallback(['/admin/api/policies'], { policies: {} }),
+          fetchJsonWithFallback(['/admin/api/audit/actions?limit=3'], { actions: [] }),
+        ]);
+        const names = Object.keys(policies?.policies || {});
+        widgetText('governanceSummary', names.length ? `${names.length} active` : 'None set');
+        widgetHtml('governancePolicies', names.length
+          ? names.map((n) => `<span class="status-pill-inline active me-1">${escapeHtml(n)}</span>`).join('')
+          : '<span class="text-muted small">Nothing configured yet.</span>');
+        const actions = Array.isArray(audit?.actions) ? audit.actions : [];
+        widgetHtml('governanceAuditList', actions.length
+          ? actions.map((a) => `<li><strong>${escapeHtml(String(a.action || 'action'))}</strong> <span class="text-secondary small">${escapeHtml(String(a.actor || ''))}</span></li>`).join('')
+          : '<li class="text-muted">No recent owner actions.</li>');
+      } catch (err) {
+        widgetFail(['governanceSummary', 'governancePolicies', 'governanceAuditList']);
+      }
+    }
+
+    async function loadRevenueLabWidget() {
+      try {
+        const data = await fetchJsonWithFallback(['/admin/api/revenue-lab'], { campaigns: [], funnel: {}, cohort: {} });
+        const campaigns = Array.isArray(data?.campaigns) ? data.campaigns : [];
+        const funnel = data?.funnel || {};
+        const attempts = Number(funnel.attempts) || 0;
+        const wins = Number(funnel.success) || 0;
+        widgetText('revenueLabSummary', campaigns.length ? `${campaigns.length} running` : 'No campaigns');
+        widgetHtml('revenueLabFunnel', attempts
+          ? `<span class="status-pill-inline active">${wins}/${attempts} converted</span>`
+          : '<span class="text-muted">No funnel traffic yet.</span>');
+        const cohorts = Object.keys(data?.cohort || {});
+        widgetHtml('revenueLabCohort', cohorts.length ? `Cohorts: ${escapeHtml(cohorts.join(', '))}` : '');
+        widgetHtml('revenueLabCampaigns', campaigns.length
+          ? campaigns.slice(0, 3).map((c) => `<li><strong>${escapeHtml(String(c.name || c.template || 'Campaign'))}</strong> <span class="text-success small">${Number(c.success) || 0}/${Number(c.total) || 0}</span></li>`).join('')
+          : '<li class="text-muted">No experiments yet.</li>');
+      } catch (err) {
+        widgetFail(['revenueLabSummary', 'revenueLabFunnel', 'revenueLabCohort', 'revenueLabCampaigns']);
+      }
+    }
+
+    async function loadTenantSuccessWidget() {
+      try {
+        const data = await fetchJsonWithFallback(['/admin/api/tenant-success'], { summary: {}, at_risk: [], churn_spark: [] });
+        const summary = data?.summary || {};
+        widgetText('tenantSuccessSummary',
+          `${Number(summary.healthy) || 0}/${Number(summary.total) || 0} healthy`);
+        const spark = Array.isArray(data?.churn_spark) ? data.churn_spark : [];
+        widgetHtml('tenantChurnSpark', spark.length
+          ? `<span style="font-family:ui-monospace,monospace;letter-spacing:1px;color:#fbbf24">${spark
+            .map((v) => (v >= 0.7 ? '█' : v >= 0.4 ? '▓' : v >= 0.2 ? '▒' : '░')).join('')}</span>
+             <span class="small text-muted">avg ${escapeHtml(String(summary.avg_churn_risk ?? '--'))}</span>`
+          : '<span class="text-muted small">No churn signal yet.</span>');
+        const atRisk = Array.isArray(data?.at_risk) ? data.at_risk : [];
+        widgetHtml('tenantAtRiskList', atRisk.length
+          ? atRisk.slice(0, 3).map((t) => `<li class="text-warning"><strong>${escapeHtml(String(t.name || t.phone || 'Tenant'))}</strong> <span class="small">${Math.round((Number(t.churn_risk) || 0) * 100)}% risk</span></li>`).join('')
+          : '<li class="text-success">None at risk.</li>');
+      } catch (err) {
+        widgetFail(['tenantSuccessSummary', 'tenantChurnSpark', 'tenantAtRiskList']);
+      }
+    }
+
+    function loadDashboardWidgets() {
+      // Only on the dashboard: the cards do not exist on other pages.
+      if (!document.getElementById('governanceCard')) return;
+      loadGovernanceWidget();
+      loadRevenueLabWidget();
+      loadTenantSuccessWidget();
+    }
+
     function bindDashboardActions() {
       const dailyButton = document.getElementById('dailyReportBtn');
       const weeklyButton = document.getElementById('weeklyReportBtn');
@@ -3683,38 +3931,64 @@
       const spaContent = document.getElementById('spa-content');
       if (!spaContent) return;
       spaContent.innerHTML = `
-        <div class="mb-4 d-flex flex-wrap align-items-center justify-content-between gap-3">
+        <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-1">
           <div>
-            <h2 class="mb-1"><i class="fa-solid fa-user-check"></i> Discovery Approvals</h2>
-            <div class="text-muted">Questionnaire submissions waiting for an owner decision</div>
+            <h2 class="mb-1"><i class="fa-solid fa-user-check text-info"></i> Discovery approvals</h2>
+            <div class="text-muted" style="font-size:.9rem;max-width:640px">
+              Every questionnaire answer that is waiting on an owner decision. Approving mints the
+              tenant, the catalogue twin and the sign-in link in one step.
+            </div>
           </div>
-          <div class="d-flex gap-2 align-items-center">
-            <select class="form-select form-select-sm" id="discoveryFilter" style="width:auto">
-              <option value="new">Waiting for approval</option>
-              <option value="approved">Approved</option>
-              <option value="rejected">Rejected</option>
-              <option value="all">All submissions</option>
-            </select>
-            <button class="btn btn-sm btn-outline-info" id="discoveryRefreshBtn"><i class="fa-solid fa-arrows-rotate"></i> Refresh</button>
-          </div>
+          <button class="btn btn-sm btn-outline-info" id="discoveryRefreshBtn">
+            <i class="fa-solid fa-arrows-rotate"></i> Refresh
+          </button>
         </div>
-        <div class="dashboard-cards mb-3">
-          <div class="dashboard-card"><h3>Waiting</h3><div class="value" id="discoveryNewCount">--</div><div class="desc">Needs a decision</div></div>
-          <div class="dashboard-card"><h3>Approved</h3><div class="value" id="discoveryApprovedCount">--</div><div class="desc">Tenants with portal access</div></div>
-          <div class="dashboard-card"><h3>Rejected</h3><div class="value" id="discoveryRejectedCount">--</div><div class="desc">Not a fit</div></div>
-          <div class="dashboard-card"><h3>Total</h3><div class="value" id="discoveryTotalCount">--</div><div class="desc">All submissions</div></div>
+        <div class="dashboard-cards">
+          <div class="dashboard-card"><h3><i class="fa-solid fa-hourglass-half"></i> Waiting</h3><div class="value" id="discoveryNewCount">--</div><div class="desc">Needs a decision</div></div>
+          <div class="dashboard-card"><h3><i class="fa-solid fa-circle-check"></i> Approved</h3><div class="value" id="discoveryApprovedCount">--</div><div class="desc">Have portal access</div></div>
+          <div class="dashboard-card"><h3><i class="fa-solid fa-ban"></i> Rejected</h3><div class="value" id="discoveryRejectedCount">--</div><div class="desc">Not a fit</div></div>
+          <div class="dashboard-card"><h3><i class="fa-solid fa-inbox"></i> Total</h3><div class="value" id="discoveryTotalCount">--</div><div class="desc">All submissions</div></div>
+        </div>
+        <div class="d-flex flex-wrap gap-2 align-items-center my-3" id="discoveryFilters" role="group" aria-label="Filter submissions">
+          <button class="chip-filter is-active" data-disc-filter="new" aria-pressed="true">Waiting <span class="n" id="chipNewCount">0</span></button>
+          <button class="chip-filter" data-disc-filter="approved" aria-pressed="false">Approved <span class="n" id="chipApprovedCount">0</span></button>
+          <button class="chip-filter" data-disc-filter="rejected" aria-pressed="false">Rejected <span class="n" id="chipRejectedCount">0</span></button>
+          <button class="chip-filter" data-disc-filter="all" aria-pressed="false">All <span class="n" id="chipTotalCount">0</span></button>
         </div>
         <div id="discoveryBanner"></div>
-        <div id="discoveryList" class="ops-empty">Loading submissions...</div>`;
-      const filter = document.getElementById('discoveryFilter');
-      if (filter) {
-        filter.value = discoveryState.filter;
-        filter.addEventListener('change', () => { discoveryState.filter = filter.value; renderDiscoveryList(); });
-      }
+        <div id="discoveryList" class="ops-empty"><i class="fa-solid fa-circle-notch fa-spin"></i> Loading submissions...</div>`;
       document.getElementById('discoveryRefreshBtn')?.addEventListener('click', loadDiscoveryQueue);
+      document.getElementById('discoveryFilters')?.addEventListener('click', (event) => {
+        const chip = event.target.closest('[data-disc-filter]');
+        if (chip) setDiscoveryFilter(chip.dataset.discFilter);
+      });
       const list = document.getElementById('discoveryList');
       if (list) list.addEventListener('click', handleDiscoveryAction);
+      setDiscoveryFilter(discoveryState.filter);
       loadDiscoveryQueue();
+    }
+
+    // One decision point for what the queue shows: the chips, the list and the
+    // post-approval jump all go through here, so they cannot disagree.
+    function setDiscoveryFilter(filter) {
+      const allowed = ['new', 'approved', 'rejected', 'all'];
+      discoveryState.filter = allowed.includes(filter) ? filter : 'new';
+      document.querySelectorAll('[data-disc-filter]').forEach((chip) => {
+        const on = chip.dataset.discFilter === discoveryState.filter;
+        chip.classList.toggle('is-active', on);
+        chip.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+      renderDiscoveryList();
+    }
+
+    // The sidebar badge is the only signal that a lead is waiting, so it is
+    // updated from the same counts the page renders.
+    function updateDiscoveryNavBadge(pending) {
+      const count = Number(pending) || 0;
+      document.querySelectorAll('[data-nav-badge]').forEach((el) => {
+        el.textContent = String(count);
+        el.hidden = count === 0;
+      });
     }
 
     async function loadDiscoveryQueue() {
@@ -3729,6 +4003,11 @@
         setVal('discoveryApprovedCount', counts.approved || 0);
         setVal('discoveryRejectedCount', counts.rejected || 0);
         setVal('discoveryTotalCount', data.total ?? discoveryState.submissions.length);
+        setVal('chipNewCount', counts.new || 0);
+        setVal('chipApprovedCount', counts.approved || 0);
+        setVal('chipRejectedCount', counts.rejected || 0);
+        setVal('chipTotalCount', data.total ?? discoveryState.submissions.length);
+        updateDiscoveryNavBadge(counts.new || 0);
         const banner = document.getElementById('discoveryBanner');
         if (banner) {
           // A missing table is a deploy problem: say so instead of showing an empty queue.
@@ -3743,13 +4022,13 @@
     }
     function discoveryField(label, value) {
       if (!value) return '';
-      return `<div class="meta"><span class="text-muted">${escapeHtml(label)}:</span> ${escapeHtml(String(value))}</div>`;
+      return `<div class="fact"><small>${escapeHtml(label)}</small>${escapeHtml(String(value))}</div>`;
     }
 
     function discoveryChips(label, list) {
       const items = Array.isArray(list) ? list.filter(Boolean) : [];
       if (!items.length) return '';
-      return `<div class="meta"><span class="text-muted">${escapeHtml(label)}:</span> ${items
+      return `<div class="fact"><small>${escapeHtml(label)}</small>${items
         .map((item) => `<span class="badge bg-secondary me-1">${escapeHtml(String(item))}</span>`).join('')}</div>`;
     }
 
@@ -3760,11 +4039,14 @@
         ? discoveryState.submissions
         : discoveryState.submissions.filter((row) => (row.status || 'new') === discoveryState.filter);
       if (!rows.length) {
-        const empty = discoveryState.filter === 'new'
-          ? 'No submissions are waiting for approval. New questionnaire answers appear here automatically.'
-          : 'Nothing in this view yet.';
+        const copy = {
+          new: ['fa-mug-hot', 'Nothing waiting. New questionnaire answers land here the moment a client submits.'],
+          approved: ['fa-user-check', 'No approved tenants yet. Approving a submission issues the sign-in link.'],
+          rejected: ['fa-ban', 'Nothing rejected.'],
+          all: ['fa-inbox', 'No submissions yet. Share the discovery form to fill this queue.'],
+        }[discoveryState.filter] || ['fa-inbox', 'Nothing in this view yet.'];
         container.className = 'ops-empty';
-        container.innerHTML = escapeHtml(empty);
+        container.innerHTML = `<i class="fa-solid ${copy[0]} mb-2 d-block" style="font-size:1.4rem;opacity:.6"></i>${escapeHtml(copy[1])}`;
         return;
       }
       container.className = '';
@@ -3779,7 +4061,7 @@
       const name = row.business_name || row.contact_name || 'Unnamed business';
       const submitted = row.submitted_at ? new Date(row.submitted_at).toLocaleString() : '';
       const approvedBlock = row.portal_url ? `
-        <div class="mt-2 p-2 rounded" style="background:rgba(56,189,248,.08)">
+        <div class="disc-invite">
           <div class="small text-muted mb-1">Portal invite link ${row.approved_at ? '· issued ' + escapeHtml(new Date(row.approved_at).toLocaleString()) : ''}</div>
           <input class="form-control form-control-sm" readonly value="${escapeHtml(row.portal_url)}" onclick="this.select()">
           <div class="d-flex flex-wrap gap-2 mt-2">
@@ -3789,16 +4071,16 @@
           </div>
         </div>` : '';
       return `
-        <div class="tenant-card mb-3" data-disc-id="${escapeHtml(id)}">
+        <div class="disc-card is-${status}" data-disc-id="${escapeHtml(id)}">
           <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
             <div>
-              <div class="fw-semibold">${escapeHtml(name)} <span class="status-pill ${status === 'approved' ? 'active' : 'inactive'}">${escapeHtml(status)}</span></div>
-              <div class="meta">${escapeHtml(row.contact_name || '')} ${phone ? '· ' + escapeHtml(phone) : ''} ${row.email ? '· ' + escapeHtml(row.email) : ''}</div>
+              <div class="disc-title">${escapeHtml(name)} <span class="status-pill-inline ${status === 'approved' ? 'active' : status === 'rejected' ? 'danger' : 'warning'}">${escapeHtml(status)}</span></div>
+              <div class="meta text-muted" style="font-size:.82rem">${escapeHtml(row.contact_name || '')} ${phone ? '· ' + escapeHtml(phone) : ''} ${row.email ? '· ' + escapeHtml(row.email) : ''}</div>
             </div>
             <div class="text-muted small">${escapeHtml(submitted)}</div>
           </div>
-          ${row.business_description ? `<div class="meta mt-2">${escapeHtml(String(row.business_description).slice(0, 400))}</div>` : ''}
-          <div class="mt-2">
+          ${row.business_description ? `<div class="meta mt-2" style="font-size:.86rem">${escapeHtml(String(row.business_description).slice(0, 400))}</div>` : ''}
+          <div class="disc-facts">
             ${discoveryField('Industry', row.industry)}
             ${discoveryField('Team', row.team_size)}
             ${discoveryField('Budget', row.budget)}
@@ -3904,10 +4186,7 @@
         );
         copyDiscoveryLink({ portal_url: data.portal_url }, true);
         await loadDiscoveryQueue();
-        discoveryState.filter = 'approved';
-        const filterEl = document.getElementById('discoveryFilter');
-        if (filterEl) filterEl.value = 'approved';
-        renderDiscoveryList();
+        setDiscoveryFilter('approved');
       } catch (err) {
         showAlert('Approval Failed', err.message || 'Could not approve this submission.', 'danger');
       } finally {

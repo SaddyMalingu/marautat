@@ -14706,6 +14706,77 @@ app.post("/admin/test-email", adminAuth, async (req, res) => {
 
 // Phase 1: discovery intake endpoint with notification + confirmation email
 const DISCOVERY_LOG_FILE = path.join(process.cwd(), "logs", "discovery_submissions.jsonl");
+// Notifications must never sit in front of a response. Render drops outbound
+// SMTP, and nodemailer then waits out its full connect timeout *per message*, so
+// awaiting it inline left the client's Submit button spinning for minutes.
+const DISCOVERY_NOTIFY_TIMEOUT_MS = 15000;
+
+function withTimeout(promise, ms, label) {
+  let timer;
+  const guard = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+  });
+  return Promise.race([promise, guard]).finally(() => clearTimeout(timer));
+}
+
+// Best effort, never throws: a missed notification costs a nudge on WhatsApp, a
+// lost submission costs a customer.
+async function notifyDiscoverySubmission(payload, { capabilities = [], challenges = [] } = {}) {
+  if (process.env.SLACK_WEBHOOK_URL) {
+    try {
+      await axios.post(
+        process.env.SLACK_WEBHOOK_URL,
+        { text: `New discovery form: ${payload.business_name} (${payload.name})` },
+        { timeout: DISCOVERY_NOTIFY_TIMEOUT_MS },
+      );
+    } catch (err) {
+      log(`DISCOVERY_SLACK_WARN: ${err.message || err}`, "WARN");
+    }
+  }
+
+  let sendEmail;
+  try {
+    ({ default: sendEmail } = await import("./writers_flow/emailSender.js"));
+  } catch (err) {
+    log(`DISCOVERY_EMAIL_MODULE_WARN: ${err.message || err}`, "WARN");
+    return;
+  }
+
+  const teamInbox = process.env.DISCOVERY_TEAM_EMAIL || process.env.SMTP_USER;
+  if (teamInbox) {
+    try {
+      await withTimeout(sendEmail({
+        to: teamInbox,
+        subject: `New Discovery Submission: ${payload.business_name}`,
+        text: [
+          `Name: ${payload.name}`,
+          `Business: ${payload.business_name}`,
+          `Email: ${payload.email}`,
+          `Phone: ${payload.phone}`,
+          `Industry: ${payload.industry}`,
+          `Team Size: ${payload.team_size}`,
+          `Timeline: ${payload.timeline}`,
+          `Budget: ${payload.budget}`,
+          `Capabilities: ${capabilities.join(", ") || "n/a"}`,
+          `Challenges: ${challenges.join(", ") || "n/a"}`,
+        ].join("\n"),
+      }), DISCOVERY_NOTIFY_TIMEOUT_MS, "Team notification email");
+    } catch (err) {
+      log(`DISCOVERY_TEAM_EMAIL_WARN: ${err.message || err}`, "WARN");
+    }
+  }
+
+  try {
+    await withTimeout(sendEmail({
+      to: payload.email,
+      subject: "We received your Alphadome discovery form",
+      text: `Hi ${payload.name},\n\nThanks for submitting your 3.0 discovery questionnaire. Our team will review your submission and contact you within 24 hours.\n\n- Alphadome Team`,
+    }), DISCOVERY_NOTIFY_TIMEOUT_MS, "Client acknowledgement email");
+  } catch (err) {
+    log(`DISCOVERY_ACK_EMAIL_WARN: ${err.message || err}`, "WARN");
+  }
+}
+
 app.post('/discovery', async (req, res) => {
   try {
     const payload = req.body || {};
@@ -14784,58 +14855,20 @@ app.post('/discovery', async (req, res) => {
       });
     }
 
-    // Slack notification (optional)
-    if (process.env.SLACK_WEBHOOK_URL) {
-      try {
-        await axios.post(process.env.SLACK_WEBHOOK_URL, {
-          text: `New discovery form: ${payload.business_name} (${payload.name})`,
-        });
-      } catch (err) {
-        console.error('[Discovery] Slack notify failed:', err.message || err);
-      }
-    }
-
-    // Email notifications (optional, using existing SMTP settings)
-    try {
-      const { default: sendEmail } = await import('./writers_flow/emailSender.js');
-      const teamInbox = process.env.DISCOVERY_TEAM_EMAIL || process.env.SMTP_USER;
-
-      if (teamInbox) {
-        await sendEmail({
-          to: teamInbox,
-          subject: `New Discovery Submission: ${payload.business_name}`,
-          text: [
-            `Name: ${payload.name}`,
-            `Business: ${payload.business_name}`,
-            `Email: ${payload.email}`,
-            `Phone: ${payload.phone}`,
-            `Industry: ${payload.industry}`,
-            `Team Size: ${payload.team_size}`,
-            `Timeline: ${payload.timeline}`,
-            `Budget: ${payload.budget}`,
-            `Capabilities: ${capabilities.join(', ') || 'n/a'}`,
-            `Challenges: ${challenges.join(', ') || 'n/a'}`,
-          ].join('\n'),
-        });
-      }
-
-      await sendEmail({
-        to: payload.email,
-        subject: 'We received your Alphadome discovery form',
-        text: `Hi ${payload.name},\n\nThanks for submitting your 3.0 discovery questionnaire. Our team will review your submission and contact you within 24 hours.\n\n- Alphadome Team`,
-      });
-    } catch (mailErr) {
-      console.error('[Discovery] Email send failed:', mailErr.message || mailErr);
-    }
-
-    return res.json({
+    // Answer the client now. The row is already persisted above, and everything
+    // below this point is a courtesy notification that must not cost a lead.
+    const responseBody = {
       ok: true,
       saved: dbSaved,
       db_warning: dbSaved ? null : (dbError?.message || 'Saved to fallback log only'),
       submission_id: savedId,
       status: 'new',
       message: 'Discovery form submitted successfully.',
-    });
+    };
+
+    void notifyDiscoverySubmission(payload, { capabilities, challenges });
+
+    return res.json(responseBody);
   } catch (err) {
     console.error('[Discovery] Unexpected error:', err.message || err);
     return res.status(500).json({ ok: false, error: err.message || 'Failed to submit discovery form.' });
@@ -15181,16 +15214,17 @@ app.post("/admin/api/discovery/submissions/:id/approve", adminAuth, async (req, 
     await appendJsonlRecord(DISCOVERY_LOG_FILE, { event: "discovery_approved", ...approvalRecord });
 
     const message = buildInviteMessage({ contactName: submission.contact_name, businessName, portalUrl });
+    // Bounded on purpose: the invite is the product here, the email is postage.
     let emailSent = false;
     let emailError = null;
     if (submission.email) {
       try {
         const { default: sendEmail } = await import("./writers_flow/emailSender.js");
-        await sendEmail({
+        await withTimeout(sendEmail({
           to: submission.email,
           subject: "Your Alphadome workspace is approved — portal link inside",
           text: message,
-        });
+        }), 12000, "Approval email");
         emailSent = true;
       } catch (err) {
         emailError = err.message || String(err);
