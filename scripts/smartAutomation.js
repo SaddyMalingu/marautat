@@ -3,6 +3,8 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { getContentJourney } from '../utils/contentJourney.js';
+// Same document guard the writers use: AI copy may not restyle the blog page.
+import { sanitizeArticleHTML } from '../utils/articleHtml.js';
 const __f = fileURLToPath(import.meta.url);
 const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 const SITE = process.env.SITE_URL || 'https://alphadome.onrender.com';
@@ -25,7 +27,9 @@ async function ai(prompt) {
 
 function clean(c) {
   if (!c) return c;
-  return c.replace(/\*\*([^*]+)\*\*/g, '').replace(/\*([^*]+)\*/g, '').replace(/#{1,6}\s/g, '').replace(/\n{3,}/g, '\n\n').trim();
+  // Markdown and the document guard both live in sanitizeArticleHTML() so this
+  // legacy writer cannot drift from the tenant writer's rules.
+  return sanitizeArticleHTML(c).replace(/\n{3,}/g, '\n\n').trim();
 }
 
 const OFFER_CTA = { job: 'Apply Now', product: 'Shop Now', service: 'Learn More', brand: 'Explore', affiliate: 'Get Deal', course: 'Enroll' };

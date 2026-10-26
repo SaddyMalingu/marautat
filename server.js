@@ -42,6 +42,7 @@ import {
   normalizeSubmission,
   findSubmission,
 } from "./utils/discoveryApprovals.js";
+import { insertWfCampaign, describeWfCampaignError } from "./utils/wfCampaigns.js";
 import aiJobsRouter from "./routes/aiJobs.js";
 import sitemapRouter from "./routes/sitemap.js";
 import aiJobsAdminRouter from "./routes/aiJobsAdmin.js";
@@ -2663,7 +2664,7 @@ app.post("/tenant/wf/campaigns", tenantSessionAuth, async (req, res) => {
       Math.max(1, parseInt(req.body?.target_count, 10) || TENANT_WF_DEFAULT_TARGET)
     );
 
-    let payload = {
+    const payload = {
       name,
       keywords,
       industries,
@@ -2675,22 +2676,27 @@ app.post("/tenant/wf/campaigns", tenantSessionAuth, async (req, res) => {
       tenant_id: tenantId,
     };
 
-    let data = null;
-    let error = null;
-    for (let attempt = 0; attempt < 10; attempt += 1) {
-      ({ data, error } = await supabase.from("wf_campaigns").insert([payload]).select().maybeSingle());
-      if (!error) break;
-      const missingColumn = extractMissingColumnName(error);
-      if (!isMissingColumnError(error) || !missingColumn || missingColumn === "tenant_id" || !(missingColumn in payload)) break;
-      delete payload[missingColumn];
-    }
-    if (error) {
-      const migration = tenantWfMigrationResponse(error);
-      if (migration) return res.status(503).json(migration);
-      throw error;
-    }
-    return res.status(201).json({ ok: true, campaign: summarizeTenantCampaign(data || payload) });
+    const campaign = await insertWfCampaign(supabase, payload);
+    return res.status(201).json({ ok: true, campaign: summarizeTenantCampaign(campaign) });
   } catch (err) {
+    // Live 2026-10-26: this route answered 500 after one database round trip and
+    // printed nothing, so the Render log held a status line and no cause. Log the
+    // database's own words, then answer with a message the tenant can act on.
+    const info = describeWfCampaignError(err);
+    log(
+      `[TENANT WF] campaign create failed: code=${info.code || "none"} ${info.message}`,
+      "ERROR"
+    );
+    const migration = tenantWfMigrationResponse(err);
+    if (migration) return res.status(503).json(migration);
+    if (err.migrationRequired) {
+      return res.status(503).json({
+        ok: false,
+        error: err.message,
+        migration_required: true,
+        detail: err.schemaDetail || info.message,
+      });
+    }
     return res.status(500).json({ ok: false, error: err.message });
   }
 });
@@ -14298,21 +14304,13 @@ app.post("/admin/api/wf/campaigns", adminAuth, async (req, res) => {
       status: "draft",
     };
 
-    let payload = { ...insertPayload };
-    let data = null;
-    let error = null;
-    for (let attempt = 0; attempt < 8; attempt += 1) {
-      ({ data, error } = await supabase.from("wf_campaigns").insert([payload]).select().single());
-      if (!error) break;
-      if (!isMissingColumnError(error)) break;
-      const missingCol = extractMissingColumnName(error);
-      if (!missingCol || !Object.prototype.hasOwnProperty.call(payload, missingCol)) break;
-      delete payload[missingCol];
-    }
-
-    if (error) throw error;
-    res.json({ ok: true, campaign: data });
+    // Same insert as the tenant route (utils/wfCampaigns.js), so the owner's
+    // console cannot create a campaign the portal then fails to insert.
+    const campaign = await insertWfCampaign(supabase, insertPayload);
+    res.json({ ok: true, campaign });
   } catch (err) {
+    const info = describeWfCampaignError(err);
+    log(`[WF] campaign create failed: code=${info.code || "none"} ${info.message}`, "ERROR");
     res.status(500).json({ ok: false, error: err.message });
   }
 });

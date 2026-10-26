@@ -6,6 +6,8 @@ import { getContentJourney, getAllAngles } from '../utils/contentJourney.js';
 // Composes angle copy from the offer's own fields when every AI provider is out
 // of quota. Imported as a pure function so it can be unit-tested without a host.
 import { composeAnglePost } from '../utils/angleFallback.js';
+// One theme per page: model copy may never restyle the article (utils/articleHtml.js).
+import { sanitizeArticleHTML, auditBlogHTML, escapeAttr, FRAGMENT_ONLY } from '../utils/articleHtml.js';
 // Share-card copy for one published page. Pure module: the AI tier writes the
 // hook/summary/excerpt when it is up, and the page's own words are used when it
 // is not, so the Share screen never comes back empty on a dry tier.
@@ -15,6 +17,7 @@ const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_R
 const SITE = process.env.SITE_URL || 'https://alphadome.onrender.com';
 const BLOG = path.join(process.cwd(), 'public', 'blog');
 const IMG = path.join(process.cwd(), 'public', 'images', 'blog');
+
 const VM = '<meta name="google-site-verification" content="nQc8r4A_tjZX4469pNlpTR5hf7bfjEazZtITnrrHZUU">';
 
 
@@ -24,27 +27,65 @@ export async function restoreFromDB() {
     const { data, error } = await sb.from('blog_posts').select('*').eq('status', 'published');
     if (error) { console.error('[DB] Restore error:', error.message); return 0; }
     if (!data || !data.length) { console.log('[DB] No posts to restore'); return 0; }
-    for (const post of data) {
-      if (post.html_content) {
-        fs.writeFileSync(path.join(BLOG, post.slug + '.html'), post.html_content, 'utf8');
-      }
+    // The offer behind each page carries the CTA wording (and the job/buyer
+    // split). Loaded once: a broken page rebuilt one-at-a-time used to pay an
+    // extra round-trip each, and the first boot after the 2026-10-26 repair has
+    // 105 of them.
+    const offerIds = [...new Set(data.map((p) => p.opportunity_id).filter(Boolean))];
+    const offers = new Map();
+    if (offerIds.length) {
+      const { data: offerRows, error: offerErr } = await sb.from('opportunities')
+        .select('id, title, offer_type, cta_label')
+        .in('id', offerIds);
+      if (offerErr) console.warn('[DB] Offers unavailable, CTA falls back to the default: ' + offerErr.message);
+      for (const row of offerRows || []) offers.set(row.id, row);
     }
-    console.log('[DB] Restored ' + data.length + ' posts');
+    let rebuilt = 0;
+    for (const post of data) {
+      if (!post.html_content) continue;
+      let html = post.html_content;
+      // A page written before sanitizeArticleHTML() existed carries the model's
+      // own <style> and can render white-on-white forever, because this restore
+      // copies html_content byte-for-byte on every boot. Rebuild it from the
+      // stored article body instead, and persist the repair.
+      const audit = auditBlogHTML(html);
+      if (!audit.ok && post.content) {
+        try {
+          const offer = post.opportunity_id
+            ? (offers.get(post.opportunity_id) || { id: post.opportunity_id })
+            : null;
+          const fixed = buildHTML({
+            title: post.title || post.slug,
+            slug: post.slug,
+            content: post.content,
+            thumb: post.thumbnail_url || null,
+            date: post.created_at || post.updated_at || null,
+          }, offer);
+          if (auditBlogHTML(fixed).ok) {
+            html = fixed;
+            rebuilt++;
+            await sb.from('blog_posts').update({ html_content: fixed }).eq('slug', post.slug);
+            console.warn('[DB] Rebuilt unreadable page ' + post.slug + ' (' + audit.issues.join(', ') + ')');
+          } else {
+            console.warn('[DB] Page still fails the audit after rebuild: ' + post.slug);
+          }
+        } catch (e) {
+          console.warn('[DB] Rebuild failed for ' + post.slug + ': ' + e.message);
+        }
+      }
+      fs.writeFileSync(path.join(BLOG, post.slug + '.html'), html, 'utf8');
+    }
+    console.log('[DB] Restored ' + data.length + ' posts' + (rebuilt ? ' (' + rebuilt + ' rebuilt from their article body)' : ''));
     return data.length;
   } catch (e) { console.error('[DB] Restore error:', e.message); return 0; }
 }
 
 function clean(c) {
   if (!c) return c;
-  return c
-    .replace(/\*\*([^*]+)\*\*/g, '')
-    .replace(/\*([^*]+)\*/g, '')
-    .replace(/#{1,6}\s/g, '')
-    .replace(/_{2,}/g, '')
-    .replace(/~~([^~]+)~~/g, '')
-    .replace(/^\s*[-*]\s+/gm, '')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
+  // Markdown and the HTML document guard both live in sanitizeArticleHTML(), so
+  // every writer path (generation, duplicate retry, review, page rebuild) gets
+  // the same rules from one place instead of three drifting copies.
+  return sanitizeArticleHTML(c).replace(/\n{3,}/g, '\n\n').trim();
 }
 
 // Last failure reason from the AI provider, surfaced to callers so a tenant or
@@ -839,10 +880,14 @@ async function generateJourney(oppId, opts) {
 // no-op. Generation still calls reviewContent() and only wants the copy.
 async function reviewContentWithStatus(content, title, deadline) {
   try {
-    const prompt = `Review and improve this blog post. Remove ALL asterisks, markdown formatting, and AI patterns. Fix inconsistencies. Make it read like a professional human-written educational article. Ensure proper HTML structure with h2, h3, p, ul, li tags. Content:\n\n` + content;
+    const prompt = `Review and improve this blog post. Remove ALL asterisks, markdown formatting, and AI patterns. Fix inconsistencies. Make it read like a professional human-written educational article. Ensure proper HTML structure with h2, h3, p, ul, li tags. Return only the article body fragment — no <!DOCTYPE>, <html>, <head>, <body>, <style> or <script> tags, no markdown fences, and no colour or background styles. Content:\n\n` + content;
     const improved = await ai(prompt, deadline);
     if (!improved || !String(improved).trim()) return { content, ai: false };
-    return { content: improved, ai: true };
+    // The review pass writes the page body verbatim (generation assigns its
+    // result straight into post.content), so it gets the same document guard as
+    // the first draft — otherwise "polish" could reintroduce the model's own
+    // <style> and turn a readable page white again.
+    return { content: sanitizeArticleHTML(improved), ai: true };
   } catch (e) { return { content, ai: false }; }
 }
 
@@ -852,14 +897,41 @@ async function reviewContent(content, title, deadline) {
 }
 
 const OFFER_CTA = { job: 'Apply Now', product: 'Shop Now', service: 'Learn More', brand: 'Explore', affiliate: 'Get Deal', course: 'Enroll' };
-function buildHTML(post, job) {
+const BLOG_STYLE = ':root{--bg:#081421;--accent:#ff8a00;--text:#f3f7fa;--muted:#b8c7d6}'
+  + '*{box-sizing:border-box;margin:0;padding:0}'
+  + 'body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.7}'
+  + '.c{max-width:800px;margin:0 auto;padding:0 24px}'
+  + 'nav{padding:1rem 0}nav a{color:var(--accent);text-decoration:none}'
+  + 'h1{font-size:2rem;margin:1rem 0}'
+  + 'h2{font-size:1.4rem;color:var(--accent);margin:1.5rem 0 .75rem}'
+  + 'h3{font-size:1.15rem;margin:1.25rem 0 .5rem}'
+  + 'p,li{color:var(--muted)}'
+  + 'ul,ol{padding-left:1.5rem;margin:.5rem 0}'
+  + 'table{width:100%;border-collapse:collapse;margin:1rem 0}'
+  + 'th,td{border:1px solid rgba(255,255,255,.18);padding:.5rem .75rem;text-align:left;color:var(--muted)}'
+  + 'th{background:rgba(255,255,255,.06);color:var(--text)}'
+  + 'img{max-width:100%;border-radius:8px;margin:1rem 0}';
+
+export function buildHTML(post, job) {
   const id = job?.id;
   const cta = (job && job.cta_label) || OFFER_CTA[job && job.offer_type] || 'Apply Now';
   const availLine = (job && job.offer_type && job.offer_type !== 'job') ? 'This offer is available now.' : 'This opportunity is available now.';
-  const img = post.thumb ? '<img src="' + post.thumb + '" alt="' + post.title + '" style="width:100%;max-height:350px;object-fit:cover;border-radius:8px;margin:1rem 0">' : '';
-  const rt = Math.ceil(post.content.replace(/<[^>]*>/g, '').split(' ').length / 200);
+  // The article body is the only model-authored HTML on the page, so it is the
+  // only place a stray <style>/<html>/white background can arrive. Sanitising it
+  // here — and not just in clean() — is what protects pages rebuilt from stored
+  // html_content (restoreFromDB, reviewBlog, repairBlogHTML).
+  const body = sanitizeArticleHTML(post.content);
+  const title = escapeAttr(post.title || post.slug);
+  const plain = String(body).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  const desc = escapeAttr(plain.substring(0, 160));
+  const thumb = post.thumb ? escapeAttr(post.thumb) : '';
+  const img = thumb ? '<img src="' + thumb + '" alt="' + title + '" style="width:100%;max-height:350px;object-fit:cover;border-radius:8px;margin:1rem 0">' : '';
+  const rt = Math.max(1, Math.ceil(plain.split(' ').filter(Boolean).length / 200));
+  // A rebuilt page must keep the date it was published, not the day of the
+  // repair: restoreFromDB()/repair_blog_html.js pass the row's own timestamp.
+  const pubDate = post.date ? new Date(post.date).toLocaleDateString() : new Date().toLocaleDateString();
   const VM = '<meta name="google-site-verification" content="nQc8r4A_tjZX4469pNlpTR5hf7bfjEazZtITnrrHZUU">';
-  return '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">' + VM + '<title>' + post.title + ' | AlphaDome</title><meta name="description" content="' + post.content.replace(/<[^>]*>/g,'').substring(0,160) + '"><link rel="canonical" href="' + (process.env.SITE_URL || 'https://alphadome.onrender.com') + '/blog/' + post.slug + '.html"><style>:root{--bg:#081421;--accent:#ff8a00;--text:#f3f7fa;--muted:#b8c7d6}*{box-sizing:border-box;margin:0;padding:0}body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.7}.c{max-width:800px;margin:0 auto;padding:0 24px}nav{padding:1rem 0}nav a{color:var(--accent);text-decoration:none}h1{font-size:2rem;margin:1rem 0}h2{font-size:1.4rem;color:var(--accent);margin:1.5rem 0 .75rem}p,li{color:var(--muted)}ul{padding-left:1.5rem;margin:.5rem 0}img{max-width:100%;border-radius:8px;margin:1rem 0}</style></head><body><div class="c"><nav><a href="/">AlphaDome</a> / <a href="/ai-jobs">AI Jobs</a> / <a href="/blog">Blog</a></nav><article><h1>' + post.title + '</h1><p style="color:var(--muted)">Published ' + new Date().toLocaleDateString() + ' | ' + rt + ' min read</p>' + img + post.content + '</article><div style="text-align:center;padding:2rem;margin:2rem 0;background:rgba(255,255,255,.05);border-radius:12px"><h2>Ready to Start?</h2><p>' + availLine + '</p><a href="/ai-jobs/apply/' + id + '" style="display:inline-block;background:var(--accent);color:#000;padding:1rem 2rem;border-radius:8px;text-decoration:none;font-weight:600">' + cta + '</a></div></div></body></html>';
+  return '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">' + VM + '<title>' + title + ' | AlphaDome</title><meta name="description" content="' + desc + '"><link rel="canonical" href="' + (process.env.SITE_URL || 'https://alphadome.onrender.com') + '/blog/' + post.slug + '.html"><style>' + BLOG_STYLE + '</style></head><body><div class="c"><nav><a href="/">AlphaDome</a> / <a href="/ai-jobs">AI Jobs</a> / <a href="/blog">Blog</a></nav><article><h1>' + title + '</h1><p style="color:var(--muted)">Published ' + pubDate + ' | ' + rt + ' min read</p>' + img + body + '</article><div style="text-align:center;padding:2rem;margin:2rem 0;background:rgba(255,255,255,.05);border-radius:12px"><h2>Ready to Start?</h2><p>' + availLine + '</p><a href="/ai-jobs/apply/' + id + '" style="display:inline-block;background:var(--accent);color:#000;padding:1rem 2rem;border-radius:8px;text-decoration:none;font-weight:600">' + escapeAttr(cta) + '</a></div></div></body></html>';
 }
 
 async function saveToDB(post, job, category) {
@@ -899,10 +971,10 @@ async function saveToDB(post, job, category) {
 async function genContent(opp, type, existing) {
   const t = opp.title, s = opp.compensation_max || 75, sk = opp.skills?.join(", ") || "AI/ML";
   const prompts = {
-    salary: "Write a comprehensive, valuable blog job seekers about \"" + t + "\" salary in " + new Date().getFullYear() + ". Hourly: $" + s + "/hr. Include: intro, salary breakdown (hourly/weekly/monthly/yearly), factors affecting pay, comparison table with similar roles, negotiation tips, industry trends, actionable advice. HTML with h2,h3,p,ul,li,table. NO markdown or asterisks.",
-    howto: "Write an in-depth guide about becoming a \"" + t + "\". Skills: " + sk + ". Include: why this career matters, day-to-day reality, required skills, step-by-step career path, common mistakes, salary expectations ($" + s + "/hr), portfolio building, interview prep, where to find jobs. HTML with h2,h3,p,ul,li. NO markdown.",
-    remote: "Write a guide about remote \"" + t + "\" jobs. Salary: $" + s + "/hr. Include: benefits and challenges, skills needed (" + sk + "), best platforms, how to stand out, work-life balance, success stories. HTML with h2,h3,p,ul,li. NO markdown.",
-    skills: "Write an expert guide about \"" + t + "\" skills. Technical: " + sk + ". Include: technical skills, soft skills, how to learn each skill, learning resources, skill roadmap, salary impact ($" + s + "/hr), certifications, future skills, action plan. HTML with h2,h3,p,ul,li. NO markdown."
+    salary: "Write a comprehensive, valuable blog job seekers about \"" + t + "\" salary in " + new Date().getFullYear() + ". Hourly: $" + s + "/hr. Include: intro, salary breakdown (hourly/weekly/monthly/yearly), factors affecting pay, comparison table with similar roles, negotiation tips, industry trends, actionable advice. HTML with h2,h3,p,ul,li,table. NO markdown or asterisks." + FRAGMENT_ONLY,
+    howto: "Write an in-depth guide about becoming a \"" + t + "\". Skills: " + sk + ". Include: why this career matters, day-to-day reality, required skills, step-by-step career path, common mistakes, salary expectations ($" + s + "/hr), portfolio building, interview prep, where to find jobs. HTML with h2,h3,p,ul,li. NO markdown." + FRAGMENT_ONLY,
+    remote: "Write a guide about remote \"" + t + "\" jobs. Salary: $" + s + "/hr. Include: benefits and challenges, skills needed (" + sk + "), best platforms, how to stand out, work-life balance, success stories. HTML with h2,h3,p,ul,li. NO markdown." + FRAGMENT_ONLY,
+    skills: "Write an expert guide about \"" + t + "\" skills. Technical: " + sk + ". Include: technical skills, soft skills, how to learn each skill, learning resources, skill roadmap, salary impact ($" + s + "/hr), certifications, future skills, action plan. HTML with h2,h3,p,ul,li. NO markdown." + FRAGMENT_ONLY
   };
   let content = await ai(prompts[type] || prompts.salary);
   if (!content) return null;
@@ -1021,7 +1093,9 @@ export async function reviewBlog(slug) {
       title,
       slug: cleanSlug,
       content: cleanedImproved,
-      thumb: thumb || (htmlContent.match(/<img src="(\/images\/blog\/[^"]+)"/)?.[1] || null)
+      thumb: thumb || (htmlContent.match(/<img src="(\/images\/blog\/[^"]+)"/)?.[1] || null),
+      // Keep the page's original publish date: a polish pass is not a re-publish.
+      date: dbPost?.created_at || null,
     };
 
     // The offer row, not just its id: buildHTML needs id/cta_label/offer_type to

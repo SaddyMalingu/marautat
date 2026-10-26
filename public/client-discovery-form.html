@@ -211,6 +211,25 @@
       margin-top: 2rem;
     }
 
+    /* Inline submit feedback. Lives outside the <form> so hiding the form on
+       success cannot hide the confirmation that the client is waiting for. */
+    .submit-error {
+      display: none;
+      background: rgba(255, 107, 107, 0.12);
+      border: 1px solid rgba(255, 107, 107, 0.45);
+      color: #ffb3b3;
+      padding: 1.2rem 1.5rem;
+      border-radius: 12px;
+      margin-top: 1.5rem;
+    }
+
+    .btn-submit:disabled {
+      opacity: 0.65;
+      cursor: wait;
+      transform: none;
+      box-shadow: none;
+    }
+
     .error-message {
       color: #ff6b6b;
       font-size: 0.85rem;
@@ -531,18 +550,51 @@
       <button type="reset" class="btn-reset">Clear Form</button>
     </div>
 
-    <div class="success-message" id="successMessage">
-      ✓ Thank you! We've received your questionnaire. We'll be in touch within 24 hours to discuss your 3.0 system.
-    </div>
   </form>
+
+  <!-- Feedback panels sit outside the form: the submit handler hides the form,
+       and previously that hid the confirmation too (the client saw a blank
+       page after pressing Submit). -->
+  <div class="success-message" id="successMessage" role="status" aria-live="polite">
+    ✓ Thank you! We've received your questionnaire. We'll be in touch within 24 hours to discuss your 3.0 system.
+    <div id="successReference" style="font-size:0.85rem;margin-top:0.6rem;color:var(--muted)"></div>
+  </div>
+
+  <div class="submit-error" id="errorMessage" role="alert" aria-live="assertive"></div>
 </div>
 
 <script>
   const form = document.getElementById('discoveryForm');
-  
+  const successMessage = document.getElementById('successMessage');
+  const successReference = document.getElementById('successReference');
+  const errorMessage = document.getElementById('errorMessage');
+  const submitBtn = form.querySelector('button[type="submit"]');
+  const submitLabel = submitBtn ? submitBtn.textContent : 'Submit Questionnaire';
+
+  function clearFeedback() {
+    errorMessage.textContent = '';
+    errorMessage.style.display = 'none';
+    successMessage.style.display = 'none';
+  }
+
+  function showError(message) {
+    successMessage.style.display = 'none';
+    errorMessage.textContent = '⚠ ' + message;
+    errorMessage.style.display = 'block';
+    errorMessage.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  function setSubmitting(busy) {
+    if (!submitBtn) return;
+    submitBtn.disabled = busy;
+    submitBtn.textContent = busy ? 'Submitting…' : submitLabel;
+  }
+
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    
+    clearFeedback();
+    setSubmitting(true);
+
     const formData = new FormData(form);
     const data = {
       name: formData.get('name'),
@@ -572,15 +624,25 @@
         body: JSON.stringify(data)
       });
 
-      const result = await resp.json();
-      if (!resp.ok || !result.ok) {
-        throw new Error(result.error || 'Failed to submit form');
+      // A proxy or crash can answer with HTML, so parse defensively: the old
+      // code called resp.json() unguarded and turned a 502 into an opaque alert.
+      let result = null;
+      try { result = await resp.json(); } catch (parseErr) { result = null; }
+
+      if (!resp.ok || !result || result.ok !== true) {
+        throw new Error((result && result.error) || ('the server answered ' + resp.status));
       }
 
-      document.getElementById('successMessage').style.display = 'block';
+      // The confirmation lives outside the form, so hiding the form no longer
+      // hides the message that tells the client their submission landed.
       form.style.display = 'none';
+      successReference.textContent = result.submission_id ? ('Reference: ' + result.submission_id) : '';
+      successMessage.style.display = 'block';
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err) {
-      alert(`Submission failed: ${err.message}. Please try again or contact us on WhatsApp.`);
+      showError('We could not save your questionnaire: ' + err.message + ' Please press Submit again, or reach us on WhatsApp.');
+    } finally {
+      setSubmitting(false);
     }
   });
 </script>

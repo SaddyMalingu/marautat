@@ -585,9 +585,109 @@ angles" run wrote five pages. Slugs now carry the stage
 (`<offer>-awareness-1`, `<offer>-awareness-2`, …) and the verifier counts unique
 slugs, not array entries.
 
-### Phase B (next) — Research & Outreach
-Tenant-scope the original WF: add `wf_campaigns.tenant_id`, `/tenant/wf/*` endpoints,
-per-tenant SMTP, and the Research & Outreach tab UI.
+**One theme per page (2026-10-26).** Some models answer the writer's "HTML
+fragment" request with a whole document: `<!DOCTYPE html>`, `<html>`, and a
+`<head>` carrying their own `<style>` with `background:#fff` / `color:#fff`. That
+copy was injected inside `<article>`, and a `<style>` element still applies when
+it sits inside `<body>`, so the model's palette overrode the template's. A live
+probe of all 283 published pages (`npm run probe:blog-theme`, 2026-10-26) found
+105 failing at least one rendering rule: 20 carried a second `<style>` block, 27
+had pasted a whole document into the article, 10 declared a white background, 97
+repeated the page title as their own `<h1>` (70 of them failing *only* that), 8
+showed markdown fences and a handful read as literal `**bold**` / `### heading` /
+`* bullet`. Several pages were a blank white sheet (light text on the model's own
+white background), i.e. a tenant opening "its" blog saw nothing. Three smaller
+variants of the same cause: `bgcolor=` attributes, `color:#fff` inline
+declarations, and answers fenced in ```` ```html ```` (visible backticks).
+
+Every writer path now funnels copy through `sanitizeArticleHTML()`
+(`utils/articleHtml.js`): unwrap a full document to its body, drop
+`style`/`script`/`link`/`meta`/`title` and document tags, keep layout hints
+(padding, border, width) but drop `color`/`background`/`font` declarations,
+strip `bgcolor`/`color` attributes, convert leftover markdown to `h2`/`h3`/`p`/
+`ul`/`ol`/`strong`/`blockquote`, and demote the model's `h1` to `h2` so the page
+keeps exactly one. `auditBlogHTML()` then proves the rendered page has exactly
+one `<style>`, one `<html>`, one `<body>`, no model CSS in the article, no
+literal markdown and one `h1`. `restoreFromDB()` audits each row on boot and
+rebuilds anything that fails from its stored article body (and saves the repair),
+so old pages do not come back broken on every deploy. A rebuilt page keeps the
+row's `created_at` as its publish date instead of looking freshly re-written.
+
+Repair the live rows with:
+
+```bash
+npm run repair:blog-html            # dry run: list pages that fail the audit
+npm run repair:blog-html -- --apply # rebuild file + html_content
+npm run test:blog-html              # offline checks for the guard + template
+npm run probe:blog-theme            # audit the live pages a reader can open
+```
+
+`probe:blog-theme` fetches every page linked from `/blog` on the deployed site and
+runs the same `auditBlogHTML()` rules, so "the fix is live" is a command and an
+exit code rather than an eyeball. It prints one `FAIL <slug> [issues]` line per
+page and writes the full row set to `.blog_probe.json`.
+
+The script needs `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` in the environment.
+On a machine without them, the same repair runs inside the deploy: every boot
+calls `restoreFromDB()`, and `GET /admin/restore-blogs?key=$ADMIN_KEY` forces it
+on a running instance without waiting for a restart.
+
+Rehearsed against the live site on 2026-10-26 (published page taken as the stored
+`html_content`, its `<article>` body as the stored `content`): every offending page
+that still holds a real article body rebuilds to a page that passes every audit
+rule. The one exception is `verify-writers-flow-20261022130935-awareness-2`, which
+holds only 144 characters of article text — there is nothing to restore, so the
+audit keeps refusing it and it needs a regeneration (Review in the tenant portal,
+or Generate on its offer), not a repair.
+
+`scripts/repair_blog_html.js` used to pull `auditBlogHTML` out of
+`scripts/blogManager.js`, which never re-exported it, so the first real run would
+have died on `auditBlogHTML is not a function`; it now imports the pure module.
+
+**The discovery form never confirmed a submission (2026-10-26).** On
+`/discovery`, the "Thank you" panel was a child of `<form id="discoveryForm">`,
+and the submit handler set `form.style.display = 'none'` — so the confirmation
+was hidden together with the form and a client who had just given us their
+business details saw a blank page. Failures were worse: a raw `alert()` carrying
+the exception text, plus an unguarded `resp.json()` that surfaced
+"Unexpected token < in JSON" when a proxy answered 502. The panel now lives
+outside the form, failures render inline with the server's reason (or the HTTP
+status), the submit button disables and re-labels while in flight, and the
+confirmation shows the `submission_id` as a reference.
+`npm run test:discovery-form` runs the page's own script against a DOM stub and
+asserts both branches.
+
+**Tenant campaign creation answered 500 and left no trace (2026-10-26).** The
+Render log held `POST /tenant/wf/campaigns 500 - 961ms` and nothing else: one
+database round trip, so the insert itself was rejected, and the route returned
+`err.message` without logging it. The insert also guessed wrong about the table.
+Two incompatible `wf_campaigns` shapes exist in this repo:
+`migrations/2026-04-20_writers_flow_tables.sql` defines
+`id uuid PRIMARY KEY DEFAULT gen_random_uuid()` plus `name`/`keywords`, while
+`migrations/2026-05-03_create_writers_flow_tables.sql` defines
+`id text PRIMARY KEY` with **no default** and no `name` column at all. Against
+the second shape the old retry loop dropped `name`, `keywords`, `channels`, … one
+per attempt and then died on `null value in column "id"` (or would have stored a
+nameless campaign that can never be run).
+
+`utils/wfCampaigns.js` now owns that insert for both the portal
+(`POST /tenant/wf/campaigns`) and the owner console
+(`POST /admin/api/wf/campaigns`). It sends its own `id`, which is a valid value
+for a `uuid` and a `text` primary key alike; retries without optional columns the
+live table lacks; drops a rejected `status` so the column default decides (the
+2026-05-03 shape only allows `created|running|completed|failed`, the routes send
+`draft`); and refuses to drop `name`, `keywords` or `tenant_id` — a campaign
+without those is unfindable or visible to the wrong client, so that answers 503
+naming the migration to run instead of "succeeding". Every failure now logs
+`[TENANT WF] campaign create failed: code=… <database message>` before the
+response, so the next occurrence is diagnosable from Render alone.
+`npm run test:wf-create` replays each shape against a faked Supabase client.
+
+### Phase B — Research & Outreach (shipped; see the campaign-create note above)
+`wf_campaigns.tenant_id`, the `/tenant/wf/*` endpoints, per-tenant SMTP and the
+Research & Outreach tab all exist. What is left here is not build work: create a
+campaign from the portal once the deployment carries the insert fix, then confirm
+the Render log shows no `500` on the route.
 
 ## Next (Phase 4, optional)
 - Converge tenant resolution onto `alphadome-kernel` behind parity tests.

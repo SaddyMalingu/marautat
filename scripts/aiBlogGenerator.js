@@ -2,6 +2,8 @@ import { createClient } from '@supabase/supabase-js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+// One theme per page: model copy may never restyle the article (utils/articleHtml.js).
+import { sanitizeArticleHTML, escapeAttr } from '../utils/articleHtml.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -51,7 +53,11 @@ export async function generateBlogPostsForOpportunity(oppId) {
     const title = a.t(o), slug = a.s(o);
     let content = await ai(a.p(o));
     if (!content) content = fallback(o);
-    fs.writeFileSync(path.join(BLOG, `${slug}.html`), html({ title, s: slug, c: content }, oppId), 'utf8');
+    // Models sometimes answer with a whole HTML document (own <style> with a
+    // white background); that copy used to be injected into the dark template and
+    // rendered white-on-white. Sanitise before it reaches the page.
+    content = sanitizeArticleHTML(content);
+    fs.writeFileSync(path.join(BLOG, `${slug}.html`), html({ title: escapeAttr(title), s: slug, c: content }, oppId), 'utf8');
     res.push({ title, slug, url: `${SITE}/blog/${slug}.html` });
   }
   idx();
