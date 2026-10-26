@@ -12,6 +12,17 @@ import { sanitizeArticleHTML, auditBlogHTML, escapeAttr, FRAGMENT_ONLY } from '.
 // hook/summary/excerpt when it is up, and the page's own words are used when it
 // is not, so the Share screen never comes back empty on a dry tier.
 import { deriveShareCard, buildSharePrompt, parseShareCard } from '../utils/postShare.js';
+// The article brief (2026-10-25). The journey decides what each page is for;
+// the brief decides how it is written — reader, scene, sentence shape, worked
+// example, honest limitation, CTA — because the one-line prompts shipped until
+// now produced heading-plus-bullets pages (283 audited pages, mostly outlines).
+import { buildArticlePrompt, buildRepairPrompt, buildReviewPrompt } from '../utils/blogWriter.js';
+// The referee. Measures what the draft actually delivered so a thin page cannot
+// be reported as a success, and names the failures a repair prompt must fix.
+import { analyzeArticle, qualityBrief, describeQuality } from '../utils/blogQuality.js';
+// Each tenant writes in its own voice, resolved from its own settings or, when
+// it has none, deterministically from its identity.
+import { resolveTenantVoice } from '../utils/tenantVoice.js';
 const __f = fileURLToPath(import.meta.url);
 const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 const SITE = process.env.SITE_URL || 'https://alphadome.onrender.com';
@@ -691,6 +702,58 @@ function isDuplicate(content, existing) {
 // call immediately instead of competing with the first.
 const inFlightOffers = new Set();
 
+// A tenant's voice, resolved once per journey.
+//
+// `bot_tenants` is the identity the portal logs in with; `site_tenants` is the
+// blog's own row and the natural home for an explicit `brand_voice` / `tone`;
+// `bot_templates.tone` is the third source and it is the one field a tenant has
+// already filled in for its WhatsApp bot. Every lookup is best-effort: a host
+// whose schema predates a column, or a template table that does not exist, must
+// still generate with the house voice rather than fail the run.
+async function loadTenantVoice(offer) {
+  var site = null, tenant = null, botTemplate = null;
+  if (offer && offer.tenant_id) {
+    try {
+      var siteRes = await sb.from('site_tenants').select('*').eq('id', offer.tenant_id).maybeSingle();
+      if (!siteRes.error) site = siteRes.data;
+      else console.warn('[GEN] Voice: site_tenants unavailable (' + siteRes.error.message + ') — using the house voice');
+    } catch (e) {
+      console.warn('[GEN] Voice: site_tenants lookup failed (' + e.message + ')');
+    }
+  }
+  if (site && site.client_phone) {
+    try {
+      var tenantRes = await sb.from('bot_tenants')
+        .select('id, client_name, client_phone').eq('client_phone', site.client_phone).maybeSingle();
+      if (!tenantRes.error) tenant = tenantRes.data;
+    } catch (e) { /* identity is optional */ }
+  }
+  if (tenant && tenant.id) {
+    try {
+      var tplRes = await sb.from('bot_templates')
+        .select('tone, system_prompt').eq('bot_tenant_id', tenant.id).eq('is_default', true).maybeSingle();
+      if (tplRes.error) {
+        // is_default may not exist on an older shape; any template still carries a tone.
+        tplRes = await sb.from('bot_templates').select('tone, system_prompt').eq('bot_tenant_id', tenant.id).limit(1).maybeSingle();
+      }
+      if (!tplRes.error) botTemplate = tplRes.data;
+    } catch (e) { /* tone is optional */ }
+  }
+  var voice = resolveTenantVoice({ site: site, tenant: tenant, botTemplate: botTemplate, offer: offer });
+  console.log('[GEN] Voice: ' + voice.id + ' (' + voice.source + ') for ' + voice.brand +
+    (voice.industry ? ' — ' + voice.industry : ''));
+  return voice;
+}
+
+// What the portal is allowed to show about the voice. The full prompt block is
+// an internal instruction and must not travel to the browser.
+function voiceMeta(voice) {
+  if (!voice) return null;
+  return { id: voice.id, label: voice.label, brand: voice.brand, source: voice.source };
+}
+
+
+
 export async function generateBlogPostsForOpportunity(oppId, opts) {
   const runKey = oppId ? String(oppId) : null;
   if (runKey && inFlightOffers.has(runKey)) {
@@ -724,6 +787,10 @@ async function generateJourney(oppId, opts) {
     existing = ef.map(function(f){return fs.readFileSync(path.join(BLOG, f), 'utf8');});
   }
   var journey = getContentJourney(o);
+  // One voice for the whole journey: nine pages under nine voices would read
+  // like nine different businesses.
+  var voice = await loadTenantVoice(o);
+  var journeyTitles = journey.map(function (p) { return p.title; });
   var res = [];
   var attempts = 0;
   var skipped = [];
@@ -792,12 +859,16 @@ async function generateJourney(oppId, opts) {
       return cs.length ? Math.min.apply(null, cs) : 0;
     };
     var angleDeadline = capFor();
+    // The commission for this page, replacing the journey's one-line prompt.
+    // `siblings` keeps nine pages from repeating each other's angle.
+    var siblings = journeyTitles.filter(function (t) { return t !== post.title; });
+    var prompt = buildArticlePrompt({ offer: o, post: post, voice: voice, siblings: siblings });
     if (aiUsable) {
       if (i > 0 && angleDelay > 0) await sleep(angleDelay);
       // The cap is recomputed per call and always includes the run deadline, so
       // no single AI call — first angle, duplicate retry or review — can push the
       // journey past BLOG_RUN_BUDGET_MS.
-      content = await ai(post.prompt, angleDeadline);
+      content = await ai(prompt, angleDeadline);
       if (content) { content = clean(content); misses = 0; } else { misses++; }
     }
     var composed = false;
@@ -820,8 +891,34 @@ async function generateJourney(oppId, opts) {
       console.warn('[GEN] AI unavailable for [' + post.angleName + '] (' + (aiUsable ? 'transient' : 'provider-wide') +
         ') — composed from the offer data');
     } else if (isDuplicate(content, existing)) {
-      content = await ai(post.prompt + ' Make this completely unique.', capFor());
+      content = await ai(prompt + ' This must be completely different from the other pages in the series — different opening scene, different examples.', capFor());
       if (content) content = clean(content);
+    }
+    // The quality gate. Valid HTML can still be an outline, which is exactly what
+    // the 283-page audit found. Score the draft and spend one call on a targeted
+    // rewrite when it fails. Skipped when the tier is already known dry, when the
+    // copy was composed locally (that copy is prose by construction) or when the
+    // run budget cannot afford a second call for this page.
+    var quality = analyzeArticle(content);
+    var repairHeadroom = budgetMs <= 0 || Date.now() - runStart < budgetMs * 0.75;
+    if (!composed && aiUsable && !lastAiError && !quality.ok && repairHeadroom) {
+      var repaired = await ai(buildRepairPrompt({
+        offer: o, post: post, voice: voice, draft: content, issues: qualityBrief(quality),
+      }), capFor());
+      if (repaired) {
+        var candidate = clean(repaired);
+        var candidateQuality = analyzeArticle(candidate);
+        if (candidateQuality.score > quality.score) {
+          console.log('[GEN] Repaired ' + post.slug + ': ' + describeQuality(quality) + ' → ' + describeQuality(candidateQuality));
+          content = candidate;
+          quality = candidateQuality;
+        } else {
+          console.warn('[GEN] Repair did not improve ' + post.slug + ' (' + describeQuality(candidateQuality) + ') — keeping the draft');
+        }
+      }
+    }
+    if (!composed) {
+      console.log('[GEN] Quality ' + post.slug + ': ' + describeQuality(quality) + (quality.ok ? '' : ' — below target, published anyway'));
     }
     // The review pass is a second AI call per post, so it can double the cost of
     // an angle. Skip it when the writer is out of quota (lastAiError set), when
@@ -829,14 +926,23 @@ async function generateJourney(oppId, opts) {
     // spending the last of it polishing page 3 means pages 4-9 fall back to
     // composed copy. Same total time, more AI-written pages.
     var reviewHeadroom = budgetMs <= 0 || Date.now() - runStart < budgetMs * 0.6;
-    if (rev && !composed && !lastAiError && reviewHeadroom) content = await reviewContent(content, post.title, capFor());
+    if (rev && !composed && !lastAiError && reviewHeadroom) {
+      content = await reviewContent(content, post.title, capFor(), { offer: o, post: post, voice: voice, analysis: quality });
+      quality = analyzeArticle(content);
+    }
     var thumb = null;
     if (img) thumb = await genImage(o.title + ' ' + post.angleName, post.slug);
     var postData = { title: post.title, slug: post.slug, content: content, thumb: thumb };
     fs.writeFileSync(path.join(BLOG, post.slug + '.html'), buildHTML(postData, o), 'utf8');
     await saveToDB(postData, o, post.angle);
     existing.push(content);
-    res.push({ title: post.title, slug: post.slug, angle: post.angleName, url: SITE + '/blog/' + post.slug + '.html', thumb: thumb, fallback: composed });
+    res.push({
+      title: post.title, slug: post.slug, angle: post.angleName,
+      url: SITE + '/blog/' + post.slug + '.html', thumb: thumb, fallback: composed,
+      // Surfaced so the tenant portal and the verifier can say *what* a page
+      // scored instead of only "generated".
+      quality: { score: quality.score, words: quality.words, ok: quality.ok, issues: quality.issues.map(function (x) { return x.code; }) },
+    });
   }
   updateIndex();
   // mode tells the tenant (and the verifier) what actually happened: 'ai' when
@@ -865,8 +971,9 @@ async function generateJourney(oppId, opts) {
     };
   }
   // Partial journeys are still a success, but callers must be able to show
-  // *why* an angle was skipped (free-tier rate limits) instead of guessing.
-  return { success: true, posts: res, attempted: attempts, skipped: skipped, mode: mode, fallback: fromTemplate };
+  // *why* an angle was skipped (free-tier rate limits) and *what* was written
+  // (voice + quality) instead of guessing.
+  return { success: true, posts: res, attempted: attempts, skipped: skipped, mode: mode, fallback: fromTemplate, voice: voiceMeta(voice) };
 }
 
 
@@ -878,21 +985,40 @@ async function generateJourney(oppId, opts) {
 // must not be told "polished" when every provider was dry and the page came back
 // byte-for-byte unchanged — so the caller gets `ai:false` instead of a silent
 // no-op. Generation still calls reviewContent() and only wants the copy.
-async function reviewContentWithStatus(content, title, deadline) {
+async function reviewContentWithStatus(content, title, deadline, opts) {
   try {
-    const prompt = `Review and improve this blog post. Remove ALL asterisks, markdown formatting, and AI patterns. Fix inconsistencies. Make it read like a professional human-written educational article. Ensure proper HTML structure with h2, h3, p, ul, li tags. Return only the article body fragment — no <!DOCTYPE>, <html>, <head>, <body>, <style> or <script> tags, no markdown fences, and no colour or background styles. Content:\n\n` + content;
+    opts = opts || {};
+    const before = analyzeArticle(content);
+    // The old prompt ("Review and improve this blog post. Remove ALL asterisks…")
+    // asked only for hygiene, so a polished page could still be a bullet-point
+    // outline. The brief now carries the tenant's voice and the measured failures.
+    const prompt = buildReviewPrompt({
+      offer: opts.offer,
+      post: opts.post || { title: title },
+      voice: opts.voice,
+      content: content,
+      issues: before.ok ? '' : qualityBrief(before),
+    });
     const improved = await ai(prompt, deadline);
     if (!improved || !String(improved).trim()) return { content, ai: false };
     // The review pass writes the page body verbatim (generation assigns its
     // result straight into post.content), so it gets the same document guard as
     // the first draft — otherwise "polish" could reintroduce the model's own
     // <style> and turn a readable page white again.
-    return { content: sanitizeArticleHTML(improved), ai: true };
+    const next = sanitizeArticleHTML(improved);
+    // A polish that shortens the page into an outline is not an improvement, and
+    // the tenant pressed Review to get a better page, not a different one.
+    const after = analyzeArticle(next);
+    if (after.score < before.score) {
+      console.warn('[REVIEW] Rejected a polish that scored lower (' + describeQuality(before) + ' → ' + describeQuality(after) + ')');
+      return { content, ai: false, rejected: true, before, after };
+    }
+    return { content: next, ai: true, before, after };
   } catch (e) { return { content, ai: false }; }
 }
 
-async function reviewContent(content, title, deadline) {
-  const result = await reviewContentWithStatus(content, title, deadline);
+async function reviewContent(content, title, deadline, opts) {
+  const result = await reviewContentWithStatus(content, title, deadline, opts);
   return result.content || content;
 }
 
@@ -1082,11 +1208,29 @@ export async function reviewBlog(slug) {
     if (!rawContent || !String(rawContent).trim()) {
       return { error: 'No reviewable content found for ' + cleanSlug };
     }
+    // The offer row, not just its id: buildHTML needs id/cta_label/offer_type to
+    // link the page's CTA, saveToDB needs tenant_id to keep the page deletable by
+    // the tenant that paid for it, and the polish pass needs the tenant's voice.
+    // Passing the bare id (as this did) rebuilt the CTA as
+    // /ai-jobs/apply/undefined on every reviewed page.
+    let offer = null;
+    if (oppId) {
+      const { data } = await sb.from('opportunities').select('*').eq('id', oppId).maybeSingle();
+      offer = data || null;
+    }
+    const voice = await loadTenantVoice(offer);
+    // `post` carries the journey angle so the polish brief knows what this page
+    // was commissioned to do. A page without an offer still gets the brand voice.
+    const angle = String(dbPost?.category || '').trim();
+
     // Bounded like the generation walk: an on-demand review must answer inside a
     // browser-friendly window, so a dry tier falls back to "unchanged" instead of
     // holding the button for a provider walk of several minutes.
     const reviewBudget = Number(process.env.BLOG_REVIEW_AI_TIMEOUT_MS || 45000);
-    const reviewed = await reviewContentWithStatus(rawContent, title, Date.now() + reviewBudget);
+    const reviewed = await reviewContentWithStatus(
+      rawContent, title, Date.now() + reviewBudget,
+      { offer: offer, post: { title: title, angle: angle || 'awareness', stage: 1 }, voice: voice },
+    );
     const cleanedImproved = clean(reviewed.content) || rawContent;
 
     const postData = {
@@ -1097,16 +1241,6 @@ export async function reviewBlog(slug) {
       // Keep the page's original publish date: a polish pass is not a re-publish.
       date: dbPost?.created_at || null,
     };
-
-    // The offer row, not just its id: buildHTML needs id/cta_label/offer_type to
-    // link the page's CTA, and saveToDB needs tenant_id to keep the page
-    // deletable by the tenant that paid for it. Passing the bare id (as this did)
-    // rebuilt the CTA as /ai-jobs/apply/undefined on every reviewed page.
-    let offer = null;
-    if (oppId) {
-      const { data } = await sb.from('opportunities').select('*').eq('id', oppId).maybeSingle();
-      offer = data || null;
-    }
 
     const newHtml = buildHTML(postData, offer || (oppId ? { id: oppId } : null));
 
@@ -1121,6 +1255,13 @@ export async function reviewBlog(slug) {
       title,
       ai: reviewed.ai,
       changed: cleanedImproved !== rawContent,
+      // What the page scored before and after, so the portal can show a real
+      // outcome instead of a bare "reviewed".
+      quality: {
+        before: reviewed.before || null,
+        after: reviewed.after || analyzeArticle(cleanedImproved),
+        rejected: !!reviewed.rejected,
+      },
     };
   } catch (err) {
     console.error(`[REVIEW] Error reviewing ${slug}:`, err.message);

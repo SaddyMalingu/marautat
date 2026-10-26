@@ -702,4 +702,74 @@ the Render log shows no `500` on the route.
 - Per-tenant custom domains / branded paths; respondent.io sample offers.
 - Founder's-plan gating for Writer's Flow (currently shown to all active tenants).
 
+---
+
+## Blog quality: voice, brief and gate (2026-10-25)
+
+**What was wrong.** Every tenant ran the same one-line prompt — `Write an
+educational blog post explaining what X is … HTML format, NO markdown` — and got
+back the same shape: an `<h2>`, four `<li>`, repeat. Of the 283 published pages,
+105 broke a rendering rule (see the 2026-10-26 section above) and the thin ones
+held 144 characters of article text. Nothing in the pipeline measured quality, so
+`9 of 9 generated` was always reported as success, and a tenant selling studio
+time read exactly like a tenant selling pharma supply.
+
+**Three modules now own the difference.** All three are pure (no fs, no network,
+no database) so they can be proven offline.
+
+| Module | Responsibility |
+|---|---|
+| `utils/tenantVoice.js` | Resolves one editorial voice per tenant: six profiles (`warm-neighbourhood-expert`, `precise-operator`, `bold-challenger`, `measured-advisor`, `storytelling-guide`, `practical-teacher`). An explicit `site_tenants.brand_voice` / `.voice` / `.tone`, else `bot_tenants.tone`, else `bot_templates.tone` wins; a free-text tone that matches no profile is honoured verbatim. With no setting, the profile is chosen by FNV-1a hash of the tenant's id/slug, so it is stable across runs and deploys, and 24 tenants still spread across all six. It also derives the market lens (music retail, health supply, construction …) and the reader (buyer vs candidate). |
+| `utils/blogWriter.js` | Builds the article brief that replaced the one-liners: business facts and a fact rule (no invented clients, statistics, guarantees or dates), the voice block, the reader and search intent, one brief per journey angle **and stage** (20 in total: 10 buyer, 10 career), the eight-step shape (scene → decision → five sections of prose before any list → one worked example with real numbers → one honest limitation section → a CTA using the offer's own label), length and rhythm rules, banned phrasing, and the HTML fragment contract. Also exports `buildRepairPrompt()` and `buildReviewPrompt()`. |
+| `utils/blogQuality.js` | The referee. Scores an article 0–100 on words, substantial paragraphs, headings, list-word ratio, list-only sections, sentences per paragraph, specifics (numbers), CTA presence, stubby paragraphs, repeated openers, duplicate headings and a banned-phrase list. Returns `ok`, `critical[]` and named `issues[]` with weights; `qualityBrief()` turns them into instructions. Targets live in `QUALITY_TARGETS` (floor 700 words, 8 paragraphs, 3 headings, ≤32% of words inside lists, ≤1 list-only section, score ≥70). |
+
+**How a journey uses them** (`scripts/blogManager.js`):
+
+1. `loadTenantVoice(offer)` resolves the tenant once per journey (site_tenants →
+   bot_tenants by `client_phone` → bot_templates by `bot_tenant_id`). Every lookup
+   is best-effort, so a host whose schema predates a column still generates with
+   the house voice. The log line is `[GEN] Voice: <id> (<source>) for <brand>`.
+2. Each angle is commissioned with `buildArticlePrompt()`, including the other
+   eight titles in the series so the pages do not repeat each other.
+3. The draft is scored. If it fails, **one** repair call is made with the measured
+   failures; the rewrite is kept only when it scores higher. Log lines:
+   `[GEN] Quality <slug>: 62/100, … — below target, published anyway` and
+   `[GEN] Repaired <slug>: … → …`.
+4. The review pass is now voice-aware and refuses a polish that scores lower, so
+   the Review button cannot turn a page into an outline.
+5. The journey result carries `voice` (`id`, `label`, `brand`, `source`) and a
+   per-post `quality` object (`score`, `words`, `ok`, `issues`). The tenant portal
+   toast shows the average score and the voice instead of a bare page count.
+
+**Choosing the voice in the portal.** `GET /tenant/blogger` now returns `voice`
+(id, label, source, brand, industry) and `voiceOptions` (all six profiles with a
+one-line essence), and the Writer's Flow → Blogger tab shows a "Your writing
+voice" panel with a picker, **Save voice**, and **Use assigned**.
+`POST /tenant/blogger/voice` writes the choice to `site_tenants.metadata.voice`,
+merging the existing jsonb instead of replacing it, and accepts `{ voice: null }`
+to clear. `metadata` is used deliberately: it already exists on every deployed
+`site_tenants` row, so a tenant can pick a tone without waiting for a migration;
+a host that somehow lacks the column answers `503` naming
+`migrations/2026-10-11_add_site_tenants_multitenant.sql` rather than pretending it
+saved. Unknown ids are refused with the allowed list, and the full prompt block is
+never sent to the browser — only the label, source and market. Proof:
+`npm run test:tenant-voice` (23 checks).
+
+**Tuning.** `QUALITY_TARGETS` is the single place to change a threshold; the
+prompt's banned list lives in `BANNED_PHRASES` in `blogWriter.js` and `BANNED` in
+`blogQuality.js` and must stay in sync. A change is either proven by
+`npm run test:blog-quality` or it is not shipped.
+
+```bash
+npm run test:blog-quality   # 15 checks: voices, briefs, gate, repair, review
+npm run test:tenant-voice   # 23 checks: the picker, the route, metadata merge
+npm run test:blog-fallback  # composed copy still passes the fallback contract
+npm run test:blog-html      # one-theme sanitizer and page template
+```
+
+The gate is deliberately a *floor*, not a style police: a page can score 78 with
+one weak section and still publish. What it will not accept is the shape that
+started this work — a heading followed by a bare list, three times over.
+
+
 

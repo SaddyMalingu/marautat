@@ -43,6 +43,9 @@ import {
   findSubmission,
 } from "./utils/discoveryApprovals.js";
 import { insertWfCampaign, describeWfCampaignError } from "./utils/wfCampaigns.js";
+// Display-only voice info for the tenant portal, and the profile list the voice
+// picker offers. The prompt block itself stays on the server.
+import { resolveTenantVoice, listVoiceProfiles, VOICE_PROFILES } from "./utils/tenantVoice.js";
 import aiJobsRouter from "./routes/aiJobs.js";
 import sitemapRouter from "./routes/sitemap.js";
 import aiJobsAdminRouter from "./routes/aiJobsAdmin.js";
@@ -4778,7 +4781,69 @@ app.get('/tenant/blogger', tenantSessionAuth, async (req, res) => {
       publicPath: `/ai-jobs/t/${ctx.site.slug}`,
       offers: (offers || []).map(function (o) { return Object.assign({}, o, { page_count: pageCounts[o.id] || 0 }); }),
       categories: cats || [],
+      // The voice every page will be written in, plus the alternatives, so the
+      // portal can show it and let the tenant change it. Before this, the tone
+      // was real but invisible: nine pages arrived in a voice nobody chose.
+      voice: tbVoiceFor(ctx.site),
+      voiceOptions: tbVoiceOptions(),
     });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// The resolved voice for one site. Display-only fields: the prompt block that
+// carries the full instruction never leaves the server.
+function tbVoiceFor(site) {
+  try {
+    const v = resolveTenantVoice({ site: site });
+    return { id: v.id, label: v.label, source: v.source, brand: v.brand, industry: v.industry };
+  } catch (e) {
+    console.warn('[tenant/blogger] voice resolution failed:', e.message);
+    return null;
+  }
+}
+
+function tbVoiceOptions() {
+  return listVoiceProfiles().map(function (id) {
+    const p = VOICE_PROFILES.find(function (x) { return x.id === id; });
+    return { id: id, label: p.label, essence: p.essence };
+  });
+}
+
+// POST /tenant/blogger/voice — choose the editorial voice for this tenant's pages.
+// Stored in site_tenants.metadata.voice, because `metadata jsonb` already exists on
+// every deployed row; adding a column would mean another migration before a
+// tenant could pick a tone. `{ voice: null }` clears the choice and returns to the
+// deterministic assignment.
+app.post('/tenant/blogger/voice', tenantSessionAuth, async (req, res) => {
+  try {
+    const ctx = await tenantSiteFromSession(req);
+    if (!ctx) return res.status(404).json({ error: 'Tenant not found' });
+    const requested = req.body && req.body.voice != null ? String(req.body.voice).trim() : null;
+    const allowed = tbVoiceOptions().map(function (o) { return o.id; });
+    if (requested && allowed.indexOf(requested) === -1) {
+      return res.status(400).json({ error: 'Unknown voice "' + requested + '". Choose one of: ' + allowed.join(', ') });
+    }
+    const metadata = (ctx.site.metadata && typeof ctx.site.metadata === 'object') ? ctx.site.metadata : {};
+    const nextMetadata = Object.assign({}, metadata);
+    if (requested) nextMetadata.voice = requested;
+    else delete nextMetadata.voice;
+    const { data, error } = await supabase.from('site_tenants')
+      .update({ metadata: nextMetadata })
+      .eq('id', ctx.site.id)
+      .select('*')
+      .maybeSingle();
+    if (error) {
+      // A host whose site_tenants predates the metadata column cannot store a
+      // choice. Say which migration to run instead of pretending it saved.
+      const missingColumn = /column .*metadata/i.test(error.message || '');
+      return res.status(missingColumn ? 503 : 502).json({
+        ok: false,
+        error: missingColumn
+          ? 'site_tenants.metadata is missing on this host — run migrations/2026-10-11_add_site_tenants_multitenant.sql, then try again.'
+          : error.message,
+      });
+    }
+    res.json({ ok: true, voice: tbVoiceFor(data || ctx.site), voiceOptions: tbVoiceOptions() });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

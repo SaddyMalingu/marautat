@@ -764,11 +764,37 @@ function wfBloggerHtml(ctx) {
   const typeOpts = ['job', 'product', 'service', 'brand', 'affiliate', 'course'].map(t => `<option value="${t}">${t}</option>`).join('');
   const catOpts = cats.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
   const publicPath = ctx.publicPath || '/ai-jobs/t/' + (ctx.site?.slug || '');
+  // The voice block. Every tenant is assigned one of six editorial voices; this
+  // is where they see it and change it. `source` explains where it came from so
+  // "derived" is not mistaken for a setting somebody made.
+  const voice = ctx.voice || null;
+  const voiceOpts = (ctx.voiceOptions || []).map(v =>
+    `<option value="${esc(v.id)}" ${voice && voice.id === v.id ? 'selected' : ''}>${esc(v.label)} — ${esc(v.essence)}</option>`).join('');
+  const voiceHtml = voice ? `
+    <div class="panel mb-3" id="wfVoicePanel">
+      <div class="panel-title">Your writing voice</div>
+      <p class="text-muted" style="font-size:.86rem;margin:-4px 0 10px;">
+        Every page this engine writes for you uses this voice, on every run. Currently
+        <strong>${esc(voice.label)}</strong>
+        (${voice.source === 'derived' ? 'assigned to your business' : voice.source === 'custom' ? 'set in your own words' : 'chosen by you'})${voice.industry ? ` · ${esc(voice.industry)}` : ''}.
+      </p>
+      <div class="row g-2 align-items-end">
+        <div class="col-md-8">
+          <label class="form-label" for="wfVoiceSelect" style="font-size:.82rem;">Change the voice</label>
+          <select class="form-select form-select-sm" id="wfVoiceSelect">${voiceOpts}</select>
+        </div>
+        <div class="col-md-4 d-flex gap-2">
+          <button class="btn btn-info btn-sm" type="button" id="wfVoiceSave">Save voice</button>
+          <button class="btn btn-outline-light btn-sm" type="button" id="wfVoiceReset">Use assigned</button>
+        </div>
+      </div>
+    </div>` : '';
   return `
     <div class="panel mb-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
       <div><span class="text-muted">Your public page:</span> <strong>${esc(publicPath)}</strong></div>
       <a class="btn btn-sm btn-info" href="${esc(publicPath)}" target="_blank" rel="noopener">View Live Page</a>
     </div>
+    ${voiceHtml}
     <div class="panel mb-3">
       <div class="panel-title">Create Offer</div>
       <form id="wfOfferForm" class="row g-2">
@@ -826,6 +852,35 @@ async function renderWritersFlow() {
   // The outreach tab is only reachable by click, but the campaign list should be
   // warm when they get there; wiring here keeps the panel inert until rendered.
   wfWireOutreach();
+
+  // Voice controls. Saving writes site_tenants.metadata.voice, so the choice
+  // survives deploys and applies to every later run for this tenant.
+  const saveVoice = async (voiceId) => {
+    const r = await apiJson('/tenant/blogger/voice', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ voice: voiceId }),
+    });
+    if (!r.ok) { toast(r.data?.error || 'Could not save the voice', 'err'); return; }
+    toast(r.data?.voice?.label
+      ? `Voice saved — your next run writes as ${r.data.voice.label}`
+      : 'Voice cleared — your assigned voice applies again', 'ok');
+    renderWritersFlow();
+  };
+  const voiceSave = document.getElementById('wfVoiceSave');
+  if (voiceSave) voiceSave.onclick = async () => {
+    const sel = document.getElementById('wfVoiceSelect');
+    if (!sel) return;
+    voiceSave.disabled = true;
+    await saveVoice(sel.value);
+    voiceSave.disabled = false;
+  };
+  const voiceReset = document.getElementById('wfVoiceReset');
+  if (voiceReset) voiceReset.onclick = async () => {
+    voiceReset.disabled = true;
+    await saveVoice(null);
+    voiceReset.disabled = false;
+  };
 
   const form = document.getElementById('wfOfferForm');
   if (form) form.onsubmit = async (ev) => {
@@ -894,12 +949,21 @@ async function renderWritersFlow() {
     const r = await apiJson(url, { method: act === 'del' ? 'DELETE' : 'POST' });
     if (!r.ok) { toast(r.data?.error || 'Action failed', 'err'); btn.disabled = false; return; }
     if (act === 'blog') {
-      const n = r.data?.result?.posts?.length ?? 0;
+      const result = r.data?.result || {};
+      const posts = Array.isArray(result.posts) ? result.posts : [];
+      const n = posts.length;
       // 'mode' says whether the pages came from a model or were composed from
       // the offer's own details because every AI provider was out of quota.
-      const mode = r.data?.result?.mode;
+      const mode = result.mode;
       const note = !mode || mode === 'ai' ? '' : mode === 'template' ? ', composed from offer details' : ', partly composed';
-      toast(`Optimized — ${n} page${n === 1 ? '' : 's'} ready${note}`, 'ok');
+      // What the pages actually scored, and the voice they were written in. The
+      // toast used to report only a count, which is how outline pages shipped
+      // as a "success" for months.
+      const scored = posts.map((p) => p.quality?.score).filter((s) => typeof s === 'number');
+      const avg = scored.length ? Math.round(scored.reduce((a, b) => a + b, 0) / scored.length) : null;
+      const voice = result.voice?.label ? ` · voice: ${result.voice.label}` : '';
+      const grade = avg == null ? '' : ` · ${avg}/100 avg`;
+      toast(`Optimized — ${n} page${n === 1 ? '' : 's'} ready${note}${grade}${voice}`, 'ok');
       // Open the list straight away: the pages are the deliverable, so the
       // tenant should land on clickable links, not a number in a toast.
       wfOpenOffer = id;
