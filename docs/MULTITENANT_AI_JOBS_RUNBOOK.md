@@ -640,6 +640,14 @@ holds only 144 characters of article text — there is nothing to restore, so th
 audit keeps refusing it and it needs a regeneration (Review in the tenant portal,
 or Generate on its offer), not a repair.
 
+Proof the boot repair ran: the deploy log line `[DB] Restored 283 posts` gains a
+suffix — `[DB] Restored 283 posts (105 rebuilt from their article body)`. A bare
+`Restored 283 posts` means the running build predates the guard; that is how the
+2026-10-26 07:11 deploy was caught still serving the old code (`Deployed commit:
+f14217ee`, no rebuild suffix, and a probe that still found 105 failing pages).
+After a deploy that carries the fix, `npm run probe:blog-theme` should report only
+the thin page.
+
 `scripts/repair_blog_html.js` used to pull `auditBlogHTML` out of
 `scripts/blogManager.js`, which never re-exported it, so the first real run would
 have died on `auditBlogHTML is not a function`; it now imports the pure module.
