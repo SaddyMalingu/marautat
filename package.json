@@ -34,6 +34,7 @@
     "test:blog-html": "node scripts/test_blog_html_sanitize.mjs",
     "test:blog-quality": "node scripts/test_blog_quality.mjs",
     "test:tenant-voice": "node scripts/test_tenant_voice_route.mjs",
+    "test:scan-pay": "node scripts/test_scan_pay.mjs",
     "test:wf-create": "node scripts/test_wf_campaign_create.mjs",
     "test:discovery-form": "node scripts/test_discovery_form_feedback.mjs",
     "repair:blog-html": "node scripts/repair_blog_html.js",

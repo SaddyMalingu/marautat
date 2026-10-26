@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="robots" content="noindex,nofollow" />
+  <meta name="theme-color" content="#0f1117" />
+  <title>Pay with M-Pesa | Alphadome</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <style>
+    :root {
+      --bg: #0f1117; --card: #181c2f; --border: #232a45; --text: #e6ebff;
+      --muted: #8b9bc4; --accent: #38bdf8; --ok: #22d3a0; --err: #f43f5e;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; background: radial-gradient(1200px 600px at 50% -10%, #17203a 0%, var(--bg) 60%);
+      color: var(--text); font-family: Inter, system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+      display: flex; align-items: center; justify-content: center; padding: 20px;
+    }
+    .card {
+      width: 100%; max-width: 420px; background: var(--card); border: 1px solid var(--border);
+      border-radius: 16px; padding: 22px; box-shadow: 0 24px 60px rgba(0,0,0,.45);
+    }
+    .brand { display: flex; align-items: center; gap: 8px; font-size: .8rem; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+    .brand b { color: var(--accent); }
+    h1 { font-size: 1.15rem; margin: 14px 0 4px; line-height: 1.35; }
+    .merchant { color: var(--muted); font-size: .88rem; margin: 0 0 16px; }
+    .amount { font-size: 2rem; font-weight: 700; letter-spacing: -.02em; margin: 0 0 4px; }
+    .amount span { font-size: .95rem; color: var(--muted); font-weight: 500; margin-right: 6px; }
+    label { display: block; font-size: .8rem; color: var(--muted); margin: 18px 0 6px; }
+    input {
+      width: 100%; padding: 13px 14px; font-size: 1rem; color: var(--text);
+      background: #101427; border: 1px solid var(--border); border-radius: 10px; outline: none;
+    }
+    input:focus { border-color: var(--accent); }
+    button {
+      width: 100%; margin-top: 16px; padding: 14px; font-size: 1rem; font-weight: 600;
+      color: #04121c; background: var(--accent); border: 0; border-radius: 10px; cursor: pointer;
+    }
+    button:disabled { opacity: .6; cursor: progress; }
+    .note { margin-top: 14px; font-size: .78rem; color: var(--muted); line-height: 1.5; }
+    .msg { margin-top: 14px; padding: 11px 12px; border-radius: 10px; font-size: .86rem; display: none; line-height: 1.45; }
+    .msg.show { display: block; }
+    .msg.ok { background: rgba(34,211,160,.12); border: 1px solid rgba(34,211,160,.35); color: var(--ok); }
+    .msg.err { background: rgba(244,63,94,.12); border: 1px solid rgba(244,63,94,.35); color: var(--err); }
+    .hidden { display: none !important; }
+    .spinner {
+      width: 18px; height: 18px; border: 2px solid rgba(56,189,248,.25); border-top-color: var(--accent);
+      border-radius: 50%; display: inline-block; vertical-align: -3px; margin-right: 8px; animation: spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <div class="brand"><b>Alphadome</b><span>scan to pay</span></div>
+
+    <div id="loading"><p class="merchant"><span class="spinner"></span>Loading this payment link…</p></div>
+
+    <section id="pay" class="hidden">
+      <h1 id="itemName">Payment</h1>
+      <p class="merchant" id="merchantName"></p>
+      <p class="amount"><span>KES</span><span id="amount">0</span></p>
+      <label for="phone">Your M-Pesa phone</label>
+      <input id="phone" type="tel" inputmode="numeric" autocomplete="tel" placeholder="07XX XXX XXX" />
+      <button id="payBtn" type="button">Pay with M-Pesa</button>
+      <div class="msg" id="msg"></div>
+      <p class="note" id="note">You will receive an M-Pesa prompt on this phone. Enter your PIN to complete the payment. Nothing is charged until you enter your PIN.</p>
+    </section>
+
+    <section id="missing" class="hidden">
+      <h1>This payment link is not available</h1>
+      <p class="merchant">It may have expired or been closed. Ask the business for a new link.</p>
+      <div class="msg err show" id="missingMsg"></div>
+    </section>
+  </main>
+
+  <script>
+    (function () {
+      var TOKEN = (location.pathname.match(/\/pay\/t\/([A-Za-z0-9_-]+)/) || [])[1] || "";
+      var PHONE_KEY = "ad_pay_phone";
+      var pay = document.getElementById("pay");
+      var loading = document.getElementById("loading");
+      var missing = document.getElementById("missing");
+      var msg = document.getElementById("msg");
+      var phoneEl = document.getElementById("phone");
+      var btn = document.getElementById("payBtn");
+
+      function showMsg(text, kind) {
+        msg.className = "msg show " + kind;
+        msg.textContent = text;
+      }
+      function showMissing(text) {
+        loading.classList.add("hidden");
+        pay.classList.add("hidden");
+        missing.classList.remove("hidden");
+        document.getElementById("missingMsg").textContent = text || "This link cannot be used.";
+      }
+      function kes(value) {
+        return Number(value || 0).toLocaleString("en-KE", { maximumFractionDigits: 2 });
+      }
+
+      if (!TOKEN) { showMissing("The link is missing its payment code."); return; }
+
+      try {
+        var saved = localStorage.getItem(PHONE_KEY);
+        if (saved) phoneEl.value = saved;
+      } catch (_) {}
+
+      fetch("/api/kassangas/template/" + encodeURIComponent(TOKEN))
+        .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+        .then(function (res) {
+          if (!res.ok) { showMissing(res.data && res.data.error); return; }
+          var t = res.data || {};
+          document.getElementById("itemName").textContent = t.itemName || "Payment";
+          document.getElementById("merchantName").textContent = t.merchantName ? "to " + t.merchantName : "";
+          document.getElementById("amount").textContent = kes(t.amount);
+          loading.classList.add("hidden");
+          pay.classList.remove("hidden");
+        })
+        .catch(function () { showMissing("We could not load this link. Check your connection and try again."); });
+
+      btn.addEventListener("click", function () {
+        var phone = String(phoneEl.value || "").replace(/[^\d+]/g, "");
+        if (!phone) { showMsg("Enter the M-Pesa phone number first.", "err"); return; }
+        btn.disabled = true;
+        var original = btn.innerHTML;
+        btn.innerHTML = '<span class="spinner"></span>Sending prompt…';
+        msg.className = "msg";
+        try { localStorage.setItem(PHONE_KEY, phone); } catch (_) {}
+
+        fetch("/pay/t/" + encodeURIComponent(TOKEN) + "/intent", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phone: phone })
+        })
+          .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+          .then(function (res) {
+            btn.disabled = false;
+            btn.innerHTML = original;
+            if (!res.ok) { showMsg((res.data && res.data.error) || "Payment could not start. Try again.", "err"); return; }
+            showMsg((res.data && res.data.message) || "Prompt sent. Enter your M-Pesa PIN to complete payment.", "ok");
+            document.getElementById("note").textContent = "Waiting for M-Pesa confirmation. You can close this page after your PIN is accepted.";
+          })
+          .catch(function () {
+            btn.disabled = false;
+            btn.innerHTML = original;
+            showMsg("Network error. Check your connection and try again.", "err");
+          });
+      });
+    })();
+  </script>
+</body>
+</html>

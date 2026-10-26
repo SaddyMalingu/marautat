@@ -46,6 +46,31 @@ import { insertWfCampaign, describeWfCampaignError } from "./utils/wfCampaigns.j
 // Display-only voice info for the tenant portal, and the profile list the voice
 // picker offers. The prompt block itself stays on the server.
 import { resolveTenantVoice, listVoiceProfiles, VOICE_PROFILES } from "./utils/tenantVoice.js";
+// Scan to Pay: the tenant merchant/client wallet rides the QR + STK stack that is
+// already live for Kassangas, so the rules live in one pure module both entry
+// points (tenant dashboard and the public pay page) agree on.
+import {
+  PLAN_TYPE as SCAN_PAY_PLAN_TYPE,
+  TEMPLATES_TABLE as SCAN_PAY_TABLE,
+  TEMPLATES_MIGRATION as SCAN_PAY_MIGRATION,
+  normalizeMsisdn as normalizeScanPayPhone,
+  isValidPayerPhone,
+  tenantMerchantCode,
+  buildAccountRef,
+  extractTemplateId,
+  buildTemplateId,
+  validateLinkInput,
+  maskPhone,
+  shapeLink,
+  describeCollection,
+  summariseCollections,
+  statsByTemplate,
+  isMissingTableError,
+  missingTemplatesMessage,
+  stkReadiness,
+  stkReadinessMessage,
+} from "./utils/scanPay.js";
+
 import aiJobsRouter from "./routes/aiJobs.js";
 import sitemapRouter from "./routes/sitemap.js";
 import aiJobsAdminRouter from "./routes/aiJobsAdmin.js";
@@ -6178,6 +6203,358 @@ app.get("/tenant/payments", tenantSessionAuth, async (req, res) => {
     return res.json({ payments: data || [] });
   } catch (error) {
     return res.status(500).json({ error: error.message });
+  }
+});
+
+// ===== TENANT SCAN TO PAY (merchant + client wallets) =====
+// The QR → STK engine is the one already live for Kassangas: `kassangas_templates`
+// holds the payment link, `subscriptions` holds the prompt, `initiateStkPush()`
+// sends it. Tenant rows are stamped with the site id in `metadata.tenant_id` and
+// an `SP<digits>` account-reference prefix, so the portal can list one tenant's
+// links and collections without a new table or a migration.
+function scanPayBaseUrl(req) {
+  return `${req.protocol}://${req.get("host")}`;
+}
+
+async function tenantScanPayContext(req) {
+  const ctx = await tenantSiteFromSession(req);
+  if (!ctx) return null;
+  return {
+    ctx,
+    code: tenantMerchantCode({ phone: ctx.tenant.client_phone, slug: ctx.site?.slug }),
+    name: String(ctx.tenant.client_name || ctx.site?.name || "Merchant").slice(0, 80),
+    base: scanPayBaseUrl(req),
+  };
+}
+
+async function loadScanPayLink(templateId, tenantSiteId) {
+  let query = supabase.from(SCAN_PAY_TABLE).select("*").eq("template_id", templateId);
+  if (tenantSiteId) query = query.contains("metadata", { tenant_id: tenantSiteId });
+  const { data, error } = await query.maybeSingle();
+  if (error) throw error;
+  return data || null;
+}
+
+/**
+ * One payment prompt, shared by the three entry points: the merchant charging a
+ * customer from the dashboard, the tenant paying another link, and the public pay
+ * page a customer opens after scanning.
+ */
+async function createScanPayIntent({ template, phone, merchantCode, source, extraMetadata = {} }) {
+  const ready = stkReadiness(process.env);
+  if (!ready.ready) {
+    const err = new Error(stkReadinessMessage(ready.missing));
+    err.status = 503;
+    throw err;
+  }
+
+  const amount = Number(template?.amount);
+  const itemName = String(template?.item_name || "Payment").slice(0, 120);
+  const merchantName = String(template?.merchant_name || "Merchant").slice(0, 80);
+
+  // A double tap must not put two prompts on the same phone: a pending row for the
+  // same link inside 90 seconds is replayed instead of re-sent.
+  const since = new Date(Date.now() - 90_000).toISOString();
+  const { data: recent } = await supabase
+    .from("subscriptions")
+    .select("mpesa_checkout_request_id, metadata, created_at")
+    .eq("plan_type", SCAN_PAY_PLAN_TYPE)
+    .eq("phone", phone)
+    .eq("status", "pending")
+    .gte("created_at", since)
+    .order("created_at", { ascending: false })
+    .limit(5);
+  const duplicate = (recent || []).find((row) => row?.metadata?.template_id === template?.template_id
+    && row?.mpesa_checkout_request_id);
+  if (duplicate) {
+    return {
+      reused: true,
+      checkoutId: duplicate.mpesa_checkout_request_id,
+      message: "A payment prompt is already on that phone. Ask them to enter their M-Pesa PIN.",
+    };
+  }
+
+  const accountRef = buildAccountRef(merchantCode);
+  const result = await initiateStkPush({
+    phone,
+    amount,
+    accountRef,
+    transactionDesc: `${merchantName} ${itemName}`.slice(0, 100),
+  });
+  const checkoutId = result?.CheckoutRequestID || null;
+
+  if (checkoutId) {
+    const { error: insertErr } = await supabase.from("subscriptions").insert([{
+      user_id: null,
+      phone,
+      amount,
+      plan_type: SCAN_PAY_PLAN_TYPE,
+      level: 1,
+      account_ref: accountRef,
+      status: "pending",
+      mpesa_checkout_request_id: checkoutId,
+      metadata: {
+        ...(result || {}),
+        template_id: template?.template_id || null,
+        item_name: itemName,
+        merchant_name: merchantName,
+        merchant_code: merchantCode || null,
+        tenant_id: template?.metadata?.tenant_id || null,
+        source,
+        ...(extraMetadata || {}),
+      },
+    }]);
+    if (insertErr) log(`SCAN_PAY_INTENT_INSERT_FAILED: ${insertErr.message}`, "WARN");
+  }
+
+  log(`SCAN_PAY_INTENT source=${source} template=${template?.template_id} amount=${amount} checkout=${checkoutId}`, "PAYMENT");
+  return {
+    reused: false,
+    checkoutId,
+    message: result?.CustomerMessage || "Payment prompt sent. Ask the customer to enter their M-Pesa PIN.",
+  };
+}
+
+// GET /tenant/scan-pay — merchant wallet, payment links and collections
+app.get("/tenant/scan-pay", tenantSessionAuth, async (req, res) => {
+  try {
+    const scan = await tenantScanPayContext(req);
+    if (!scan) return res.status(404).json({ error: "Tenant not found" });
+    const { ctx, code, name, base } = scan;
+    const ready = stkReadiness(process.env);
+
+    let linkRows = [];
+    let templatesMissing = false;
+    try {
+      const { data, error } = await supabase
+        .from(SCAN_PAY_TABLE)
+        .select("template_id, item_name, amount, reusable, merchant_name, status, created_at")
+        .contains("metadata", { tenant_id: ctx.site.id })
+        .order("created_at", { ascending: false })
+        .limit(100);
+      if (error) throw error;
+      linkRows = data || [];
+    } catch (err) {
+      if (!isMissingTableError(err)) throw err;
+      templatesMissing = true;
+    }
+
+    const { data: intentRows, error: intentErr } = await supabase
+      .from("subscriptions")
+      .select("id, phone, amount, status, account_ref, metadata, created_at")
+      .eq("plan_type", SCAN_PAY_PLAN_TYPE)
+      .ilike("account_ref", `${code}%`)
+      .order("created_at", { ascending: false })
+      .limit(50);
+    if (intentErr) return res.status(502).json({ error: intentErr.message });
+
+    const rows = intentRows || [];
+    const stats = statsByTemplate(rows);
+    return res.json({
+      ok: true,
+      merchant: { code, name, phone: maskPhone(ctx.tenant.client_phone), slug: ctx.site.slug || "" },
+      readiness: {
+        templates: !templatesMissing,
+        migration: SCAN_PAY_MIGRATION,
+        error: templatesMissing ? missingTemplatesMessage() : null,
+        stk: ready.ready,
+        stkMissing: ready.missing,
+        base,
+      },
+      links: linkRows.map((row) => shapeLink({ row, baseUrl: base, stats: stats[row.template_id] || {} })),
+      collections: rows.map(describeCollection),
+      totals: summariseCollections(rows),
+    });
+  } catch (err) {
+    log(`SCAN_PAY_CONTEXT_FAILED: ${err.message}`, "ERROR");
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /tenant/scan-pay/links — create a reusable QR payment link
+app.post("/tenant/scan-pay/links", tenantSessionAuth, async (req, res) => {
+  try {
+    const scan = await tenantScanPayContext(req);
+    if (!scan) return res.status(404).json({ error: "Tenant not found" });
+    const check = validateLinkInput(req.body || {});
+    if (!check.ok) return res.status(400).json({ error: check.error });
+
+    const ready = stkReadiness(process.env);
+    if (!ready.ready) {
+      return res.status(503).json({ error: stkReadinessMessage(ready.missing), missing: ready.missing });
+    }
+
+    const templateId = buildTemplateId();
+    const { error } = await supabase.from(SCAN_PAY_TABLE).insert([{
+      template_id: templateId,
+      item_name: check.itemName,
+      amount: check.amount,
+      reusable: check.reusable,
+      merchant_name: scan.name,
+      created_at: new Date().toISOString(),
+      metadata: {
+        source: "tenant_scan_pay",
+        tenant_id: scan.ctx.site.id,
+        tenant_app_id: scan.ctx.tenant.id,
+        tenant_phone: scan.ctx.tenant.client_phone || null,
+        tenant_slug: scan.ctx.site.slug || null,
+        merchant_code: scan.code,
+      },
+    }]);
+
+    if (error) {
+      if (isMissingTableError(error)) return res.status(503).json({ error: missingTemplatesMessage() });
+      log(`SCAN_PAY_LINK_INSERT_FAILED: ${error.message}`, "ERROR");
+      return res.status(502).json({ error: "Could not save the payment link. Please try again." });
+    }
+
+    log(`SCAN_PAY_LINK_CREATED tenant=${scan.ctx.site.slug} template=${templateId} amount=${check.amount}`, "PAYMENT");
+    return res.json({
+      ok: true,
+      link: shapeLink({
+        row: {
+          template_id: templateId,
+          item_name: check.itemName,
+          amount: check.amount,
+          reusable: check.reusable,
+          merchant_name: scan.name,
+          status: "active",
+          created_at: new Date().toISOString(),
+        },
+        baseUrl: scan.base,
+      }),
+    });
+  } catch (err) {
+    log(`SCAN_PAY_LINK_CREATE_FAILED: ${err.message}`, "ERROR");
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /tenant/scan-pay/charge — merchant prompts a customer for a link's amount
+app.post("/tenant/scan-pay/charge", tenantSessionAuth, async (req, res) => {
+  try {
+    const scan = await tenantScanPayContext(req);
+    if (!scan) return res.status(404).json({ error: "Tenant not found" });
+    const templateId = extractTemplateId(req.body?.templateId || req.body?.link);
+    if (!templateId) return res.status(400).json({ error: "Choose a payment link first." });
+
+    const phone = normalizeScanPayPhone(req.body?.phone);
+    if (!isValidPayerPhone(phone)) {
+      return res.status(400).json({ error: "Enter the customer phone as 07XXXXXXXX or 2547XXXXXXXX." });
+    }
+
+    const template = await loadScanPayLink(templateId, scan.ctx.site.id);
+    if (!template) return res.status(404).json({ error: "That payment link is not one of yours." });
+    if (String(template.status || "active").toLowerCase() !== "active") {
+      return res.status(410).json({ error: "That payment link has been closed." });
+    }
+
+    const out = await createScanPayIntent({
+      template,
+      phone,
+      merchantCode: scan.code,
+      source: "tenant_dashboard_charge",
+      extraMetadata: { initiated_by: "merchant", initiated_by_site: scan.ctx.site.id },
+    });
+    return res.json({ ok: true, ...out, templateId, amount: Number(template.amount) || 0 });
+  } catch (err) {
+    const status = err.status || 502;
+    return res.status(status).json({ error: err.message || "Could not start the payment prompt." });
+  }
+});
+
+// POST /tenant/scan-pay/pay — the tenant as a payer: pay any Alphadome pay link
+app.post("/tenant/scan-pay/pay", tenantSessionAuth, async (req, res) => {
+  try {
+    const scan = await tenantScanPayContext(req);
+    if (!scan) return res.status(404).json({ error: "Tenant not found" });
+    const templateId = extractTemplateId(req.body?.link || req.body?.templateId);
+    if (!templateId) return res.status(400).json({ error: "Paste a payment link or scan a poster first." });
+
+    const phone = normalizeScanPayPhone(req.body?.phone || req.tenantSession?.tenantPhone);
+    if (!isValidPayerPhone(phone)) {
+      return res.status(400).json({ error: "Enter your phone as 07XXXXXXXX or 2547XXXXXXXX." });
+    }
+
+    let template = null;
+    try {
+      template = await loadScanPayLink(templateId, null);
+    } catch (err) {
+      if (isMissingTableError(err)) return res.status(503).json({ error: missingTemplatesMessage() });
+      throw err;
+    }
+    if (!template) return res.status(404).json({ error: "That payment link no longer exists." });
+    if (String(template.status || "active").toLowerCase() !== "active") {
+      return res.status(410).json({ error: "That payment link has been closed." });
+    }
+
+    const out = await createScanPayIntent({
+      template,
+      phone,
+      merchantCode: template?.metadata?.merchant_code || scan.code,
+      source: "tenant_client_wallet",
+      extraMetadata: { payer_tenant_id: scan.ctx.site.id, payer_kind: "tenant" },
+    });
+    return res.json({
+      ok: true,
+      ...out,
+      templateId,
+      amount: Number(template.amount) || 0,
+      itemName: template.item_name || "",
+    });
+  } catch (err) {
+    const status = err.status || 502;
+    return res.status(status).json({ error: err.message || "Could not start the payment." });
+  }
+});
+
+// GET /pay/t/:tokenId — the public page a customer opens after scanning a poster.
+// Served for every token so the page can explain an expired link; the template is
+// resolved by the intent endpoint below and by /api/kassangas/template/:tokenId.
+app.get("/pay/t/:tokenId", (req, res) => {
+  res.sendFile(path.join(publicDir, "pay.html"));
+});
+
+// POST /pay/t/:tokenId/intent — the customer's own prompt (no tenant session).
+app.post("/pay/t/:tokenId/intent", async (req, res) => {
+  try {
+    const templateId = extractTemplateId(req.params.tokenId);
+    if (!templateId) return res.status(400).json({ error: "This payment link is not valid." });
+
+    const phone = normalizeScanPayPhone(req.body?.phone);
+    if (!isValidPayerPhone(phone)) {
+      return res.status(400).json({ error: "Enter your phone as 07XXXXXXXX or 2547XXXXXXXX." });
+    }
+
+    let template = null;
+    try {
+      template = await loadScanPayLink(templateId, null);
+    } catch (err) {
+      if (isMissingTableError(err)) return res.status(503).json({ error: missingTemplatesMessage() });
+      throw err;
+    }
+    if (!template) return res.status(404).json({ error: "This payment link is no longer available." });
+    if (String(template.status || "active").toLowerCase() !== "active") {
+      return res.status(410).json({ error: "This payment link has been closed." });
+    }
+
+    const out = await createScanPayIntent({
+      template,
+      phone,
+      merchantCode: template?.metadata?.merchant_code || "SP",
+      source: "public_pay_page",
+    });
+    log(`SCAN_PAY_PUBLIC_INTENT template=${templateId} checkout=${out.checkoutId}`, "PAYMENT");
+    return res.json({
+      ok: true,
+      ...out,
+      amount: Number(template.amount) || 0,
+      itemName: template.item_name || "",
+      merchantName: template.merchant_name || "",
+    });
+  } catch (err) {
+    const status = err.status || 502;
+    return res.status(status).json({ error: err.message || "Could not start the payment." });
   }
 });
 
