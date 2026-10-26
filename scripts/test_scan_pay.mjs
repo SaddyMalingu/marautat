@@ -20,6 +20,7 @@
  * Exit codes: 0 = all passed, 1 = at least one failure.
  */
 import fs from 'fs';
+import vm from 'node:vm';
 import {
   PLAN_TYPE,
   TEMPLATES_TABLE,
@@ -236,8 +237,12 @@ ok('a missing QR library degrades to the link instead of breaking',
   /typeof QRCode === 'undefined'/.test(dash));
 ok('a poster can be scanned back into the pay form',
   /typeof jsQR === 'undefined'/.test(dash) && /jsQR\(/.test(dash));
-ok('both libraries come from the CDNs the live wallet already uses',
-  /qrcode\.js\/1\.5\.3/.test(dash) && /jsqr@1\.4\.0/.test(dash));
+ok('both QR libraries ship with the site instead of a CDN that 404s',
+  /src="\/vendor\/qrcode\.min\.js"/.test(dash) && /src="\/vendor\/jsQR\.js"/.test(dash));
+ok('the dead cdnjs QR path is gone from the portal',
+  !/cdnjs\.cloudflare\.com\/ajax\/libs\/qrcode\.js/.test(dash));
+ok('a missing vendored file still falls back to a CDN copy',
+  /qrcodejs@1\.0\.0\/qrcode\.min\.js/.test(dash) && /jsqr@1\.4\.0\/dist\/jsQR\.js/.test(dash));
 ok('the merchant code is shown for reconciliation',
   /Merchant wallet/.test(dash) && /merchant\.code/.test(dash));
 ok('the merchant can charge a customer', /Request payment from a customer/.test(dash));
@@ -271,6 +276,107 @@ ok('the share card offers LinkedIn with pretyped copy',
   /id="wfShareLinkedIn"/.test(dash) && /linkedin\.com\/feed\/\?shareActive=true&text=/.test(dash));
 ok('the LinkedIn caption avoids the ampersand that truncates it',
   /replace\(\/&\/g, ' and '\)/.test(dash));
+
+// ---- 8c. the QR libraries, loaded and decoded for real ---------------------
+// The portal used to point QRCode at cdnjs "qrcode.js/1.5.3", which answers 404,
+// so every merchant saw "QR library unavailable — share the link instead". Both
+// libraries now ship in public/vendor; this block loads the actual files, draws a
+// payment link with the generator and reads it back with the reader.
+const vendorQrPath = 'public/vendor/qrcode.min.js';
+const vendorJsQrPath = 'public/vendor/jsQR.js';
+ok('the QR generator ships with the site', fs.existsSync(vendorQrPath),
+  vendorQrPath + ' is missing');
+ok('the QR reader ships with the site', fs.existsSync(vendorJsQrPath),
+  vendorJsQrPath + ' is missing');
+
+// Both libraries expect a browser. A stub DOM/canvas is enough to build the module
+// matrix and to hand pixels to the decoder, which is what we actually verify.
+function browserSandbox() {
+  const ctx2d = {
+    fillStyle: '', strokeStyle: '', lineWidth: 1, font: '', textAlign: '',
+    fillRect() {}, clearRect() {}, strokeRect() {}, fillText() {},
+    drawImage() {}, putImageData() {}, beginPath() {}, moveTo() {}, lineTo() {},
+    stroke() {}, save() {}, restore() {}, translate() {}, scale() {}, rotate() {},
+    getImageData: () => ({ data: new Uint8ClampedArray(4), width: 1, height: 1 }),
+  };
+  const makeCanvas = () => ({
+    width: 0, height: 0, style: {},
+    getContext: () => ctx2d,
+    toDataURL: () => 'data:image/png;base64,',
+    setAttribute() {}, appendChild() {},
+  });
+  const makeNode = () => ({ style: {}, title: '', innerHTML: '', src: '', alt: '',
+    setAttribute() {}, appendChild() {}, addEventListener() {} });
+  const document = {
+    createElement: (tag) => (tag === 'canvas' ? makeCanvas() : makeNode()),
+    // qrcodejs picks its renderer with document.documentElement.tagName at load.
+    documentElement: { tagName: 'HTML' },
+    head: { appendChild() {} },
+    body: { appendChild() {} },
+  };
+  const sandbox = {
+    document, navigator: { userAgent: 'node' }, console,
+    module: { exports: {} }, exports: {},
+    Image: function Image() { this.style = {}; this.onload = null; },
+    // qrcodejs picks its canvas renderer on this global being defined, exactly as
+    // it is in a browser; without it the library falls back to a DOM table.
+    CanvasRenderingContext2D: function CanvasRenderingContext2D() {},
+  };
+  sandbox.window = sandbox;
+  sandbox.self = sandbox;
+  sandbox.globalThis = sandbox;
+  vm.createContext(sandbox);
+  return sandbox;
+}
+
+const qrSandbox = browserSandbox();
+vm.runInContext(fs.readFileSync(vendorQrPath, 'utf8'), qrSandbox, { filename: 'qrcode.min.js' });
+const VendoredQRCode = qrSandbox.QRCode || qrSandbox.window.QRCode;
+ok('the vendored generator exposes new QRCode() with error levels',
+  typeof VendoredQRCode === 'function' && !!VendoredQRCode.CorrectLevel
+    && VendoredQRCode.CorrectLevel.M === 0);
+
+const readerSandbox = browserSandbox();
+vm.runInContext(fs.readFileSync(vendorJsQrPath, 'utf8'), readerSandbox, { filename: 'jsQR.js' });
+const VendoredJsQR = readerSandbox.jsQR
+  || (readerSandbox.module.exports && readerSandbox.module.exports.default)
+  || readerSandbox.module.exports;
+ok('the vendored reader exposes a jsQR() decoder', typeof VendoredJsQR === 'function');
+
+const payLink = 'https://alphadome.onrender.com/pay/t/TMPL-196345-529927';
+let decoded = null;
+try {
+  const holder = { style: {}, title: '', appendChild() {}, setAttribute() {} };
+  const qr = new VendoredQRCode(holder, {
+    text: payLink, width: 190, height: 190,
+    colorDark: '#0f1117', colorLight: '#ffffff',
+    correctLevel: VendoredQRCode.CorrectLevel.M,
+  });
+  const model = qr._oQRCode;
+  const count = model.getModuleCount();
+  const quiet = 4;
+  const scale = 5;
+  const size = (count + quiet * 2) * scale;
+  const pixels = new Uint8ClampedArray(size * size * 4).fill(255);
+  for (let r = 0; r < count; r++) {
+    for (let c = 0; c < count; c++) {
+      if (!model.isDark(r, c)) continue;
+      for (let y = 0; y < scale; y++) {
+        const rowStart = ((r + quiet) * scale + y) * size;
+        for (let x = 0; x < scale; x++) {
+          const p = (rowStart + (c + quiet) * scale + x) * 4;
+          pixels[p] = 0; pixels[p + 1] = 0; pixels[p + 2] = 0;
+        }
+      }
+    }
+  }
+  const found = typeof VendoredJsQR === 'function' ? VendoredJsQR(pixels, size, size) : null;
+  decoded = found && found.data;
+} catch (e) {
+  decoded = 'threw: ' + e.message;
+}
+ok('a QR drawn by the vendored generator decodes back to the payment link',
+  decoded === payLink, 'decoded: ' + decoded);
 
 // ---- 9. the Micro1 hand-off ------------------------------------------------
 ok('Writer\'s Flow carries a Connect Micro1 button', /id="wfMicro1Btn"/.test(dash));

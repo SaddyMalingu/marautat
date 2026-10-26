@@ -7,7 +7,17 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Bebas+Neue&display=swap" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+  <script src="./vendor/jsQR.js"></script>
+  <script>
+    // The decoder ships with the site (public/vendor). If it is ever missing, pull
+    // the same build from the CDN so camera and image scanning keep working.
+    if (typeof jsQR === "undefined") {
+      var jsQrFallback = document.createElement("script");
+      jsQrFallback.src = "https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js";
+      jsQrFallback.async = true;
+      document.head.appendChild(jsQrFallback);
+    }
+  </script>
   <style>
     :root {
       --bg-1: #081421;
@@ -585,7 +595,7 @@
         }
       }
 
-      if (!decodedText) {
+      if (!decodedText && typeof jsQR === "function") {
         const code = jsQR(ctx.getImageData(0, 0, dw, dh).data, dw, dh);
         decodedText = code?.data || null;
       }
@@ -618,6 +628,11 @@
           offscreen.height = img.naturalHeight;
           const ctx = offscreen.getContext("2d");
           ctx.drawImage(img, 0, 0);
+          if (typeof jsQR !== "function") {
+            showStatus("scanStatus", "error", "QR reader is still loading — try again in a second.");
+            qrUploadInput.value = "";
+            return;
+          }
           const imageData = ctx.getImageData(0, 0, offscreen.width, offscreen.height);
           const code = jsQR(imageData.data, offscreen.width, offscreen.height);
           if (code && code.data) {

@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Bebas+Neue&display=swap" rel="stylesheet">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode.js/1.5.3/qrcode.min.js"></script>
+  <script src="./vendor/qrcode.min.js"></script>
   <style>
     :root {
       --bg-1: #081421;
@@ -317,9 +317,11 @@
         return true;
       }
 
+      // Local copy first (served from public/vendor), CDN only if that is missing.
       const fallbacks = [
-        "https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js",
-        "https://unpkg.com/qrcodejs@1.0.0/qrcode.min.js"
+        "./vendor/qrcode.min.js",
+        "https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js",
+        "https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"
       ];
 
       for (const src of fallbacks) {
@@ -338,7 +340,7 @@
 
     function renderFallbackQr(qrUrl) {
       qrCodeDiv.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(qrUrl)}" alt="Payment QR code" width="220" height="220" />`;
-      showStatus("error", "QR library unavailable. Using fallback QR image generator.");
+      showStatus("error", "Could not draw the QR here. Showing an image of the same link.");
     }
 
     function showStatus(type, msg) {
