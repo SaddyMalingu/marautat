@@ -216,6 +216,7 @@
       --bg-1: #10162b;
       --panel: rgba(19, 26, 51, 0.94);
       --panel-2: rgba(24, 32, 65, 0.92);
+      --line: rgba(120, 144, 196, 0.16);
       --line-strong: rgba(120, 144, 196, 0.32);
       --ink-1: #f4f7ff;
       --ink-2: #c2cbe4;
@@ -356,8 +357,13 @@
     /* ---- Layout ---- */
     .main-content { padding: 26px 30px 64px 30px; max-width: 1340px; }
     @media (min-width: 992px) {
-      .sidebar { width: 264px; position: fixed; left: 0; top: 0; bottom: 0; z-index: 10; }
+      /* The top bar is sticky and now sits above the sidebar, so the fixed
+         sidebar needs to start below it instead of hiding its own logo. */
+      .sidebar { width: 264px; position: fixed; left: 0; top: 0; bottom: 0; z-index: 10; padding-top: 56px; }
       .main-content { margin-left: 264px; }
+      /* Keep the owner brief inside the content column: full width would tuck
+         its opening words under the sidebar. */
+      #ownerBriefStrip { margin-left: 264px !important; }
     }
     @media (max-width: 991px) {
       .main-content { margin-left: 0; padding: 16px 14px 48px; }
