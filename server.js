@@ -6371,6 +6371,83 @@ app.get("/tenant/scan-pay", tenantSessionAuth, async (req, res) => {
   }
 });
 
+// GET /tenant/scan-pay/bundles — the airtime/data catalogue plus this tenant's own
+// bundle sales. The catalogue is the one the Kassangas wallet already sells from
+// (`getKassangasMarketplaceCatalog`), and the sales are keyed by the same
+// `SP<digits>` merchant code the QR links carry, so the portal can run a resale
+// desk without reading another tenant's ledger. Purchases still go through
+// `POST /api/kassangas/buy-product` — the single sale engine, already exercised by
+// `public/kassangas-merchant-portal.html`; only this read side needs the session.
+app.get("/tenant/scan-pay/bundles", tenantSessionAuth, async (req, res) => {
+  try {
+    const scan = await tenantScanPayContext(req);
+    if (!scan) return res.status(404).json({ error: "Tenant not found" });
+
+    const salesRows = await getSalesTransactions({ merchantCode: scan.code, limit: 200 });
+    const statusOf = (row) => String(row?.status || (row?.ok ? "completed" : "failed")).toLowerCase();
+    const successful = salesRows.filter((row) => row.ok || statusOf(row) === "completed");
+    const pending = salesRows.filter((row) => statusOf(row) === "pending");
+    const failed = salesRows.length - successful.length - pending.length;
+    const grossKes = successful.reduce((sum, row) => sum + (Number(row.amount_kes) || 0), 0);
+    const feeKes = successful.reduce((sum, row) => sum + (Number(row.alphadome_fee_kes) || 0), 0);
+    const netKes = Math.max(0, grossKes - feeKes);
+
+    const providers = await Promise.all(PROVIDER_PRIORITY
+      .filter((key) => PROVIDER_CONFIG[key])
+      .map(async (key) => {
+        const config = PROVIDER_CONFIG[key];
+        const init = await getProviderAdapter(key).init();
+        return {
+          key,
+          name: config.name,
+          locality: config.locality,
+          model: config.model,
+          categories: config.categories,
+          onboarding: config.onboarding,
+          sandbox_ready: Boolean(init.ok),
+          credentials_present: Boolean(process.env[config.api_key_env]),
+        };
+      }));
+
+    return res.json({
+      ok: true,
+      merchantCode: scan.code,
+      salesMode: SALES_MODE,
+      activeProvider: ACTIVE_PROVIDER,
+      catalog: getKassangasMarketplaceCatalog(),
+      providers,
+      recommended_providers: getKassangasDigitalProviders(),
+      sales: {
+        total: salesRows.length,
+        successful: successful.length,
+        pending: pending.length,
+        failed,
+        conversion_pct: salesRows.length ? Math.round((successful.length / salesRows.length) * 1000) / 10 : 0,
+        gross_kes: grossKes,
+        alphadome_fee_kes: feeKes,
+        merchant_net_kes: netKes,
+        avg_ticket_kes: successful.length ? Math.round((grossKes / successful.length) * 100) / 100 : 0,
+        reserve_suggestion_kes: Math.round(Math.max(500, netKes * 0.15)),
+        recent: salesRows.slice(0, 10).map((row) => ({
+          transactionId: row.transaction_id || "",
+          sku: row.sku || "",
+          product: row.product_name || getMarketplaceItemBySku(row.sku)?.title || row.sku || "",
+          category: row.category || "",
+          amount: Number(row.amount_kes) || 0,
+          fee: Number(row.alphadome_fee_kes) || 0,
+          net: Number(row.merchant_net_kes) || 0,
+          status: statusOf(row),
+          payer: maskPhone(row.phone),
+          createdAt: row.at || null,
+        })),
+      },
+    });
+  } catch (err) {
+    log(`SCAN_PAY_BUNDLES_FAILED: ${err.message}`, "ERROR");
+    return res.status(500).json({ error: "Could not load bundle sales" });
+  }
+});
+
 // POST /tenant/scan-pay/links — create a reusable QR payment link
 app.post("/tenant/scan-pay/links", tenantSessionAuth, async (req, res) => {
   try {

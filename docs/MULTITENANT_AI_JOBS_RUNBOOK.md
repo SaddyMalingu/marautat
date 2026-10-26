@@ -119,7 +119,7 @@ founder's-plan clients, with two tabs: **Research & Outreach** (placeholder) and
   **Open**, **Share**, **Review**, **Delete**.
   - **Share** opens a mini card with the public URL (copy button), the AI-written
     **hook** / **summary** / **excerpt**, 3 key points and hashtags, plus
-    *Copy caption*, WhatsApp and X targets. Backed by
+    *Copy caption*, WhatsApp, X and LinkedIn targets. Backed by
     `GET /tenant/blogger/posts/:slug/share`, which returns
     `{ url, absolute_url, hook, summary, excerpt, bullets, hashtags, mode }`.
     `mode='ai'` means a model wrote the card; `mode='template'` means every

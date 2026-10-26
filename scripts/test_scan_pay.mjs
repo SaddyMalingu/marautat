@@ -199,6 +199,17 @@ ok('only one STK implementation exists in the repo',
   (server.match(/mpesa\/stkpush\/v1\/processrequest/g) || []).length === 1,
   String((server.match(/mpesa\/stkpush\/v1\/processrequest/g) || []).length));
 
+const iBundles = server.indexOf('app.get("/tenant/scan-pay/bundles"');
+const bundlesSrc = iBundles > -1 ? server.slice(iBundles, iBundles + 3600) : '';
+ok('bundle sales are read through a tenant-scoped endpoint',
+  /app\.get\("\/tenant\/scan-pay\/bundles", tenantSessionAuth/.test(server));
+ok('bundle sales are filtered by this tenant\'s merchant code',
+  /getSalesTransactions\(\{ merchantCode: scan\.code/.test(bundlesSrc));
+ok('a bundle sale is listed with a masked payer, not a phone book',
+  /maskPhone\(row\.phone\)/.test(bundlesSrc));
+ok('provider readiness travels with the catalogue',
+  /sandbox_ready: Boolean\(init\.ok\)/.test(bundlesSrc) && /getKassangasMarketplaceCatalog\(\)/.test(bundlesSrc));
+
 const iGet = server.indexOf('app.get("/tenant/scan-pay"');
 const getSrc = iGet > -1 ? server.slice(iGet, iGet + 2600) : '';
 ok('links are scoped to this tenant site', /contains\("metadata", \{ tenant_id: ctx\.site\.id \}\)/.test(getSrc));
@@ -234,6 +245,32 @@ ok('the tenant can pay as a client', /Client wallet/.test(dash));
 ok('both wallet directions are on the same page',
   /spScanPayFormsHtml/.test(dash) && /spScanPayTablesHtml/.test(dash));
 ok('collections are shown with a status badge', /Recent collections/.test(dash) && /badge\(c\.status/.test(dash));
+
+// ---- 8b. the tools a merchant asks for next --------------------------------
+ok('a QR can be generated and downloaded, not only shown',
+  /new QRCode\(canvas/.test(dash) && /id="spQrDownload"/.test(dash) && /toDataURL\('image\/png'\)/.test(dash));
+ok('a poster can be scanned with the camera as well as a photo',
+  /id="spScanCamBtn"/.test(dash) && /getUserMedia/.test(dash) && /id="spScanVideo"/.test(dash));
+ok('the camera is released before the section re-renders',
+  /async function renderScanPay\(\)[\s\S]{0,200}spStopScanCamera\(\);/.test(dash));
+ok('the sales calculator mirrors the Kassangas merchant portal',
+  /id="spCalcTarget"/.test(dash) && /id="spCalcRunBtn"/.test(dash) && /Remaining gap/.test(dash));
+ok('the cash-flow calculator mirrors the client wallet',
+  /id="spCashIncome"/.test(dash) && /id="spCashRunBtn"/.test(dash) && /Net cash flow/.test(dash));
+ok('the sales calculator starts from what this tenant already collected',
+  /id="spCalcCurrent"[^>]*value="\$\{collected/.test(dash));
+ok('the bundle desk sells from the catalogue the wallet uses',
+  /id="spBundleSku"/.test(dash) && /id="spBundleSellBtn"/.test(dash) && /\/api\/kassangas\/buy-product/.test(dash));
+ok('the bundle desk reads this tenant\'s sales, not a public aggregate',
+  /apiJson\('\/tenant\/scan-pay\/bundles'\)/.test(dash));
+ok('a bundle sale carries the tenant merchant code',
+  /merchant_code: state\?\.merchant\?\.code/.test(dash));
+ok('bundle sales are shown with a status badge',
+  /id="spBundleSales"/.test(dash) && /badge\(s\.status/.test(dash));
+ok('the share card offers LinkedIn with pretyped copy',
+  /id="wfShareLinkedIn"/.test(dash) && /linkedin\.com\/feed\/\?shareActive=true&text=/.test(dash));
+ok('the LinkedIn caption avoids the ampersand that truncates it',
+  /replace\(\/&\/g, ' and '\)/.test(dash));
 
 // ---- 9. the Micro1 hand-off ------------------------------------------------
 ok('Writer\'s Flow carries a Connect Micro1 button', /id="wfMicro1Btn"/.test(dash));

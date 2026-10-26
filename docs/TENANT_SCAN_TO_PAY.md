@@ -10,13 +10,46 @@
 | Direction | Action | Endpoint |
 |---|---|---|
 | Collect | Create a reusable payment link (item + amount) | `POST /tenant/scan-pay/links` |
-| Collect | Show the QR / copy the link / open the customer page | client-side (`qrcode.js`) |
+| Collect | Show the QR / copy the link / download the QR as a PNG | client-side (`qrcode.js`) |
 | Collect | Prompt a named customer's phone for a link's amount | `POST /tenant/scan-pay/charge` |
 | Collect | See links, per-link totals, collections, merchant code | `GET /tenant/scan-pay` |
-| Pay | Pay any Alphadome pay link (paste or scan a poster) | `POST /tenant/scan-pay/pay` |
+| Pay | Pay any Alphadome pay link (paste, upload a poster, or live camera) | `POST /tenant/scan-pay/pay` |
 | Pay (customer) | Open the link and prompt their own phone | `POST /pay/t/:tokenId/intent` |
+| Resell | Sell an airtime/data bundle to a customer's number | `POST /api/kassangas/buy-product` |
+| Resell | This tenant's own bundle sales + the catalogue + provider readiness | `GET /tenant/scan-pay/bundles` |
 
-The customer page (`/pay/t/...`) carries no session: it resolves the link through
+## The tools around the wallet
+
+**QR, both directions.** `Create QR + link` draws the poster code (`qrcode.js`) and
+`Download QR` saves it as a PNG for printing. On the pay side the same `jsQR`
+decoder serves an uploaded screenshot and a live camera (`getUserMedia`, rear
+camera). The camera is released on decode, on "Stop camera", and before the
+section re-renders, so the light never stays on. With no camera, no permission or
+no CDN, the section says which of those happened and the paste field still works.
+
+**Money tools.** Two calculators on the same screen:
+
+| Calculator | Inputs | Outputs | Carried over from |
+|---|---|---|---|
+| Sales | monthly target, already collected (prefilled with this tenant's Scan to Pay collections) | remaining gap, per day (30-day month), per week, already in | `public/kassangas-merchant-portal.html` |
+| Cash flow | monthly income, monthly expenses | net cash flow, savings rate, suggested 10% reserve, daily spend at that rate | `public/kassangas-client-wallet.html` |
+
+The gap for the day/week is rounded up, so "KES 0 left" never ships while a
+shilling is still outstanding.
+
+**Airtime and data bundles.** The bundle desk lists the same catalogue the
+Kassangas wallet sells from (data bundles, airtime, KPLC, water, GOtv/DStv, gift
+cards), shows the customer price, Alphadome's fee and what the tenant keeps
+*before* confirming, and sells through `POST /api/kassangas/buy-product` with
+`merchant_code` set to the tenant's own `SP<digits>`. Reads come from
+`GET /tenant/scan-pay/bundles`, which filters `logs/digital_sales_transactions.jsonl`
+by that same code, so one tenant never sees another's sales. The response also
+carries `salesMode` (`sandbox` / `production`) and each provider's readiness, so a
+"setup needed" provider is visible instead of being silently chosen.
+
+## The customer page (`/pay/t/...`)
+
+The customer page carries no session: it resolves the link through
 `GET /api/kassangas/template/:tokenId`, then posts to the intent endpoint. It is
 marked `noindex,nofollow` and is not in `sitemap.xml`.
 
@@ -41,6 +74,9 @@ Kassangas QR checkout runs. If `kassangas_templates` is missing, the routes answ
 - `POST /tenant/scan-pay/pay` may pay **any** link (that is the point) and records
   `metadata.payer_tenant_id`.
 - Payer phones are masked in the portal (`2547***78`).
+- `GET /tenant/scan-pay/bundles` filters the sales log by the tenant's own merchant
+  code and returns masked recipients only, so the bundle desk cannot read another
+  tenant's sales.
 
 ## Merchant code and reconciliation
 
@@ -61,15 +97,20 @@ so a paybill statement line can be matched to the tenant that requested it.
 ## Demo script (5 minutes)
 
 1. Tenant portal → **Scan to Pay** → create "Guitar setup, KES 1,500".
-2. **Show QR** → open `/pay/t/TMPL-…` on a phone → enter an M-Pesa number.
+2. **Show QR** → **Download QR** (a printable poster) → open `/pay/t/TMPL-…` on a phone → enter an M-Pesa number.
 3. Prompt arrives → enter the PIN (sandbox) → refresh the portal → the collection
    appears with the masked payer and the merchant code.
-4. Paste the same link into **Client wallet → Pay now** to show the other direction.
+4. Paste the same link into **Client wallet → Pay now**, or point **Scan with camera**
+   at the poster, to show the other direction.
+5. **Money tools** → target 120,000, already in (prefilled) → the gap and the daily
+   number; then cash flow → net flow and savings rate.
+6. **Airtime & data bundles** → pick "Safaricom Daily 1GB" → see the fee and what the
+   tenant keeps → sell to a test number → the sale appears below with its TXN id.
 
 ## Verification
 
 ```bash
-npm run test:scan-pay      # 114 checks: rules, routes, portal wiring, customer page
+npm run test:scan-pay      # 130 checks: rules, routes, bundles, portal wiring, customer page
 ```
 
 Live checks after deploy:

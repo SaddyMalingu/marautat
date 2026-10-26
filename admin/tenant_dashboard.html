@@ -550,6 +550,10 @@ async function wfOpenShareCard(slug) {
 }
 function wfRenderShareCard(d) {
   const caption = [d.hook, d.excerpt, d.absolute_url].filter(Boolean).join('\n\n');
+  // LinkedIn's composer takes the post body from `text`, but truncates it at the
+  // first ampersand even when percent-encoded, so this copy spells "and" instead.
+  const linkedinUrl = 'https://www.linkedin.com/feed/?shareActive=true&text='
+    + encodeURIComponent(caption.replace(/&/g, ' and '));
   const source = d.mode === 'ai' ? 'AI-written card' : 'Composed from the page';
   document.getElementById('wfShareTitle').textContent = d.title || d.slug;
   document.getElementById('wfShareSub').textContent =
@@ -582,6 +586,7 @@ function wfRenderShareCard(d) {
     <button class="btn btn-sm btn-outline-info" id="wfShareCopyCaption" type="button">Copy caption</button>
     <a class="btn btn-sm btn-success" href="https://wa.me/?text=${encodeURIComponent(caption)}" target="_blank" rel="noopener">WhatsApp</a>
     <a class="btn btn-sm btn-outline-secondary" href="https://twitter.com/intent/tweet?text=${encodeURIComponent(d.hook || '')}&url=${encodeURIComponent(d.absolute_url || '')}" target="_blank" rel="noopener">X</a>
+    <a class="btn btn-sm btn-outline-secondary" id="wfShareLinkedIn" href="${esc(linkedinUrl)}" target="_blank" rel="noopener" title="Opens LinkedIn with the caption already typed in">LinkedIn</a>
     <button class="btn btn-sm btn-outline-secondary" id="wfShareDone" type="button">Close</button>`;
 
   const copyUrl = document.getElementById('wfShareCopyUrl');
@@ -1991,10 +1996,13 @@ async function renderPayments() {
 }
 
 // ══════════════════════════════════ SCAN TO PAY ══════════════════════════════════
-// Two wallets on one page: the merchant side (create a link, show the QR, prompt a
-// customer) and the client side (pay a link, or scan a poster). Both are backed by
-// /tenant/scan-pay, which reuses the QR + STK engine already live for Kassangas —
-// no second payment stack, and no new table a tenant is blocked on.
+// Two wallets on one page: the merchant side (create a link, show or download the
+// QR, prompt a customer) and the client side (pay a link, or scan a poster with the
+// camera). Around them sit the tools a merchant asks for next — the sales and
+// cash-flow calculators from the Kassangas portals, and the airtime/data bundle
+// desk. Everything is backed by /tenant/scan-pay (plus the existing buy-product
+// engine), which reuses the QR + STK stack already live for Kassangas — no second
+// payment stack, and no new table a tenant is blocked on.
 function spMoney(n) {
   return 'KES ' + Number(n || 0).toLocaleString('en-KE', { maximumFractionDigits: 2 });
 }
@@ -2006,6 +2014,8 @@ function spOkBox(msg) {
 }
 
 async function renderScanPay() {
+  // Leaving and re-entering the section must not leave a camera light on.
+  spStopScanCamera();
   const sp = document.getElementById('spa');
   sp.innerHTML = spinner('Loading Scan to Pay…');
   const r = await apiJson('/tenant/scan-pay');
@@ -2069,11 +2079,15 @@ function spScanPayHtml(state) {
       </div>
     </div>
     ${spScanPayFormsHtml(state)}
+    ${spMoneyToolsHtml(state)}
+    ${spBundlesHtml()}
     ${spScanPayTablesHtml(state)}
     <div class="panel d-none" id="spQrHost">
       <div class="panel-title" id="spQrTitle">Payment QR</div>
       <div id="spQrCanvas" class="d-flex justify-content-center py-2"></div>
       <div class="text-center"><code id="spQrUrl" style="font-size:.78rem;word-break:break-all;"></code></div>
+      <div class="text-center mt-2"><button class="btn btn-outline-acc btn-sm" type="button" id="spQrDownload"><i class="fa-solid fa-download me-1"></i>Download QR</button></div>
+
     </div>`;
 }
 
@@ -2114,13 +2128,380 @@ function spScanPayFormsHtml(state) {
           </form>
           <div class="d-flex gap-2 align-items-center mt-2 flex-wrap">
             <input type="file" id="spScanFile" accept="image/*" capture="environment" class="d-none">
-            <button class="btn btn-outline-acc btn-sm" type="button" id="spScanBtn"><i class="fa-solid fa-camera me-1"></i>Scan a poster</button>
+            <button class="btn btn-outline-acc btn-sm" type="button" id="spScanBtn"><i class="fa-solid fa-image me-1"></i>Scan a poster</button>
+            <button class="btn btn-outline-acc btn-sm" type="button" id="spScanCamBtn"><i class="fa-solid fa-camera-retro me-1"></i>Scan with camera</button>
             <span id="spScanNote" class="text-muted" style="font-size:.78rem;"></span>
           </div>
+          <video id="spScanVideo" playsinline muted autoplay class="d-none" style="width:100%;border-radius:10px;margin-top:8px;background:#000;"></video>
+
           <div id="spPayMsg" class="mt-2"></div>
         </div>
       </div>
     </div>`;
+}
+
+// The two calculators the Kassangas merchant portal and client wallet run, kept on
+// the same screen as the wallets so a tenant can answer "what is left to sell this
+// month?" and "what does this month leave me?" without leaving the portal.
+function spStatRows(rows) {
+  return (rows || []).map(([label, value, tone]) => {
+    const style = tone ? ` style="color:${tone};"` : '';
+    return `<div class="kv-row"><span class="kv-key">${esc(label)}</span><b${style}>${esc(value)}</b></div>`;
+  }).join('');
+}
+
+function spMoneyToolsHtml(state) {
+  // Prefilled from what this tenant has actually collected through Scan to Pay, so
+  // the first number the calculator needs is already on screen.
+  const collected = Math.round(Number(state?.totals?.collected || 0));
+  return `
+    <div class="panel mb-3">
+      <div class="panel-title"><i class="fa-solid fa-calculator me-2" style="color:#facc15;"></i>Money tools</div>
+      <p style="font-size:.84rem;color:var(--text-muted);margin-bottom:12px;">
+        The same two calculators the Kassangas merchant portal and client wallet run: what is still
+        left to sell this month, and what the month leaves you with.
+      </p>
+      <div class="row g-3">
+        <div class="col-12 col-lg-6">
+          <div class="panel h-100" style="background:rgba(250,204,21,.05);">
+            <div class="panel-title" style="font-size:.92rem;margin-bottom:8px;">Sales calculator</div>
+            <div class="row g-2">
+              <div class="col-12">
+                <label class="form-label" for="spCalcTarget" style="font-size:.78rem;">Monthly sales target (KES)</label>
+                <input id="spCalcTarget" class="form-control form-control-sm" type="number" min="0" step="1" placeholder="e.g. 120000">
+              </div>
+              <div class="col-12">
+                <label class="form-label" for="spCalcCurrent" style="font-size:.78rem;">Sold or collected so far (KES)</label>
+                <input id="spCalcCurrent" class="form-control form-control-sm" type="number" min="0" step="1" placeholder="e.g. 42000" value="${collected || ''}">
+              </div>
+              <div class="col-12"><button class="btn btn-outline-acc btn-sm" type="button" id="spCalcRunBtn"><i class="fa-solid fa-play me-1"></i>Run sales calculator</button></div>
+            </div>
+            <div id="spCalcOut" class="mt-2"></div>
+          </div>
+        </div>
+        <div class="col-12 col-lg-6">
+          <div class="panel h-100" style="background:rgba(56,189,248,.05);">
+            <div class="panel-title" style="font-size:.92rem;margin-bottom:8px;">Cash-flow calculator</div>
+            <div class="row g-2">
+              <div class="col-12">
+                <label class="form-label" for="spCashIncome" style="font-size:.78rem;">Monthly income (KES)</label>
+                <input id="spCashIncome" class="form-control form-control-sm" type="number" min="0" step="1" placeholder="e.g. 25000">
+              </div>
+              <div class="col-12">
+                <label class="form-label" for="spCashExpense" style="font-size:.78rem;">Monthly expenses (KES)</label>
+                <input id="spCashExpense" class="form-control form-control-sm" type="number" min="0" step="1" placeholder="e.g. 16000">
+              </div>
+              <div class="col-12"><button class="btn btn-outline-acc btn-sm" type="button" id="spCashRunBtn"><i class="fa-solid fa-play me-1"></i>Run cash-flow calculator</button></div>
+            </div>
+            <div id="spCashOut" class="mt-2"></div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function spWireMoneyTools() {
+  const salesBtn = document.getElementById('spCalcRunBtn');
+  if (salesBtn) salesBtn.onclick = () => {
+    const out = document.getElementById('spCalcOut');
+    const target = Number(document.getElementById('spCalcTarget').value || 0);
+    const current = Number(document.getElementById('spCalcCurrent').value || 0);
+    if (!target) { out.innerHTML = spErrBox("Enter this month's sales target first."); return; }
+    const gap = Math.max(0, target - current);
+    out.innerHTML = spStatRows([
+      ['Remaining gap', spMoney(gap), gap ? 'var(--accent)' : 'var(--success)'],
+      ['Per day (30-day month)', spMoney(Math.ceil(gap / 30))],
+      ['Per week', spMoney(Math.ceil(gap / 4.345))],
+      ['Already in', spMoney(current), 'var(--success)'],
+    ]);
+  };
+
+  const cashBtn = document.getElementById('spCashRunBtn');
+  if (cashBtn) cashBtn.onclick = () => {
+    const out = document.getElementById('spCashOut');
+    const income = Number(document.getElementById('spCashIncome').value || 0);
+    const expense = Number(document.getElementById('spCashExpense').value || 0);
+    if (income <= 0) { out.innerHTML = spErrBox('Enter the income you expect this month.'); return; }
+    const surplus = income - expense;
+    out.innerHTML = spStatRows([
+      ['Net cash flow', spMoney(surplus), surplus >= 0 ? 'var(--success)' : 'var(--danger)'],
+      ['Savings rate', Math.round((surplus / income) * 1000) / 10 + '%'],
+      ['Suggested reserve (10%)', spMoney(Math.max(0, Math.round(income * 0.1)))],
+      ['Daily spend at this rate', spMoney(Math.max(0, Math.round(surplus / 30)))],
+    ]);
+  };
+}
+
+
+// Airtime/data resale: the catalogue and this tenant's own sales come from the
+// session-scoped endpoint, while the sale itself is the existing buy-product
+// engine the Kassangas merchant portal already uses.
+let spBundleItems = [];
+
+function spNormalizeRecipient(raw) {
+  let v = String(raw || '').trim().replace(/\s+/g, '');
+  if (v.startsWith('+')) v = v.slice(1);
+  if (v.startsWith('0')) v = '254' + v.slice(1);
+  if (/^7\d{8}$/.test(v)) v = '254' + v;
+  return v;
+}
+
+function spBundlesHtml() {
+  return `
+    <div class="panel mb-3" id="spBundlesPanel">
+      <div class="panel-title d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <span><i class="fa-solid fa-sim-card me-2" style="color:#a78bfa;"></i>Airtime &amp; data bundles</span>
+        <span class="text-muted" id="spBundlesMode" style="font-size:.75rem;"></span>
+      </div>
+      <p style="font-size:.84rem;color:var(--text-muted);margin-bottom:12px;">
+        The catalogue the Kassangas wallet sells from: data bundles, airtime, bills and TV.
+        Sell one to a customer's number or buy one for yourself — the value lands on the number you type.
+      </p>
+      <form id="spBundleForm" class="row g-2">
+        <div class="col-12 col-md-5">
+          <select class="form-select form-select-sm" id="spBundleSku" name="sku"><option value="">Loading products…</option></select>
+        </div>
+        <div class="col-12 col-md-4">
+          <input class="form-control form-control-sm" id="spBundlePhone" name="phone" placeholder="Recipient 07XX…" inputmode="numeric" value="${esc(S.phone || '')}">
+        </div>
+        <div class="col-12 col-md-3">
+          <button class="btn btn-accent btn-sm w-100" type="submit" id="spBundleSellBtn"><i class="fa-solid fa-bolt me-1"></i>Sell bundle</button>
+        </div>
+        <div class="col-12 col-md-7">
+          <select class="form-select form-select-sm" id="spBundleProvider" name="provider"><option value="">Loading providers…</option></select>
+        </div>
+        <div class="col-12 col-md-5 d-flex align-items-center">
+          <span id="spBundlePrice" class="text-muted" style="font-size:.76rem;">Pick a product to see the margin.</span>
+        </div>
+      </form>
+      <div id="spBundleMsg" class="mt-2"></div>
+      <div id="spBundleSummary" class="mt-2"></div>
+      <div id="spBundleSales" class="table-responsive mt-2"></div>
+      <div class="mt-3">
+        <a class="btn btn-outline-acc btn-sm" href="/kassangas-client-wallet#finance-tab" target="_blank" rel="noopener noreferrer"><i class="fa-solid fa-store me-1"></i>Open the Kassangas marketplace</a>
+      </div>
+    </div>`;
+}
+
+function spShowBundlePrice() {
+  const el = document.getElementById('spBundlePrice');
+  const select = document.getElementById('spBundleSku');
+  if (!el || !select) return;
+  const item = spBundleItems.find((i) => i.sku === select.value);
+  if (!item) { el.textContent = 'Pick a product to see the margin.'; return; }
+  if (Number(item.price_kes) > 0) {
+    const fee = Number(item.alphadome_fee_kes || 0);
+    el.innerHTML = `Customer pays <b>${spMoney(item.price_kes)}</b> · Alphadome fee ${spMoney(fee)} · you keep <b style="color:var(--success);">${spMoney(Math.max(0, Number(item.price_kes) - fee))}</b>`;
+  } else {
+    el.textContent = `${item.label || item.category} · the provider confirms the price`;
+  }
+}
+
+async function spLoadBundles() {
+  const summary = document.getElementById('spBundleSummary');
+  if (!summary) return;
+  let r;
+  try {
+    r = await apiJson('/tenant/scan-pay/bundles');
+  } catch (err) {
+    summary.innerHTML = spErrBox(err.message || 'Could not load the bundle catalogue');
+    return;
+  }
+  if (!r.ok) { summary.innerHTML = spErrBox(r.data?.error || 'Could not load the bundle catalogue'); return; }
+
+  const d = r.data || {};
+  const catalog = d.catalog || {};
+  const modeEl = document.getElementById('spBundlesMode');
+  if (modeEl) modeEl.textContent = `${d.salesMode || 'sandbox'} mode · ${d.activeProvider || 'provider'}`;
+
+  spBundleItems = [...(catalog.bundles || []), ...(catalog.bills || []), ...(catalog.digital_products || [])];
+  const sku = document.getElementById('spBundleSku');
+  if (sku) {
+    const groups = [
+      ['Data bundles', catalog.bundles || []],
+      ['Airtime, bills & TV', catalog.bills || []],
+      ['Digital products', catalog.digital_products || []],
+    ].filter(([, items]) => items.length);
+    sku.innerHTML = groups.map(([label, items]) => `
+      <optgroup label="${esc(label)}">${items.map((item) => {
+        const price = Number(item.price_kes) > 0
+          ? ` — KES ${item.price_kes}`
+          : item.price_hint_kes ? ` — ${item.price_hint_kes}` : '';
+        return `<option value="${esc(item.sku)}">${esc(item.title + price)}</option>`;
+      }).join('')}</optgroup>`).join('') || '<option value="">No products configured</option>';
+  }
+
+  const provider = document.getElementById('spBundleProvider');
+  if (provider) {
+    provider.innerHTML = (d.providers || []).map((p) =>
+      `<option value="${esc(p.key)}">${esc(p.name)}${p.sandbox_ready ? '' : ' (setup needed)'}</option>`).join('')
+      || '<option value="">No provider configured</option>';
+    const africasTalking = (d.providers || []).find((p) => p.key === 'africas-talking');
+    if (africasTalking) provider.value = africasTalking.key;
+  }
+  spShowBundlePrice();
+
+  const sales = d.sales || {};
+  const tiles = [
+    ['Sales', String(sales.total || 0)],
+    ['Completed', String(sales.successful || 0)],
+    ['Gross', spMoney(sales.gross_kes)],
+    ['Net to you', spMoney(sales.merchant_net_kes)],
+  ];
+  summary.innerHTML = `<div class="row g-2">${tiles.map(([label, value]) => `
+    <div class="col-6 col-md-3"><div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:10px;padding:10px;">
+      <div style="font-size:.7rem;color:var(--text-muted);">${esc(label)}</div>
+      <div style="font-weight:600;">${esc(value)}</div>
+    </div></div>`).join('')}</div>`;
+
+  const salesBox = document.getElementById('spBundleSales');
+  if (!salesBox) return;
+  const recent = sales.recent || [];
+  salesBox.innerHTML = recent.length === 0
+    ? '<div class="text-muted" style="font-size:.8rem;">No bundle sales yet. The first one appears here with its transaction id.</div>'
+    : `<table class="table table-sm mb-0 align-middle">
+        <thead><tr><th>When</th><th>Product</th><th>To</th><th>Amount</th><th>Net</th><th>Status</th></tr></thead>
+        <tbody>${recent.map((s) => `<tr>
+          <td style="font-size:.78rem;">${fmtDT(s.createdAt)}</td>
+          <td>${esc(s.product || s.sku || '')}</td>
+          <td style="font-size:.8rem;">${esc(s.payer || '—')}</td>
+          <td><b>${spMoney(s.amount)}</b></td>
+          <td>${spMoney(s.net)}</td>
+          <td>${badge(s.status || 'pending')}</td>
+        </tr>`).join('')}</tbody>
+      </table>`;
+}
+
+function spWireBundles(state) {
+  const sku = document.getElementById('spBundleSku');
+  if (sku) sku.onchange = spShowBundlePrice;
+  spLoadBundles();
+
+  const form = document.getElementById('spBundleForm');
+  if (!form) return;
+  form.onsubmit = async (ev) => {
+    ev.preventDefault();
+    const box = document.getElementById('spBundleMsg');
+    const btn = document.getElementById('spBundleSellBtn');
+    const phone = spNormalizeRecipient(document.getElementById('spBundlePhone').value);
+    const selectedSku = document.getElementById('spBundleSku').value;
+    const provider = document.getElementById('spBundleProvider').value;
+    if (!selectedSku) { box.innerHTML = spErrBox('Choose a bundle first.'); return; }
+    if (!/^2547\d{8}$/.test(phone)) { box.innerHTML = spErrBox('Enter the recipient as 07XXXXXXXX.'); return; }
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Selling…';
+    const r = await apiJson('/api/kassangas/buy-product', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        phone,
+        sku: selectedSku,
+        provider,
+        merchant_code: state?.merchant?.code || '',
+        fulfillment_provider: 'africas-talking',
+        visitor_id: 'tenant_' + (S.phone || 'portal'),
+      }),
+    });
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fa-solid fa-bolt me-1"></i>Sell bundle';
+
+    if (!r.ok || !r.data?.success) {
+      box.innerHTML = spErrBox(r.data?.error || r.data?.message || 'Could not complete that sale');
+      return;
+    }
+    const sale = r.data;
+    box.innerHTML = spOkBox(`${sale.product || selectedSku} sent to ${phone}. TXN ${sale.transaction_id || '—'} · you keep ${spMoney(sale.merchant_net_kes)}`);
+    spLoadBundles();
+  };
+}
+
+// Scanning: the poster upload and the live camera share one decoder (jsQR) and
+// write into the same pay field, so "scan" behaves the same either way.
+let spScanStream = null;
+let spScanFrame = 0;
+
+function spStopScanCamera() {
+  if (spScanFrame) cancelAnimationFrame(spScanFrame);
+  spScanFrame = 0;
+  if (spScanStream) {
+    spScanStream.getTracks().forEach((track) => track.stop());
+    spScanStream = null;
+  }
+  const video = document.getElementById('spScanVideo');
+  if (video) {
+    video.pause();
+    video.srcObject = null;
+    video.classList.add('d-none');
+  }
+  const btn = document.getElementById('spScanCamBtn');
+  if (btn) btn.innerHTML = '<i class="fa-solid fa-camera-retro me-1"></i>Scan with camera';
+}
+
+function spWireScanCamera() {
+  const btn = document.getElementById('spScanCamBtn');
+  const video = document.getElementById('spScanVideo');
+  const note = document.getElementById('spScanNote');
+  if (!btn || !video) return;
+
+  btn.onclick = async () => {
+    if (spScanStream) { spStopScanCamera(); if (note) note.textContent = 'Camera closed.'; return; }
+    if (typeof jsQR === 'undefined') { if (note) note.textContent = 'QR reader unavailable — upload a screenshot instead.'; return; }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      if (note) note.textContent = 'This browser cannot open the camera — upload a screenshot instead.';
+      return;
+    }
+
+    try {
+      spScanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+    } catch {
+      if (note) note.textContent = 'Camera permission was refused — upload a screenshot instead.';
+      return;
+    }
+
+    video.srcObject = spScanStream;
+    video.classList.remove('d-none');
+    btn.innerHTML = '<i class="fa-solid fa-stop me-1"></i>Stop camera';
+    if (note) note.textContent = 'Point the camera at the poster QR…';
+
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const tick = () => {
+      if (!spScanStream) return;
+      if (video.readyState >= 2 && video.videoWidth > 0) {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const code = jsQR(ctx.getImageData(0, 0, canvas.width, canvas.height).data, canvas.width, canvas.height);
+        if (code && code.data) {
+          const field = document.querySelector('#spPayForm input[name="link"]');
+          if (field) field.value = code.data;
+          if (note) note.textContent = 'QR read — check the amount, then tap Pay now.';
+          spStopScanCamera();
+          return;
+        }
+      }
+      spScanFrame = requestAnimationFrame(tick);
+    };
+    spScanFrame = requestAnimationFrame(tick);
+  };
+}
+
+// A merchant who prints posters needs the file, not only the screen.
+function spWireQrDownload() {
+  const btn = document.getElementById('spQrDownload');
+  if (!btn) return;
+  btn.onclick = () => {
+    const host = document.getElementById('spQrCanvas');
+    const canvas = host && host.querySelector('canvas');
+    const img = host && host.querySelector('img');
+    const href = canvas ? canvas.toDataURL('image/png') : (img && img.src) || '';
+    if (!href) { toast('The QR is not ready yet', 'err'); return; }
+    const a = Object.assign(document.createElement('a'), { href, download: 'alphadome-payment-qr.png' });
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
 }
 
 function spScanPayTablesHtml(state) {
@@ -2330,6 +2711,14 @@ function spWireScanPay(state) {
       ev.target.value = '';
     };
   }
+  // The money tools, the bundle desk and the two QR routes (generate → download,
+  // scan → pay) share this screen and this tenant's merchant code, so they are
+  // wired from the same place; each degrades to a message if its input is missing.
+  spWireMoneyTools();
+  spWireBundles(state);
+  spWireScanCamera();
+  spWireQrDownload();
+
 }
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• ADD AGENT â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•

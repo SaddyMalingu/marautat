@@ -12,7 +12,7 @@
 **Start here:**
 1. [ALPHADOME_HIGH_TICKET_CONTENT_ENGINE.md](ALPHADOME_HIGH_TICKET_CONTENT_ENGINE.md) — buyer focus, offer ladder, flagship build, content cadence, lead path, and 90-day execution
 2. [LANDING_SITE_CONTENT.md](LANDING_SITE_CONTENT.md) — current landing-copy source; verify claims and implementation status before publishing
-3. [docs/TENANT_SCAN_TO_PAY.md](docs/TENANT_SCAN_TO_PAY.md) — the tenant merchant/client wallet: endpoints, isolation, demo script, failure modes
+3. [docs/TENANT_SCAN_TO_PAY.md](docs/TENANT_SCAN_TO_PAY.md) — the tenant merchant/client wallet: QR generate + download, camera/AI-free scanning, the two money calculators, the airtime/data bundle desk, endpoints, isolation, demo script, failure modes
 
 **Commercial focus:** International agencies for white-label licensing, followed by international SME deployment buyers. Use real deployments and measured outcomes to earn trust.
 
