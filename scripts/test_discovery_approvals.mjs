@@ -217,7 +217,9 @@ ok('rotating is refused before approval', /status\(409\)/.test(rotateSrc));
 // only way in is to fake a submission for them.
 const tenantInviteRoute = server.indexOf('"/admin/api/tenants/:tenantId/portal-link"');
 ok('owner can issue an invite for an existing tenant', tenantInviteRoute > -1);
-const tenantInviteSrc = tenantInviteRoute > -1 ? server.slice(tenantInviteRoute, tenantInviteRoute + 3200) : '';
+// The window has to cover the whole route: the token/link/message builders run
+// after the tenant write, and catalogue_warning is in the response at the tail.
+const tenantInviteSrc = tenantInviteRoute > -1 ? server.slice(tenantInviteRoute, tenantInviteRoute + 5600) : '';
 ok('tenant invite is admin-only', /adminAuth/.test(tenantInviteSrc));
 ok('tenant invite reuses the same token + link + message builders',
   /newPortalToken\(\)/.test(tenantInviteSrc) &&
@@ -229,6 +231,27 @@ ok('tenant invite refuses a tenant without a usable mobile',
 ok('tenant invite persists a corrected phone (login compares it)', /tenantPatch\.client_phone = phone/.test(tenantInviteSrc));
 ok('tenant invite keeps the discovery card in sync', /from\("discovery_submissions"\)/.test(tenantInviteSrc));
 ok('tenant invite never returns a password', !/TENANT_DASHBOARD_PASS/.test(tenantInviteSrc));
+
+// A tenant has to exist in alphadome as well as public before the dashboard can
+// manage anything: bot_products / bot_training_data / bot_orders all carry a FK
+// to alphadome.bot_tenants, so a public-only tenant can read an empty catalogue
+// but never save into it. Approval used to create exactly that half-tenant.
+ok('tenant birth reserves the alphadome identity', /await ensureAlphadomeTenant\(payload\)/.test(server));
+ok('the alphadome reservation precedes the public insert',
+  server.indexOf('ensureAlphadomeTenant(payload)') > -1 &&
+  server.indexOf('ensureAlphadomeTenant(payload)') < server.indexOf('.from("bot_tenants").insert([payload])'),
+  'the portal row must not exist without its alphadome twin');
+ok('a failed portal insert releases the alphadome reservation',
+  /deleteAlphadomeTenantById\(tenantId\)/.test(server));
+ok('the twin is born dormant, not reachable by a webhook id',
+  /PENDING_WA_ID_PREFIX = "pending:"/.test(server) &&
+  /whatsapp_phone_number_id: row\.whatsapp_phone_number_id \|\| `\$\{PENDING_WA_ID_PREFIX\}/.test(server));
+ok('a phone already claimed in alphadome is refused with a merge instruction',
+  /23505/.test(server) && /Merge the two identities first/.test(server));
+ok('approval repairs a tenant that exists only in public',
+  /await ensureAlphadomeTenant\(tenant\)/.test(approveSrc));
+ok('tenant invite reports a catalogue repair failure instead of losing the link',
+  /catalogue_warning/.test(tenantInviteSrc));
 
 // Tenant Writer's Flow must be scoped by tenant_id and must never fall back to
 // the global campaign list: that fallback would leak one client's leads to another.

@@ -23,6 +23,7 @@
     "test:site-hygiene": "node scripts/test_site_hygiene.mjs",
     "test:discovery": "node scripts/test_discovery_approvals.mjs",
     "test:tenant-merge": "node scripts/test_tenant_merge_sql.mjs",
+    "test:bot-schema": "node scripts/test_bot_schema_reconcile_sql.mjs",
     "smoke:tenant": "node scripts/smoke_tenant_onboarding.mjs",
     "test:smoke-tenant": "node scripts/test_smoke_tenant_onboarding.mjs",
     "check:ai-key": "node scripts/check_ai_key.mjs",

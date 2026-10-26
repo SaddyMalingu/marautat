@@ -26,6 +26,7 @@ const BASE = String(arg('base', process.env.BASE_URL || 'https://alphadome.onren
 const KEY = arg('key', process.env.ADMIN_PASS || '');
 const WANTED = arg('tenant', '');
 const ISSUE = arg('issue', '') === 'true';
+const WRITE = arg('write', '') === 'true';
 
 let pass = 0;
 let fail = 0;
@@ -57,8 +58,10 @@ Optional:
   --base=<url>            default ${BASE}
   --tenant=<name|phone>   which tenant to invite (default: first with a usable mobile)
   --issue                 actually mint a link (rotates the tenant's current one)
+  --write                 also save one training row and delete it again, proving the
+                          tenant can write to the alphadome-backed tables (needs --issue)
 
-Nothing is written without --issue.`);
+Nothing is written without --issue, and the --write probe removes what it creates.`);
   process.exit(2);
 }
 
@@ -164,6 +167,15 @@ async function main() {
   // never hand back a credential field of any kind.
   ok('the invite response carries no credential field', !/"(password|pass|tenant_key|admin_key)"\s*:/i.test(JSON.stringify(invite.body)), 'credential field found');
   ok('rotation is reported to the caller', typeof invite.body?.rotated === 'boolean');
+  // The invite must say whether this tenant can actually manage its catalogue.
+  // The portal signs in through public, but every catalogue write is a foreign
+  // key into alphadome, so a tenant with no alphadome row can log in and save
+  // nothing. null = healthy, string = the reason it is not.
+  ok('the invite reports catalogue health', 'catalogue_warning' in (invite.body || {}),
+    `fields: ${Object.keys(invite.body || {}).join(',')}`);
+  if (invite.body?.catalogue_warning) {
+    console.log(`\n  WARNING  ${invite.body.catalogue_warning}\n`);
+  }
 
   // 4. The client's first click: sign in with the link and nothing else.
   const login = await request('/tenant/session/login', {
@@ -181,7 +193,39 @@ async function main() {
 
   const sessionHeaders = { 'x-tenant-session': String(login.body.token), 'x-tenant-phone': sessionPhone };
 
-  // 5. Tenant-scoped Writer's Flow.
+  // 5. Two shells, one identity. The session id comes from public.bot_tenants,
+  //    while every catalogue / training / order write carries a foreign key to
+  //    alphadome.bot_tenants. Prove both sides resolve before calling the
+  //    dashboard usable, and optionally prove a write actually lands.
+  const botSettings = await request('/tenant/bot-settings', { headers: sessionHeaders });
+  ok('the tenant resolves in alphadome (portal and catalogue share one uuid)',
+    botSettings.status === 200 && Boolean(botSettings.body?.settings),
+    `status ${botSettings.status} ${JSON.stringify(botSettings.body).slice(0, 160)}`);
+
+  if (WRITE) {
+    const marker = `onboarding smoke ${new Date().toISOString()}`;
+    const saved = await request('/tenant/training', {
+      method: 'POST',
+      headers: { ...sessionHeaders, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: marker, answer: 'smoke test row - safe to delete', data_type: 'smoke' }),
+    });
+    const savedId = saved.body?.training?.id;
+    const wrote = ok('the tenant can write its first dashboard row',
+      saved.status === 200 && Boolean(savedId),
+      `status ${saved.status} ${JSON.stringify(saved.body).slice(0, 200)}`);
+    if (wrote && savedId) {
+      const cleaned = await request(`/tenant/training/${encodeURIComponent(savedId)}`, {
+        method: 'DELETE',
+        headers: sessionHeaders,
+      });
+      ok('the write probe deleted what it created', cleaned.status === 200 && Boolean(cleaned.body?.ok),
+        `status ${cleaned.status} ${JSON.stringify(cleaned.body).slice(0, 160)}`);
+    }
+  } else {
+    console.log('  (pass --write to prove the catalogue/training tables accept a row)');
+  }
+
+  // 6. Tenant-scoped Writer's Flow.
   const campaigns = await request('/tenant/wf/campaigns', { headers: sessionHeaders });
   const campaignsDebug = `status ${campaigns.status} ${JSON.stringify(campaigns.body).slice(0, 160)}`;
   if (ok("the client's campaign list answers 200", campaigns.status === 200, campaignsDebug)) {
@@ -191,7 +235,7 @@ async function main() {
     console.log(`\n  ${chosen.client_name} sees ${(visible || []).length} campaign(s).`);
   }
 
-  // 6. Negative cases: the link is one tenant's key, not a master password.
+  // 7. Negative cases: the link is one tenant's key, not a master password.
   const otherPhone = await request('/tenant/session/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

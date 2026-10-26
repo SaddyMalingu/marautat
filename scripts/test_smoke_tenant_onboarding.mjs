@@ -46,7 +46,7 @@ function json(res, status, body) {
 
 // breakPortalPhone mimics the regression we care about: an invite link that signs
 // nobody in because the phone parameter is missing.
-function buildServer({ breakPortalPhone = false } = {}) {
+function buildServer({ breakPortalPhone = false, writeBroken = false } = {}) {
   return http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
     const body = req.method === 'POST' ? await readBody(req) : {};
@@ -66,6 +66,8 @@ function buildServer({ breakPortalPhone = false } = {}) {
         portal_url: portalUrl,
         whatsapp_url: `https://wa.me/${PHONE}?text=${encodeURIComponent(portalUrl)}`,
         invite_message: `Karibu! Open your portal (this link signs you in — no password to copy): ${portalUrl}`,
+        // null = the tenant has its alphadome twin, so the dashboard can save.
+        catalogue_warning: null,
       });
     }
 
@@ -83,6 +85,28 @@ function buildServer({ breakPortalPhone = false } = {}) {
       });
     }
 
+    if (url.pathname === '/tenant/bot-settings') {
+      if (req.headers['x-tenant-session'] !== 'session-abc') return json(res, 401, { error: 'Missing tenant session token' });
+      // Resolving here means the phone found a row in alphadome, which is what the
+      // catalogue foreign keys need. A public-only tenant answers 404 instead.
+      return json(res, 200, { settings: { ai_model: 'gpt-4o-mini', has_wa_token: false, is_active: true } });
+    }
+
+    if (url.pathname === '/tenant/training' && req.method === 'POST') {
+      if (req.headers['x-tenant-session'] !== 'session-abc') return json(res, 401, { error: 'Missing tenant session token' });
+      if (writeBroken) {
+        return json(res, 500, {
+          error: 'insert or update on table "bot_training_data" violates foreign key constraint "bot_training_data_bot_tenant_id_fkey"',
+        });
+      }
+      return json(res, 200, { training: { id: 'training-1', question: body.question || '', answer: body.answer || '' } });
+    }
+
+    if (url.pathname === '/tenant/training/training-1' && req.method === 'DELETE') {
+      if (req.headers['x-tenant-session'] !== 'session-abc') return json(res, 401, { error: 'Missing tenant session token' });
+      return json(res, 200, { ok: true, deleted_id: 'training-1' });
+    }
+
     if (url.pathname === '/tenant/wf/campaigns') {
       if (req.headers['x-tenant-session'] !== 'session-abc') return json(res, 401, { error: 'Missing tenant session token' });
       return json(res, 200, { ok: true, campaigns: [{ id: 'c1', name: 'Q4 schools', status: 'running' }] });
@@ -92,23 +116,23 @@ function buildServer({ breakPortalPhone = false } = {}) {
   });
 }
 
-function runSmoke(base) {
+function runSmoke(base, extraArgs = []) {
   return new Promise((resolve) => {
     execFile(
       process.execPath,
-      [SMOKE, `--base=${base}`, `--key=${ADMIN_KEY}`, '--tenant=kassangas', '--issue'],
+      [SMOKE, `--base=${base}`, `--key=${ADMIN_KEY}`, '--tenant=kassangas', '--issue', ...extraArgs],
       { cwd: ROOT, env: { ...process.env, ADMIN_PASS: '', BASE_URL: '' } },
       (err, stdout, stderr) => resolve({ code: err ? err.code || 1 : 0, output: `${stdout}\n${stderr}` }),
     );
   });
 }
 
-async function scenario(label, options, expectCode) {
+async function scenario(label, options, expectCode, extraArgs = []) {
   const server = buildServer(options);
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
   try {
-    const result = await runSmoke(base);
+    const result = await runSmoke(base, extraArgs);
     check(`${label}: smoke test exits ${expectCode}`, result.code === expectCode, `exited ${result.code}`);
     return result.output;
   } finally {
@@ -123,6 +147,21 @@ check('healthy invite: the link is printed for sending', healthy.includes(`t=${I
 
 const broken = await scenario('borked invite', { breakPortalPhone: true }, 1);
 check('borked invite: the missing phone is caught', /FAIL\s+the invite URL carries the login phone/.test(broken));
+
+// The probe that proves a tenant can actually manage its dashboard: a public-only
+// tenant signs in fine and still cannot save, because the catalogue tables carry a
+// foreign key into alphadome.
+const writeProbe = await scenario('write probe', {}, 0, ['--write']);
+check('write probe: the alphadome-backed tables accept a row',
+  /PASS\s+the tenant can write its first dashboard row/.test(writeProbe));
+check('write probe: the created row is removed again',
+  /PASS\s+the write probe deleted what it created/.test(writeProbe));
+
+const writeBlocked = await scenario('write blocked', { writeBroken: true }, 1, ['--write']);
+check('write blocked: a tenant without an alphadome row is caught before the demo',
+  /FAIL\s+the tenant can write its first dashboard row/.test(writeBlocked));
+check('write blocked: the foreign-key reason is printed',
+  /foreign key constraint/.test(writeBlocked));
 
 console.log(`\n---\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -600,6 +600,17 @@ const supabase = hasSupabaseConfig
   ? createClient(process.env.SB_URL, process.env.SB_SERVICE_ROLE_KEY)
   : createFallbackSupabase();
 
+// The bot runtime's system of record is the alphadome schema; the portal and
+// PostgREST speak public. Anything that has to write an alphadome row directly
+// (tenant birth, credential repair) goes through this client, not through the
+// unqualified one above.
+const alphadomeDb = hasSupabaseConfig
+  ? createClient(process.env.SB_URL, process.env.SB_SERVICE_ROLE_KEY, {
+      auth: { persistSession: false },
+      db: { schema: "alphadome" },
+    })
+  : null;
+
 if (!hasSupabaseConfig) {
   console.warn('[SERVER] SB_URL/SB_SERVICE_ROLE_KEY missing; running in local-safe fallback mode.');
 }
@@ -14904,6 +14915,106 @@ app.get("/admin/api/discovery/submissions", adminAuth, async (req, res) => {
 // hand back a link nobody can use — it fails with the migration name instead.
 const PROTECTED_TENANT_COLUMNS = new Set(["portal_token", "client_name", "client_phone"]);
 
+// ---------------------------------------------------------------------------
+// Tenant birth: one identity, two shells.
+//
+// The portal signs in through public.bot_tenants, but every table it manages -
+// bot_products, bot_training_data, bot_orders, bot_collections - carries a
+// foreign key to alphadome.bot_tenants. A tenant that exists only in public can
+// therefore read an empty catalogue but can never fill it: PostgREST answers
+// 23503 foreign_key_violation and the dashboard reports "Save failed".
+//
+// Discovery approval used to create exactly that half-tenant. The mirror trigger
+// (2026-10-25_bot_schema_reconcile_02_apply.sql, section H) only UPDATEs the
+// alphadome row, which touches zero rows for a uuid that is not there yet.
+// ensureAlphadomeTenant() reserves the same uuid in alphadome before the portal
+// row exists, so a new client is born on both sides of the split at once.
+//
+// alphadome requires whatsapp_phone_number_id and whatsapp_access_token, and a
+// brand-new client has no Meta credentials. The row is therefore born dormant:
+// a "pending:<uuid>" id that no webhook can ever deliver to, and an empty token,
+// which every credential check in this file already reads as "not configured".
+// The real values are entered in the portal (Bot Config), which writes public,
+// and the mirror trigger copies them onto this row. NULL never overwrites, so a
+// second pass cannot wipe credentials that are already live.
+// ---------------------------------------------------------------------------
+const PENDING_WA_ID_PREFIX = "pending:";
+
+async function fetchAlphadomeTenantById(tenantId) {
+  if (!alphadomeDb || !tenantId) return null;
+  const { data, error } = await alphadomeDb
+    .from("bot_tenants")
+    .select("*")
+    .eq("id", tenantId)
+    .maybeSingle();
+  if (error) throw error;
+  return data || null;
+}
+
+async function deleteAlphadomeTenantById(tenantId) {
+  if (!alphadomeDb || !tenantId) return;
+  try {
+    const { error } = await alphadomeDb.from("bot_tenants").delete().eq("id", tenantId);
+    if (error) throw error;
+  } catch (err) {
+    log(`TENANT_BIRTH_CLEANUP_WARN: alphadome tenant ${tenantId} kept (${err.message})`, "WARN");
+  }
+}
+
+async function ensureAlphadomeTenant(row) {
+  if (!alphadomeDb || !row?.id) return null;
+  // Idempotent by design: an existing twin is returned untouched, so calling this
+  // on every approval/invite can never overwrite live WhatsApp credentials.
+  const existing = await fetchAlphadomeTenantById(row.id);
+  if (existing) return existing;
+
+  const phone = normalizeKePhone(row.client_phone) || String(row.client_phone || "").trim();
+  if (!phone) throw new Error("Cannot create the alphadome tenant: client_phone is empty");
+
+  const payload = {
+    id: row.id,
+    client_name: row.client_name || `Client ${phone.slice(-4)}`,
+    client_phone: phone,
+    client_email: row.client_email || null,
+    point_of_contact_name: row.point_of_contact_name || null,
+    point_of_contact_phone: row.point_of_contact_phone || null,
+    whatsapp_phone_number_id: row.whatsapp_phone_number_id || `${PENDING_WA_ID_PREFIX}${row.id}`,
+    whatsapp_business_account_id: row.whatsapp_business_account_id || null,
+    whatsapp_access_token: row.whatsapp_access_token || "",
+    ai_provider: row.ai_provider || "openai",
+    ai_model: row.ai_model || "gpt-4o-mini",
+    is_active: row.is_active !== false,
+    metadata: {
+      ...(row.metadata && typeof row.metadata === "object" ? row.metadata : {}),
+      provisioned_by: "tenant_onboarding",
+      awaiting_whatsapp: !row.whatsapp_access_token,
+    },
+  };
+
+  const { data, error } = await alphadomeDb
+    .from("bot_tenants")
+    .insert([payload])
+    .select()
+    .maybeSingle();
+  if (!error) return data;
+
+  const duplicate = String(error.code || "") === "23505" || /duplicate key/i.test(String(error.message || ""));
+  if (!duplicate) throw error;
+
+  // Same phone, different identity. Splitting it is what produced the shells in
+  // the first place, so refuse the write and name the row that has to be merged.
+  const { data: clash } = await alphadomeDb
+    .from("bot_tenants")
+    .select("id, client_name")
+    .eq("client_phone", phone)
+    .maybeSingle();
+  throw new Error(
+    `Cannot onboard ${phone}: alphadome.bot_tenants already holds that phone under ` +
+    `${clash?.id || "another uuid"}${clash?.client_name ? ` (${clash.client_name})` : ""}. ` +
+    "Merge the two identities first - migrations/2026-10-25_bot_schema_reconcile_04_coachdawn.sql is the pattern."
+  );
+}
+
 async function writeBotTenantRecord(tenantId, patch) {
   const payload = { ...patch };
   for (let attempt = 0; attempt < 10; attempt += 1) {
@@ -14926,16 +15037,30 @@ async function writeBotTenantRecord(tenantId, patch) {
 
 async function insertBotTenantRecord(record) {
   const payload = { ...record };
-  for (let attempt = 0; attempt < 10; attempt += 1) {
-    const { data, error } = await supabase.from("bot_tenants").insert([payload]).select().maybeSingle();
-    if (!error) return data;
-    const missingColumn = extractMissingColumnName(error);
-    if (!isMissingColumnError(error) || !missingColumn || !(missingColumn in payload)) throw error;
-    if (PROTECTED_TENANT_COLUMNS.has(missingColumn)) {
-      throw new Error(`bot_tenants.${missingColumn} is missing - run migrations/2026-10-24_discovery_tenant_approvals.sql`);
+  // The uuid is minted here instead of by the column default: the alphadome row
+  // has to carry the same id, and reserving it first means a phone already
+  // claimed in alphadome fails before any portal row exists to clean up.
+  if (!payload.id) payload.id = crypto.randomUUID();
+  const tenantId = payload.id;
+  await ensureAlphadomeTenant(payload);
+  try {
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const { data, error } = await supabase.from("bot_tenants").insert([payload]).select().maybeSingle();
+      if (!error) return data;
+      const missingColumn = extractMissingColumnName(error);
+      if (!isMissingColumnError(error) || !missingColumn || !(missingColumn in payload)) throw error;
+      if (PROTECTED_TENANT_COLUMNS.has(missingColumn)) {
+        throw new Error(`bot_tenants.${missingColumn} is missing - run migrations/2026-10-24_discovery_tenant_approvals.sql`);
+      }
+      delete payload[missingColumn];
     }
-    delete payload[missingColumn];
+  } catch (err) {
+    // No portal row landed, so release the reservation: a retry must start clean
+    // rather than collide with an empty alphadome tenant.
+    await deleteAlphadomeTenantById(tenantId);
+    throw err;
   }
+  await deleteAlphadomeTenantById(tenantId);
   throw new Error("Could not create the tenant record");
 }
 
@@ -15007,6 +15132,12 @@ app.post("/admin/api/discovery/submissions/:id/approve", adminAuth, async (req, 
     const tenant = existing?.id
       ? await writeBotTenantRecord(existing.id, tenantPatch)
       : await insertBotTenantRecord(tenantPatch);
+
+    // Approval is also the repair point for tenants born before this guard (or
+    // inserted by hand): a public-only tenant cannot write a single catalogue
+    // row, because every domain FK points at alphadome.bot_tenants. No-op once
+    // the twin exists, so it is safe on the already-approved path too.
+    await ensureAlphadomeTenant(tenant);
 
     const approvedBy = String(req.headers["x-admin-actor"] || req.query.actor || "owner").slice(0, 80);
     const approvalRecord = {
@@ -15224,6 +15355,17 @@ app.post("/admin/api/tenants/:tenantId/portal-link", adminAuth, async (req, res)
     if (normalizeKePhone(tenant.client_phone) !== phone) tenantPatch.client_phone = phone;
     await writeBotTenantRecord(tenant.id, tenantPatch);
 
+    // Same repair as approval. Unlike approval this must not cost the tenant its
+    // invite when alphadome is unreachable: report the gap and let the owner fix
+    // the catalogue, send the link now.
+    let catalogueWarning = null;
+    try {
+      await ensureAlphadomeTenant({ ...tenant, ...tenantPatch });
+    } catch (err) {
+      catalogueWarning = err.message;
+      log(`TENANT_PORTAL_LINK_CATALOGUE_WARN: ${err.message}`, "WARN");
+    }
+
     // Keep the discovery card pointing at the link that actually works, when this
     // tenant came from the questionnaire. Best effort: the invite is already valid.
     try {
@@ -15261,6 +15403,10 @@ app.post("/admin/api/tenants/:tenantId/portal-link", adminAuth, async (req, res)
       portal_url: portalUrl,
       whatsapp_url: buildWhatsAppInviteLink({ phone, message }),
       invite_message: message,
+      // null when the alphadome twin exists (the normal case). A string here
+      // means the invite works but this tenant cannot save catalogue/training
+      // rows until the reported merge/connection problem is fixed.
+      catalogue_warning: catalogueWarning,
     });
   } catch (err) {
     log(`TENANT_PORTAL_LINK_ERROR: ${err.message}`, "ERROR");
