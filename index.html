@@ -3,7 +3,100 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Alphadome - Deployable AI Systems for Revenue, Operations, and Scale</title>
+  <title>Alphadome — Deployable AI Systems for Sales, Payments and Operations</title>
+  <meta name="description" content="Alphadome builds and deploys working AI systems for African businesses: WhatsApp campaigns, M-Pesa scan-to-pay, tenant-ready content engines and operations dashboards. Start with one workflow, measure it, then expand. Deployments scoped from $3,000; agency licensing from $10,000." />
+  <link rel="canonical" href="https://alphadome.onrender.com/" />
+  <meta name="robots" content="index,follow" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Alphadome" />
+  <meta property="og:title" content="Alphadome — Deployable AI Systems for Sales, Payments and Operations" />
+  <meta property="og:description" content="One costly workflow, scoped and deployed in weeks: WhatsApp campaigns, M-Pesa payments, a tenant-ready content engine and the dashboards that prove it worked." />
+  <meta property="og:url" content="https://alphadome.onrender.com/" />
+  <meta property="og:image" content="https://alphadome.onrender.com/images/site/multi-tenant-operations-dashboard.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Alphadome — Deployable AI Systems" />
+  <meta name="twitter:description" content="Deploy one revenue workflow, measure it, then expand. WhatsApp, M-Pesa and multi-tenant systems, built by Alphadome." />
+  <meta name="twitter:image" content="https://alphadome.onrender.com/images/site/multi-tenant-operations-dashboard.png" />
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Organization",
+        "@id": "https://alphadome.onrender.com/#organization",
+        "name": "Alphadome",
+        "url": "https://alphadome.onrender.com/",
+        "logo": "https://alphadome.onrender.com/favicon.svg",
+        "description": "Alphadome builds and deploys AI systems for sales, payments and operations: WhatsApp campaigns, M-Pesa scan-to-pay checkout, multi-tenant portals and a tenant-ready content engine.",
+        "founder": { "@type": "Person", "name": "David Saddy Malingu" },
+        "areaServed": "Kenya",
+        "contactPoint": [
+          {
+            "@type": "ContactPoint",
+            "telephone": "+254743780542",
+            "contactType": "sales"
+          },
+          {
+            "@type": "ContactPoint",
+            "telephone": "+254117604817",
+            "contactType": "customer support"
+          }
+        ]
+      },
+      {
+        "@type": "Service",
+        "name": "Scoped AI workflow deployment",
+        "provider": { "@id": "https://alphadome.onrender.com/#organization" },
+        "serviceType": "AI workflow deployment, WhatsApp automation, M-Pesa payment integration",
+        "areaServed": "Kenya",
+        "offers": {
+          "@type": "Offer",
+          "name": "Deployment pilot",
+          "priceCurrency": "USD",
+          "price": "3000",
+          "description": "Starting anchor for a scoped deployment of one revenue or operations workflow. Final price depends on scope, integrations and support."
+        }
+      },
+      {
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "What can be live in the first 30 days?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "One workflow. The fastest to deploy are WhatsApp campaign and follow-up flows, M-Pesa scan-to-pay checkout for a product catalogue, and the content engine for an existing offer. Each depends on the integrations you already have, confirmed during discovery."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Is this just ChatGPT with a dashboard?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "No. Language models are used for drafting, classification and summarising. Anything that touches money, stock, permissions or customer records runs through deterministic code with audit trails, fallbacks and role checks."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "How is the content engine different from other AI blog tools?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "It writes a nine-page journey per offer rather than nine variations of one page, assigns each tenant a stable editorial voice, and scores every draft against a quality gate covering prose depth, specifics, an honest limitations section and a call to action."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Can my agency resell it?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes, through a written white-label licence starting from 10,000 USD, defining tenant limits, hosting, support, updates, permitted reselling and any revenue share."
+            }
+          }
+        ]
+      }
+    ]
+  }
+  </script>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
   <meta name="theme-color" content="#081421" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -876,6 +969,156 @@
       }
     }
 
+    /* WHAT THIS IS / IS NOT, PRICING, FAQ — added 2026-10-25 so a first-time
+       visitor can tell what Alphadome sells before scrolling to the portfolio. */
+    .what-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 1rem;
+      margin-top: 1.8rem;
+    }
+
+    .what-card {
+      background: var(--panel);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 16px;
+      padding: 1.4rem;
+    }
+
+    .what-card h3 {
+      font-size: 1.05rem;
+      margin-bottom: 0.55rem;
+      color: var(--accent-2);
+    }
+
+    .what-card p { color: var(--muted); font-size: 0.95rem; }
+
+    .compare-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1rem;
+      margin-top: 1.5rem;
+    }
+
+    .compare-card {
+      border-radius: 16px;
+      padding: 1.4rem;
+      border: 1px solid rgba(126, 249, 200, 0.28);
+      background: rgba(126, 249, 200, 0.05);
+    }
+
+    .compare-card.not {
+      border-color: rgba(255, 138, 0, 0.3);
+      background: rgba(255, 138, 0, 0.05);
+    }
+
+    .compare-card h3 { font-size: 1.05rem; margin-bottom: 0.7rem; }
+    .compare-card ul { list-style: none; display: grid; gap: 0.5rem; }
+    .compare-card li {
+      color: var(--muted);
+      font-size: 0.94rem;
+      padding-left: 1.35rem;
+      position: relative;
+    }
+    .compare-card li::before {
+      content: "✓";
+      position: absolute;
+      left: 0;
+      color: var(--mint);
+      font-weight: 700;
+    }
+    .compare-card.not li::before { content: "✕"; color: var(--accent); }
+
+    .price-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 1rem;
+      margin-top: 1.8rem;
+    }
+
+    .price-card {
+      background: var(--panel);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 16px;
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+    }
+
+    .price-card.featured { border-color: rgba(255, 138, 0, 0.55); }
+
+    .price-tag {
+      font-family: "Bebas Neue", sans-serif;
+      font-size: 2rem;
+      letter-spacing: 0.04em;
+      color: var(--accent-2);
+      line-height: 1;
+    }
+
+    .price-card h3 { font-size: 1.05rem; }
+    .price-card p { color: var(--muted); font-size: 0.92rem; }
+    .price-card .price-meta {
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+    }
+
+    .micro-note {
+      max-width: 760px;
+      margin: 1.4rem auto 0;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.86rem;
+      line-height: 1.6;
+    }
+
+    .faq-list { max-width: 840px; margin: 1.8rem auto 0; display: grid; gap: 0.7rem; }
+
+    .faq-list details {
+      background: var(--panel);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      padding: 1rem 1.15rem;
+    }
+
+    .faq-list summary {
+      cursor: pointer;
+      font-weight: 600;
+      color: var(--text);
+      font-size: 0.98rem;
+    }
+
+    .faq-list summary::marker { color: var(--accent); }
+
+    .faq-list details p {
+      color: var(--muted);
+      font-size: 0.93rem;
+      margin-top: 0.7rem;
+      line-height: 1.65;
+    }
+
+    .site-footer {
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 2rem 16px 2.6rem;
+      background: rgba(4, 12, 22, 0.6);
+    }
+
+    .site-footer .container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem 1.6rem;
+      align-items: center;
+      justify-content: space-between;
+      color: var(--muted);
+      font-size: 0.86rem;
+    }
+
+    .site-footer nav { display: flex; flex-wrap: wrap; gap: 1rem; }
+    .site-footer a { color: var(--muted); text-decoration: none; }
+    .site-footer a:hover { color: var(--accent-2); }
+
     /* RESPONSIVE */
     @media (max-width: 1100px) {
       .container { padding: 0 18px; }
@@ -887,9 +1130,12 @@
       .portfolio-grid,
       .audience-tabs,
       .workflow,
-      .ownership-points {
+      .ownership-points,
+      .what-grid,
+      .price-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
+      .compare-grid { grid-template-columns: 1fr; }
       .capabilities-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
@@ -934,7 +1180,10 @@
       .audience-tabs,
       .ownership-points,
       .capabilities-grid,
-      .outcome-grid {
+      .outcome-grid,
+      .what-grid,
+      .price-grid,
+      .compare-grid {
         grid-template-columns: 1fr;
       }
       .hero .cta-buttons { flex-direction: column; }
@@ -1031,9 +1280,9 @@
 <div class="site-topbar" aria-label="Latest release updates">
   <div class="ticker">
     <div class="ticker-track">
-      <span>Latest Release: Scan-to-Pay Checkout is live for merchant collections and fast customer payments.</span>
-      <span>Wallet Update: Merchant Portal and Client Wallet experiences are now available in the Alphadome commerce stack.</span>
-      <span>Coming Next: Scan-to-Send interactive posters that route prospects directly into your conversion portal.</span>
+      <span>Deployed now: Scan-to-Pay M-Pesa checkout, a tenant-ready blog engine, and WhatsApp campaign tooling.</span>
+      <span>Working demo: the tenant portal generates nine SEO pages per offer, in your brand's voice, with a quality score.</span>
+      <span>Next build slice: scan-to-send interactive posters that route a prospect straight into a booking or order flow.</span>
     </div>
   </div>
 </div>
@@ -1048,12 +1297,14 @@
     <label for="nav-toggle" class="nav-toggle-btn" aria-label="Toggle navigation menu">Menu</label>
     <div class="nav-links">
       <a href="#home">Home</a>
+      <a href="#what">What it is</a>
       <a href="#commerce">Commerce</a>
-      <a href="#writers-flow">Writer's Flow</a>
+      <a href="#writers-flow">Content engine</a>
       <a href="#capabilities">Capabilities</a>
-      <a href="#portfolio">Portfolio</a>
-      <a href="#audience">Audience</a>
-      <a href="#contact">Contact</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#portfolio">Systems</a>
+      <a href="#faq">FAQ</a>
+      <a href="/discovery">Book a call</a>
     </div>
   </div>
 </nav>
@@ -1064,45 +1315,111 @@
     <div class="brand-logo-wrap reveal">
       <video src="/logo-bg.mp4" autoplay loop muted playsinline preload="auto" aria-label="Alphadome logo animation"></video>
     </div>
+    <div class="position-strip reveal">Built in Nairobi · WhatsApp-first · Your system, not another subscription</div>
+    <h1 class="reveal delay-1">We deploy the AI system your sales team actually uses.</h1>
+    <p class="subheading reveal delay-2">
+      Alphadome builds one working revenue workflow at a time: WhatsApp campaigns and follow-up,
+      M-Pesa scan-to-pay checkout, a tenant-ready content engine, and the dashboards that show what happened.
+      You start with a scoped pilot, measure it against a baseline, and expand only when the numbers justify it.
+    </p>
+    <div class="cta-buttons reveal delay-2">
+      <a class="btn btn-primary" href="/discovery">Book a deployment call</a>
+      <a class="btn btn-secondary" href="/portfolio.html">See working systems</a>
+      <a class="btn btn-secondary" href="https://wa.me/254786817637">WhatsApp us</a>
+    </div>
+    <div class="outcome-grid reveal delay-3">
+      <div class="outcome-item">
+        <strong>One workflow first</strong>
+        <span>We pick the costliest or most revenue-critical process, not the whole business.</span>
+      </div>
+      <div class="outcome-item">
+        <strong>Delivered in weeks</strong>
+        <span>Scope, integrations and acceptance criteria agreed before work starts.</span>
+      </div>
+      <div class="outcome-item">
+        <strong>Multi-tenant core</strong>
+        <span>Real isolation, roles and audit trails — built for operators, not demos.</span>
+      </div>
+      <div class="outcome-item">
+        <strong>Measured, not promised</strong>
+        <span>Baseline before launch, review after. No invented results on this page.</span>
+      </div>
+    </div>
     <section class="generated-video-section" aria-label="Examples of generated Alphadome videos">
       <div class="generated-video-wrap">
         <div class="generated-video-headline">
-          <h3>Unleash Your Power!!!</h3>
+          <h3>Sample brand motion</h3>
         </div>
         <p>
-          Preview the style of branded motion content Alphadome can produce for campaigns, offers, and product storytelling.
+          A sample of the branded motion content the same production pipeline can generate for campaigns,
+          offers and product storytelling. It is a capability demo, not a client result.
         </p>
         <div class="generated-video-player">
           <video id="alphadome-generated-video" autoplay muted playsinline preload="metadata" aria-label="Autoplaying shuffled Alphadome generated video showcase"></video>
         </div>
       </div>
     </section>
-    <div class="position-strip reveal">Built for Paid Pilots and Fast Production Rollout</div>
-    <h1 class="reveal delay-1">Stop Buying Tools.<br/>Deploy a Revenue Operating System.</h1>
-    <p class="subheading reveal delay-2">Alphadome turns sales, operations, design, and supply chain workflows into one modular AI system your team can run daily. Multi-tenant architecture, secure automation, and measurable conversion pipelines are already built.</p>
-    <div class="cta-buttons">
-      <a class="btn btn-primary" href="/discovery">Book a System Blueprint Call</a>
-      <a class="btn btn-secondary" href="/portfolio.html">View Deployable Systems</a>
-      <a class="btn btn-secondary" href="https://wa.me/254786817637">WhatsApp Us</a>
+  </div>
+</section>
+
+<!-- WHAT THIS IS -->
+<section class="section" id="what">
+  <div class="container">
+    <h2>What Alphadome actually is</h2>
+    <p style="text-align:center;color:var(--muted);max-width:760px;margin:0 auto;font-size:1rem;line-height:1.7;">
+      A small engineering team that builds and hands over working systems. Not an agency deck, not a
+      no-code subscription, and not a promise that AI will fix a process nobody owns.
+    </p>
+    <div class="what-grid">
+      <div class="what-card">
+        <h3>Systems, deployed</h3>
+        <p>
+          We build the actual software: multi-tenant portals, WhatsApp campaign tooling, payment flows and
+          reporting. It runs on infrastructure you can point at, with a runbook for the team that operates it.
+        </p>
+      </div>
+      <div class="what-card">
+        <h3>One workflow at a time</h3>
+        <p>
+          A pilot is one measurable workflow — quote-to-order, lead follow-up, stock exception handling.
+          Scope, integrations, acceptance criteria and ownership are written down before anything is built.
+        </p>
+      </div>
+      <div class="what-card">
+        <h3>Evidence over adjectives</h3>
+        <p>
+          Every public claim on this site is either something you can open (the demo systems, the portals)
+          or something we will measure with you. Where evidence does not exist yet, we say so.
+        </p>
+      </div>
     </div>
-    <div class="outcome-grid reveal delay-3">
-      <div class="outcome-item">
-        <strong>4 Core Platforms</strong>
-        <span>Comms, construction, architecture, and healthcare supply operations.</span>
+    <div class="compare-grid">
+      <div class="compare-card">
+        <h3>What you get</h3>
+        <ul>
+          <li>A scoped deployment with written acceptance criteria</li>
+          <li>Working WhatsApp, M-Pesa and dashboard integrations where they fit</li>
+          <li>Tenant isolation, roles and audit trails in the core</li>
+          <li>A content engine that writes in your brand's voice, not a generic one</li>
+          <li>Handover: runbook, admin access and a named owner</li>
+        </ul>
       </div>
-      <div class="outcome-item">
-        <strong>API-First Modules</strong>
-        <span>Composable services for campaign, lead, analytics, workflow, and governance.</span>
-      </div>
-      <div class="outcome-item">
-        <strong>Production-Ready Core</strong>
-        <span>Operational systems with active rollout paths and measurable KPI loops.</span>
-      </div>
-      <div class="outcome-item">
-        <strong>Ownership By Design</strong>
-        <span>Deploy as your internal operating asset instead of renting disconnected tools.</span>
+      <div class="compare-card not">
+        <h3>What this is not</h3>
+        <ul>
+          <li>Not a self-serve tool you configure alone on day one</li>
+          <li>Not a chatbot demo with no workflow behind it</li>
+          <li>Not a guaranteed revenue or savings figure</li>
+          <li>Not an investment product or a token sale</li>
+          <li>Not a claim that every named system is in production for a paying client</li>
+        </ul>
       </div>
     </div>
+    <p class="micro-note">
+      Deployment status is labelled throughout: <strong>Live</strong> means running in this build,
+      <strong>Demo</strong> means a working walkthrough you can open, and <strong>Next build slice</strong>
+      means designed but not shipped. Ask for the evidence behind any specific claim.
+    </p>
   </div>
 </section>
 
@@ -1178,32 +1495,54 @@
 <!-- WRITER'S FLOW -->
 <section class="section" id="writers-flow">
   <div class="container">
-    <h2>Writer's Flow and AI Content Generation</h2>
-    <div class="sales-grid">
+    <h2>A content engine that writes like your business</h2>
+    <p style="text-align:center;color:var(--muted);max-width:780px;margin:0 auto;font-size:1rem;line-height:1.7;">
+      Most "AI blog" tools produce nine variations of the same outline. Ours writes a nine-page journey per offer,
+      in a voice assigned to your business, then checks its own work before anything is published.
+    </p>
+    <div class="sales-grid" style="margin-top:1.8rem;">
       <div class="sales-card">
-        <h3>Writer's Flow Engine</h3>
-        <p>Content and workflow automation layer used to generate campaign messaging, product descriptions, follow-up flows, and lead-nurture sequences across tenants.</p>
+        <h3>One offer, nine pages</h3>
+        <p>
+          Every offer gets a full journey: what it is, what it costs, whether it fits, how to prepare,
+          how to start, how to scale, and how to get value in year one. Each page owns its own URL,
+          its own search intent and its own call to action — no duplicate copy across the set.
+        </p>
       </div>
       <div class="sales-card">
-        <h3>AI Content Studio</h3>
-        <p>Generate branded text assets, channel-adapted campaign copy, and conversion-focused scripts with retrieval-aware context from your business knowledge.</p>
+        <h3>Your voice, not the model's</h3>
+        <p>
+          Six editorial voices — warm local expert, precise operator, bold challenger, measured advisor,
+          storytelling guide, practical teacher — are matched to each tenant and kept stable across runs.
+          Set a tone in your settings and it wins. The brief names your reader, your market and the scene to open on.
+        </p>
       </div>
       <div class="sales-card">
-        <h3>Sales-Ready Delivery Loop</h3>
-        <p>Move from content generation to execution by pushing assets into outreach workflows, dashboards, and measured conversion pipelines.</p>
+        <h3>Measured before it publishes</h3>
+        <p>
+          A quality gate scores every draft: prose versus bullet points, paragraph depth, headings,
+          specific numbers, an honest limitations section and a working call to action. Pages that read
+          as an outline get rewritten automatically. The tenant portal shows the score instead of a bare "done".
+        </p>
       </div>
     </div>
-    <div style="text-align:center; margin-top:1.2rem;">
-      <a class="btn btn-primary" href="/discovery">Request Writer's Flow Setup</a>
+    <div style="text-align:center; margin-top:1.4rem;">
+      <a class="btn btn-primary" href="/discovery">Request a content engine pilot</a>
+      <a class="btn btn-secondary" href="/blog">Read generated pages</a>
     </div>
+    <p class="micro-note">
+      Pages written by a model are labelled as such internally (<code>mode=ai</code>). When every provider is
+      out of quota the engine composes from your own offer details instead, and says so — it never claims a model
+      wrote copy it did not write.
+    </p>
     <div class="section-visual-grid">
       <figure class="visual-card">
         <img src="/images/site/writers-flow-content-studio.png" alt="Writer's Flow AI content studio" loading="lazy" />
-        <span class="visual-label">AI Content Studio</span>
+        <span class="visual-label">Content Studio</span>
       </figure>
       <figure class="visual-card">
         <img src="/images/site/multi-tenant-operations-dashboard.png" alt="Multi-tenant operations dashboard" loading="lazy" />
-        <span class="visual-label">Execution Dashboard</span>
+        <span class="visual-label">Tenant Dashboard</span>
       </figure>
     </div>
   </div>
@@ -1317,32 +1656,65 @@
   </div>
 </section>
 
-<!-- CO-OWNERSHIP EXPLAINED -->
-<section class="section">
+<!-- PRICING -->
+<section class="section" id="pricing">
   <div class="container">
-    <h2>Ownership Model Built for Long-Term Leverage</h2>
-    <div class="co-ownership-body">
-      <h3>Your System, Your Leverage</h3>
-      <p>We build around your business model so your system becomes a compounding digital asset, not a one-off campaign tool.</p>
-      <p><strong>Stakeholders can be aligned through structured participation models</strong> tied to growth outcomes and recurring value creation.</p>
-      <p>You can package repeatable workflows, onboard partners faster, and create durable operating advantage as demand grows.</p>
+    <h2>What it costs to start</h2>
+    <p style="text-align:center;color:var(--muted);max-width:780px;margin:0 auto;font-size:1rem;line-height:1.7;">
+      These are starting anchors, not quotes. The real number depends on scope, integrations, data access,
+      support and licensing rights — and it is written down before work begins.
+    </p>
+    <div class="price-grid">
+      <div class="price-card">
+        <div class="price-meta">Pilot</div>
+        <h3>Scoped deployment</h3>
+        <div class="price-tag">From $3,000</div>
+        <p>One revenue or operations workflow, deployed, tested and handed over with a stated support period.</p>
+        <p><strong>Best for:</strong> a business that wants a working system it can point at, not another subscription.</p>
+      </div>
+      <div class="price-card featured">
+        <div class="price-meta">Agency</div>
+        <h3>White-label licence</h3>
+        <div class="price-tag">From $10,000</div>
+        <p>Deploy eligible multi-tenant modules under your own brand, with tenant limits, support and update terms defined by agreement.</p>
+        <p><strong>Best for:</strong> agencies that already sell delivery and want proven infrastructure underneath it.</p>
+      </div>
+      <div class="price-card">
+        <div class="price-meta">After launch</div>
+        <h3>Optimisation retainer</h3>
+        <div class="price-tag">$500–2,000<span style="font-size:1rem;">/mo</span></div>
+        <p>Monitoring, tuning and a monthly review against the baseline set at kickoff. Scoped to the service level you need.</p>
+        <p><strong>Best for:</strong> teams that want the deployment to keep improving after handover.</p>
+      </div>
     </div>
-    <div class="ownership-points">
-      <div class="ownership-point">
-        <h4>You Control The Roadmap</h4>
-        <p>Majority shareholder. You set strategy and control operations.</p>
+    <p class="micro-note">
+      Smaller hosted teams can start on the Founder's Package at KES 1,000 per month; a scoped deployment is
+      quoted separately. Nothing here is a fixed price, a guaranteed outcome, or a promise of revenue.
+      <a href="/discovery" style="color:var(--accent-2);">Start with the discovery form</a> and we will confirm fit, scope and total cost in writing.
+    </p>
+  </div>
+</section>
+
+<!-- OWNERSHIP AND LICENSING -->
+<section class="section" id="ownership">
+  <div class="container">
+    <h2>Who owns what</h2>
+    <div class="grid-4">
+      <div class="card">
+        <h3>You own the deployment</h3>
+        <p>Your data, your workflows, your admin access. The system is designed to keep running with a named owner on your side, not to expire with a subscription.</p>
       </div>
-      <div class="ownership-point">
-        <h4>Aligned Incentives</h4>
-        <p>Team members, partners, investors hold tokenized portions. Aligned incentives.</p>
+      <div class="card">
+        <h3>Alphadome retains the core</h3>
+        <p>The multi-tenant platform underneath is ours; the configuration, content and operating processes built for you are yours. The split is stated in the agreement.</p>
       </div>
-      <div class="ownership-point">
-        <h4>Programmable Revenue Logic</h4>
-        <p>Payments flow to shareholders based on ownership. No manual distribution.</p>
+      <div class="card">
+        <h3>Licensing is written</h3>
+        <p>Tenant limits, hosting, support, updates, permitted reselling and any revenue share are defined in the licence — never implied by a demo.</p>
       </div>
-      <div class="ownership-point">
-        <h4>Traceable Growth</h4>
-        <p>Blockchain ledger shows all transactions, stakeholder positions, and revenue flows.</p>
+      <div class="card">
+        <h3>No investment offer</h3>
+        <p>Nothing on this page is an offer of equity, tokens or securities. Commercial engagements are services and licences, priced and invoiced as such.</p>
       </div>
     </div>
   </div>
@@ -1388,6 +1760,10 @@
     <div style="text-align: center; margin-top: 3rem;">
       <a href="/portfolio.html" class="btn btn-secondary">See Full Portfolio →</a>
     </div>
+    <p class="micro-note">
+      Each system links to a walkthrough you can open. They are demos of built capability unless a page states
+      otherwise — no logo, usage figure or customer outcome appears here without written permission.
+    </p>
   </div>
 </section>
 
@@ -1418,17 +1794,101 @@
   </div>
 </section>
 
+<!-- FAQ -->
+<section class="section" id="faq">
+  <div class="container">
+    <h2>Questions buyers actually ask</h2>
+    <div class="faq-list">
+      <details>
+        <summary>What can be live in the first 30 days?</summary>
+        <p>
+          One workflow. The fastest to deploy are WhatsApp campaign and follow-up flows, M-Pesa scan-to-pay
+          checkout for a product catalogue, and the content engine for an existing offer. Each depends on
+          integrations you already have — we confirm that in discovery before quoting, not after.
+        </p>
+      </details>
+      <details>
+        <summary>Do I have to replace my current tools?</summary>
+        <p>
+          No. We connect to what you already use where an integration is realistic, and we tell you plainly
+          when something should be replaced instead of wrapped. The deployment is judged on the workflow
+          working, not on how much of your stack we replaced.
+        </p>
+      </details>
+      <details>
+        <summary>Is this just ChatGPT with a dashboard?</summary>
+        <p>
+          No. A language model is used where it is genuinely the right tool — drafting, classification,
+          summarising a conversation. Everything that touches money, stock, permissions or customer records
+          runs through deterministic code with audit trails, fallbacks and role checks around it.
+        </p>
+      </details>
+      <details>
+        <summary>How is the content engine different from other AI blog tools?</summary>
+        <p>
+          Three differences you can verify: it writes a nine-page journey per offer instead of nine variations
+          of one page; each tenant gets a stable editorial voice rather than a generic one; and every draft is
+          scored against a quality gate (prose versus bullets, depth, specifics, an honest limitation section,
+          a call to action) before it publishes.
+        </p>
+      </details>
+      <details>
+        <summary>Can my agency resell it?</summary>
+        <p>
+          Yes, through a written licence starting from $10,000. Tenant limits, hosting, support, updates,
+          permitted reselling and any revenue share are defined in that agreement. We discuss fit before
+          terms, so a licence is not sold to an agency that cannot support it.
+        </p>
+      </details>
+      <details>
+        <summary>What happens if the pilot does not work?</summary>
+        <p>
+          Acceptance criteria are agreed before the build starts, and there is a review checkpoint at the
+          end of the pilot. If the workflow does not meet the agreed measures, we say so and either fix the
+          scope or stop — with the evidence in front of both sides. We do not publish results we cannot stand behind.
+        </p>
+      </details>
+      <details>
+        <summary>Do you have client case studies?</summary>
+        <p>
+          Not yet published with evidence and permission. The systems on this site are shown as demos and
+          build walkthroughs, labelled as such. When a deployment has a baseline, a measurement period and
+          written permission, it will appear here as a case study — not before.
+        </p>
+      </details>
+    </div>
+  </div>
+</section>
+
 <!-- FOOTER CTA -->
 <section class="footer-cta" id="contact">
   <div class="container">
-    <h2>Ready to Convert More Pipeline with Alphadome?</h2>
-    <p>Share your target market, your revenue bottleneck, and your deployment timeline. We will recommend the exact module stack and rollout sequence.</p>
+    <h2>Tell us the workflow that is costing you money</h2>
+    <p>Give us the bottleneck, the tools you already use and your timeline. We will come back with a scoped
+      recommendation: what to deploy first, what it will take, and what we would measure.</p>
     <div class="buttons">
-      <a href="/discovery" class="btn btn-primary">Start Discovery</a>
+      <a href="/discovery" class="btn btn-primary">Start the discovery form</a>
       <a href="https://wa.me/254786817637" class="btn btn-secondary">Chat on WhatsApp</a>
     </div>
   </div>
 </section>
+
+<footer class="site-footer">
+  <div class="container">
+    <div>
+      <strong style="color:var(--text);">Alphadome</strong> · Deployable AI systems, built in Nairobi.
+      <div style="margin-top:.35rem;">Call 0743 780 542 · WhatsApp 0117 604 817</div>
+    </div>
+    <nav aria-label="Footer">
+      <a href="/portfolio.html">Systems</a>
+      <a href="/discovery">Discovery</a>
+      <a href="/blog">Blog</a>
+      <a href="/tenant-dashboard">Tenant portal</a>
+      <a href="/privacy-policy.html">Privacy</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+  </div>
+</footer>
 
 <!-- Floating WhatsApp Assistant -->
 <a href="https://wa.me/254786817637?text=Hello%20Alphadome%20Assistant%2C%20I%20want%20to%20launch%20a%20system%20for%20my%20business." target="_blank" rel="noopener" id="floating-whatsapp" title="Chat with Alphadome Assistant on WhatsApp" aria-label="Chat with Alphadome Assistant on WhatsApp">

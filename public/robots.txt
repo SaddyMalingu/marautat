@@ -1,15 +1,24 @@
 User-agent: *
 Allow: /
 
+# Public marketing and content
+Allow: /
+Allow: /portfolio.html
+Allow: /discovery
+Allow: /blog
+Allow: /privacy-policy.html
+
 # AI Jobs section
 Allow: /ai-jobs
 Allow: /ai-jobs/mercor
 Allow: /ai-jobs/mercor/
 
 # Disallow admin and private routes
-Disallow: /admin/
+Disallow: /admin
+Disallow: /tenant-dashboard
 Disallow: /debug/
 Disallow: /api/opportunities/*/apply
+Disallow: /tenant/
 
 # Sitemap
-Sitemap: https://alphadome.com/sitemap.xml
+Sitemap: https://alphadome.onrender.com/sitemap.xml

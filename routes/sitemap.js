@@ -6,6 +6,8 @@
  */
 
 import { Router } from 'express';
+import fs from 'fs';
+import path from 'path';
 import { getActiveSources, getActiveCategories, getCategoriesForSource, getOpportunities } from '../utils/aiJobsService.js';
 
 const router = Router();
@@ -24,6 +26,26 @@ router.get('/sitemap.xml', async (req, res) => {
     <priority>1.0</priority>
   </url>
   <url>
+    <loc>${SITE_URL}/discovery</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>${SITE_URL}/portfolio.html</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>${SITE_URL}/blog</loc>
+    <changefreq>daily</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>${SITE_URL}/privacy-policy.html</loc>
+    <changefreq>yearly</changefreq>
+    <priority>0.2</priority>
+  </url>
+  <url>
     <loc>${SITE_URL}/ai-jobs</loc>
     <changefreq>daily</changefreq>
     <priority>0.9</priority>
@@ -33,6 +55,31 @@ router.get('/sitemap.xml', async (req, res) => {
     <changefreq>daily</changefreq>
     <priority>0.9</priority>
   </url>`;
+
+    // Published tenant/Writer's Flow pages. They are written to public/blog at
+    // runtime, so the sitemap reads the directory the same way /blog does — a
+    // page that exists on disk is the definition of "published" here.
+    try {
+      const blogDir = path.join(process.cwd(), 'public', 'blog');
+      if (fs.existsSync(blogDir)) {
+        const slugs = fs.readdirSync(blogDir)
+          .filter((f) => f.endsWith('.html') && f !== 'index.html')
+          .map((f) => f.replace(/\.html$/i, ''))
+          .slice(0, 2000);
+        for (const slug of slugs) {
+          const stat = fs.statSync(path.join(blogDir, slug + '.html'));
+          xml += `
+  <url>
+    <loc>${SITE_URL}/blog/${slug}.html</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+    <lastmod>${stat.mtime.toISOString().slice(0, 10)}</lastmod>
+  </url>`;
+        }
+      }
+    } catch (e) {
+      console.warn('[Sitemap] blog pages unavailable:', e.message);
+    }
 
     // --- Mercor (legacy paths, unchanged) ---
     const mercorCategories = mercor ? await getCategoriesForSource(mercor.id) : await getActiveCategories();

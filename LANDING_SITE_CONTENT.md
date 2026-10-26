@@ -1,6 +1,54 @@
 # Alphadome Landing Site Content
 ## https://alphadome.onrender.com/
 
+**Publication note:** Sections beginning with “HOLD” are legacy drafts and must not be published until claims, permissions, product status, and legal review are complete.
+
+---
+
+## Implemented on the live homepage (2026-10-25)
+
+The root `index.html` (served at `/`) now follows the compliance-aware direction
+of this document rather than the older "unleash the ecosystem" copy:
+
+- **Hero** states what is deployed and for whom, with three CTAs (discovery,
+  systems, WhatsApp). The `<h1>` comes before the video showcase, and the video
+  is labelled "Sample brand motion … a capability demo, not a client result".
+- **"What Alphadome actually is"** — three cards plus two honest lists: what a
+  buyer gets, and what this is *not* (no self-serve tool, no chatbot demo, no
+  guaranteed revenue, no investment product, no claim every system is in
+  production for a paying client). Status labels are defined in the same block:
+  **Live** / **Demo** / **Next build slice**.
+- **Content engine section** describes what the repo actually does: nine pages
+  per offer, a per-tenant voice, and a quality gate that scores drafts before
+  publication (see the blog-quality section of
+  `docs/MULTITENANT_AI_JOBS_RUNBOOK.md`).
+- **Pricing** uses the offer ladder as *starting anchors*, not quotes: deployment
+  from $3,000, agency licence from $10,000, optimisation retainer $500–2,000 per
+  month, plus the KES 1,000/month Founder's Package for smaller hosted teams.
+- **Ownership** replaced the tokenized-equity section. It now describes what each
+  side owns and states plainly that nothing on the page is an offer of equity,
+  tokens or securities.
+- **FAQ** answers the objections buyers actually raise, including "do you have
+  case studies" (the honest answer is not yet, with evidence and permission).
+- **SEO** — description, canonical, Open Graph/Twitter cards, and JSON-LD for
+  `Organization`, `Service` + starting-price `Offer`, and `FAQPage` whose
+  questions match the visible copy.
+
+`npm run test:landing` (53 checks) holds this contract: one `<h1>`, metadata,
+parseable structured data, section order, anchor and internal-link resolution,
+allowed price anchors, the banned legacy claims, image alt text and nav basics.
+
+Related pages were brought into line in the same pass:
+
+| Page | Change |
+|---|---|
+| `public/portfolio.html` | Title/description/canonical/OG; the "29 onboarded agents" and "100% navigation" stats (unverifiable) replaced with capability statements; a note that walkthroughs are demos unless a page says otherwise; nav now points at discovery and the blog. |
+| `public/client-discovery-form.html` | Hero reframed around the costly workflow, with a "what happens next" block and a one-working-day reply promise; budget options now include the $3,000 deployment and $10,000 licence anchors alongside monthly hosted ranges; the ownership question is about revenue/profit share rather than owning portions of the system. Field names and stored values are unchanged, so `discovery_submissions` and the approval flow are unaffected. |
+| `public/index.html`, `public/homepage-updated.html` | Stale copies of the homepage: `noindex,follow` plus a canonical to `/` so they cannot compete with the real page. |
+| `public/robots.txt` | Sitemap URL corrected from `alphadome.com` to `alphadome.onrender.com`; `/tenant`, `/tenant-dashboard` and `/admin` disallowed. |
+| `routes/sitemap.js` | Adds the marketing pages, `/blog`, and every published page in `public/blog` (the same directory `/blog` serves). |
+
+
 ---
 
 ## HERO SECTION
@@ -9,34 +57,20 @@
 **Alphadome: Your Network of Digital Employees**
 
 ### Subheading
-Harness the power of AI agents, blockchain tokenization, and automated systems to transform your African brand into a digital enterprise.
+Deployable AI systems for revenue, operations, and scale. We build practical workflows for sales, payments, and business operations, with experience in WhatsApp-first and African-market integrations.
 
 ### CTAs
-- **Primary:** Join Alpha 1 Squad - First 1000 Clients
-- **Secondary:** Explore 3.0 Systems
+- **Primary:** Book a Deployment Call
+- **Secondary:** Watch a Build Walkthrough
 
 ### Background Image/Video
-Animated visualization of the Afrika rock digital asset transforming into connected AI agents, robots, and systems
+Screen recording of a verified workflow, labeled as demo, staging, sandbox, or production as applicable
 
 ---
 
-## FOUNDER'S VISION SECTION
+## HOW WE WORK
 
-### Quote
-> "24 months ago, I collected this Afrika-shaped piece of rock, and promised to make it the most valuable rock in the world—increasing its value from zero to millions if not billions. How was I to achieve this miracle? By turning it into a digital asset that helps Afrikan brands and professionals to build their dreams, realize their visions, missions, goals, and ambitions. That's how Alphadome was born."
-
-**— David Saddy Malingu, Founder and CEO**
-
-### Supporting Text
-24 months into our journey, we've built a fully fledged system that leverages automations and intelligent algorithms to:
-
-- Research market opportunities intelligently
-- Generate relevant branding content at scale
-- Utilize multiple communication channels to match brands with opportunities
-- Convert leads to sales with AI-powered workflows
-- Build information systems that set businesses on a path of scalable growth
-
-**Think of Alphadome as a network of dedicated digital employees handling your performance needs proactively, innovatively, and profitably.**
+Start with one costly or revenue-critical workflow. Agree on a baseline and success measures, connect the required systems, then test and hand off a scoped deployment. Businesses can engage for a deployment; qualified agencies can discuss licensing for eligible modules. WhatsApp and M-Pesa examples show experience with African-market workflows, not a geographic limit on service.
 
 ---
 
@@ -50,14 +84,14 @@ Why Choose Alphadome?
 #### Card 1: AI-Powered Agents
 **Icon:** Robot/Brain
 **Title:** Custom AI-Powered Agents
-**Description:** Specialized AI agents trained to your brand's personality and processes. They handle sales, support, operations, and growth 24/7—without fatigue, burnout, or vacation days.
-**CTA:** Learn About AI Agents
+**Description:** Scope an AI agent around a defined sales, support, or operations workflow, with human escalation and operating limits agreed before launch.
+**CTA:** Discuss a Workflow
 
-#### Card 2: Blockchain Equity Ownership
-**Icon:** Blockchain/Chains
-**Title:** Own Equity in Your Digital Systems
-**Description:** Leverage blockchain crowdfunding to fund your 3.0 systems and agents. Own equity, earn revenue from system operations, and participate in democratic value creation.
-**CTA:** Understand Blockchain Model
+#### Card 2: Workflow Automation
+**Icon:** Workflow
+**Title:** Automate High-Value Workflows
+**Description:** Connect lead capture, customer conversations, payments, and operations in workflows designed around measurable business needs.
+**CTA:** See a Build Walkthrough
 
 #### Card 3: Custom 3.0 Systems
 **Icon:** Blueprint/Layers
@@ -65,162 +99,86 @@ Why Choose Alphadome?
 **Description:** Purpose-built information systems tailored to your business. From e-commerce to healthcare to research publishing—we build the digital infrastructure your brand needs.
 **CTA:** Explore 3.0 Systems
 
-#### Card 4: Physical Embodiment
-**Icon:** Robot Kiosk
-**Title:** Your AI Embodied in Branded Robots
-**Description:** Your AI agents transform into branded physical robots and digital kiosks deployed at customer touchpoints. From storefront assistants to customer service kiosks.
-**CTA:** Meet the Avatar Universe
+#### Card 4: Agency Licensing
+**Icon:** Multi-tenant Systems
+**Title:** Extend Your Agency's Delivery
+**Description:** Discuss white-label licensing for eligible multi-tenant modules, with deployment, tenant limits, support, and commercial terms defined upfront.
+**CTA:** Discuss Licensing
 
 ---
 
-## ALPHA 1 SQUAD SECTION
+## CUSTOM SYSTEMS AND AGENCY LICENSING
 
 ### Title
-Join the Alpha 1 Squad: Transform Your Brand in 24 Months
+Deploy a System or License It for Your Agency
 
 ### Description
-Be one of the first 1,000 brands to build a complete digital ecosystem with Alphadome. Alpha 1 clients receive priority focus, resources, and strategic partnership.
+Buyers can engage Alphadome for a scoped deployment or discuss white-label licensing for agency delivery. Start with one workflow, define success measures, and expand after the pilot is validated.
 
 ### Timeline
-**Duration:** 24-month transformation journey
-**Entry Period:** First 1,000 applications
-**Program Status:** Now Accepting Applications
+**Pilot delivery:** Scoped during discovery; timing depends on integrations and client readiness
+**Agency licensing:** Qualification and terms discussed during discovery
+**Program status:** Accepting qualified pilot and licensing inquiries
 
 ### Key Benefits (Visual Grid)
 
-1. **Custom 3.0 System Design**
-   - Purpose-built information systems aligned with your brand and operations
-   - Databases, dashboards, automation workflows, performance tracking
-   - Examples: AI Architect (design), Journal Hub (publishing), KEMSA 3.0 (supply chain)
+1. **Workflow Discovery**
+   - Select one measurable sales or operations workflow
+   - Document the current process, constraints, and baseline
+   - Agree on pilot acceptance criteria before implementation
 
-2. **Brand-Specific AI Agents**
-   - AI agents fine-tuned to your industry, brand voice, and customer journey
-   - Trained on your data, processes, and competitive landscape
-   - Deployed across WhatsApp, web, and integration points
+2. **Scoped System Deployment**
+   - Define required integrations, data access, and human escalation
+   - Confirm environments, test plan, ownership, and handoff
+   - Expand only after the pilot is reviewed
 
-3. **Physical Avatar & Robot Design**
-   - Choose from 8 production-ready Avatar designs or create custom
-   - Each carries the Afrika rock emblem symbolizing Alphadome ownership
-   - Transformable into physical robots or digital kiosks
+4. **Agency Licensing**
+   - Discuss white-label rights for eligible multi-tenant modules
+   - Define tenant limits, hosting, support, updates, and permitted reselling
+   - Set commercial and revenue-share terms in a written agreement
 
-4. **Blockchain Crowdfunding**
-   - Community funds your system's development through equity crowdfunding
-   - Shareholder model aligns incentives across ecosystem
-   - Revenue sharing as your system scales and succeeds
+5. **Measured Outcomes**
+   - Establish a baseline and agree what will be measured
+   - Review results over a defined period
+   - Publish outcomes only with evidence and client permission
 
-5. **Dedicated Success Team**
-   - Alphadome's full focus on your growth and optimization
-   - Revenue maximization strategies tailored to your business
-   - Continuous refinement and scaling of AI agents and systems
-
-6. **Early Access to Innovation**
-   - First to access new 3.0 systems, agents, and features
-   - Participate in designing the Alphadome platform's future
-   - Priority on physical robot manufacturing and deployment
+6. **Ongoing Optimization**
+   - Define monitoring and support responsibilities
+   - Prioritize changes from observed workflow performance
+   - Set service levels and fees in the engagement agreement
 
 ### Success Stories/Case Studies
-- **Building Plans 3.0:** Architects generating custom designs and renderings in 48 hours instead of 2 weeks
-- **Intra Africa Journal Hub:** Publishing peer-reviewed research 3x faster with automated workflows
-- **KEMSA 3.0:** Healthcare supply chain optimized with AI forecasting and blockchain traceability
-- **Retail Clients:** E-commerce brands achieving 40% conversion improvement with AI agents
+Publish a case study only after verifying the deployment, baseline, measurement period, result, and client permission. Until then, show clearly labeled product demos and build walkthroughs without implying customer outcomes.
 
 ### Call-to-Action
-**Apply for Alpha 1 Squad Now** → Fill Application Form
+**Book a Deployment or Licensing Call** → [Booking page]
 
 ---
 
 ## PRICING SECTION
 
 ### Section Title
-Simple, Flexible Pricing for Every Stage
+Deployment and Licensing Packages
 
-### Two Pricing Tiers
+Pricing depends on workflow scope, integrations, hosting, support, and licensing rights. These are starting anchors, not fixed quotes or guaranteed outcomes.
 
-#### Tier 1: Founder's Package (Entry Level)
-**Price:** 1,000 KES/month
-**Best For:** Emerging brands, solo professionals, test-driving Alphadome
+#### Deployment Pilot
+**Price:** From $3,000
+**Best For:** Businesses that want a scoped AI workflow deployed and measured
 
-**Includes:**
-- ✅ Platform access and WhatsApp Business integration
-- ✅ Basic AI automation workflows
-- ✅ Performance dashboards and analytics
-- ✅ Community support (Slack/WhatsApp)
-- ✅ 40+ pre-built AI agent templates
-- ✅ Product catalog management
-- ✅ Lead tracking and follow-up automation
+**Scope:** Agreed after discovery; may include workflow design, integrations, testing, handoff, and a defined support period.
 
-**Payment Options:**
-- M-Pesa STK Push (Recommended) — Get push prompt monthly
-- Bank Transfer — Direct payment option
-- Other Payment Gateways — Flexible alternatives
-- **Choice:** You select your preferred payment method at any interaction point
+#### Agency License
+**Price:** From $10,000
+**Best For:** Agencies seeking to deploy or resell eligible multi-tenant systems
 
-**Getting Started:**
-1. Visit alphadome.onrender.com
-2. Click "Start with Founder's Package"
-3. Complete quick setup (2-3 minutes)
-4. Choose payment method
-5. Live within hours
+**Scope:** Licensing rights, tenant limits, deployment model, support, updates, and any revenue share are defined by agreement.
 
----
+#### Ongoing Optimization
+**Price:** $500-2,000/month, scoped to service level
+**Best For:** Clients who need ongoing monitoring and workflow tuning after deployment
 
-#### Tier 2: Alpha 1 Squad (Enterprise Custom)
-**Price:** Custom Quote Based on Your Needs
-**Best For:** Established brands, enterprise operations, rapid growth targets
-
-**Includes:**
-- ✅ Everything in Founder's Package
-- ✅ Custom 3.0 System Design (unlimited)
-- ✅ AI Agent Development & Training
-- ✅ Physical Avatar Design & Robotics
-- ✅ Blockchain Crowdfunding Setup
-- ✅ Dedicated Success Manager
-- ✅ Revenue Optimization Consulting
-- ✅ Priority Feature Development
-- ✅ White-label Options
-- ✅ Advanced Analytics & Reporting
-
-**Timeline:** 24-month transformation journey with defined milestones
-
-**Why Invest in Alpha 1 Squad:**
-- 24-month runway to build market dominance
-- Blockchain equity crowdfunding to minimize cash burn
-- Community-funded growth aligned with your success
-- Physical robots and digital kiosks for brand presence
-- Revenue sharing with investors participating in crowdfunding
-
-**Getting Started:**
-1. Book a consultation call
-2. Discuss your goals and opportunities
-3. Receive custom proposal
-4. Sign partnership agreement
-5. Begin 24-month transformation
-
----
-
-### Payment Methods Deep Dive
-
-#### M-Pesa STK Push (Primary)
-- **How It Works:** Automatic push notification each month
-- **Approval:** One-tap confirmation
-- **Processing:** Instant
-- **Best For:** Hassle-free automatic billing
-
-#### Bank Transfer
-- **How It Works:** Direct transfer to Alphadome account
-- **Schedule:** Monthly or custom intervals
-- **Best For:** Corporate accounts, bulk operations
-
-#### Other Gateways
-- **Options:** Credit/Debit card, PayPal, Stripe, Local alternatives
-- **Flexibility:** Mix and match payment methods
-- **Best For:** International clients, enterprise integrations
-
-#### Client-Driven Selection
-**Key:** You choose your payment method regardless of where you interact with Alphadome:
-- Applied via WhatsApp? Choose payment method in chat.
-- Signing up on website? Select at checkout.
-- Phone call with team? Discuss preferred option.
+**Call to action:** Book a discovery call to confirm fit, scope, and total cost.
 
 ---
 
@@ -230,7 +188,7 @@ Simple, Flexible Pricing for Every Stage
 Explore 3.0 Systems in Action
 
 ### Introduction
-3.0 Systems are custom-built, brand-specific information systems that combine AI automation, blockchain tokenization, and intelligent workflows. Each system includes databases, dashboards, agents, NFTs, and physical embodiments.
+3.0 Systems are custom-built, brand-specific information systems that combine AI automation, integrations, and operational workflows. The examples below are demo candidates; confirm implementation status before describing any capability as live or production-ready.
 
 ### Featured Systems Grid
 
@@ -245,14 +203,7 @@ Explore 3.0 Systems in Action
 - Blender integration for advanced visualization
 - Client collaboration and feedback workflows
 
-**Results:**
-- Design cycle time: 2 weeks → 48 hours
-- Cost reduction: 30-40% on rendering
-- Client satisfaction: Visualize before building
-
-**Clients Using:** Architecture firms, construction companies, interior designers
-
-**NFT Component:** Tokenized design blueprints, rendered assets sold as digital collectibles
+**Proof to capture before publishing outcomes:** Baseline and measured design cycle time, rendering cost, and client approval for any named deployment.
 
 ---
 
@@ -268,14 +219,7 @@ Explore 3.0 Systems in Action
 - Community engagement and analytics
 - Payment processing (Article Processing Charges)
 
-**Results:**
-- Publish cycle: 6 months → 8 weeks
-- Researcher reach: Across African continent and diaspora
-- Sustainability: Revenue from APCs and affiliate partnerships
-
-**Clients Using:** Universities, research institutes, African publishers
-
-**NFT Component:** Author NFTs, research collectibles, institution badges
+**Proof to capture before publishing outcomes:** Verified workflow timestamps, publication volume, measurement period, and permission for any institution or author reference.
 
 ---
 
@@ -287,18 +231,11 @@ Explore 3.0 Systems in Action
 - Real-time inventory tracking and dashboards
 - AI-powered demand forecasting
 - Anomaly detection for supply disruptions
-- Blockchain traceability for drugs and supplies
+- Supply-chain traceability and audit workflows, where implemented
 - Route optimization for distribution
 - Compliance and regulatory tracking
 
-**Results:**
-- Inventory accuracy: 85% → 99.2%
-- Stockout prevention: 60% reduction
-- Distribution efficiency: 25% faster delivery
-
-**Clients Using:** Healthcare providers, pharmaceutical distributors, hospitals
-
-**NFT Component:** Supply chain transparency badges, compliance certificates
+**Proof to capture before publishing outcomes:** Validated inventory baseline, stockout and delivery measures, test/production environment, and authorization to name any organization. Do not imply healthcare deployment or compliance certification without evidence.
 
 ---
 
@@ -314,12 +251,7 @@ Explore 3.0 Systems in Action
 - Social media integration and listening
 - Analytics and recommendation engine
 
-**Results:**
-- Omnichannel sales 3x conversion improvement
-- Inventory waste: 20% reduction
-- Customer lifetime value: 40% increase
-
-**Clients Using:** Anupi Fashions, Beauty Square, Ebrahim Electronics, Kam Pharmacy
+**Proof to capture before publishing outcomes:** Funnel definition, order and inventory baseline, measurement period, attribution method, and written permission for client names/logos.
 
 ---
 
@@ -335,12 +267,7 @@ Explore 3.0 Systems in Action
 - Performance analytics and reporting
 - Certification and credentials tracking
 
-**Results:**
-- Administrative time: 60% reduction
-- Client management: Scales to 10x without hiring
-- Revenue per client: 35% increase through upselling automation
-
-**Clients Using:** Coach Dawn, Coach Peter, Dr. Cindy, Vet Martin
+**Proof to capture before publishing outcomes:** Baseline and measured administrative time, cohort and period, attribution method, and written permission for any client reference.
 
 ---
 
@@ -375,6 +302,10 @@ Explore 3.0 Systems in Action
 - Omnichannel brand presence
 
 ---
+
+## HOLD: LEGACY AVATAR, INVESTOR, AND PROMOTIONAL DRAFTS
+
+**Do not include this section or anything below it in the public site or sales path yet.** It contains unverified production and customer claims, speculative metrics/projections, crowdfunding and tokenized ownership language, testimonials/widgets, and outdated onboarding copy. Validate product status and evidence; obtain qualified legal review before publishing investment, equity, or revenue-share material. Move any approved material into a separately reviewed destination.
 
 ## AVATAR UNIVERSE SECTION
 

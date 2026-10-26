@@ -8,6 +8,13 @@
 
 ## 🎯 FOR DIFFERENT AUDIENCES
 
+### 📣 For Sales, Content, and Agency Partners
+**Start here:**
+1. [ALPHADOME_HIGH_TICKET_CONTENT_ENGINE.md](ALPHADOME_HIGH_TICKET_CONTENT_ENGINE.md) — buyer focus, offer ladder, flagship build, content cadence, lead path, and 90-day execution
+2. [LANDING_SITE_CONTENT.md](LANDING_SITE_CONTENT.md) — current landing-copy source; verify claims and implementation status before publishing
+
+**Commercial focus:** International agencies for white-label licensing, followed by international SME deployment buyers. Use real deployments and measured outcomes to earn trust.
+
 ### 👔 For Project Managers / Non-Technical Stakeholders
 **Read these (in order):**
 1. [EXECUTIVE_SUMMARY.md](EXECUTIVE_SUMMARY.md) — 5 min overview of problem & solution
@@ -66,6 +73,9 @@
 
 ```
 📁 Project Root
+│
+├── 📄 ALPHADOME_HIGH_TICKET_CONTENT_ENGINE.md ⭐ SALES & CONTENT START HERE
+│   └─ Buyer focus, offers, proof build, lead path, and 90-day plan
 │
 ├── 📄 MULTI_TENANT_README.md (THIS FILE)
 │   └─ Quick reference for all stakeholders
