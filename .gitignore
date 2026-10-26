@@ -11,3 +11,13 @@
 .ps*.txt
 .wait_deploy.ps1
 .run_live.ps1
+
+# More scratch from live verification: route/landing audits and the z_* probe
+# outputs. They are evidence copied out of terminals, never inputs to a build.
+.audit*
+.g.txt
+.m4.txt
+z_ready.json
+z_rev.json
+z_risk.json
+z_run1.txt
