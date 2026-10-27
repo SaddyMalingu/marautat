@@ -27,7 +27,10 @@
     /* One breakpoint owns the drawer: below 1024px the section list slides over the
        content, so a 768px tablet gets the whole width for its tables instead of the
        528px a permanent 240px column would leave. Above it the column is sticky. */
-    @media (max-width: 1023px) { .app-shell { grid-template-columns: 1fr; } .sidebar { display: none; } .sidebar.open { display: flex; position: fixed; inset: 60px 0 0 0; z-index: 220; width: min(84vw, 300px); box-shadow: 10px 0 34px rgba(0,0,0,0.55); animation: navIn 0.18s ease; } }
+    /* Below 1024px the section list becomes an overlay drawer (declared further
+       down, after the base .sidebar rule -- a media query adds no specificity, so
+       an override placed above the base rule silently loses the cascade). */
+    @media (max-width: 1023px) { .app-shell { grid-template-columns: 1fr; } }
     /* â”€â”€â”€ Topbar â”€â”€â”€ */
     .topbar { grid-column: 1 / -1; background: var(--bg-sidebar); border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 20px; gap: 14px; position: sticky; top: 0; z-index: 100; }
     .topbar-brand { font-weight: 700; font-size: 1.05rem; color: var(--accent); flex: 1; }
@@ -166,6 +169,37 @@
     .table-scroll { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; }
     .table-scroll > .table, .table-scroll > table { margin-bottom: 0; }
     .table-scroll.table-wide > .table, .table-scroll.table-wide > table { min-width: 560px; }
+    /* ─── Phone/tablet drawer. This block has to live BELOW the base .sidebar
+       rule: a media query adds no specificity, so the same selector declared
+       earlier loses to the later base rule and the 30-row list renders inline at
+       full width -- which is exactly how the rail ended up filling the screen and
+       trapping the page behind a body scroll lock. ─── */
+    @media (max-width: 1023px) {
+      .sidebar { display: none; }
+      .sidebar.open {
+        display: flex;
+        position: fixed;
+        top: var(--topbar-h);
+        left: 0;
+        right: auto;
+        bottom: 0;
+        /* Explicit height as well as top/bottom: some WebViews ignore one or the
+           other, and an unconstrained fixed box cannot scroll internally. */
+        height: calc(100vh - var(--topbar-h));
+        height: calc(100dvh - var(--topbar-h));
+        max-height: calc(100vh - var(--topbar-h));
+        max-height: calc(100dvh - var(--topbar-h));
+        width: min(82vw, 320px);
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        touch-action: pan-y;
+        padding-bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+        z-index: 220;
+        box-shadow: 10px 0 34px rgba(0,0,0,0.55);
+        animation: navIn 0.18s ease;
+      }
+    }
+
     /* ─── Sticky rail on desktop: the 30-row section list used to scroll away ─── */
     @media (min-width: 1024px) {
       .sidebar { position: sticky; top: var(--topbar-h); align-self: start; max-height: calc(100vh - var(--topbar-h)); max-height: calc(100dvh - var(--topbar-h)); }
@@ -4039,6 +4073,9 @@ function openNav() {
   const sb = document.getElementById('sidebar');
   const scrim = document.getElementById('navScrim');
   if (!sb) return;
+  // From 1024px the rail is permanent: opening a drawer there would drop a scrim
+  // over the only navigation the desktop user has.
+  if (!navIsDrawer()) return;
   sb.classList.add('open');
   if (scrim) { scrim.classList.add('show'); scrim.setAttribute('aria-hidden', 'false'); }
   document.body.classList.add('nav-open');

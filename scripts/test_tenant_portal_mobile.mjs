@@ -49,14 +49,42 @@ ok('media queries all open a block', count(/@media[^{]*\{/g, style) === count(/@
   count(/@media[^{]*\{/g, style) + ' of ' + count(/@media/g, style));
 
 // ---- 3. One breakpoint owns the drawer ------------------------------------
+// Cascade order is the whole ballgame here: a @media block adds no specificity,
+// so a `max-width` override declared ABOVE the base rule silently loses and the
+// 30-row list renders inline at full width on a phone. That shipped once; the
+// index comparisons below are what stop it shipping again.
+const baseSidebarAt = style.search(/(^|\n)\s*\.sidebar\s*\{/);
+const mobileNoneAt = style.search(/\.sidebar\s*\{\s*display:\s*none/);
+const drawerBlockAt = style.search(/\.sidebar\.open\s*\{/);
+const drawerBlock = (style.match(/\.sidebar\.open\s*\{([\s\S]*?)\}/) || ['', ''])[1];
 ok('the drawer breakpoint is 1023px', /@media \(max-width: 1023px\)/.test(style));
 ok('the old 767px shell media query is gone', !/@media \(max-width: 767px\)\s*\{[^}]*\.app-shell/.test(style));
-ok('the sidebar is hidden only inside the drawer breakpoint',
-  !/(^|\n)\s*\.sidebar\s*\{[^}]*display:\s*none/.test(style));
-ok('the open drawer is fixed, capped and above the content',
-  /\.sidebar\.open\s*\{[^}]*position:\s*fixed/.test(style) &&
-  /\.sidebar\.open\s*\{[^}]*width:\s*min\(84vw,\s*300px\)/.test(style) &&
-  /\.sidebar\.open\s*\{[^}]*z-index:\s*220/.test(style));
+ok('the base .sidebar rule is found', baseSidebarAt > -1, String(baseSidebarAt));
+ok('the sidebar is hidden at phone width', mobileNoneAt > -1, 'no .sidebar{display:none}');
+ok('the hide rule comes AFTER the base .sidebar rule (cascade order)',
+  mobileNoneAt > baseSidebarAt, 'base@' + baseSidebarAt + ' hide@' + mobileNoneAt);
+ok('the open drawer is declared after the base rule too',
+  drawerBlockAt > baseSidebarAt, 'base@' + baseSidebarAt + ' drawer@' + drawerBlockAt);
+ok('the hidden rule is inside the drawer media block',
+  (() => {
+    const before = style.slice(0, mobileNoneAt);
+    return before.lastIndexOf('@media (max-width: 1023px)') > before.lastIndexOf('@media (min-width:');
+  })());
+ok('the open drawer is fixed and above the content',
+  /position:\s*fixed/.test(drawerBlock) && /z-index:\s*220/.test(drawerBlock),
+  drawerBlock.trim().slice(0, 60));
+ok('the open drawer is narrower than the phone it covers',
+  /width:\s*min\(82vw,\s*320px\)/.test(drawerBlock), drawerBlock.trim().slice(0, 60));
+// A fixed box with no bounded height cannot scroll internally: the whole list
+// then hangs off the viewport with a body scroll lock in front of it.
+ok('the open drawer is pinned under the topbar',
+  /top:\s*var\(--topbar-h\)/.test(drawerBlock) && /bottom:\s*0/.test(drawerBlock));
+ok('the open drawer has a bounded height (vh and dvh)',
+  /height:\s*calc\(100vh - var\(--topbar-h\)\)/.test(drawerBlock) &&
+  /height:\s*calc\(100dvh - var\(--topbar-h\)\)/.test(drawerBlock) &&
+  /max-height:\s*calc\(100dvh - var\(--topbar-h\)\)/.test(drawerBlock));
+ok('the open drawer scrolls itself, vertically only',
+  /overflow-y:\s*auto/.test(drawerBlock) && /touch-action:\s*pan-y/.test(drawerBlock));
 ok('the rail is sticky on desktop and scrolls on its own',
   /@media \(min-width: 1024px\)[\s\S]{0,260}\.sidebar\s*\{[^}]*position:\s*sticky/.test(style) &&
   /\.sidebar\s*\{[^}]*overflow-y:\s*auto/.test(style));
@@ -427,15 +455,22 @@ if (runError === null) {
   win.fire('resize');
   ok('resizing out of the drawer breakpoint cleans up the scrim',
     !sidebar.classList.contains('open') && !body.classList.contains('nav-open'));
-}
 
-console.log('\n' + pass + ' passed, ' + fail + ' failed');
-process.exit(fail ? 1 : 0);
+  // The rail is permanent from 1024px: a drawer there would drop a scrim over the
+  // only navigation a desktop user has.
+  ctx.openNav();
+  ok('openNav is a no-op on desktop, where the rail is permanent',
+    !sidebar.classList.contains('open') && !scrim.classList.contains('show') &&
+    !body.classList.contains('nav-open') && menuBtn.getAttribute('aria-expanded') === 'false',
+    sidebar.className + ' / ' + body.className);
 
   navFilter.value = 'ord';
+  ctx.applyNavFilter('ord');
   ctx.closeNav(false);
   ok('closing the drawer also clears a half-typed filter',
     navFilter.value === '' && !itemHome.classList.contains('nav-hidden'));
-}
+  } // ---- end 16 ----
+} // ---- end 15 ----
 
+console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

@@ -68,6 +68,46 @@ it" into a pilot.
 3. `go()` now writes history. A link that expects `location.hash` to be empty would
    see `#/home`; nothing in the repo reads it.
 
+## Regression: the drawer filled the screen (fixed 2026-10-27)
+
+What merchants saw on a phone: the section list rendered as a full-width column
+under the topbar, could not be scrolled to reach Writer's Flow, and picking a
+section left the screen frozen behind it.
+
+Cause was cascade order, not a missing feature. `@media` adds **no** specificity,
+so a `max-width: 1023px` block that declares `.sidebar { display: none }` placed
+*above* the base `.sidebar { display: flex; ... }` rule loses to it, because the
+later rule of equal specificity wins. The drawer rules had been inserted up with
+the shell grid instead of below the rail.
+
+What that produced, measured in Chrome at 360×640:
+
+| state            | before the fix                              | after            |
+| ---------------- | ------------------------------------------- | ---------------- |
+| drawer closed    | `display:flex`, static, **360×1879px** inline | `display:none`   |
+| drawer open      | fixed 300×580, scrollable                   | fixed 295×580, scrollable |
+| after a tap      | back to the 1879px inline column            | `display:none`   |
+
+The full-height inline column pushed the content off screen while
+`body.nav-open { overflow: hidden }` removed the only way to scroll, which is the
+"nothing moves" half of the report.
+
+Rules that follow from it, and are now asserted in
+`scripts/test_tenant_portal_mobile.mjs`:
+
+1. The phone drawer block must be declared **after** the base `.sidebar` rule;
+   the test compares character offsets, not just that both strings exist.
+2. The open drawer must be pinned (`top: var(--topbar-h)`, `bottom: 0`) *and*
+   given an explicit `height`/`max-height` in `vh` and `dvh`. A fixed box with no
+   bounded height cannot scroll internally, so the list hangs off the viewport.
+3. `openNav()` is a no-op from 1024px up, where the rail is permanent — otherwise
+   a stray call drops a scrim over the only navigation a desktop user has.
+
+Geometry was verified with a throwaway Chrome DevTools Protocol run (mobile
+emulation, stubbed `fetch`, real stylesheet) at 360×640, 812×375, 768×1024 and
+1024×768, plus a screenshot of the open drawer. Static greps alone would not have
+caught this one: the markup, the media query and the JS were all correct.
+
 ## Next validation step
 
 Signed in as a test merchant on a real phone (360px): open the drawer with the
