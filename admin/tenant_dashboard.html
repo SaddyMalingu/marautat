@@ -152,7 +152,7 @@
     /* ─── Drawer scrim: tapping the page behind the sections closes them. Before
        this the drawer floated over the content with no way back except tapping a
        section, and the page behind it still scrolled under the thumb. ─── */
-    .nav-scrim { position: fixed; inset: var(--topbar-h) 0 0 0; background: rgba(6,9,16,0.66); z-index: 210; display: none; -webkit-tap-highlight-color: transparent; }
+    .nav-scrim { position: fixed; inset: var(--topbar-h) 0 0 0; background: rgba(6,9,16,0.66); z-index: 210; display: none; -webkit-tap-highlight-color: transparent; touch-action: none; }
     .nav-scrim.show { display: block; animation: scrimIn 0.16s ease; }
     /* ─── Section filter: 30 rows is a long scroll on a phone ─── */
     .nav-filter-wrap { position: relative; padding: 0 12px 10px; flex-shrink: 0; }

@@ -338,6 +338,8 @@ if (runError === null) {
     sidebar.classList.contains('open') && scrim.classList.contains('show') &&
     body.classList.contains('nav-open') && menuBtn.getAttribute('aria-expanded') === 'true');
   ok('the scrim is announced as visible', scrim.getAttribute('aria-hidden') === 'false');
+  ok('the scrim swallows drags so the page behind cannot scroll',
+    /\.nav-scrim \{[^}]*touch-action: none/.test(style));
 
   ctx.closeNav(true);
   ok('closeNav reverses all of it and returns focus to the button',
