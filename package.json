@@ -23,6 +23,7 @@
     "test:site-hygiene": "node scripts/test_site_hygiene.mjs",
     "test:landing": "node scripts/test_landing_site.mjs",
     "test:admin-console": "node scripts/test_admin_console_html.mjs",
+    "test:tenant-portal": "node scripts/test_tenant_portal_mobile.mjs",
     "test:discovery": "node scripts/test_discovery_approvals.mjs",
     "test:tenant-merge": "node scripts/test_tenant_merge_sql.mjs",
     "test:bot-schema": "node scripts/test_bot_schema_reconcile_sql.mjs",

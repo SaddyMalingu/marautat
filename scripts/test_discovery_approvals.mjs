@@ -334,7 +334,9 @@ ok('an expired cookie is cleared instead of dead-ending the page',
 ok('/tenant/session/me rehydrates a session from the cookie',
   /app\.get\("\/tenant\/session\/me", tenantSessionAuth/.test(server));
 ok('a stored session is honoured before the missing-key guard',
-  /if \(loadSession\(\)\) \{ showApp\(\); go\('home'\); return; \}\s*\n\s*if \(await restoreSessionFromCookie\(\)\)/.test(tenantDash),
+  // The destination only has to be a section go() accepts; what matters is that
+  // loadSession() is tried first, then the cookie, then the key guard.
+  /if \(loadSession\(\)\) \{ showApp\(\); go\([^;]*\); return; \}\s*\n\s*if \(await restoreSessionFromCookie\(\)\)/.test(tenantDash),
   'F5 used to fall through to the key guard');
 ok('boot is async so it can await the cookie restore', /async function boot\(\)/.test(tenantDash));
 ok('the portal rehydrates from the cookie over same-origin fetch',

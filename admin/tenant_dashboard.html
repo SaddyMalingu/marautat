@@ -23,30 +23,37 @@
     *, *::before, *::after { box-sizing: border-box; }
     body { font-family: 'Inter', system-ui, Arial, sans-serif; background: var(--bg-main); color: var(--text-light); min-height: 100vh; margin: 0; }
     /* â”€â”€â”€ App Shell â”€â”€â”€ */
-    .app-shell { display: grid; grid-template-columns: 240px 1fr; grid-template-rows: 60px 1fr; min-height: 100vh; }
-    @media (max-width: 767px) { .app-shell { grid-template-columns: 1fr; } .sidebar { display: none; } .sidebar.open { display: flex; position: fixed; inset: 60px 0 0 0; z-index: 200; width: 240px; } }
+    .app-shell { display: grid; grid-template-columns: 240px 1fr; grid-template-rows: 60px 1fr; min-height: 100vh; min-height: 100dvh; }
+    /* One breakpoint owns the drawer: below 1024px the section list slides over the
+       content, so a 768px tablet gets the whole width for its tables instead of the
+       528px a permanent 240px column would leave. Above it the column is sticky. */
+    @media (max-width: 1023px) { .app-shell { grid-template-columns: 1fr; } .sidebar { display: none; } .sidebar.open { display: flex; position: fixed; inset: 60px 0 0 0; z-index: 220; width: min(84vw, 300px); box-shadow: 10px 0 34px rgba(0,0,0,0.55); animation: navIn 0.18s ease; } }
     /* â”€â”€â”€ Topbar â”€â”€â”€ */
     .topbar { grid-column: 1 / -1; background: var(--bg-sidebar); border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 20px; gap: 14px; position: sticky; top: 0; z-index: 100; }
     .topbar-brand { font-weight: 700; font-size: 1.05rem; color: var(--accent); flex: 1; }
     .topbar-user { font-size: 0.88rem; color: var(--text-muted); }
     .topbar-logout { font-size: 0.84rem; color: var(--danger); cursor: pointer; background: none; border: none; padding: 4px 10px; border-radius: 6px; transition: background 0.2s; }
     .topbar-logout:hover { background: rgba(244,63,94,0.13); }
-    .topbar-menu-btn { display: none; background: none; border: none; color: var(--text-light); font-size: 1.2rem; cursor: pointer; }
-    @media (max-width: 767px) { .topbar-menu-btn { display: block; } }
+    .topbar-menu-btn { display: none; background: none; border: none; color: var(--text-light); font-size: 1.2rem; cursor: pointer; width: 44px; height: 44px; margin-left: -10px; border-radius: 10px; align-items: center; justify-content: center; }
+    .topbar-menu-btn:active { background: rgba(56,189,248,0.14); }
+    @media (max-width: 1023px) { .topbar-menu-btn { display: inline-flex; } }
     /* â”€â”€â”€ Sidebar â”€â”€â”€ */
-    .sidebar { background: var(--bg-sidebar); border-right: 1px solid var(--border); display: flex; flex-direction: column; padding: 18px 0; overflow-y: auto; }
+    .sidebar { background: var(--bg-sidebar); border-right: 1px solid var(--border); display: flex; flex-direction: column; padding: 18px 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
     .sidebar-label { font-size: 0.72rem; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: var(--text-muted); padding: 14px 20px 6px 20px; }
     .nav-item { display: flex; align-items: center; gap: 10px; padding: 10px 20px; cursor: pointer; font-size: 0.92rem; font-weight: 500; color: var(--text-muted); transition: all 0.15s; border-left: 3px solid transparent; user-select: none; }
     .nav-item:hover { background: rgba(56,189,248,0.07); color: var(--text-light); }
     .nav-item.active { background: rgba(56,189,248,0.12); color: var(--accent); border-left-color: var(--accent); }
     .nav-icon { width: 18px; text-align: center; font-size: 0.95rem; }
     /* â”€â”€â”€ Main â”€â”€â”€ */
-    .main-area { overflow-y: auto; padding: 28px 28px 60px; background: var(--bg-main); }
-    @media (max-width: 575px) { .main-area { padding: 16px 12px 60px; } }
+    /* min-width:0 stops a wide table from stretching its grid column (which made the
+       whole document scroll sideways on a phone). The bottom padding clears the
+       WhatsApp bubble and the iPhone home bar. */
+    .main-area { overflow-y: auto; padding: 28px 28px calc(60px + env(safe-area-inset-bottom, 0px)); background: var(--bg-main); min-width: 0; }
+    @media (max-width: 575px) { .main-area { padding: 16px 12px calc(78px + env(safe-area-inset-bottom, 0px)); } }
     /* â”€â”€â”€ Cards â”€â”€â”€ */
     .section-hdr { font-size: 1.3rem; font-weight: 700; color: var(--text-light); margin-bottom: 20px; display: flex; align-items: center; gap: 10px; }
     .section-hdr i { color: var(--accent); }
-    .stat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); gap: 14px; margin-bottom: 22px; }
+    .stat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; margin-bottom: 22px; }
     .stat-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 18px 16px; }
     .stat-label { font-size: 0.78rem; color: var(--text-muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
     .stat-value { font-size: 2rem; font-weight: 700; color: var(--accent); line-height: 1; margin-bottom: 4px; }
@@ -88,7 +95,7 @@
     .toast-err { border-left: 3px solid var(--danger); }
     @keyframes slideIn { from { transform: translateX(30px); opacity: 0; } to { transform: none; opacity: 1; } }
     /* â”€â”€â”€ Login â”€â”€â”€ */
-    .login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #0f1117 0%, #181c2f 100%); }
+    .login-wrap { min-height: 100vh; min-height: 100dvh; padding: 20px; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #0f1117 0%, #181c2f 100%); }
     .login-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 18px; padding: 40px 36px; width: 100%; max-width: 440px; box-shadow: 0 8px 40px rgba(0,0,0,0.4); }
     .login-logo { text-align: center; margin-bottom: 24px; }
     .login-logo i { font-size: 2.4rem; color: var(--accent); }
@@ -97,7 +104,8 @@
     /* â”€â”€â”€ Misc â”€â”€â”€ */
     .spinner-sm { width: 16px; height: 16px; border-width: 2px; display: inline-block; vertical-align: text-bottom; }
     .app-hidden { display: none !important; }
-    #floating-wa { position: fixed; right: 22px; bottom: 22px; z-index: 999; }
+    #floating-wa { position: fixed; right: calc(22px + env(safe-area-inset-right, 0px)); bottom: calc(22px + env(safe-area-inset-bottom, 0px)); z-index: 999; }
+    body.nav-open #floating-wa { display: none; }
     #floating-wa img { width: 52px; height: 52px; border-radius: 50%; box-shadow: 0 4px 16px rgba(0,0,0,0.3); transition: transform 0.2s; display: block; }
     #floating-wa:hover img { transform: scale(1.08); }
     .bar-wrap { display: flex; flex-direction: column; gap: 8px; }
@@ -123,6 +131,95 @@
     .wf-share-tags { display: flex; flex-wrap: wrap; gap: 6px; }
     .wf-share-tag { font-size: 0.74rem; color: var(--accent); background: rgba(56,189,248,0.1); border: 1px solid rgba(56,189,248,0.25); border-radius: 20px; padding: 2px 9px; }
     .wf-share-actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 18px 16px; border-top: 1px solid var(--border); }
+    /* ═══ Responsive shell: 320px phones → ultrawide monitors ═══════════════════
+       Breakpoints kept deliberately few:
+         <576px    phone portrait   (2-up KPI cards, edge-to-edge panels)
+         576-1023  phone landscape / tablet (navigation is a drawer)
+         1024-1439 laptop (permanent sticky sidebar)
+         1440+     wide desktop (wider rail, capped reading width)
+       576px is Bootstrap's own sm boundary, so its grid classes line up. */
+    :root { --topbar-h: 60px; --sidebar-w: 240px; }
+    html { -webkit-text-size-adjust: 100%; }
+    /* A stray wide element must never make the phone scroll the whole document.
+       overflow-x:clip is preferred where supported: unlike hidden it does not
+       create a scroll container, so the sticky topbar and rail keep working. */
+    body { overflow-x: hidden; }
+    @supports (overflow-x: clip) { body { overflow-x: clip; } }
+    body.nav-open { overflow: hidden; }
+    #spa { max-width: 1440px; margin: 0 auto; }
+    @keyframes navIn { from { transform: translateX(-14px); opacity: 0.35; } to { transform: none; opacity: 1; } }
+    @keyframes scrimIn { from { opacity: 0; } to { opacity: 1; } }
+    /* ─── Drawer scrim: tapping the page behind the sections closes them. Before
+       this the drawer floated over the content with no way back except tapping a
+       section, and the page behind it still scrolled under the thumb. ─── */
+    .nav-scrim { position: fixed; inset: var(--topbar-h) 0 0 0; background: rgba(6,9,16,0.66); z-index: 210; display: none; -webkit-tap-highlight-color: transparent; }
+    .nav-scrim.show { display: block; animation: scrimIn 0.16s ease; }
+    /* ─── Section filter: 30 rows is a long scroll on a phone ─── */
+    .nav-filter-wrap { position: relative; padding: 0 12px 10px; flex-shrink: 0; }
+    .nav-filter-wrap .fa-magnifying-glass { position: absolute; left: 24px; top: 11px; font-size: 0.78rem; color: var(--text-muted); pointer-events: none; }
+    .nav-filter { width: 100%; background: var(--bg-main); border: 1px solid var(--border); border-radius: 8px; color: var(--text-light); font-size: 0.86rem; padding: 9px 10px 9px 30px; }
+    .nav-filter::placeholder { color: var(--text-muted); }
+    .nav-filter:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px rgba(56,189,248,0.18); }
+    .nav-empty { padding: 2px 20px 10px; font-size: 0.8rem; color: var(--text-muted); }
+    .nav-hidden { display: none !important; }
+    /* ─── Tables: a scroll container of their own instead of the document ─── */
+    .table-scroll { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; }
+    .table-scroll > .table, .table-scroll > table { margin-bottom: 0; }
+    .table-scroll.table-wide > .table, .table-scroll.table-wide > table { min-width: 560px; }
+    /* ─── Sticky rail on desktop: the 30-row section list used to scroll away ─── */
+    @media (min-width: 1024px) {
+      .sidebar { position: sticky; top: var(--topbar-h); align-self: start; max-height: calc(100vh - var(--topbar-h)); max-height: calc(100dvh - var(--topbar-h)); }
+    }
+    /* ─── Touch sizing and phone density. Scoped to .sidebar because .nav-item is
+       also used by the Writer's Flow pill tabs, which are Bootstrap rows. ─── */
+    @media (max-width: 767px) {
+      .sidebar .nav-item { min-height: 46px; padding: 12px 20px; }
+      .btn, .btn-accent, .btn-outline-acc, .btn-danger-out { min-height: 40px; }
+      .btn-sm { min-height: 34px; }
+      .table td .btn, .table td .btn-sm { min-height: 32px; }
+      /* iOS zooms the page when a focused field renders under 16px, which leaves
+         the merchant looking at half a form. The small variants are 14px. */
+      .form-control-sm, .form-select-sm, .input-group-sm > .form-control, .input-group-sm > .form-select, .input-group-sm > .input-group-text { font-size: 16px; }
+      .topbar { padding: 0 12px; gap: 8px; }
+      .topbar-brand { font-size: 0.95rem; }
+      .topbar-user { max-width: 26vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .topbar-logout { padding: 8px 6px; }
+      .toast-area { top: calc(var(--topbar-h) + 8px); left: 10px; right: 10px; max-width: none; }
+      .toast-msg { font-size: 0.85rem; padding: 10px 12px; }
+      #floating-wa { right: calc(12px + env(safe-area-inset-right, 0px)); bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
+      #floating-wa img { width: 46px; height: 46px; }
+      .panel { padding: 15px; border-radius: 12px; }
+      .stat-card { padding: 14px 12px; }
+      .stat-value { font-size: 1.55rem; }
+      .section-hdr { font-size: 1.12rem; flex-wrap: wrap; gap: 8px; }
+      .login-card { padding: 26px 20px; border-radius: 14px; }
+      .sidebar .nav-item:active { background: rgba(56,189,248,0.16); }
+    }
+    @media (max-width: 575px) {
+      .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+      .login-wrap { padding: 14px; }
+      .wf-share-backdrop { padding: 10px 8px 24px; }
+      .wf-share-actions .btn { flex: 1 1 45%; }
+      .kv-row { flex-wrap: wrap; gap: 2px; }
+      /* Inline styles on the Customer 360 card win over a plain rule. */
+      #custModal > div { margin: 10px !important; padding: 16px !important; border-radius: 12px !important; }
+    }
+    /* Landscape phones: the topbar and the KPI row must not eat the height. */
+    @media (max-width: 900px) and (orientation: landscape) {
+      .main-area { padding-top: 12px; }
+      .sidebar .nav-item { min-height: 40px; padding: 8px 20px; }
+    }
+    @media (min-width: 1440px) {
+      .app-shell { grid-template-columns: 264px 1fr; }
+      .main-area { padding: 32px 40px 72px; }
+    }
+    /* Keyboard users get a ring on every control; taps do not. */
+    .sidebar .nav-item:focus-visible, .btn:focus-visible, .btn-accent:focus-visible, .btn-outline-acc:focus-visible,
+    .btn-danger-out:focus-visible, .topbar-menu-btn:focus-visible, .topbar-logout:focus-visible,
+    .nav-filter:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; scroll-behavior: auto !important; }
+    }
   </style>
 </head>
 <body>
@@ -150,13 +247,18 @@
 <!-- â”€â”€ App Shell â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
 <div id="appShell" class="app-shell app-hidden">
   <header class="topbar">
-    <button class="topbar-menu-btn" id="menuBtn"><i class="fa-solid fa-bars"></i></button>
+    <button class="topbar-menu-btn" id="menuBtn" type="button" aria-label="Open sections" aria-expanded="false" aria-controls="sidebar"><i class="fa-solid fa-bars" aria-hidden="true"></i></button>
     <span class="topbar-brand"><i class="fa-solid fa-store me-2"></i>Tenant Portal</span>
     <span class="topbar-user" id="topUser"></span>
     <button class="topbar-logout" id="logoutBtn"><i class="fa-solid fa-right-from-bracket me-1"></i>Logout</button>
   </header>
 
-  <nav class="sidebar" id="sidebar">
+  <nav class="sidebar" id="sidebar" aria-label="Tenant portal sections">
+    <div class="nav-filter-wrap">
+      <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+      <input id="navFilter" class="nav-filter" type="search" placeholder="Jump to a section" aria-label="Filter sections" autocomplete="off" enterkeyhint="search" />
+    </div>
+    <div class="nav-empty" id="navEmpty" hidden>No section matches that.</div>
     <div class="sidebar-label">Overview</div>
     <div class="nav-item active" data-sec="home"><span class="nav-icon"><i class="fa-solid fa-gauge-high"></i></span>Dashboard</div>
     <div class="sidebar-label">Sales</div>
@@ -205,6 +307,9 @@
     <div class="nav-item" data-sec="reviews"><span class="nav-icon"><i class="fa-solid fa-star-half-stroke"></i></span>Reviews</div>
     <div class="nav-item" data-sec="help"><span class="nav-icon"><i class="fa-solid fa-circle-question"></i></span>Help &amp; Support</div>
   </nav>
+
+  <!-- Tapping the dimmed page behind the section list closes it (phones/tablets). -->
+  <div class="nav-scrim" id="navScrim" aria-hidden="true"></div>
 
   <main class="main-area" id="mainArea">
     <div id="spa"></div>
@@ -376,10 +481,22 @@ function showApp() {
 }
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• NAVIGATION â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-function go(sec) {
+function go(sec, opts) {
+  const o = opts || {};
   curSec = sec;
-  document.querySelectorAll('.nav-item[data-sec]').forEach(el => el.classList.toggle('active', el.dataset.sec === sec));
-  document.getElementById('sidebar').classList.remove('open');
+  document.querySelectorAll('.nav-item[data-sec]').forEach(el => {
+    const on = el.dataset.sec === sec;
+    el.classList.toggle('active', on);
+    // Screen readers hear which section is current instead of a wall of links.
+    if (on) el.setAttribute('aria-current', 'page'); else el.removeAttribute('aria-current');
+  });
+  // The section list is a mobile overlay; picking anything confirms the choice.
+  closeNav(false);
+  // The phone's back button walks back through sections instead of leaving the
+  // portal, and a reload lands on the section the merchant was reading.
+  if (!o.fromHash) setSectionHash(sec, o.push === true);
+  const label = sectionLabel(sec);
+  document.title = label ? 'Tenant Portal - ' + label + ' | Alphadome' : 'Tenant Portal | Alphadome';
   const sp = document.getElementById('spa');
   sp.innerHTML = spinner();
   // Scroll to top of main content area for instant visibility
@@ -3874,7 +3991,7 @@ async function signInWithInvite() {
   if (!S.key) S.key = INVITE_TOKEN;
   saveSession(data);
   showApp();
-  go('home');
+  go(sectionFromHash() || 'home');
   const phoneEl = document.getElementById('lPhone');
   if (phoneEl && data.tenant_phone) phoneEl.value = data.tenant_phone;
   try {
@@ -3887,9 +4004,183 @@ async function signInWithInvite() {
 }
 
 // ══════════════════════════════════ BOOT ══════════════════════════════════
+// ══════════════════════════ RESPONSIVE SHELL (phones → desktops) ══════════════
+// Everything the drawer, the section filter, the table scroller and the URL need,
+// in one place, so the markup stays a list of labels and nothing else.
+const NAV_DRAWER_QUERY = '(max-width: 1023px)';
+function navItems() { return Array.prototype.slice.call(document.querySelectorAll('.nav-item[data-sec]')); }
+
+function navIsDrawer() {
+  try { return window.matchMedia(NAV_DRAWER_QUERY).matches; } catch (_) { return window.innerWidth <= 1023; }
+}
+
+function sectionLabel(sec) {
+  const el = navItems().filter((n) => n.dataset.sec === sec)[0];
+  return el ? (el.textContent || '').trim() : '';
+}
+
+function sectionFromHash() {
+  const raw = String(location.hash || '').replace(/^#\/?/, '').trim();
+  return navItems().some((n) => n.dataset.sec === raw) ? raw : '';
+}
+
+// A reload used to drop the merchant back on the dashboard; now the section lives
+// in the URL, and Back walks through sections instead of leaving the portal.
+function setSectionHash(sec, push) {
+  const want = '#/' + sec;
+  if (location.hash === want) return;
+  try {
+    if (push) history.pushState({ sec }, '', want);
+    else history.replaceState({ sec }, '', want);
+  } catch (_) { /* history is best-effort on old WebViews */ }
+}
+
+function openNav() {
+  const sb = document.getElementById('sidebar');
+  const scrim = document.getElementById('navScrim');
+  if (!sb) return;
+  sb.classList.add('open');
+  if (scrim) { scrim.classList.add('show'); scrim.setAttribute('aria-hidden', 'false'); }
+  document.body.classList.add('nav-open');
+  const btn = document.getElementById('menuBtn');
+  if (btn) btn.setAttribute('aria-expanded', 'true');
+}
+
+function closeNav(returnFocus) {
+  const sb = document.getElementById('sidebar');
+  const scrim = document.getElementById('navScrim');
+  if (sb) sb.classList.remove('open');
+  if (scrim) { scrim.classList.remove('show'); scrim.setAttribute('aria-hidden', 'true'); }
+  document.body.classList.remove('nav-open');
+  const btn = document.getElementById('menuBtn');
+  if (btn) {
+    btn.setAttribute('aria-expanded', 'false');
+    if (returnFocus) { try { btn.focus({ preventScroll: true }); } catch (_) { btn.focus(); } }
+  }
+  const filter = document.getElementById('navFilter');
+  if (filter && filter.value) { filter.value = ''; applyNavFilter(''); }
+}
+
+function toggleNav() {
+  const sb = document.getElementById('sidebar');
+  if (sb && sb.classList.contains('open')) closeNav(true); else openNav();
+}
+
+// Thirty rows is a long scroll with a thumb; typing three letters is not.
+function applyNavFilter(query) {
+  const q = String(query || '').trim().toLowerCase();
+  const items = navItems();
+  items.forEach((el) => {
+    const hit = !q || (el.textContent || '').toLowerCase().indexOf(q) !== -1;
+    el.classList.toggle('nav-hidden', !hit);
+  });
+  // A group heading with nothing left under it is just noise, so it goes too.
+  document.querySelectorAll('#sidebar .sidebar-label').forEach((label) => {
+    let shown = false;
+    let node = label.nextElementSibling;
+    while (node && !node.classList.contains('sidebar-label')) {
+      if (node.classList.contains('nav-item') && !node.classList.contains('nav-hidden')) shown = true;
+      node = node.nextElementSibling;
+    }
+    label.classList.toggle('nav-hidden', !shown);
+  });
+  const empty = document.getElementById('navEmpty');
+  if (empty) empty.hidden = !q || items.some((el) => !el.classList.contains('nav-hidden'));
+}
+
+// A six-column table on a 360px phone must scroll inside its own panel, never drag
+// the whole page sideways. Renderers that already use .table-responsive are left
+// alone; anything loose gets wrapped, and four-plus-column tables keep a readable
+// minimum width so cells stop crushing into slivers.
+function wrapLooseTables(root) {
+  const scope = root || document.getElementById('spa');
+  if (!scope || !scope.querySelectorAll) return 0;
+  let wrapped = 0;
+  scope.querySelectorAll('table').forEach((table) => {
+    const holder = table.closest('.table-responsive, .table-scroll');
+    const cols = table.querySelectorAll('thead th').length || table.querySelectorAll('tr:first-child > *').length;
+    if (holder) { if (cols >= 4) holder.classList.add('table-wide'); return; }
+    // A table whose parent is a table section cannot legally host a <div>.
+    const parentTag = (table.parentNode && table.parentNode.tagName) || '';
+    if (/^(TBODY|THEAD|TFOOT|TR|COLGROUP)$/.test(parentTag)) return;
+    const box = document.createElement('div');
+    box.className = 'table-scroll' + (cols >= 4 ? ' table-wide' : '');
+    table.parentNode.insertBefore(box, table);
+    box.appendChild(table);
+    wrapped++;
+  });
+  return wrapped;
+}
+
+// Sections render asynchronously, so watch the container instead of chasing every
+// render function: the observer fires once per batch and wrapping is idempotent.
+function watchLooseTables() {
+  const spa = document.getElementById('spa');
+  if (!spa || typeof MutationObserver === 'undefined') return;
+  let queued = false;
+  const run = () => { queued = false; wrapLooseTables(spa); };
+  new MutationObserver(() => { if (!queued) { queued = true; setTimeout(run, 0); } })
+    .observe(spa, { childList: true, subtree: true });
+}
+
+// Swipe the drawer away with a leftward flick, the way a phone user expects.
+function enableNavSwipe() {
+  const sb = document.getElementById('sidebar');
+  if (!sb) return;
+  let x0 = null, y0 = null;
+  sb.addEventListener('touchstart', (ev) => {
+    const t = ev.touches && ev.touches[0];
+    if (!t) return;
+    x0 = t.clientX; y0 = t.clientY;
+  }, { passive: true });
+  sb.addEventListener('touchend', (ev) => {
+    const t = ev.changedTouches && ev.changedTouches[0];
+    if (x0 === null || !t) { x0 = null; y0 = null; return; }
+    const dx = t.clientX - x0;
+    const dy = Math.abs(t.clientY - (y0 || t.clientY));
+    if (dx < -45 && dy < 40) closeNav(true);
+    x0 = null; y0 = null;
+  }, { passive: true });
+}
+
+function bindShell() {
+  navItems().forEach((el) => {
+    el.addEventListener('click', () => go(el.dataset.sec, { push: true }));
+    // These rows are <div>s for historical reasons, which left them unreachable by
+    // keyboard and missing from a screen reader's control list. Cheaper to fix in
+    // place than to rewrite thirty lines of markup.
+    el.setAttribute('role', 'button');
+    if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '0');
+    el.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') {
+        ev.preventDefault();
+        go(el.dataset.sec, { push: true });
+      }
+    });
+  });
+  const btn = document.getElementById('menuBtn');
+  if (btn) btn.addEventListener('click', toggleNav);
+  const scrim = document.getElementById('navScrim');
+  if (scrim) scrim.addEventListener('click', () => closeNav(true));
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape' && document.body.classList.contains('nav-open')) closeNav(true);
+  });
+  const filter = document.getElementById('navFilter');
+  if (filter) filter.addEventListener('input', () => applyNavFilter(filter.value));
+  window.addEventListener('hashchange', () => {
+    const sec = sectionFromHash();
+    if (sec && sec !== curSec) go(sec, { fromHash: true });
+  });
+  // A phone turned to landscape, or a desktop window widened, must never keep a
+  // scrim and a scroll lock attached to a drawer that no longer exists.
+  window.addEventListener('resize', () => { if (!navIsDrawer()) closeNav(false); });
+  enableNavSwipe();
+  watchLooseTables();
+}
+
 async function boot() {
-  document.querySelectorAll('.nav-item[data-sec]').forEach(el => el.addEventListener('click', () => go(el.dataset.sec)));
-  document.getElementById('menuBtn').addEventListener('click', () => document.getElementById('sidebar').classList.toggle('open'));
+  // Sections, drawer, filter, table scrollers, deep links and the back button.
+  bindShell();
   document.getElementById('logoutBtn').addEventListener('click', doLogout);
 
   document.getElementById('loginForm').addEventListener('submit', async function(e) {
@@ -3908,7 +4199,7 @@ async function boot() {
     }
     // Persist key if just entered
     if (data.token && !S.key) S.key = key;
-    saveSession(data); showApp(); go('home');
+    saveSession(data); showApp(); go(sectionFromHash() || 'home');
   });
 
   // An invite link signs the client in on first open — no key to type.
@@ -3916,8 +4207,8 @@ async function boot() {
   // Order matters: a refresh keeps the session (and the login cookie), so it has
   // to be honoured before the missing-key guard. The old order turned every F5
   // into "Missing key in URL" for a client who was already signed in.
-  if (loadSession()) { showApp(); go('home'); return; }
-  if (await restoreSessionFromCookie()) { showApp(); go('home'); return; }
+  if (loadSession()) { showApp(); go(sectionFromHash() || 'home'); return; }
+  if (await restoreSessionFromCookie()) { showApp(); go(sectionFromHash() || 'home'); return; }
   if (!S.key) { showLogin('Missing key in URL. Open /tenant-dashboard?key=YOUR_KEY'); return; }
   showLogin();
 }
