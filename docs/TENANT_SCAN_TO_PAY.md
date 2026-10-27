@@ -10,7 +10,7 @@
 | Direction | Action | Endpoint |
 |---|---|---|
 | Collect | Create a reusable payment link (item + amount) | `POST /tenant/scan-pay/links` |
-| Collect | Show the QR / copy the link / download the QR as a PNG | client-side (`/vendor/qrcode.min.js`) |
+| Collect | Show the QR / copy the link / download the QR as a PNG | client-side (`/vendor/qrcode.min.js` + `/vendor/qr-poster.js`) |
 | Collect | Prompt a named customer's phone for a link's amount | `POST /tenant/scan-pay/charge` |
 | Collect | See links, per-link totals, collections, merchant code | `GET /tenant/scan-pay` |
 | Pay | Pay any Alphadome pay link (paste, upload a poster, or live camera) | `POST /tenant/scan-pay/pay` |
@@ -20,12 +20,13 @@
 
 ## The tools around the wallet
 
-**QR, both directions.** `Create QR + link` draws the poster code (`public/vendor/qrcode.min.js`)
-and `Download QR` saves it as a PNG for printing. On the pay side the same `jsQR`
-decoder serves an uploaded screenshot and a live camera (`getUserMedia`, rear
-camera). The camera is released on decode, on "Stop camera", and before the
-section re-renders, so the light never stays on. With no camera or no permission
-the section says which of those happened and the paste field still works.
+**QR, both directions.** `Create QR + link` draws the poster code (`public/vendor/qrcode.min.js`
+through `public/vendor/qr-poster.js`) and `Download QR` saves that same PNG for
+printing. On the pay side the same `jsQR` decoder serves an uploaded screenshot and
+a live camera (`getUserMedia`, rear camera). The camera is released on decode, on
+"Stop camera", and before the section re-renders, so the light never stays on. With
+no camera or no permission the section says which of those happened and the paste
+field still works.
 
 Both libraries live in `public/vendor/` and are served from `/vendor/...` by the
 same Express app. The first build pointed the generator at
@@ -33,6 +34,22 @@ same Express app. The first build pointed the generator at
 answers **404**, so `QRCode` was undefined on every load and the panel said
 "QR library unavailable — share the link instead". Self-hosting removes that
 failure mode; a CDN copy only loads if the vendored file is missing.
+
+**Why `qr-poster.js` exists.** A QR that draws is not a QR that scans. qrcodejs
+fills its canvas with a fractional tile — a 33-module link asked for at 190px gets
+190/33 = 5.76px per module — so every module edge lands on a half pixel and the
+browser anti-aliases it grey. It also draws edge to edge: **no quiet zone**, on a
+panel that is dark. A phone camera will not lock onto that, which is what "the QR
+is missing" actually looked like on 2026-10-27. `qr-poster.js` takes the module
+matrix from qrcodejs and redraws it with
+
+- a whole number of pixels per module (17px at the default 720px side),
+- four modules of white margin on every side, filled as the canvas ground,
+- the same bitmap handed to the screen and to `Download QR`.
+
+Verified in the suite by decoding the poster against a near-black surround, the way
+the panel presents it; a margin-less code fails that test. The merchant portal uses
+the same helper, with `api.qrserver.com` still as the last-resort image.
 
 
 **Money tools.** Two calculators on the same screen:
@@ -68,6 +85,8 @@ marked `noindex,nofollow` and is not in `sitemap.xml`.
 - `initiateStkPush()` — the single STK implementation in `server.js`.
 - `qrcodejs 1.0.0` and `jsQR 1.4.0` — vendored in `public/vendor/` (provenance and
   licences in `public/vendor/README.md`), served at `/vendor/...`.
+- `qr-poster.js` — our own 60-line renderer over qrcodejs' matrix: whole-pixel
+  modules and a quiet zone, so the code scans off a screen and off paper.
 
 No migration is required to collect: both tables already exist wherever the
 Kassangas QR checkout runs. If `kassangas_templates` is missing, the routes answer
@@ -103,6 +122,7 @@ so a paybill statement line can be matched to the tenant that requested it.
 | Link closed / expired | `410` on the pay page, with "ask the business for a new link" |
 | Double tap inside 90 s | The existing prompt is replayed, no second STK |
 | Vendored QR files missing from a deploy | A CDN copy loads and the section redraws itself |
+| `qr-poster.js` missing | `showQr` falls back to qrcodejs' own 640px canvas on the white card; the QR still draws, one quiet zone thinner |
 
 ## Demo script (5 minutes)
 
@@ -120,7 +140,7 @@ so a paybill statement line can be matched to the tenant that requested it.
 ## Verification
 
 ```bash
-npm run test:scan-pay      # 137 checks: rules, routes, bundles, portal wiring, customer page, QR round trip
+npm run test:scan-pay      # 153 checks: rules, routes, bundles, portal wiring, customer page, QR round trip, poster geometry
 ```
 
 Live checks after deploy:
@@ -128,6 +148,7 @@ Live checks after deploy:
 ```bash
 curl -s -o /dev/null -w "%{http_code}\n" https://alphadome.onrender.com/pay/t/PROBE   # 200
 curl -s -o /dev/null -w "%{http_code}\n" https://alphadome.onrender.com/tenant/scan-pay # 401
+curl -s -o /dev/null -w "%{http_code}\n" https://alphadome.onrender.com/vendor/qr-poster.js # 200
 ```
 
 The `401` on the API is the isolation proof: the portal section needs a tenant

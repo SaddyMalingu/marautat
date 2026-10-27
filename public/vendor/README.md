@@ -4,13 +4,19 @@ Third-party files served straight from this site, so the merchant-facing screens
 never depend on a CDN being reachable — or on a CDN path that answers 404.
 
 | File | Package | Version | Licence | Used by |
-|---|---|---|---|---|
-| `qrcode.min.js` | [`qrcodejs`](https://github.com/davidshimjs/qrcodejs) | 1.0.0 | MIT | `admin/tenant_dashboard.html` (Scan to Pay → Create QR + link / Download QR), `public/kassangas-merchant-portal.html` |
+|---|---|---|---|---|---|
+| `qrcode.min.js` | [`qrcodejs`](https://github.com/davidshimjs/qrcodejs) | 1.0.0 | MIT | `public/vendor/qr-poster.js` (the module matrix), `public/kassangas-merchant-portal.html` (last-resort canvas) |
 | `jsQR.js` | [`jsqr`](https://github.com/cozmo/jsQR) | 1.4.0 | Apache-2.0 | `admin/tenant_dashboard.html` (scan a poster, scan with camera), `public/kassangas-client-wallet.html` |
+| `qr-poster.js` | ours, not third-party | — | same as the repo | `admin/tenant_dashboard.html` (Scan to Pay → Create QR + link / Download QR), `public/kassangas-merchant-portal.html` |
 
-Both were taken byte-for-byte, unmodified, from
+Both third-party files were taken byte-for-byte, unmodified, from
 `https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js` and
 `https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js`.
+
+`qr-poster.js` is not vendored code: it is the small renderer that turns a
+qrcodejs module matrix into a bitmap a camera can read (whole-pixel modules, four
+modules of quiet zone). qrcodejs on its own fills fractional rects at
+`width / modules` and draws edge to edge, which is unreadable on a dark panel.
 
 ## Why they live here
 

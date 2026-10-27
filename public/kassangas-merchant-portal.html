@@ -8,6 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Bebas+Neue&display=swap" rel="stylesheet">
   <script src="./vendor/qrcode.min.js"></script>
+  <script src="./vendor/qr-poster.js"></script>
   <style>
     :root {
       --bg-1: #081421;
@@ -314,6 +315,7 @@
 
     async function ensureQrLibrary() {
       if (typeof window.QRCode === "function") {
+        await ensurePosterHelper();
         return true;
       }
 
@@ -328,6 +330,7 @@
         try {
           await loadScript(src);
           if (typeof window.QRCode === "function") {
+            await ensurePosterHelper();
             return true;
           }
         } catch (_) {
@@ -336,6 +339,17 @@
       }
 
       return false;
+    }
+
+    // qr-poster.js draws whole-pixel modules inside a 4-module quiet zone. Without
+    // it the QR still renders, just with qrcodejs' blurrier edge-to-edge canvas.
+    async function ensurePosterHelper() {
+      if (typeof window.AlphaQR !== "undefined") return;
+      try {
+        await loadScript("./vendor/qr-poster.js");
+      } catch (_) {
+        // Optional: the native canvas below still produces a code.
+      }
     }
 
     function renderFallbackQr(qrUrl) {
@@ -496,7 +510,17 @@
         qrCodeDiv.innerHTML = "";
         const qrSize = Math.max(180, Math.min(260, Math.floor(window.innerWidth * 0.62)));
 
-        if (qrAvailable && typeof window.QRCode === "function") {
+        if (qrAvailable && typeof window.AlphaQR === "object" && typeof window.AlphaQR.dataUrl === "function") {
+          try {
+            // Same whole-pixel, quiet-zone renderer the tenant dashboard uses.
+            const img = document.createElement("img");
+            img.alt = "Payment QR code";
+            img.src = window.AlphaQR.dataUrl(qrUrl, 720);
+            qrCodeDiv.appendChild(img);
+          } catch (_) {
+            renderFallbackQr(qrUrl);
+          }
+        } else if (qrAvailable && typeof window.QRCode === "function") {
           try {
             new window.QRCode(qrCodeDiv, {
               text: qrUrl,

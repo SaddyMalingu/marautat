@@ -53,6 +53,11 @@
     .stat-sub { font-size: 0.79rem; color: var(--text-muted); }
     .panel { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 22px; margin-bottom: 18px; }
     .panel-title { font-size: 0.93rem; font-weight: 600; color: var(--text-light); margin-bottom: 16px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+    /* Scan to Pay QR. The PNG already carries its four quiet-zone modules, so the
+       white card is belt and braces on this dark panel; a ~700px bitmap shown at
+       300px stays sharp on every screen density and is print-safe when downloaded. */
+    #spQrCanvas figure { margin: 0; padding: 12px; background: #fff; border-radius: 12px; display: inline-block; line-height: 0; max-width: 100%; }
+    #spQrCanvas img, #spQrCanvas canvas { display: block; width: min(300px, 76vw); height: auto; max-width: 100%; }
     /* â”€â”€â”€ Tables â”€â”€â”€ */
     .table { color: var(--text-light); border-color: var(--border); }
     .table thead th { color: var(--text-muted); font-size: 0.77rem; text-transform: uppercase; letter-spacing: 0.5px; border-color: var(--border); background: var(--bg-main); font-weight: 600; }
@@ -215,6 +220,10 @@
      404, which is exactly what produced "QR library unavailable". Same builds the
      Kassangas wallet pages load. -->
 <script src="/vendor/qrcode.min.js"></script>
+<!-- qr-poster.js redraws the matrix at whole-pixel module size inside a 4-module
+     quiet zone; qrcodejs' own canvas is margin-less and anti-aliased, which phone
+     cameras refuse even though the code "renders". -->
+<script src="/vendor/qr-poster.js"></script>
 <script src="/vendor/jsQR.js"></script>
 <script>
 // Last resort only: if a deploy ever ships without public/vendor, pull the same
@@ -2509,7 +2518,9 @@ function spWireScanCamera() {
   };
 }
 
-// A merchant who prints posters needs the file, not only the screen.
+// A merchant who prints posters needs the file, not only the screen. The poster
+// helper hands us the same 720px PNG that is on screen, so the download is
+// print-ready rather than a screenshot-sized bitmap.
 function spWireQrDownload() {
   const btn = document.getElementById('spQrDownload');
   if (!btn) return;
@@ -2517,7 +2528,9 @@ function spWireQrDownload() {
     const host = document.getElementById('spQrCanvas');
     const canvas = host && host.querySelector('canvas');
     const img = host && host.querySelector('img');
-    const href = canvas ? canvas.toDataURL('image/png') : (img && img.src) || '';
+    let href = '';
+    if (canvas) href = canvas.toDataURL('image/png');
+    else if (img && /^data:image\/png;base64,/.test(img.src)) href = img.src;
     if (!href) { toast('The QR is not ready yet', 'err'); return; }
     const a = Object.assign(document.createElement('a'), { href, download: 'alphadome-payment-qr.png' });
     document.body.appendChild(a);
@@ -2592,25 +2605,46 @@ function spWireScanPay(state) {
 
   const showQr = (url, label) => {
     const host = document.getElementById('spQrHost');
-    const canvas = document.getElementById('spQrCanvas');
-    if (!host || !canvas || !url) return;
+    const box = document.getElementById('spQrCanvas');
+    if (!host || !box || !url) return;
     host.classList.remove('d-none');
     document.getElementById('spQrTitle').textContent = label ? 'QR — ' + label : 'Payment QR';
     document.getElementById('spQrUrl').textContent = url;
-    canvas.innerHTML = '';
+    box.innerHTML = '';
+    const note = (msg) => {
+      box.innerHTML = '<div style="font-size:.84rem;color:var(--text-muted);">' + msg + '</div>';
+    };
+
     if (typeof QRCode === 'undefined') {
-      canvas.innerHTML = '<div style="font-size:.84rem;color:var(--text-muted);">QR library unavailable — share the link instead.</div>';
-    } else {
-      try {
-        new QRCode(canvas, {
-          text: url, width: 190, height: 190,
-          colorDark: '#0f1117', colorLight: '#ffffff',
-          correctLevel: QRCode.CorrectLevel.M,
-        });
-      } catch (err) {
-        console.warn('[SCAN PAY] QR draw failed', err);
-        canvas.innerHTML = '<div style="font-size:.84rem;color:var(--text-muted);">QR could not be drawn on this device — copy the link instead.</div>';
+      note('QR library unavailable — share the link instead.');
+      host.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      return;
+    }
+
+    try {
+      // 720px of whole-pixel modules with a four-module quiet zone. The same PNG is
+      // what Download QR saves, so a printed poster scans as well as the screen.
+      let src = '';
+      if (typeof AlphaQR !== 'undefined' && typeof AlphaQR.dataUrl === 'function') {
+        src = AlphaQR.dataUrl(url, 720);
+      } else {
+        // Degraded path only: qrcodejs' native canvas has no quiet zone, so the
+        // white card is doing the margin work on its own.
+        const scratch = document.createElement('div');
+        new QRCode(scratch, { text: url, width: 640, height: 640, correctLevel: QRCode.CorrectLevel.M });
+        const cv = scratch.querySelector('canvas');
+        src = cv ? cv.toDataURL('image/png') : '';
       }
+      if (!src) throw new Error('no QR image produced');
+      const frame = document.createElement('figure');
+      const img = document.createElement('img');
+      img.alt = 'Payment QR code for ' + (label || url);
+      img.src = src;
+      frame.appendChild(img);
+      box.appendChild(frame);
+    } catch (err) {
+      console.warn('[SCAN PAY] QR draw failed', err);
+      note('QR could not be drawn on this device — copy the link instead.');
     }
     host.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   };

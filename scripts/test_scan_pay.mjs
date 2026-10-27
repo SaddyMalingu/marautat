@@ -232,7 +232,7 @@ ok('the section loads the tenant wallet context', /apiJson\('\/tenant\/scan-pay'
 ok('creating a link posts to the tenant endpoint', /apiJson\('\/tenant\/scan-pay\/links'/.test(dash));
 ok('charging a customer posts to the charge endpoint', /apiJson\('\/tenant\/scan-pay\/charge'/.test(dash));
 ok('paying a link posts to the pay endpoint', /apiJson\('\/tenant\/scan-pay\/pay'/.test(dash));
-ok('the QR is drawn from the returned pay URL', /new QRCode\(canvas/.test(dash));
+ok('the QR is drawn from the returned pay URL', /AlphaQR\.dataUrl\(url, 720\)/.test(dash));
 ok('a missing QR library degrades to the link instead of breaking',
   /typeof QRCode === 'undefined'/.test(dash));
 ok('a poster can be scanned back into the pay form',
@@ -253,7 +253,7 @@ ok('collections are shown with a status badge', /Recent collections/.test(dash) 
 
 // ---- 8b. the tools a merchant asks for next --------------------------------
 ok('a QR can be generated and downloaded, not only shown',
-  /new QRCode\(canvas/.test(dash) && /id="spQrDownload"/.test(dash) && /toDataURL\('image\/png'\)/.test(dash));
+  /AlphaQR\.dataUrl\(url, 720\)/.test(dash) && /id="spQrDownload"/.test(dash) && /toDataURL\('image\/png'\)/.test(dash));
 ok('a poster can be scanned with the camera as well as a photo',
   /id="spScanCamBtn"/.test(dash) && /getUserMedia/.test(dash) && /id="spScanVideo"/.test(dash));
 ok('the camera is released before the section re-renders',
@@ -377,6 +377,155 @@ try {
 }
 ok('a QR drawn by the vendored generator decodes back to the payment link',
   decoded === payLink, 'decoded: ' + decoded);
+
+// ---- 8d. the poster renderer: whole pixels and a real quiet zone ------------
+// qrcodejs fills fractional rects (190/33 = 5.76px per module) and leaves no
+// margin, which is why a merchant could see a QR and no phone could read it. This
+// loads the shipping renderer and checks the geometry it actually produces, then
+// decodes a print-size bitmap back to the link.
+const posterPath = 'public/vendor/qr-poster.js';
+ok('the poster renderer ships with the site', fs.existsSync(posterPath), posterPath + ' is missing');
+
+// A canvas that records what was painted, so module size and margins can be
+// measured instead of assumed.
+function recorderSandbox() {
+  const makeCtx = () => {
+    const ctx = {
+      rects: [], fillStyle: '', strokeStyle: '', lineWidth: 1, font: '', textAlign: '',
+      fillRect(x, y, w, h) { ctx.rects.push({ x, y, w, h, fill: ctx.fillStyle }); },
+      clearRect() {}, strokeRect() {}, fillText() {}, drawImage() {}, putImageData() {},
+      beginPath() {}, moveTo() {}, lineTo() {}, stroke() {}, save() {}, restore() {},
+      translate() {}, scale() {}, rotate() {},
+      getImageData: (x, y, w, h) => ({ data: new Uint8ClampedArray(4 * w * h), width: w, height: h }),
+    };
+    return ctx;
+  };
+  const document = {
+    createElement(tag) {
+      if (tag !== 'canvas') {
+        return {
+          style: {}, title: '', innerHTML: '', src: '', alt: '', parentNode: null,
+          setAttribute() {}, appendChild() {}, addEventListener() {}, querySelector: () => null,
+        };
+      }
+      const cv = {
+        width: 0, height: 0, style: {}, _ctx: makeCtx(),
+        getContext() { return cv._ctx; },
+        toDataURL: () => 'data:image/png;base64,', setAttribute() {}, appendChild() {},
+      };
+      return cv;
+    },
+    documentElement: { tagName: 'HTML' },
+    head: { appendChild() {} },
+    body: { appendChild() {} },
+  };
+  const sandbox = {
+    document, navigator: { userAgent: 'node' }, console,
+    module: { exports: {} }, exports: {},
+    Image: function Image() { this.style = {}; },
+    CanvasRenderingContext2D: function CanvasRenderingContext2D() {},
+  };
+  sandbox.window = sandbox;
+  sandbox.self = sandbox;
+  sandbox.globalThis = sandbox;
+  vm.createContext(sandbox);
+  return sandbox;
+}
+
+const posterSandbox = recorderSandbox();
+vm.runInContext(fs.readFileSync(vendorQrPath, 'utf8'), posterSandbox, { filename: 'qrcode.min.js' });
+vm.runInContext(fs.readFileSync(posterPath, 'utf8'), posterSandbox, { filename: 'qr-poster.js' });
+const AlphaQR = posterSandbox.AlphaQR || (posterSandbox.window && posterSandbox.window.AlphaQR);
+ok('the poster helper exposes canvas() and dataUrl()',
+  !!AlphaQR && typeof AlphaQR.canvas === 'function' && typeof AlphaQR.dataUrl === 'function');
+
+let posterSide = 0, posterScale = 0, posterRects = [], posterCount = 0, posterErr = '';
+try {
+  posterCount = AlphaQR.matrixFor(payLink).getModuleCount();
+  const cv = AlphaQR.canvas(payLink, 720);
+  posterSide = cv.width;
+  posterRects = cv._ctx.rects;
+  posterScale = posterSide / (posterCount + 8);
+} catch (e) { posterErr = e.message; }
+
+ok('the poster renderer produces a square bitmap', posterSide > 0 && posterErr === '',
+  posterErr || 'side=' + posterSide);
+ok('every module is a whole number of pixels wide',
+  Number.isInteger(posterScale) && posterScale >= 6, 'scale=' + posterScale);
+ok('the bitmap is the module grid plus four quiet-zone modules a side',
+  posterSide === (posterCount + 8) * posterScale,
+  'side=' + posterSide + ' count=' + posterCount + ' scale=' + posterScale);
+const posterBg = posterRects[0] || {};
+ok('the code is drawn on a white ground',
+  posterBg.x === 0 && posterBg.y === 0 && posterBg.w === posterSide && posterBg.h === posterSide
+    && /^#ffffff$/i.test(posterBg.fill || ''), JSON.stringify(posterBg));
+const posterDark = posterRects.slice(1);
+const posterQuiet = 4 * posterScale;
+ok('no dark module touches the edge: a real quiet zone',
+  posterDark.length > 0 && posterDark.every(r =>
+    r.x >= posterQuiet && r.y >= posterQuiet
+    && r.x + r.w <= posterSide - posterQuiet && r.y + r.h <= posterSide - posterQuiet),
+  'rects=' + posterDark.length);
+ok('every dark module is the same whole-pixel square',
+  posterDark.length > 0
+    && posterDark.every(r => r.w === posterScale && r.h === posterScale)
+    && posterDark.every(r => Number.isInteger(r.x) && Number.isInteger(r.y)));
+
+let posterDecoded = null, posterOnPanel = null, posterPixels = null;
+try {
+  posterPixels = new Uint8ClampedArray(posterSide * posterSide * 4).fill(255);
+  for (const r of posterDark) {
+    if (!/^#000000$/i.test(r.fill || '')) continue;
+    for (let y = r.y; y < r.y + r.h; y++) {
+      for (let x = r.x; x < r.x + r.w; x++) {
+        const p = (y * posterSide + x) * 4;
+        posterPixels[p] = 0; posterPixels[p + 1] = 0; posterPixels[p + 2] = 0;
+      }
+    }
+  }
+  const found = typeof VendoredJsQR === 'function' ? VendoredJsQR(posterPixels, posterSide, posterSide) : null;
+  posterDecoded = found && found.data;
+
+  // On the dark panel the code is surrounded by near-black, so a code with no light
+  // margin of its own disappears. The old 190px draw failed exactly here.
+  const pad = 8;
+  const outer = posterSide + pad * 2;
+  const onPanel = new Uint8ClampedArray(outer * outer * 4);
+  for (let i = 0; i < onPanel.length; i += 4) {
+    onPanel[i] = 23; onPanel[i + 1] = 26; onPanel[i + 2] = 31; onPanel[i + 3] = 255;
+  }
+  for (let y = 0; y < posterSide; y++) {
+    for (let x = 0; x < posterSide; x++) {
+      const from = (y * posterSide + x) * 4;
+      const to = ((y + pad) * outer + (x + pad)) * 4;
+      onPanel[to] = posterPixels[from];
+      onPanel[to + 1] = posterPixels[from + 1];
+      onPanel[to + 2] = posterPixels[from + 2];
+    }
+  }
+  const panelFound = typeof VendoredJsQR === 'function' ? VendoredJsQR(onPanel, outer, outer) : null;
+  posterOnPanel = panelFound && panelFound.data;
+} catch (e) {
+  posterDecoded = 'threw: ' + e.message;
+}
+ok('a print-size poster decodes back to the payment link',
+  posterDecoded === payLink, 'decoded: ' + posterDecoded);
+ok('the poster stays readable on the dark panel it sits on',
+  posterOnPanel === payLink, 'decoded against a dark surround: ' + posterOnPanel);
+
+const portalPage = fs.readFileSync('public/kassangas-merchant-portal.html', 'utf8');
+ok('the dashboard loads the poster renderer',
+  /<script src="\/vendor\/qr-poster\.js"><\/script>/.test(dash));
+ok('the dashboard no longer draws the old 190px edge-to-edge code',
+  !/width: 190, height: 190/.test(dash), 'the 190px draw is still in the dashboard');
+ok('the QR sits on a white card on the dark panel',
+  /#spQrCanvas figure\s*\{[^}]*background: #fff/.test(dash));
+ok('Download QR saves that same print-size PNG',
+  /data:image\\\/png;base64,/.test(dash) && /download: 'alphadome-payment-qr\.png'/.test(dash));
+ok('the merchant portal loads the poster renderer',
+  /<script src="\.\/vendor\/qr-poster\.js"><\/script>/.test(portalPage));
+ok('the merchant portal draws through the poster renderer',
+  /window\.AlphaQR\.dataUrl\(qrUrl, 720\)/.test(portalPage));
 
 // ---- 9. the Micro1 hand-off ------------------------------------------------
 ok('Writer\'s Flow carries a Connect Micro1 button', /id="wfMicro1Btn"/.test(dash));
