@@ -14,7 +14,11 @@
       --bg-sidebar: #13162a;
       --border: #1e2749;
       --accent: #38bdf8;
-      --text-muted: #7c8db0;
+      /* 2026-10-27: #7c8db0 sat at 5.05:1 on --bg-card, which passes AA on paper
+         but reads as "almost invisible" on a phone held in a shop in daylight.
+         #8b9ac0 measures 6.00:1 on --bg-card, 6.72:1 on --bg-main and 6.36:1 on
+         --bg-sidebar, so secondary copy stays quiet without disappearing. */
+      --text-muted: #8b9ac0;
       --text-light: #d4daf0;
       --success: #22d3a0;
       --warning: #f59e0b;
@@ -22,7 +26,17 @@
     }
     *, *::before, *::after { box-sizing: border-box; }
     body { font-family: 'Inter', system-ui, Arial, sans-serif; background: var(--bg-main); color: var(--text-light); min-height: 100vh; margin: 0; }
-    /* â”€â”€â”€ App Shell â”€â”€â”€ */
+    /* ─── Bootstrap's grey does not belong in this palette ───────────────────────
+       `.text-muted` is used throughout this page for the sentence under a section
+       header. Bootstrap 5.3 paints it #6c757d with `!important`, so the page
+       palette never reached it: 3.4:1 on --bg-card, which is why "Collect payments
+       for your products and offers…" and the Writer's Flow voice explainer were
+       reported as almost invisible. A later rule with the same `!important` wins,
+       because this <style> block loads after the Bootstrap <link>. */
+    .text-muted, .text-body-secondary, .text-secondary, .form-text { color: var(--text-muted) !important; }
+    .form-control::placeholder, .form-select::placeholder,
+    .form-control-sm::placeholder, .form-select-sm::placeholder { color: var(--text-muted); opacity: 1; }
+    /* ─── App Shell ─── */
     .app-shell { display: grid; grid-template-columns: 240px 1fr; grid-template-rows: 60px 1fr; min-height: 100vh; min-height: 100dvh; }
     /* One breakpoint owns the drawer: below 1024px the section list slides over the
        content, so a 768px tablet gets the whole width for its tables instead of the
@@ -30,11 +44,23 @@
     /* Below 1024px the section list becomes an overlay drawer (declared further
        down, after the base .sidebar rule -- a media query adds no specificity, so
        an override placed above the base rule silently loses the cascade). */
-    @media (max-width: 1023px) { .app-shell { grid-template-columns: 1fr; } }
+    /* `1fr` is shorthand for `minmax(auto, 1fr)`, and that `auto` floor is the
+       min-content width of the widest item in the column — here the topbar. Once
+       the header carried a real business name (2026-10-27) that floor grew past a
+       phone's width and the whole document scrolled sideways: measured 431px of
+       scroll at a 360px viewport, against 345px before. `minmax(0, 1fr)` removes
+       the floor, so the header truncates instead of stretching the page. */
+    @media (max-width: 1023px) { .app-shell { grid-template-columns: minmax(0, 1fr); } }
     /* â”€â”€â”€ Topbar â”€â”€â”€ */
     .topbar { grid-column: 1 / -1; background: var(--bg-sidebar); border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 20px; gap: 14px; position: sticky; top: 0; z-index: 100; }
-    .topbar-brand { font-weight: 700; font-size: 1.05rem; color: var(--accent); flex: 1; }
-    .topbar-user { font-size: 0.88rem; color: var(--text-muted); }
+    /* The brand is the client's own business name now (it used to read "Tenant
+       Portal"), and a real business name can be longer than the space between the
+       hamburger and Logout on a 360px phone. Truncate it instead of letting it
+       push the controls off screen; the full name stays in the tab title. */
+    .topbar-brand { font-weight: 700; font-size: 1.05rem; color: var(--accent); flex: 1; min-width: 0; display: flex; align-items: center; overflow: hidden; }
+    .topbar-brand > i { flex-shrink: 0; }
+    .topbar-brand-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .topbar-user { font-size: 0.88rem; color: var(--text-muted); white-space: nowrap; }
     .topbar-logout { font-size: 0.84rem; color: var(--danger); cursor: pointer; background: none; border: none; padding: 4px 10px; border-radius: 6px; transition: background 0.2s; }
     .topbar-logout:hover { background: rgba(244,63,94,0.13); }
     .topbar-menu-btn { display: none; background: none; border: none; color: var(--text-light); font-size: 1.2rem; cursor: pointer; width: 44px; height: 44px; margin-left: -10px; border-radius: 10px; align-items: center; justify-content: center; }
@@ -238,6 +264,18 @@
       /* Inline styles on the Customer 360 card win over a plain rule. */
       #custModal > div { margin: 10px !important; padding: 16px !important; border-radius: 12px !important; }
     }
+    /* On a phone the name is the point and the phone number is not: the same
+       number is on Profile and in every WhatsApp message that reached this client.
+       Hiding it hands ~95px to the business name, which then reads in full instead
+       of "joska Spor…". Above this width both stay. */
+    @media (max-width: 479px) {
+      .topbar-user { display: none; }
+      .topbar-brand { font-size: 1rem; }
+      /* The word "Logout" costs ~40px that the business name needs more. The icon
+         stays a 40px tap target and keeps its aria-label. */
+      .topbar-logout { padding: 8px 10px; }
+      .topbar-logout .logout-label { display: none; }
+    }
     /* Landscape phones: the topbar and the KPI row must not eat the height. */
     @media (max-width: 900px) and (orientation: landscape) {
       .main-area { padding-top: 12px; }
@@ -265,7 +303,7 @@
   <div class="login-card">
     <div class="login-logo">
       <i class="fa-solid fa-store"></i>
-      <h2>Tenant Portal</h2>
+      <h2 id="loginTitle">Tenant Portal</h2>
       <p>Powered by Alphadome</p>
     </div>
     <div id="loginAlert" class="mb-3" style="display:none;"></div>
@@ -282,9 +320,9 @@
 <div id="appShell" class="app-shell app-hidden">
   <header class="topbar">
     <button class="topbar-menu-btn" id="menuBtn" type="button" aria-label="Open sections" aria-expanded="false" aria-controls="sidebar"><i class="fa-solid fa-bars" aria-hidden="true"></i></button>
-    <span class="topbar-brand"><i class="fa-solid fa-store me-2"></i>Tenant Portal</span>
+    <span class="topbar-brand"><i class="fa-solid fa-store me-2" aria-hidden="true"></i><span class="topbar-brand-name" id="brandName">Tenant Portal</span></span>
     <span class="topbar-user" id="topUser"></span>
-    <button class="topbar-logout" id="logoutBtn"><i class="fa-solid fa-right-from-bracket me-1"></i>Logout</button>
+    <button class="topbar-logout" id="logoutBtn" aria-label="Log out"><i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i><span class="logout-label ms-1">Logout</span></button>
   </header>
 
   <nav class="sidebar" id="sidebar" aria-label="Tenant portal sections">
@@ -495,9 +533,50 @@ async function doLogout() {
 }
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• SHOW / HIDE â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ══════════════════════════════════ IDENTITY ══════════════════════════════════
+// The business name the client typed into the discovery form, carried through
+// approval into bot_tenants.client_name and returned by every session response.
+// The header used to say "Tenant Portal" for everyone, which made four paying
+// clients feel like guests on the same demo; now the portal wears their name.
+function tenantBrand() {
+  const name = String(S.name || '').trim();
+  return name || 'Tenant Portal';
+}
+// 254706291262 -> +254 706 291 262. Anything unexpected is returned untouched.
+function formatPhone(raw) {
+  const digits = String(raw || '').replace(/\D/g, '');
+  if (digits.length === 12 && digits.startsWith('254')) {
+    return '+254 ' + digits.slice(3, 6) + ' ' + digits.slice(6, 9) + ' ' + digits.slice(9);
+  }
+  if (digits.length === 10 && digits.startsWith('0')) {
+    return '+254 ' + digits.slice(1, 4) + ' ' + digits.slice(4, 7) + ' ' + digits.slice(7);
+  }
+  return String(raw || '');
+}
+// One place that paints the identity, so the topbar, the sign-in card and the tab
+// title can never disagree about whose portal this is.
+function applyBrand() {
+  const brand = tenantBrand();
+  const brandEl = document.getElementById('brandName');
+  if (brandEl) {
+    brandEl.textContent = brand;
+    brandEl.setAttribute('title', brand);
+    // A business name is a proper noun, not a long tab label.
+    if (brandEl.parentElement) brandEl.parentElement.setAttribute('title', brand);
+  }
+  const loginTitle = document.getElementById('loginTitle');
+  if (loginTitle) loginTitle.textContent = brand;
+  const userEl = document.getElementById('topUser');
+  // The name now lives in the brand, so this slot says which phone is signed in
+  // instead of repeating the same words twice in one bar.
+  if (userEl) userEl.textContent = S.name ? formatPhone(S.phone) : (S.phone || 'Tenant');
+  document.title = brand === 'Tenant Portal' ? 'Tenant Portal | Alphadome' : brand + ' | Alphadome';
+}
+
 function showLogin(msg = '') {
   document.getElementById('loginScreen').classList.remove('app-hidden');
   document.getElementById('appShell').classList.add('app-hidden');
+  applyBrand();
   // Whatever we already know is filled in, so a session timeout is one tap and
   // not a support call.
   const phoneEl = document.getElementById('lPhone');
@@ -511,7 +590,7 @@ function showLogin(msg = '') {
 function showApp() {
   document.getElementById('loginScreen').classList.add('app-hidden');
   document.getElementById('appShell').classList.remove('app-hidden');
-  document.getElementById('topUser').textContent = S.name || S.phone || 'Tenant';
+  applyBrand();
 }
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• NAVIGATION â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -530,7 +609,9 @@ function go(sec, opts) {
   // portal, and a reload lands on the section the merchant was reading.
   if (!o.fromHash) setSectionHash(sec, o.push === true);
   const label = sectionLabel(sec);
-  document.title = label ? 'Tenant Portal - ' + label + ' | Alphadome' : 'Tenant Portal | Alphadome';
+  // The tab carries the client's own name too: "Scan to Pay · Malingu Ventures".
+  const brand = tenantBrand();
+  document.title = label ? label + ' · ' + brand + ' | Alphadome' : brand + ' | Alphadome';
   const sp = document.getElementById('spa');
   sp.innerHTML = spinner();
   // Scroll to top of main content area for instant visibility
@@ -1303,9 +1384,15 @@ async function renderRevenue() {
     </div>`;
 }
 async function renderAnalytics() {
-  const [ana, attr] = await Promise.all([
+  // Three sources on one screen: WhatsApp conversations, attribution, and — the
+  // 2026-10-27 addition — what Writer's Flow is producing for THIS business. The
+  // owner sees platform-wide numbers in /admin/ai-jobs; a client needs the same
+  // shape of answer about their own pages, so both come from the same measures
+  // (views, clicks, CTR) and only the scope differs.
+  const [ana, attr, wf] = await Promise.all([
     apiJson('/tenant/analytics'),
     apiJson('/tenant/attribution'),
+    apiJson('/tenant/writers-flow/analytics'),
   ]);
   const a = ana?.data?.analytics || {};
   const attr_data = attr?.data?.attribution || {};
@@ -1374,6 +1461,140 @@ async function renderAnalytics() {
         <div class="panel">
           <div class="panel-title">Last-Touch Attribution</div>
           ${lastTouch.length === 0 ? '<p style="color:var(--text-muted);font-size:0.88rem;margin:0;">No attribution data yet.</p>' : `<table class="table table-sm mb-0"><thead><tr><th>Source</th><th>Share</th><th>Conversions</th><th>Revenue</th></tr></thead><tbody>${ltRows}</tbody></table>`}
+        </div>
+      </div>
+    </div>
+    ${wfAnalyticsHtml(wf && wf.ok ? wf.data : null)}`;
+}
+
+// Writer's Flow block for the Analytics section. Same measures the owner sees in
+// /admin/ai-jobs — views, clicks, CTR and the pages that earned them — but every
+// figure is scoped to this one client.
+function wfAnalyticsHtml(w) {
+  const brand = tenantBrand();
+  if (!w) {
+    return `
+      <div class="section-hdr" style="margin-top:28px;"><i class="fa-solid fa-pen-nib"></i> Writer's Flow</div>
+      <div class="panel">
+        <p style="color:var(--text-muted);font-size:0.88rem;margin:0;">
+          Writer's Flow analytics could not be loaded just now. The conversation numbers above are
+          unaffected — open the section again to retry.
+        </p>
+      </div>`;
+  }
+  const t = w.totals || {};
+  const period = w.period_days || 30;
+  const pages = w.pages || [];
+  const empty = `
+    <div class="panel" style="text-align:center;padding:26px 18px;">
+      <i class="fa-solid fa-pen-nib" style="font-size:1.7rem;color:var(--accent);"></i>
+      <div style="font-weight:600;margin-top:10px;">No pages yet</div>
+      <p style="color:var(--text-muted);font-size:0.88rem;margin:6px auto 14px;max-width:430px;">
+        Create an offer, generate its pages, and every view and click they earn shows up here —
+        counted for ${esc(brand)} only.
+      </p>
+      <button class="btn btn-accent btn-sm" type="button" onclick="go('writers-flow')">
+        <i class="fa-solid fa-arrow-right me-1"></i>Open Writer's Flow
+      </button>
+    </div>`;
+  return `
+    <div class="section-hdr" style="margin-top:28px;"><i class="fa-solid fa-pen-nib"></i> Writer's Flow</div>
+    <p class="text-muted" style="margin-top:-10px;margin-bottom:14px;">
+      The public pages this engine wrote for ${esc(brand)}, and the traffic they pulled in the
+      last ${period} days. A view here is a stranger reading about your business — not a WhatsApp message.
+    </p>
+    <div class="stat-grid">
+      <div class="stat-card"><div class="stat-label">Pages written</div><div class="stat-value">${t.pages || 0}</div><div class="stat-sub">${t.avg_words ? t.avg_words + ' words avg' : 'engine-written'}</div></div>
+      <div class="stat-card"><div class="stat-label">Live pages</div><div class="stat-value">${t.published || 0}</div><div class="stat-sub">published</div></div>
+      <div class="stat-card"><div class="stat-label">Page views</div><div class="stat-value">${t.views || 0}</div><div class="stat-sub">last ${period} days</div></div>
+      <div class="stat-card"><div class="stat-label">Clicks</div><div class="stat-value">${t.clicks || 0}</div><div class="stat-sub">on-page CTAs</div></div>
+    </div>
+    <div class="stat-grid">
+      <div class="stat-card"><div class="stat-label">CTR</div><div class="stat-value">${t.ctr || '0.0'}%</div><div class="stat-sub">clicks per view</div></div>
+      <div class="stat-card"><div class="stat-label">Words written</div><div class="stat-value">${Number(t.words || 0).toLocaleString('en')}</div><div class="stat-sub">across all pages</div></div>
+      <div class="stat-card"><div class="stat-label">Offers</div><div class="stat-value">${t.offers || 0}</div><div class="stat-sub">driving pages</div></div>
+      <div class="stat-card"><div class="stat-label">New pages</div><div class="stat-value">${t.pages_this_week || 0}</div><div class="stat-sub">last 7 days</div></div>
+    </div>
+    ${w.note ? `<div class="alert py-2 mb-3" style="background:var(--bg-card);border:1px solid var(--border);font-size:0.84rem;color:var(--text-muted);">${esc(w.note)}</div>` : ''}
+    ${pages.length === 0 ? empty : wfTrafficHtml(w)}`;
+}
+
+// The detail half of the Writer's Flow block: who is reading what.
+function wfTrafficHtml(w) {
+  const period = w.period_days || 30;
+  const pages = w.pages || [];
+  const offers = w.offers || [];
+  const series = w.series || [];
+  const recent = w.recent || [];
+  const maxViews = Math.max(...series.map((d) => d.views || 0), 1);
+
+  const pageRows = pages.map((p) => `<tr>
+      <td>
+        <a href="${esc(p.url || '#')}" target="_blank" rel="noopener" style="color:var(--text-light);font-weight:600;text-decoration:none;">${esc(p.title || p.slug)}</a>
+        <div style="font-size:0.74rem;color:var(--text-muted);">${p.words || 0} words${p.status ? ' · ' + esc(p.status) : ''}</div>
+      </td>
+      <td class="text-center">${p.views || 0}</td>
+      <td class="text-center">${p.clicks || 0}</td>
+      <td class="text-center">${p.ctr || '0.0'}%</td>
+    </tr>`).join('');
+
+  const offerRows = offers.map((o) => `<tr>
+      <td>${esc(o.title || o.slug)}
+        <div style="font-size:0.74rem;color:var(--text-muted);">${esc(o.offer_type || 'offer')}${o.status ? ' · ' + esc(o.status) : ''}</div>
+      </td>
+      <td class="text-center">${o.pages || 0}</td>
+      <td class="text-center">${o.views || 0}</td>
+    </tr>`).join('');
+
+  const recentRows = recent.map((p) => `<div class="kv-row">
+      <span style="font-size:0.85rem;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(p.title || p.slug)}</span>
+      <span style="font-size:0.76rem;color:var(--text-muted);white-space:nowrap;">${fmtDate(p.created_at)}</span>
+    </div>`).join('');
+
+  return `
+    <div class="row g-3">
+      <div class="col-12 col-lg-7">
+        <div class="panel">
+          <div class="panel-title">Top performing pages
+            <span style="font-size:0.75rem;color:var(--text-muted);font-weight:500;">last ${period} days</span></div>
+          <table class="table table-sm mb-0">
+            <thead><tr><th>Page</th><th class="text-center">Views</th><th class="text-center">Clicks</th><th class="text-center">CTR</th></tr></thead>
+            <tbody>${pageRows}</tbody>
+          </table>
+        </div>
+      </div>
+      <div class="col-12 col-lg-5">
+        <div class="panel">
+          <div class="panel-title">By offer</div>
+          ${offers.length ? `<table class="table table-sm mb-0">
+            <thead><tr><th>Offer</th><th class="text-center">Pages</th><th class="text-center">Views</th></tr></thead>
+            <tbody>${offerRows}</tbody>
+          </table>` : '<p style="color:var(--text-muted);font-size:0.88rem;margin:0;">No offers yet.</p>'}
+        </div>
+      </div>
+      <div class="col-12 col-lg-7">
+        <div class="panel">
+          <div class="panel-title">Page views — last 14 days</div>
+          ${series.length === 0
+            ? '<p style="color:var(--text-muted);font-size:0.88rem;margin:0;">No page views recorded yet. Share a page link to start the count.</p>'
+            : `<div class="bar-wrap">${series.map((d) => `
+                <div class="bar-row">
+                  <span class="bar-label">${esc(String(d.date || '').slice(5))}</span>
+                  <div class="bar-track"><div class="bar-fill" style="width:${Math.round((d.views || 0) / maxViews * 100)}%"></div></div>
+                  <span class="bar-count">${d.views || 0}</span>
+                </div>`).join('')}
+              </div>`}
+        </div>
+      </div>
+      <div class="col-12 col-lg-5">
+        <div class="panel">
+          <div class="panel-title">Newest pages</div>
+          ${recentRows || '<p style="color:var(--text-muted);font-size:0.88rem;margin:0;">No pages yet.</p>'}
+          <div style="margin-top:14px;">
+            <button class="btn btn-outline-acc btn-sm" type="button" onclick="go('writers-flow')">
+              <i class="fa-solid fa-pen-nib me-1"></i>Writer's Flow
+            </button>
+          </div>
         </div>
       </div>
     </div>`;

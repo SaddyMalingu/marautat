@@ -5211,6 +5211,210 @@ app.get("/tenant/analytics", tenantSessionAuth, async (req, res) => {
   }
 });
 
+// GET /tenant/writers-flow/analytics — Writer's Flow performance for ONE tenant.
+//
+// The owner's /admin/ai-jobs page already reports page views, clicks, CTR and the
+// pages that earned them — but for the whole platform at once. A client opening
+// Analytics wants those same numbers about their own pages, and the section only
+// ever reported WhatsApp conversations.
+//
+// Everything below is derived from rows the tenant already owns: their offers
+// (opportunities.tenant_id), the pages generated from those offers (blog_posts),
+// and the traffic those pages collected (analytics_page_views / analytics_clicks,
+// keyed by /blog/<slug>). No new table, no migration, and no query without a
+// tenant filter — a page path outside the slug set is never counted.
+app.get("/tenant/writers-flow/analytics", tenantSessionAuth, async (req, res) => {
+  try {
+    const ctx = await tenantSiteFromSession(req);
+    if (!ctx) return res.status(404).json({ error: "Tenant not found" });
+    const site = ctx.site || {};
+    const days = Math.min(Math.max(parseInt(req.query.days, 10) || 30, 1), 365);
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+
+    // ---- the tenant's offers -------------------------------------------------
+    const offersRes = await supabase.from("opportunities")
+      .select("id, title, slug, offer_type, status, created_at")
+      .eq("tenant_id", site.id)
+      .order("created_at", { ascending: false })
+      .limit(200);
+    if (offersRes.error && offersRes.error.code !== "42P01") {
+      return res.status(500).json({ error: offersRes.error.message });
+    }
+    const offers = offersRes.data || [];
+
+    // ---- the pages those offers produced ------------------------------------
+    // `content` is selected only to count words; it never leaves the server.
+    let posts = [];
+    let note = null;
+    const offerIds = offers.map((o) => o.id).filter(Boolean);
+    if (offerIds.length) {
+      const postsRes = await supabase.from("blog_posts")
+        .select("slug, title, status, created_at, opportunity_id, content")
+        .in("opportunity_id", offerIds)
+        .order("created_at", { ascending: false })
+        .limit(200);
+      if (postsRes.error) {
+        // A deployment without blog_posts still gets a usable page: zeros plus a
+        // sentence saying what is missing, instead of a dead section.
+        if (postsRes.error.code !== "42P01") return res.status(500).json({ error: postsRes.error.message });
+        note = "blog_posts is not installed on this deployment yet.";
+      } else {
+        posts = postsRes.data || [];
+      }
+    }
+
+    const pages = posts.map((p) => {
+      const words = String(p.content || "").trim().split(/\s+/).filter(Boolean).length;
+      return {
+        slug: p.slug,
+        title: p.title || p.slug,
+        status: p.status || null,
+        created_at: p.created_at || null,
+        offer_id: p.opportunity_id || null,
+        words,
+        views: 0,
+        clicks: 0,
+        ctr: "0.0",
+        url: "/blog/" + p.slug + ".html",
+      };
+    });
+    const byPath = {};
+    pages.forEach((p) => { byPath["/blog/" + p.slug] = p; });
+    const paths = Object.keys(byPath);
+
+    // ---- the traffic those pages collected ----------------------------------
+    // PostgREST caps the length of an IN list, so ask in batches of 100.
+    let views = [];
+    let clicks = [];
+    let geoAvailable = true;
+    for (let i = 0; i < paths.length; i += 100) {
+      const slice = paths.slice(i, i + 100);
+      let viewsRes = await supabase.from("analytics_page_views")
+        .select("page_path, created_at, country")
+        .in("page_path", slice).gte("created_at", since);
+      if (viewsRes.error && viewsRes.error.code === "42703") {
+        // Older schema: the location columns arrived with 2026-09-20_analytics_fix.
+        geoAvailable = false;
+        viewsRes = await supabase.from("analytics_page_views")
+          .select("page_path, created_at")
+          .in("page_path", slice).gte("created_at", since);
+      }
+      if (viewsRes.error) {
+        if (["42P01", "42703"].indexOf(viewsRes.error.code) === -1) {
+          return res.status(500).json({ error: viewsRes.error.message });
+        }
+        note = note || "Page-view tracking is not installed on this deployment yet.";
+        break;
+      }
+      views = views.concat(viewsRes.data || []);
+
+      const clicksRes = await supabase.from("analytics_clicks")
+        .select("page_path, click_type")
+        .in("page_path", slice).gte("created_at", since);
+      if (clicksRes.error) {
+        if (["42P01", "42703"].indexOf(clicksRes.error.code) === -1) {
+          return res.status(500).json({ error: clicksRes.error.message });
+        }
+        note = note || "Click tracking is not installed on this deployment yet.";
+        break;
+      }
+      clicks = clicks.concat(clicksRes.data || []);
+    }
+
+    const countries = {};
+    const dayMap = {};
+    // Every reported path is matched back to the tenant's own slug, so a URL that
+    // only resembles theirs cannot inflate the numbers.
+    views.forEach((v) => {
+      const page = byPath[v.page_path];
+      if (!page) return;
+      page.views += 1;
+      const day = String(v.created_at || "").slice(0, 10);
+      if (day) {
+        if (!dayMap[day]) dayMap[day] = { date: day, views: 0, clicks: 0 };
+        dayMap[day].views += 1;
+      }
+      if (geoAvailable && v.country) countries[v.country] = (countries[v.country] || 0) + 1;
+    });
+    clicks.forEach((c) => {
+      const page = byPath[c.page_path];
+      if (!page) return;
+      page.clicks += 1;
+      const day = String(c.created_at || "").slice(0, 10);
+      if (day) {
+        if (!dayMap[day]) dayMap[day] = { date: day, views: 0, clicks: 0 };
+        dayMap[day].clicks += 1;
+      }
+    });
+
+    pages.forEach((p) => {
+      p.ctr = p.views > 0 ? ((p.clicks / p.views) * 100).toFixed(1) : "0.0";
+    });
+
+    const totalViews = pages.reduce((n, p) => n + p.views, 0);
+    const totalClicks = pages.reduce((n, p) => n + p.clicks, 0);
+    const totalWords = pages.reduce((n, p) => n + p.words, 0);
+    const published = pages.filter((p) => p.status === "published").length;
+    const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+
+    // Per-offer rollup: which offer is actually earning its keep.
+    const pagesByOffer = {};
+    pages.forEach((p) => {
+      if (!p.offer_id) return;
+      if (!pagesByOffer[p.offer_id]) pagesByOffer[p.offer_id] = { pages: 0, views: 0, clicks: 0 };
+      pagesByOffer[p.offer_id].pages += 1;
+      pagesByOffer[p.offer_id].views += p.views;
+      pagesByOffer[p.offer_id].clicks += p.clicks;
+    });
+    const offersOut = offers.map((o) => {
+      const agg = pagesByOffer[o.id] || { pages: 0, views: 0, clicks: 0 };
+      return {
+        id: o.id, title: o.title || o.slug, slug: o.slug,
+        offer_type: o.offer_type || "job", status: o.status || null,
+        pages: agg.pages, views: agg.views, clicks: agg.clicks,
+      };
+    }).sort((a, b) => (b.views - a.views) || (b.pages - a.pages));
+
+    const stripped = pages.map((p) => ({
+      slug: p.slug, title: p.title, status: p.status, created_at: p.created_at,
+      words: p.words, views: p.views, clicks: p.clicks, ctr: p.ctr, url: p.url,
+    }));
+
+    return res.json({
+      ok: true,
+      period_days: days,
+      site: { name: site.name || null, slug: site.slug || null },
+      public_path: site.slug ? "/ai-jobs/t/" + site.slug : null,
+      totals: {
+        offers: offers.length,
+        pages: pages.length,
+        published,
+        words: totalWords,
+        avg_words: pages.length ? Math.round(totalWords / pages.length) : 0,
+        views: totalViews,
+        clicks: totalClicks,
+        ctr: totalViews > 0 ? ((totalClicks / totalViews) * 100).toFixed(1) : "0.0",
+        pages_this_week: pages.filter((p) => Date.parse(p.created_at || 0) >= weekAgo).length,
+      },
+      // Best performers first; the table is capped so a 200-page tenant still
+      // gets a page that loads on a phone.
+      pages: stripped
+        .sort((a, b) => (b.views - a.views) || (Date.parse(b.created_at || 0) - Date.parse(a.created_at || 0)))
+        .slice(0, 50),
+      offers: offersOut,
+      recent: stripped.slice()
+        .sort((a, b) => Date.parse(b.created_at || 0) - Date.parse(a.created_at || 0))
+        .slice(0, 6),
+      series: Object.keys(dayMap).sort().slice(-14).map((k) => dayMap[k]),
+      top_countries: Object.keys(countries).map((c) => ({ country: c, views: countries[c] }))
+        .sort((a, b) => b.views - a.views).slice(0, 5),
+      note,
+    });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
 // GET /tenant/attribution — first/last-touch attribution analytics
 app.get("/tenant/attribution", tenantSessionAuth, async (req, res) => {
   try {

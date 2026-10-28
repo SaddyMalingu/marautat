@@ -1,8 +1,15 @@
 # Tenant Portal — responsive shell for every device
 
 **Surface:** `admin/tenant_dashboard.html` (served at `/tenant-dashboard`, auth-gated)
-**Test:** `npm run test:tenant-portal` → `scripts/test_tenant_portal_mobile.mjs` (102 checks)
+**Test:** `npm run test:tenant-portal` → `scripts/test_tenant_portal_mobile.mjs` (114 checks)
 **Owner of the behaviour:** the `RESPONSIVE SHELL` block in the page's last `<script>`
+
+> **2026-10-27 — the header is now the client's business name.** That made the
+> topbar's min-content wider than a phone, and because the shell track was declared
+> `1fr` (= `minmax(auto, 1fr)`) the whole document grew to 431px at a 360px viewport.
+> The drawer breakpoint now uses `minmax(0, 1fr)`, the phone number is hidden below
+> 480px and the word "Logout" collapses to its icon, so the name reads in full.
+> Details, measurements and the analytics change: `docs/TENANT_PORTAL_BRANDING_ANALYTICS.md`.
 
 ## Target buyer and workflow
 
