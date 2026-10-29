@@ -1,6 +1,0 @@
- M docs/CTA_COVERAGE_2026-10-29.md
- M scripts/audit_page_fidelity.mjs
- M scripts/blogManager.js
- M scripts/repair_blog_html.js
- M scripts/test_blog_html_sanitize.mjs
- M utils/ctaBlock.js
