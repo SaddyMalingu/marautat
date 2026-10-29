@@ -126,8 +126,6 @@ export async function restoreFromDB() {
     // the verifier's own pages were doing exactly that, 93 links deep. Anything
     // this restore did not just write is stale: drop it.
     const written = new Set(live.filter((p) => p.html_content).map((p) => p.slug + '.html'));
-    const titles = {};
-    for (const p of live) if (p.html_content) titles[p.slug] = p.title || p.slug;
     let pruned = 0;
     try {
       for (const file of fs.readdirSync(BLOG)) {
@@ -140,8 +138,23 @@ export async function restoreFromDB() {
       console.warn('[DB] Could not prune stale pages: ' + e.message);
     }
     if (pruned) console.warn('[DB] Removed ' + pruned + ' page(s) with no published post');
-    // Real titles, so /blog advertises the article and not the slug.
-    try { updateIndex(titles); } catch (e) { console.warn('[DB] Index rebuild failed: ' + e.message); }
+    // /blog has two generators: updateIndex() in this module, and the /blog route
+    // in server.js, which reads each page's <h1> and description to build the
+    // richer list that is actually served. A stale index on disk keeps linking to
+    // the pages just pruned, so drop it and let the route rebuild it — rewriting
+    // it here would lose the descriptions and images the route adds.
+    try {
+      const indexPath = path.join(BLOG, 'index.html');
+      if (fs.existsSync(indexPath)) {
+        const current = fs.readFileSync(indexPath, 'utf8');
+        if (/verify-writers-flow-|test-ai-specialist-|Ready to Start\?/i.test(current)) {
+          fs.unlinkSync(indexPath);
+          console.warn('[DB] Dropped a stale /blog index; it will be rebuilt on the next request');
+        }
+      }
+    } catch (e) {
+      console.warn('[DB] Could not reset the blog index: ' + e.message);
+    }
     console.log('[DB] Restored ' + live.length + ' posts' + (rebuilt ? ' (' + rebuilt + ' rebuilt from their article body)' : ''));
     return live.length;
   } catch (e) { console.error('[DB] Restore error:', e.message); return 0; }

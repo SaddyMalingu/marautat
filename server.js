@@ -471,7 +471,13 @@ app.get(['/blog', '/blog/'], async (req, res) => {
   // Generate blog index dynamically from existing posts
   try {
     if (!fs.existsSync(blogDir)) fs.mkdirSync(blogDir, { recursive: true });
-    const files = fs.readdirSync(blogDir).filter(f => f.endsWith('.html') && f !== 'index.html');
+    const files = fs.readdirSync(blogDir)
+      .filter(f => f.endsWith('.html') && f !== 'index.html')
+      // The verifier's own pages are real HTML files, and this route advertises
+      // whatever it finds on disk — 36 of them were listed on /blog. They are
+      // written as drafts now and deleted at boot, but the public index must not
+      // depend on that having happened.
+      .filter(f => !/^(?:verify-writers-flow-|test-ai-specialist-)/i.test(f));
     
     if (files.length > 0) {
       // Build index from existing posts
