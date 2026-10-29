@@ -15,6 +15,7 @@
 //   node scripts/test_tenant_session_persistence.mjs
 import fs from 'fs';
 import vm from 'vm';
+import { execFileSync } from 'child_process';
 
 let pass = 0, fail = 0;
 const ok = (name, cond, extra = '') => {
@@ -121,6 +122,23 @@ ok('revoked entries do not accumulate forever',
 ok('the tenant is still re-checked from the database on every data route',
   /async function tenantSiteFromSession\(req\)[\s\S]{0,200}from\('bot_tenants'\)/.test(server));
 ok('the cookie is still HttpOnly and SameSite', /"HttpOnly", "SameSite=Lax"/.test(server));
+
+// The bug this guards: a duplicate `const` declaration in server.js parses
+// nowhere and kills the process on boot, and no amount of text matching can see
+// it — the file is a perfectly good string. Parse the files for real.
+const parses = (file) => {
+  try {
+    execFileSync(process.execPath, ['--check', file], { stdio: 'pipe' });
+    return true;
+  } catch (e) {
+    return false;
+  }
+};
+ok('server.js parses as a module', parses('server.js'));
+ok('the session module parses', parses('utils/tenantSession.js'));
+ok('no symbol is declared twice in the session block',
+  (server.match(/const revokedTenantTokens = new Map\(\);/g) || []).length === 1,
+  (server.match(/const revokedTenantTokens = new Map\(\);/g) || []).length + ' declarations');
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

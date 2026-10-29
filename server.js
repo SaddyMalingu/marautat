@@ -2315,11 +2315,6 @@ function createTenantSession(tenant) {
   };
 }
 
-// A logout must take effect on the instance handling it. Tokens held by
-// processes that have since restarted cannot be recalled — the TTL is the
-// bound — but a token used on the instance that logged it out is refused.
-const revokedTenantTokens = new Map();
-
 /** Session for a token, from memory or from the token itself. */
 function readTenantSession(token) {
   const raw = String(token || "").trim();
