@@ -64,8 +64,19 @@ export async function restoreFromDB() {
       if (offerErr) console.warn('[DB] Offers unavailable, CTA falls back to the default: ' + offerErr.message);
       for (const row of offerRows || []) offers.set(row.id, row);
     }
+    // Rows the verifier wrote before 2026-10-29 are still marked published in
+    // the database. Demote them once, at the source, so they stop being restored
+    // at all instead of being filtered out again on every boot.
+    const artifacts = data.filter((p) => TEST_ARTIFACT.test(String(p.slug || '')));
+    if (artifacts.length) {
+      const slugs = artifacts.map((p) => p.slug);
+      const { error: demoteErr } = await sb.from('blog_posts').update({ status: 'draft' }).in('slug', slugs);
+      if (demoteErr) console.warn('[DB] Could not demote verifier pages: ' + demoteErr.message);
+      else console.warn('[DB] Demoted ' + slugs.length + ' verifier page(s) to draft');
+    }
+    const live = data.filter((p) => !TEST_ARTIFACT.test(String(p.slug || '')));
     let rebuilt = 0;
-    for (const post of data) {
+    for (const post of live) {
       if (!post.html_content) continue;
       let html = post.html_content;
       // A page written before sanitizeArticleHTML() existed carries the model's
@@ -96,7 +107,11 @@ export async function restoreFromDB() {
             html = fixed;
             rebuilt++;
             await sb.from('blog_posts').update({ html_content: fixed }).eq('slug', post.slug);
-            console.warn('[DB] Rebuilt unreadable page ' + post.slug + ' (' + audit.issues.join(', ') + ')');
+            // The audit list is empty when the rebuild was triggered by the stale
+            // footer rather than by a readability failure — say which, or every
+            // log line reads "unreadable page X ()".
+            console.warn('[DB] Rebuilt ' + post.slug + ' (' +
+              (audit.ok ? 'old closing block' : audit.issues.join(', ')) + ')');
           } else {
             console.warn('[DB] Page still fails the audit after rebuild: ' + post.slug);
           }
@@ -106,8 +121,29 @@ export async function restoreFromDB() {
       }
       fs.writeFileSync(path.join(BLOG, post.slug + '.html'), html, 'utf8');
     }
-    console.log('[DB] Restored ' + data.length + ' posts' + (rebuilt ? ' (' + rebuilt + ' rebuilt from their article body)' : ''));
-    return data.length;
+    // The index is built from the files on disk (updateIndex), so a file left
+    // behind by a post that is no longer published keeps appearing on /blog —
+    // the verifier's own pages were doing exactly that, 93 links deep. Anything
+    // this restore did not just write is stale: drop it.
+    const written = new Set(live.filter((p) => p.html_content).map((p) => p.slug + '.html'));
+    const titles = {};
+    for (const p of live) if (p.html_content) titles[p.slug] = p.title || p.slug;
+    let pruned = 0;
+    try {
+      for (const file of fs.readdirSync(BLOG)) {
+        if (!file.endsWith('.html') || file === 'index.html') continue;
+        if (written.has(file)) continue;
+        fs.unlinkSync(path.join(BLOG, file));
+        pruned++;
+      }
+    } catch (e) {
+      console.warn('[DB] Could not prune stale pages: ' + e.message);
+    }
+    if (pruned) console.warn('[DB] Removed ' + pruned + ' page(s) with no published post');
+    // Real titles, so /blog advertises the article and not the slug.
+    try { updateIndex(titles); } catch (e) { console.warn('[DB] Index rebuild failed: ' + e.message); }
+    console.log('[DB] Restored ' + live.length + ' posts' + (rebuilt ? ' (' + rebuilt + ' rebuilt from their article body)' : ''));
+    return live.length;
   } catch (e) { console.error('[DB] Restore error:', e.message); return 0; }
 }
 
@@ -1155,10 +1191,25 @@ async function genContent(opp, type, existing) {
 
 // Rebuilds public/blog/index.html from the files on disk. Deleting a post must
 // call this too, otherwise /blog keeps linking to the removed page.
-export function updateIndex() {
+//
+// `titles` (slug → real title) is optional and wins over the prettified slug:
+// the index used to advertise "Chief Of Staff Awareness 1" for a page whose
+// actual heading was "What a Chief of Staff Actually Does All Day".
+export function updateIndex(titles) {
   if (!fs.existsSync(BLOG)) return;
-  const files = fs.readdirSync(BLOG).filter(function(x){return x.endsWith(".html") && x !== "index.html";});
-  const posts = files.map(function(x){const s=x.replace(".html","");return {slug:s,title:s.replace(/-/g," ").replace(/\b\w/g,function(c){return c.toUpperCase();})};});
+  const known = titles && typeof titles === 'object' ? titles : {};
+  const files = fs.readdirSync(BLOG)
+    .filter(function (x) { return x.endsWith('.html') && x !== 'index.html'; })
+    // A verifier's own page must never be advertised, even if a file is left on
+    // disk by an older boot. 93 index links pointed at these once.
+    .filter(function (x) { return !TEST_ARTIFACT.test(x.replace(/\.html$/, '')); });
+  const posts = files.map(function (x) {
+    const s = x.replace('.html', '');
+    return {
+      slug: s,
+      title: known[s] || s.replace(/-/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); }),
+    };
+  });
   const list = posts.map(function(p){return '<article style="margin:1rem 0;padding:1.5rem;background:rgba(255,255,255,.05);border-radius:12px"><h3 style="margin:0 0 .5rem"><a href="/blog/'+p.slug+'.html" style="color:#ff8a00;text-decoration:none">'+p.title+'</a></h3><a href="/blog/'+p.slug+'.html" style="color:#b8c7d6;font-size:.9rem">Read more</a></article>';}).join("");
   fs.writeFileSync(path.join(BLOG,"index.html"),'<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>AI Jobs Blog | AlphaDome</title><meta name="description" content="AI jobs articles."><link rel="canonical" href="/blog/"><style>:root{--bg:#081421;--accent:#ff8a00;--text:#f3f7fa;--muted:#b8c7d6}*{box-sizing:border-box;margin:0;padding:0}body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.6}.c{max-width:800px;margin:0 auto;padding:0 24px}nav{padding:1rem 0}nav a{color:var(--accent);text-decoration:none}h1{font-size:2rem;margin:1rem 0}</style></head><body><div class="c"><nav><a href="/">AlphaDome</a> / Blog</nav><h1>AI Jobs Blog</h1><p style="color:var(--muted)">Expert career guides.</p>'+list+'<p style="color:var(--muted);margin-top:2rem">'+posts.length+' articles</p></div></body></html>',"utf8");
 }

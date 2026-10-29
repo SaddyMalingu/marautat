@@ -128,6 +128,30 @@ possessive `s` (which produced "…English & Finnishes" on live pages):
 - The pipeline passes `{ offerType, title }` into `analyzeArticle()`, so the
   conversion gate actually runs.
 
+### The boot migration (2026-10-29, after the first deploy)
+
+`restoreFromDB()` copied `html_content` byte-for-byte whenever a page passed the
+readability audit, so the new footer reached only newly written pages. Three
+changes make the existing corpus migrate itself on boot, with no model calls:
+
+1. A page still carrying `Ready to Start?` or `This opportunity is available now.`
+   is rebuilt even though it passes the audit — no code path produces those
+   strings any more, so the page is stale by definition (`isStalePage()` in
+   `utils/ctaBlock.js`).
+2. The offers query the rebuild uses now selects `compensation_max`,
+   `compensation_currency`, `location_text`, `destination_url`, `referral_url`
+   and `application_url`, so the new footer can print the figure, the place and
+   the real destination.
+3. `/blog` is built from the files on disk, so any file without a published row
+   kept being advertised — and the verifier's own pages were 93 links deep in the
+   index, titled `Verify Writers Flow 20261022130935`. The restore now demotes
+   existing verifier rows to draft, deletes files with no published post, and
+   rebuilds the index from **real titles** instead of slug-cased filenames.
+
+First deploy result: `Restored 337 posts (240 rebuilt from their article body)`.
+Six sampled pages verified live — no legacy block, offer named in the heading,
+readiness list present, two buttons.
+
 ## How to use it
 
 ```js
