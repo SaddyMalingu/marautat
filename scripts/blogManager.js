@@ -57,7 +57,9 @@ export async function restoreFromDB() {
     const offers = new Map();
     if (offerIds.length) {
       const { data: offerRows, error: offerErr } = await sb.from('opportunities')
-        .select('id, title, offer_type, cta_label')
+        // The page footer is written from the offer itself (utils/ctaBlock.js),
+        // so it needs the figure, the place and the destination, not just a label.
+        .select('id, title, offer_type, cta_label, compensation_max, compensation_currency, location_text, destination_url, referral_url, application_url')
         .in('id', offerIds);
       if (offerErr) console.warn('[DB] Offers unavailable, CTA falls back to the default: ' + offerErr.message);
       for (const row of offerRows || []) offers.set(row.id, row);
@@ -71,7 +73,14 @@ export async function restoreFromDB() {
       // copies html_content byte-for-byte on every boot. Rebuild it from the
       // stored article body instead, and persist the repair.
       const audit = auditBlogHTML(html);
-      if (!audit.ok && post.content) {
+      // The closing block was rewritten on 2026-10-29: it names the offer, prints
+      // the figure, lists what to have ready and appears above the article too.
+      // A page still carrying the old fixed block is stale by definition — no
+      // code path produces those strings any more — so rebuild it even though it
+      // passes the audit. Without this, every healthy page keeps the generic
+      // "Ready to Start? / Apply Now" until someone regenerates it by hand.
+      const staleFooter = /Ready to Start\?|This (?:opportunity|offer) is available now\./.test(html);
+      if ((!audit.ok || staleFooter) && post.content) {
         try {
           const offer = post.opportunity_id
             ? (offers.get(post.opportunity_id) || { id: post.opportunity_id })
