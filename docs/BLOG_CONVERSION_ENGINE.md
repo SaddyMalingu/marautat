@@ -152,6 +152,36 @@ First deploy result: `Restored 337 posts (240 rebuilt from their article body)`.
 Six sampled pages verified live — no legacy block, offer named in the heading,
 readiness list present, two buttons.
 
+### What a rebuild actually changes (and what it cannot)
+
+`restoreFromDB()` re-renders the page **from `blog_posts.content`** and writes the
+result to **`html_content` only** — that is the single column it updates:
+
+```js
+await sb.from('blog_posts').update({ html_content: fixed }).eq('slug', post.slug);
+```
+
+So a rebuild changes the wrapper around the article: `<head>`/`<style>`, the meta
+description, the compact CTA above the article, the closing block, and the
+"Published … | N min read" line. The article body is passed through
+`sanitizeArticleHTML(content)` and embedded verbatim — `content`, `title` and
+`slug` are never in an UPDATE payload from this path. (This rebuild path predates
+2026-10-29; it used to fire only when a page failed the readability audit. Today
+it also fires on the stale footer, which is why 240 pages moved instead of ~105.)
+
+To verify that on production rather than trust it:
+
+```bash
+npm run audit:page-fidelity                 # every published post, read-only
+npm run audit:page-fidelity -- --slug=chief-of-staff-awareness-1
+```
+
+It compares the article inside each stored page against
+`sanitizeArticleHTML(content)` and prints how many are identical, which differ,
+and which are still on the old footer. It issues SELECTs only.
+`test:blog-html` pins the comparison itself (including a tampered-page case), so
+the audit cannot pass by being blind.
+
 ## How to use it
 
 ```js

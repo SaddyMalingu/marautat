@@ -38,6 +38,42 @@ export function orphanPageFiles(files, keep) {
 }
 
 /**
+ * The article body as stored inside a rendered page.
+ *
+ * The template adds three things that are not part of the stored article — the
+ * <h1>, the "Published … | N min read" line and the lead image — so they are
+ * stripped before comparing. Used by scripts/audit_page_fidelity.mjs to prove a
+ * rebuild changed the page and not the prose.
+ */
+export function articleBodyOf(pageHtml) {
+  const s = String(pageHtml || '');
+  const open = s.indexOf('<article>');
+  if (open < 0) return null;
+  let body = s.slice(open + '<article>'.length);
+  const close = body.indexOf('</article>');
+  if (close >= 0) body = body.slice(0, close);
+  body = body.replace(/<h1>[\s\S]*?<\/h1>/i, '');
+  body = body.replace(/<p style="color:var\(--muted\)">Published [\s\S]*?<\/p>/i, '');
+  body = body.replace(/^\s*<img\b[^>]*>/i, '');
+  return body.trim();
+}
+
+/** Comparable text: tags stripped, whitespace collapsed. Case preserved. */
+export function plainTextOf(html) {
+  return String(html || '')
+    .replace(/<(script|style)\b[\s\S]*?<\/\1>/gi, ' ')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
  * A cached index that advertises a page which should no longer be public, or
  * that still carries the pre-2026-10-29 footer text. Either way it is stale and
  * the richer generator in server.js should rebuild it.

@@ -22,7 +22,7 @@
 import chalk from "chalk";
 import { sanitizeArticleHTML, auditBlogHTML, escapeAttr } from "../utils/articleHtml.js";
 import { isStalePage } from "../utils/ctaBlock.js";
-import { isTestArtifact, orphanPageFiles, indexIsStale } from "../utils/blogIndex.js";
+import { isTestArtifact, orphanPageFiles, indexIsStale, articleBodyOf, plainTextOf } from "../utils/blogIndex.js";
 
 const results = [];
 const record = (status, name, detail = "") => {
@@ -362,6 +362,27 @@ await check("index rules: test artifacts are recognised by slug or filename", ()
   assert(!isTestArtifact("chief-of-staff-awareness-1"), "a real page was flagged");
   assert(!isTestArtifact(""), "empty slug flagged");
   return "3 artifact shapes caught, real slugs clear";
+});
+
+await check("fidelity audit: a rebuilt page still carries the stored article verbatim", () => {
+  // This is the check scripts/audit_page_fidelity.mjs runs against production:
+  // the body inside the rebuilt page must equal sanitize(content) exactly, so a
+  // template change cannot be mistaken for a rewrite of the prose.
+  const article = CLEAN_FRAGMENT + "<p>" + BODY_WORDS + "</p><h2>Pay</h2><ul><li>Hourly band</li><li>Annual band</li></ul>";
+  const page = buildHTML({ title: "A title the template owns", slug: "s", content: article, thumb: "/images/blog/x.png" }, OFFER);
+  const body = articleBodyOf(page);
+  assert(body !== null, "no <article> found in the built page");
+  const bodyText = plainTextOf(body);
+  const articleText = plainTextOf(sanitizeArticleHTML(article));
+  assert(bodyText === articleText,
+    "the page body differs from the stored article:\n  page:    " + bodyText.slice(0, 160) + "\n  article: " + articleText.slice(0, 160));
+  assert(!/\bPublished\b/.test(bodyText), "the 'Published …' line was not stripped");
+  assert(!/A title the template owns/.test(bodyText), "the <h1> was not stripped");
+  assert(/Annual band/.test(bodyText), "the article's own list was lost");
+  // A hand-edited page must be detected, or the audit would be worthless.
+  const tampered = page.replace("Annual band", "Annual band, now with extra words");
+  assert(plainTextOf(articleBodyOf(tampered)) !== articleText, "an edited body was not detected");
+  return `${bodyText.split(/\s+/).length} words identical in and out of the template`;
 });
 
 // ---------------------------------------------------------------------------

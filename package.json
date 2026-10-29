@@ -40,6 +40,7 @@
     "test:wf-create": "node scripts/test_wf_campaign_create.mjs",
     "test:discovery-form": "node scripts/test_discovery_form_feedback.mjs",
     "repair:blog-html": "node scripts/repair_blog_html.js",
+    "audit:page-fidelity": "node scripts/audit_page_fidelity.mjs",
     "probe:blog-theme": "node scripts/probe_blog_theme.mjs",
     "test:share-card": "node scripts/test_post_share.mjs",
     "aboss:workbook": "node scripts/aboss_make_workbook.cjs",
