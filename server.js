@@ -46,6 +46,9 @@ import { insertWfCampaign, describeWfCampaignError } from "./utils/wfCampaigns.j
 // Display-only voice info for the tenant portal, and the profile list the voice
 // picker offers. The prompt block itself stays on the server.
 import { resolveTenantVoice, listVoiceProfiles, VOICE_PROFILES } from "./utils/tenantVoice.js";
+// The blog index must never advertise a verifier's own page, whichever generator
+// builds it (this route, or updateIndex() in scripts/blogManager.js).
+import { isTestArtifact } from "./utils/blogIndex.js";
 // Scan to Pay: the tenant merchant/client wallet rides the QR + STK stack that is
 // already live for Kassangas, so the rules live in one pure module both entry
 // points (tenant dashboard and the public pay page) agree on.
@@ -477,7 +480,7 @@ app.get(['/blog', '/blog/'], async (req, res) => {
       // whatever it finds on disk — 36 of them were listed on /blog. They are
       // written as drafts now and deleted at boot, but the public index must not
       // depend on that having happened.
-      .filter(f => !/^(?:verify-writers-flow-|test-ai-specialist-)/i.test(f));
+      .filter(f => !isTestArtifact(f));
     
     if (files.length > 0) {
       // Build index from existing posts

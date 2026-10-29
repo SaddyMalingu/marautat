@@ -22,6 +22,7 @@
 import chalk from "chalk";
 import { sanitizeArticleHTML, auditBlogHTML, escapeAttr } from "../utils/articleHtml.js";
 import { isStalePage } from "../utils/ctaBlock.js";
+import { isTestArtifact, orphanPageFiles, indexIsStale } from "../utils/blogIndex.js";
 
 const results = [];
 const record = (status, name, detail = "") => {
@@ -319,6 +320,48 @@ await check("cta: a stored page on the old template is detected as stale", () =>
   assert(!isStalePage(fresh), "a freshly built page was flagged as stale — restoreFromDB would rebuild it on every boot");
   assert(!isStalePage(""), "empty input was treated as a legacy page");
   return "legacy footer detected, new page clear";
+});
+
+await check("index rules: only files a published post owns survive a boot", () => {
+  const disk = [
+    "index.html",
+    "chief-of-staff-awareness-1.html",
+    "defense-analyst-awareness-1.html",
+    "verify-writers-flow-20261022080548-awareness.html",
+    "test-ai-specialist-1.html",
+    "orphan-from-a-deleted-offer.html",
+    "sitemap.xml",
+  ];
+  const keep = ["chief-of-staff-awareness-1.html", "defense-analyst-awareness-1.html"];
+  const orphans = orphanPageFiles(disk, keep);
+  assert(orphans.length === 3, `expected 3 orphans, got ${orphans.length}: ${orphans.join(", ")}`);
+  assert(orphans.includes("verify-writers-flow-20261022080548-awareness.html"), "a verifier page would survive");
+  assert(orphans.includes("orphan-from-a-deleted-offer.html"), "an orphaned article would survive");
+  assert(!orphans.includes("index.html"), "the index would have been deleted");
+  assert(!orphans.includes("sitemap.xml"), "a non-HTML asset would have been deleted");
+  assert(!orphans.includes("chief-of-staff-awareness-1.html"), "a live page would have been deleted");
+  const asSet = orphanPageFiles(disk, new Set(keep));
+  assert(asSet.length === 3, "a Set and an array disagreed");
+  return `${orphans.length} orphans from ${disk.length} files`;
+});
+
+await check("index rules: a stale /blog index is dropped, a clean one is kept", () => {
+  assert(indexIsStale('<a href="/blog/verify-writers-flow-20261022080548-awareness.html">x</a>'), "verifier link not detected");
+  assert(indexIsStale('<div><h2>Ready to Start?</h2></div>'), "legacy footer not detected");
+  const clean = buildHTML({ title: "T", slug: "s", content: CLEAN_FRAGMENT }, OFFER);
+  assert(!indexIsStale(clean), "a freshly built page was treated as a stale index");
+  assert(!indexIsStale(""), "empty input flagged as stale");
+  assert(!indexIsStale(null), "null flagged as stale");
+  return "verifier link and legacy footer both caught";
+});
+
+await check("index rules: test artifacts are recognised by slug or filename", () => {
+  assert(isTestArtifact("verify-writers-flow-20261022080548-awareness"), "slug not recognised");
+  assert(isTestArtifact("verify-writers-flow-20261022080548-awareness.html"), "filename not recognised");
+  assert(isTestArtifact("test-ai-specialist-1"), "smoke-test slug not recognised");
+  assert(!isTestArtifact("chief-of-staff-awareness-1"), "a real page was flagged");
+  assert(!isTestArtifact(""), "empty slug flagged");
+  return "3 artifact shapes caught, real slugs clear";
 });
 
 // ---------------------------------------------------------------------------

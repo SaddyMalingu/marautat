@@ -25,6 +25,8 @@ import { analyzeArticle, qualityBrief, describeQuality } from '../utils/blogQual
 // on a job, a product and a course alike, linking to a redirect that 404s when
 // the offer has no destination. utils/ctaBlock.js writes it from the offer.
 import { ctaBlock, isStalePage } from '../utils/ctaBlock.js';
+// The prune/index rules for the boot restore, kept pure so they are testable.
+import { isTestArtifact, orphanPageFiles, indexIsStale } from '../utils/blogIndex.js';
 
 // Slugs the verifier and the provider smoke test generate. They are real posts
 // with real HTML, and until 2026-10-29 they were published to /blog alongside
@@ -67,14 +69,14 @@ export async function restoreFromDB() {
     // Rows the verifier wrote before 2026-10-29 are still marked published in
     // the database. Demote them once, at the source, so they stop being restored
     // at all instead of being filtered out again on every boot.
-    const artifacts = data.filter((p) => TEST_ARTIFACT.test(String(p.slug || '')));
+    const artifacts = data.filter((p) => isTestArtifact(p.slug));
     if (artifacts.length) {
       const slugs = artifacts.map((p) => p.slug);
       const { error: demoteErr } = await sb.from('blog_posts').update({ status: 'draft' }).in('slug', slugs);
       if (demoteErr) console.warn('[DB] Could not demote verifier pages: ' + demoteErr.message);
       else console.warn('[DB] Demoted ' + slugs.length + ' verifier page(s) to draft');
     }
-    const live = data.filter((p) => !TEST_ARTIFACT.test(String(p.slug || '')));
+    const live = data.filter((p) => !isTestArtifact(p.slug));
     let rebuilt = 0;
     for (const post of live) {
       if (!post.html_content) continue;
@@ -128,9 +130,7 @@ export async function restoreFromDB() {
     const written = new Set(live.filter((p) => p.html_content).map((p) => p.slug + '.html'));
     let pruned = 0;
     try {
-      for (const file of fs.readdirSync(BLOG)) {
-        if (!file.endsWith('.html') || file === 'index.html') continue;
-        if (written.has(file)) continue;
+      for (const file of orphanPageFiles(fs.readdirSync(BLOG), written)) {
         fs.unlinkSync(path.join(BLOG, file));
         pruned++;
       }
@@ -145,12 +145,9 @@ export async function restoreFromDB() {
     // it here would lose the descriptions and images the route adds.
     try {
       const indexPath = path.join(BLOG, 'index.html');
-      if (fs.existsSync(indexPath)) {
-        const current = fs.readFileSync(indexPath, 'utf8');
-        if (/verify-writers-flow-|test-ai-specialist-|Ready to Start\?/i.test(current)) {
-          fs.unlinkSync(indexPath);
-          console.warn('[DB] Dropped a stale /blog index; it will be rebuilt on the next request');
-        }
+      if (fs.existsSync(indexPath) && indexIsStale(fs.readFileSync(indexPath, 'utf8'))) {
+        fs.unlinkSync(indexPath);
+        console.warn('[DB] Dropped a stale /blog index; it will be rebuilt on the next request');
       }
     } catch (e) {
       console.warn('[DB] Could not reset the blog index: ' + e.message);
