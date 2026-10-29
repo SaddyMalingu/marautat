@@ -52,6 +52,35 @@ function getClientIp(req) {
   }
 }
 
+// Which page of ours did this click come from?
+//
+// Every CTA is answered by /ai-jobs/apply/<id>, and that route recorded the walk
+// as an `apply_click` on the offer but never as a click on the page that earned
+// it. /tenant/writers-flow/analytics reads analytics_clicks by page_path, so with
+// no writer for that table a tenant's CTR could only ever print 0.0% — the one
+// number that says whether the writing works was structurally dead.
+//
+// The referring URL is what ties the two together, and it is the only thing that
+// does so without rewriting 299 already-published pages. Attribution is strict:
+// same host only, and only the two shapes we publish, so a stray or spoofed
+// referrer cannot invent traffic on a page the tenant owns.
+export function pagePathFromReferrer(req, fallback = null) {
+  try {
+    const ref = (typeof req?.get === 'function' ? req.get('Referrer') : null) || req?.headers?.referer;
+    if (!ref || typeof ref !== 'string') return fallback;
+    const url = new URL(ref);
+    const host = String(req?.headers?.['x-forwarded-host'] || req?.headers?.host || '')
+      .split(',')[0].trim().split(':')[0].toLowerCase();
+    if (host && url.hostname.toLowerCase() !== host) return fallback;
+    const p = url.pathname.replace(/\.html$/, '');
+    if (/^\/blog\/[A-Za-z0-9_-]+$/.test(p)) return p;
+    if (/^\/ai-jobs\/t\/[A-Za-z0-9_-]+(\/[A-Za-z0-9_-]+)*$/.test(p)) return p;
+  } catch (e) {
+    // Unparseable referrer: fall through to the caller's default.
+  }
+  return fallback;
+}
+
 // Track page view
 export async function trackPageView(pagePath, req) {
   try {

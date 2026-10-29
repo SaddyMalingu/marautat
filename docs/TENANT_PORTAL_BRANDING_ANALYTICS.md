@@ -163,13 +163,69 @@ title (which must come out escaped).
 - **Revenue impact:** retention and renewal. A client who cannot see their own name or
   their own traffic numbers has no evidence the retainer is working; both are now on
   the first screen they open.
-- **Main risks:** (1) page views only exist for `/blog/<slug>` because that is the only
-  path the tracker records — the `/ai-jobs/t/<slug>` hubs are not counted, so hub
-  traffic is invisible; (2) `blog_posts.content` is read to count words, capped at 200
-  posts, so a very large tenant sees words for the newest 200 pages only.
+- **Main risks:** (1) `blog_posts.content` is read to count words, capped at 200
+  posts, so a very large tenant sees words for the newest 200 pages only;
+  (2) a page whose CTA points straight at the provider cannot have its clicks
+  counted here — the provider answers that click, not this server — which is why
+  the endpoint returns `clicks_note` and the section prints it (see below).
 - **Next validation:** open `/tenant-dashboard?t=…` on a signed-in phone, confirm the
   header shows the business name, read the Scan to Pay and Writer's Flow sentences
   without squinting, and check Analytics shows that tenant's pages with their real
-  view counts. If hub traffic matters for the renewal conversation, add
-  `trackPageView` to the `/ai-jobs/t/*` routes as the next slice.
+  view and click counts.
+
+---
+
+## Traffic that was never counted (2026-10-29)
+
+Two gaps made the CTR figure — the one number that tells a client the writing
+works — impossible to move:
+
+**1. Clicks were never written.** `trackClick()` existed in `utils/analytics.js`
+and had **no caller anywhere in the repository**. `analytics_clicks` was therefore
+always empty, and every tenant's CTR was `0.0%` by construction, however well the
+pages converted. The fix is one line in `/ai-jobs/apply/:id`, the only place that
+sees both the reader and the page that sent them:
+
+```js
+trackClick(pagePathFromReferrer(req, '/ai-jobs/apply'), 'apply', req).catch(() => {});
+```
+
+`pagePathFromReferrer` (`utils/analytics.js`) accepts a referrer only when it is
+same-host and one of the two shapes this site publishes (`/blog/<slug>`,
+`/ai-jobs/t/<slug>[/…]`), so a stray or spoofed referrer cannot invent traffic on
+a page the tenant owns. Anything unattributable is recorded as `/ai-jobs/apply` —
+it counts for the platform, and is credited to nobody.
+
+**2. Hub traffic was invisible.** `/ai-jobs/t/<slug>` recorded views only in
+`opportunity_events`, which this portal does not read, so the one page a tenant
+actually promotes showed zeros. All three tenant routes now also write the visit
+to `analytics_page_views` under its real path, and the endpoint reports it as a
+separate `hub` object (`views`, `clicks`, `ctr`) matched on the path prefix so the
+hub's offer and category pages count too.
+
+Hub figures are reported **beside** the pages, never folded into them: one is the
+page the tenant hands out, the others are what search finds, and adding them
+together would hide which is working.
+
+**3. A zero now explains itself.** When views exist and clicks are zero, the
+endpoint returns `clicks_note` and the section prints it:
+
+> Page views are counted on every page. Clicks are only counted when the button
+> goes through this site — a page whose offer links straight to the provider
+> shows 0 clicks here even if readers clicked it.
+
+That sentence is the difference between "the blog does not convert" and "we could
+not see this click", and only one of those is true.
+
+**Coverage limit, stated plainly:** pages whose CTA points at the provider
+(`destination_url` / `referral_url`) are not measurable by this server. Making
+them measurable means routing every CTA through `/ai-jobs/apply/<id>`, which
+changes `ctaTarget()` in `utils/ctaBlock.js` and therefore re-renders the page
+frames of the corpus (`content` untouched). That is a deliberate, separate
+decision — not something to slip into a measurement fix.
+
+Tests: `npm run test:tenant-branding` (95 checks, including the parser run
+against real referrers) and `test_analytics_tracking.mjs` (20 checks, including
+the real click line lifted out of `routes/aiJobs.js` and executed against a mock
+Supabase).
 

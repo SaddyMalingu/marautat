@@ -1485,6 +1485,19 @@ function wfAnalyticsHtml(w) {
   const t = w.totals || {};
   const period = w.period_days || 30;
   const pages = w.pages || [];
+  // The hub the tenant hands out and the pages search finds are different
+  // audiences; folding them into one figure would hide which one is working.
+  const hub = w.hub && w.hub.path ? w.hub : null;
+  const hubCards = hub ? `
+    <div class="stat-grid">
+      <div class="stat-card"><div class="stat-label">Hub views</div><div class="stat-value">${hub.views || 0}</div><div class="stat-sub">the page you share</div></div>
+      <div class="stat-card"><div class="stat-label">Hub clicks</div><div class="stat-value">${hub.clicks || 0}</div><div class="stat-sub">on the hub itself</div></div>
+      <div class="stat-card"><div class="stat-label">Hub CTR</div><div class="stat-value">${hub.ctr || '0.0'}%</div><div class="stat-sub">clicks per view</div></div>
+    </div>` : '';
+  // Shown only when a zero would otherwise be misread as "nobody clicked".
+  const clicksNote = w.clicks_note
+    ? `<div class="alert py-2 mb-3" style="background:var(--bg-card);border:1px solid var(--border);font-size:0.84rem;color:var(--text-muted);">${esc(w.clicks_note)}</div>`
+    : '';
   const empty = `
     <div class="panel" style="text-align:center;padding:26px 18px;">
       <i class="fa-solid fa-pen-nib" style="font-size:1.7rem;color:var(--accent);"></i>
@@ -1515,6 +1528,8 @@ function wfAnalyticsHtml(w) {
       <div class="stat-card"><div class="stat-label">Offers</div><div class="stat-value">${t.offers || 0}</div><div class="stat-sub">driving pages</div></div>
       <div class="stat-card"><div class="stat-label">New pages</div><div class="stat-value">${t.pages_this_week || 0}</div><div class="stat-sub">last 7 days</div></div>
     </div>
+    ${hubCards}
+    ${clicksNote}
     ${w.note ? `<div class="alert py-2 mb-3" style="background:var(--bg-card);border:1px solid var(--border);font-size:0.84rem;color:var(--text-muted);">${esc(w.note)}</div>` : ''}
     ${pages.length === 0 ? empty : wfTrafficHtml(w)}`;
 }

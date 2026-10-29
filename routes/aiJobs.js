@@ -31,6 +31,7 @@ import {
   renderTenantOffers
 } from '../utils/aiJobsViews.js';
 import { renderOfferPage } from '../utils/aiJobsViewsOpp.js';
+import { trackPageView, trackClick, pagePathFromReferrer } from '../utils/analytics.js';
 
 const router = Router();
 
@@ -47,6 +48,21 @@ function getTrackingInfo(req) {
     utmMedium: req.query.utm_medium || null,
     utmCampaign: req.query.utm_campaign || null
   };
+}
+
+// Helper: record a hub page in the same page-view table the blog pages use.
+//
+// Hub visits were recorded only in opportunity_events, which the tenant portal
+// does not read — so the page a tenant actually promotes showed zero traffic in
+// their own Analytics section. This puts the hub in analytics_page_views under
+// its real path (/ai-jobs/t/<slug> and anything beneath it), which is what
+// /tenant/writers-flow/analytics matches on. Non-blocking: tracking can never
+// affect the response.
+function trackHubView(req) {
+  try {
+    const p = String(req.originalUrl || req.url || '').split('?')[0].replace(/\.html$/, '');
+    if (p) trackPageView(p, req);
+  } catch (e) {}
 }
 
 // GET /ai-jobs - Main AI Jobs landing page
@@ -232,6 +248,12 @@ router.get('/apply/:id', async (req, res) => {
     const trusted = Boolean(opportunity.destination_url) || isValidReferralUrl(dest);
     if (!wellFormed || !trusted) return res.status(400).json({ error: 'Invalid destination URL' });
     await trackEvent({ opportunityId: opportunity.id, categoryId: opportunity.category_id, eventType: 'apply_click', ...getTrackingInfo(req), metadata: { opportunity: opportunity.slug, offer_type: meta.type } });
+    // A click on the page that sent them here, in the table the tenant portal
+    // reads. Without this the CTA converts and nobody can prove it: the offer
+    // gets an apply_click, the page that earned it gets nothing. The fallback
+    // path is deliberately not a tenant page, so an unattributable click counts
+    // for the platform without being credited to someone else's writing.
+    trackClick(pagePathFromReferrer(req, '/ai-jobs/apply'), 'apply', req).catch(() => {});
     res.redirect(302, dest);
   } catch (err) {
     console.error('[AI Jobs] Error processing apply click:', err);
@@ -269,6 +291,7 @@ if (MULTITENANT) {
       if (!tenant) return res.status(404).send('Site not found');
       const offers = await getOffersByTenant(tenant.id, { limit: 100 });
       await trackEvent({ eventType: 'page_view', ...getTrackingInfo(req), metadata: { page: 'tenant-hub', tenant: tenantSlug } });
+      trackHubView(req);
       res.send(renderTenantOffers(tenant, offers));
     } catch (err) {
       console.error('[AI Jobs] Error rendering tenant hub:', err);
@@ -284,6 +307,7 @@ if (MULTITENANT) {
       const opportunity = await getOpportunityBySlug(slug);
       if (!opportunity) return res.status(404).send('Offer not found');
       await trackEvent({ opportunityId: opportunity.id, categoryId: opportunity.category_id, eventType: 'opportunity_view', ...getTrackingInfo(req), metadata: { opportunity: slug, tenant: tenantSlug } });
+      trackHubView(req);
       res.send(renderOfferPage(opportunity, {
         sourceName: opportunity.source?.name || tenant.name,
         basePath: `/ai-jobs/t/${tenantSlug}`,
@@ -304,6 +328,7 @@ if (MULTITENANT) {
       if (!category) return res.status(404).send('Category not found');
       const offers = await getOffersByTenant(tenant.id, { categoryId: category.id, limit: 100 });
       await trackEvent({ categoryId: category.id, eventType: 'category_view', ...getTrackingInfo(req), metadata: { category: categorySlug, tenant: tenantSlug } });
+      trackHubView(req);
       res.send(renderTenantOffers(tenant, offers, { title: `${tenant.name} — ${category.name}`, sub: category.description || `${category.name} offers from ${tenant.name}.` }));
     } catch (err) {
       console.error('[AI Jobs] Error rendering tenant category:', err);

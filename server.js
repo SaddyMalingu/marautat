@@ -5330,6 +5330,24 @@ app.get("/tenant/writers-flow/analytics", tenantSessionAuth, async (req, res) =>
       clicks = clicks.concat(clicksRes.data || []);
     }
 
+    // ---- the tenant's public hub --------------------------------------------
+    // Hubs are where strangers actually arrive (/ai-jobs/t/<slug>), and until
+    // now they were not in this response at all: a tenant whose traffic comes
+    // through the hub they promote saw zeros for it. Matched on the path prefix
+    // so the hub's offer and category pages count too; the slug is reduced to
+    // [A-Za-z0-9-] first so it cannot smuggle a LIKE wildcard into the filter.
+    const hubSlug = String(site.slug || "").replace(/[^A-Za-z0-9-]/g, "");
+    const hub = { path: hubSlug ? "/ai-jobs/t/" + hubSlug : null, views: 0, clicks: 0, ctr: "0.0" };
+    if (hub.path) {
+      const hubViews = await supabase.from("analytics_page_views")
+        .select("page_path").like("page_path", hub.path + "%").gte("created_at", since);
+      if (!hubViews.error) hub.views = (hubViews.data || []).length;
+      const hubClicks = await supabase.from("analytics_clicks")
+        .select("page_path").like("page_path", hub.path + "%").gte("created_at", since);
+      if (!hubClicks.error) hub.clicks = (hubClicks.data || []).length;
+      hub.ctr = hub.views > 0 ? ((hub.clicks / hub.views) * 100).toFixed(1) : "0.0";
+    }
+
     const countries = {};
     const dayMap = {};
     // Every reported path is matched back to the tenant's own slug, so a URL that
@@ -5365,6 +5383,14 @@ app.get("/tenant/writers-flow/analytics", tenantSessionAuth, async (req, res) =>
     const totalWords = pages.reduce((n, p) => n + p.words, 0);
     const published = pages.filter((p) => p.status === "published").length;
     const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+
+    // A zero is only honest when it means nobody clicked. A page whose CTA points
+    // straight at the provider is answered by the provider, so this server never
+    // sees that click; saying so costs one sentence and stops a 0.0% CTR from
+    // being read as a verdict on the writing.
+    const clicksNote = (totalViews > 0 && totalClicks === 0)
+      ? "Page views are counted on every page. Clicks are only counted when the button goes through this site — a page whose offer links straight to the provider shows 0 clicks here even if readers clicked it."
+      : null;
 
     // Per-offer rollup: which offer is actually earning its keep.
     const pagesByOffer = {};
@@ -5417,6 +5443,10 @@ app.get("/tenant/writers-flow/analytics", tenantSessionAuth, async (req, res) =>
       series: Object.keys(dayMap).sort().slice(-14).map((k) => dayMap[k]),
       top_countries: Object.keys(countries).map((c) => ({ country: c, views: countries[c] }))
         .sort((a, b) => b.views - a.views).slice(0, 5),
+      // The hub is reported beside the pages, never folded into them: one is the
+      // page the tenant promotes, the others are what search finds.
+      hub,
+      clicks_note: clicksNote,
       note,
     });
   } catch (error) {

@@ -24,12 +24,16 @@ ok('/blog/:slug route respects the __pvTracked guard', /if \(!req\.__pvTracked\)
 
 // ---- 2. Functional test: real middleware + real static + real analytics ----
 const received = [];
+const clicks = [];
 const mock = http.createServer((req, res) => {
   let body = '';
   req.on('data', c => body += c);
   req.on('end', () => {
     if (req.url.includes('analytics_page_views') && req.method === 'POST') {
       try { received.push(JSON.parse(body)); } catch (e) { received.push({ parse_error: e.message, body }); }
+    }
+    if (req.url.includes('analytics_clicks') && req.method === 'POST') {
+      try { clicks.push(JSON.parse(body)); } catch (e) { clicks.push({ parse_error: e.message, body }); }
     }
     res.writeHead(201, { 'Content-Type': 'application/json' });
     res.end('[]');
@@ -43,7 +47,7 @@ const mockPort = mock.address().port;
 process.env.SUPABASE_URL = 'http://127.0.0.1:' + mockPort;
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-key';
 delete process.env.VITE_SUPABASE_URL;
-await import('./utils/analytics.js');
+const { pagePathFromReferrer, trackClick } = await import('./utils/analytics.js');
 
 // Isolated blog dir with one real post file
 const blogDir = path.join(process.cwd(), 'tmp_blog_static_test');
@@ -88,6 +92,49 @@ await new Promise(r => setTimeout(r, 400));
 ok('missing post falls through to route', s3 === 200 && routeHits === 0, 'status=' + s3 + ' routeHits=' + routeHits);
 ok('missing post counted exactly once', received.length === 3, 'inserts=' + received.length);
 ok('no insert recorded for /blog index via this hook', received.every(r => r.page_path !== '/blog'), JSON.stringify(received.map(r => r.page_path)));
+
+// ---- 3. A click on the CTA has to be countable per page --------------------
+// /ai-jobs/apply/<id> is the only place in the system that sees both the reader
+// and the page that sent them, so it is where a click becomes attributable.
+// trackClick() had no caller before 2026-10-29, so analytics_clicks was always
+// empty and /tenant/writers-flow/analytics could only ever print 0.0% CTR.
+// This runs the real line out of routes/aiJobs.js, not a copy of it.
+const aiJobsSrc = fs.readFileSync('routes/aiJobs.js', 'utf8');
+const clickLine = (aiJobsSrc.match(/\n\s*(trackClick\(pagePathFromReferrer\(req, '\/ai-jobs\/apply'\), 'apply', req\)\.catch\(\(\) => \{\}\);)/) || [])[1];
+ok('extracted the real click line from routes/aiJobs.js', Boolean(clickLine), String(clickLine));
+
+const clickApp = express();
+clickApp.get('/ai-jobs/apply/:id', async (req, res) => {
+  eval(clickLine);
+  res.send('redirected');
+});
+const cSrv = clickApp.listen(0, '127.0.0.1');
+await new Promise(r => cSrv.once('listening', r));
+const cBase = 'http://127.0.0.1:' + cSrv.address().port;
+const hit = (p, referer) => new Promise((resolve) => {
+  const headers = { 'x-forwarded-for': '127.0.0.1' };
+  if (referer) headers.referer = referer;
+  http.get(cBase + p, { headers }, r => { r.resume(); r.on('end', () => resolve(r.statusCode)); });
+});
+
+await hit('/ai-jobs/apply/abc', cBase + '/blog/test-post.html');
+await new Promise(r => setTimeout(r, 400));
+ok('a CTA click is written to analytics_clicks', clicks.length === 1, 'inserts=' + clicks.length);
+ok('the click is credited to the page it came from', clicks[0]?.page_path === '/blog/test-post', JSON.stringify(clicks[0]?.page_path));
+ok('the click is typed', clicks[0]?.click_type === 'apply', JSON.stringify(clicks[0]?.click_type));
+
+await hit('/ai-jobs/apply/abc', 'https://www.google.com/blog/somebody-elses-page');
+await new Promise(r => setTimeout(r, 400));
+ok('a click from another site is not credited to a tenant page',
+  clicks[1]?.page_path === '/ai-jobs/apply', JSON.stringify(clicks[1]?.page_path));
+
+await hit('/ai-jobs/apply/abc');
+await new Promise(r => setTimeout(r, 400));
+ok('a click with no referrer still counts for the platform',
+  clicks.length === 3 && clicks[2]?.page_path === '/ai-jobs/apply', JSON.stringify(clicks[2]?.page_path));
+ok('click tracking never double-counts a view', received.length === 3, 'views=' + received.length);
+
+cSrv.close();
 
 srv.close(); mock.close();
 fs.rmSync(blogDir, { recursive: true, force: true });

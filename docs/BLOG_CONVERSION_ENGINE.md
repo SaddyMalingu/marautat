@@ -242,6 +242,10 @@ Tests: `npm run test:blog-quality` (playbook + gate), `npm run test:blog-html`
    without a model call.
 2. **The readiness card is generic per offer type**, not per offer. A job that
    needs a specific document should set it on the offer row.
-3. **No measurement loop yet.** `GET /tenant/writers-flow/analytics` already
-   reports views and clicks per page; the next step is a before/after CTR read
-   on the pages rebuilt in step 1.
+3. **Clicks through a direct provider link are not measurable.** The measurement
+   loop itself exists (`GET /tenant/writers-flow/analytics` reports views, clicks
+   and CTR per page, and `clicks_note` says when a zero means "not counted"), but
+   a page whose CTA points straight at the provider is answered by the provider.
+   Closing that gap means routing every CTA through `/ai-jobs/apply/<id>` —
+   `ctaTarget()` in `utils/ctaBlock.js` — which re-renders page frames across the
+   corpus (`content` untouched, and `BLOG_REBUILD_STALE_PAGES=off` still applies).

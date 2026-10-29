@@ -149,6 +149,60 @@ ok('the conversation analytics above it are untouched',
   /apiJson\('\/tenant\/analytics'\)/.test(js) && /apiJson\('\/tenant\/attribution'\)/.test(js) &&
   /Messages[^<]{0,14}Last 7 Days/.test(js) && /Cohort Retention/.test(js));
 
+// ---- 5. Traffic that was never counted (2026-10-29) ----------------------
+// Two gaps made the CTR figure meaningless: trackClick() had no caller at all,
+// so analytics_clicks was empty and every tenant's CTR was 0.0% by construction;
+// and hub traffic (/ai-jobs/t/<slug>) was written only to opportunity_events,
+// which this portal does not read. Both are now written, and a zero that means
+// "not measurable" says so instead of reading as "nobody clicked".
+const aiJobs = fs.readFileSync('routes/aiJobs.js', 'utf8');
+const analytics = fs.readFileSync('utils/analytics.js', 'utf8');
+
+ok('the apply route records the click, not just the offer event',
+  /router\.get\('\/apply\/:id'[\s\S]*?trackClick\(pagePathFromReferrer\(req, '\/ai-jobs\/apply'\), 'apply', req\)/.test(aiJobs));
+ok('the click is written before the redirect, so it cannot be skipped',
+  aiJobs.indexOf("trackClick(pagePathFromReferrer(req, '/ai-jobs/apply'), 'apply', req)") <
+  aiJobs.indexOf("res.redirect(302, dest)"));
+ok('an unattributable click is never credited to a tenant page',
+  /pagePathFromReferrer\(req, '\/ai-jobs\/apply'\)/.test(aiJobs) &&
+  !/trackClick\('\/blog\//.test(aiJobs));
+ok('the click is non-blocking', /trackClick\([\s\S]{0,90}\)\.catch\(\(\) => \{\}\)/.test(aiJobs));
+ok('all three tenant hub routes record their view',
+  (aiJobs.match(/trackHubView\(req\);/g) || []).length === 3);
+ok('the hub view uses the real path, so the offer and category pages count too',
+  /req\.originalUrl \|\| req\.url[\s\S]{0,80}split\('\?'\)\[0\]\.replace\(\/\\\.html\$\/, ''\)/.test(aiJobs));
+ok('hub tracking is behind the same multi-tenant flag as the routes',
+  aiJobs.indexOf("if (MULTITENANT) {") < aiJobs.indexOf('trackHubView(req);'));
+ok('the referrer parser only accepts our own host',
+  /url\.hostname\.toLowerCase\(\) !== host\) return fallback/.test(analytics));
+ok('the referrer parser only accepts the two shapes we publish',
+  /\/\^\\\/blog\\\/\[A-Za-z0-9_-\]\+/.test(analytics) && /\/\^\\\/ai-jobs\\\/t\\\//.test(analytics));
+ok('the tenant endpoint reports the hub separately', /hub,\s+clicks_note: clicksNote,/.test(route));
+ok('the hub query is prefix-matched and wildcard-proof',
+  /\.like\("page_path", hub\.path \+ "%"\)/.test(route) &&
+  /const hubSlug = String\(site\.slug \|\| ""\)\.replace\(\/\[\^A-Za-z0-9-\]\/g, ""\)/.test(route));
+ok('a zero CTR explains itself', /clicks_note: clicksNote/.test(route) &&
+  /totalViews > 0 && totalClicks === 0/.test(route) && /even if readers clicked it/.test(route));
+ok('the section shows the hub cards', /Hub views|Hub CTR/.test(js) && /Hub clicks/.test(js));
+ok('the section renders the explanation', /\$\{clicksNote\}/.test(js) && /\$\{hubCards\}/.test(js));
+ok('hub figures stay out of the page totals', !/t\.views = .*hub/.test(js) &&
+  /const hubCards = hub \?/.test(js));
+
+// The parser itself, executed rather than grepped.
+const { pagePathFromReferrer } = await import(new URL('../utils/analytics.js', import.meta.url).href);
+const sameHost = 'alphadome.onrender.com';
+const req = (referer, host = sameHost) => ({ headers: { host, referer } });
+ok('a blog page attributes to its own path', pagePathFromReferrer(req(`https://${sameHost}/blog/chief-of-staff-awareness-1.html`)) === '/blog/chief-of-staff-awareness-1');
+ok('the hub attributes to the hub path', pagePathFromReferrer(req(`https://${sameHost}/ai-jobs/t/acme`)) === '/ai-jobs/t/acme');
+ok('a hub offer page keeps its full path', pagePathFromReferrer(req(`https://${sameHost}/ai-jobs/t/acme/o/widget`)) === '/ai-jobs/t/acme/o/widget');
+ok('a query string does not confuse it', pagePathFromReferrer(req(`https://${sameHost}/ai-jobs/t/acme?utm_source=x`)) === '/ai-jobs/t/acme');
+ok('another site cannot claim a page', pagePathFromReferrer(req('https://www.google.com/blog/someone-else'), 'fallback') === 'fallback');
+ok('no referrer falls back', pagePathFromReferrer({ headers: {} }, 'fallback') === 'fallback');
+ok('an unparseable referrer falls back', pagePathFromReferrer(req('not a url'), 'fallback') === 'fallback');
+ok('the blog index is not a page', pagePathFromReferrer(req(`https://${sameHost}/blog`), 'fallback') === 'fallback');
+ok('an .html request is normalised the same way the counter uses',
+  pagePathFromReferrer(req(`https://${sameHost}/blog/x.html`)) === pagePathFromReferrer(req(`https://${sameHost}/blog/x`)));
+
 // ---- 4. Two branding regressions that belong with section 1 ---------------
 ok("the voice explainer's wording is unchanged (test:tenant-voice depends on it)",
   /assigned to your business/.test(html) && /chosen by you/.test(html));
@@ -173,7 +227,7 @@ ok('phones drop the word "Logout", keeping the icon and its label',
   /<span class="logout-label ms-1">Logout<\/span>/.test(html));
 
 
-// ---- 5. Run the helpers; do not just grep them ----------------------------
+// ---- 6. Run the helpers; do not just grep them ----------------------------
 // Same trick the shell suite uses: a DOM small enough to reason about. The
 // functions are lifted out by brace matching so the rest of the page (boot(),
 // fetch calls, listeners) never has to run.
