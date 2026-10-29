@@ -52,6 +52,40 @@ export function isStalePage(html) {
   return LEGACY_FOOTER.test(String(html || ''));
 }
 
+// Two more ways a page can be unable to convert, found by counting the live
+// corpus on 2026-10-29: 96 pages had no closing block at all (the migration only
+// knew about the *old* block, so it never looked at them), and 21 carried a block
+// whose only content was "send a message" with nothing to press.
+const CTA_CONTAINER = /class="cta(?:\s[^"]*)?"/;
+const CTA_BUTTON = /class="cta-btn(?:\s[^"]*)?"/;
+const ARTICLE = /<article>/;
+
+export function hasClosingBlock(html) {
+  return CTA_CONTAINER.test(String(html || ''));
+}
+
+export function hasCtaButton(html) {
+  return CTA_BUTTON.test(String(html || ''));
+}
+
+/**
+ * A stored page that cannot give the reader anything to do.
+ *
+ * Requires an `<article>` first: a page with no body has nothing to rebuild from
+ * and must not be flagged, or every boot would retry it forever.
+ *
+ * This has to agree with what `ctaBlock()` produces, or the rebuild never
+ * converges — a page that is rebuilt into a block this function still calls
+ * missing would be rewritten on every single boot. Every branch of ctaBlock()
+ * therefore emits at least one `.cta-btn`, including the one for an offer with no
+ * destination configured (which links to /ai-jobs instead of nowhere).
+ */
+export function needsClosingBlock(html) {
+  const s = String(html || '');
+  if (!ARTICLE.test(s)) return false;
+  return !hasClosingBlock(s) || !hasCtaButton(s);
+}
+
 const type = (offer) => {
   const t = String((offer && offer.offer_type) || 'job').toLowerCase();
   return LABEL[t] ? t : 'job';
@@ -116,11 +150,13 @@ export function ctaBlock(offer, opts) {
   const after = esc(options.after || AFTER[t]);
 
   if (!href) {
-    // No destination and no offer id: a button here is a dead end. Offer the
-    // one thing that still works — a way to reach the business.
+    // No destination and no offer id. The sentence is honest, but a page with
+    // nothing to press is still a dead end — 21 live pages were in exactly this
+    // state on 2026-10-29. Give the reader somewhere to go that is not a lie.
     return '<div class="cta"><h2>' + heading + '</h2>' +
       '<p>' + esc('This offer has no link configured yet, so send a message and the business will reply with the details.') + '</p>' +
-      (facts ? '<p><strong>' + esc(facts) + '</strong></p>' : '') + '</div>';
+      (facts ? '<p><strong>' + esc(facts) + '</strong></p>' : '') +
+      '<a class="cta-btn cta-btn--alt" href="/ai-jobs">Browse other opportunities</a></div>';
   }
 
   const button = '<a class="cta-btn" href="' + esc(href) + '"' +

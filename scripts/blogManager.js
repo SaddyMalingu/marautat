@@ -24,7 +24,7 @@ import { analyzeArticle, qualityBrief, describeQuality } from '../utils/blogQual
 // lines — "Ready to Start? / This opportunity is available now. / [Apply Now]" —
 // on a job, a product and a course alike, linking to a redirect that 404s when
 // the offer has no destination. utils/ctaBlock.js writes it from the offer.
-import { ctaBlock, isStalePage } from '../utils/ctaBlock.js';
+import { ctaBlock, isStalePage, needsClosingBlock } from '../utils/ctaBlock.js';
 // The prune/index rules for the boot restore, kept pure so they are testable.
 import { isTestArtifact, orphanPageFiles, indexIsStale } from '../utils/blogIndex.js';
 
@@ -98,10 +98,17 @@ export async function restoreFromDB() {
       // passes the audit. Without this, every healthy page keeps the generic
       // "Ready to Start? / Apply Now" until someone regenerates it by hand.
       const staleFooter = isStalePage(html);
+      // Two further states the audit cannot see, both measured on the live corpus
+      // on 2026-10-29: 96 pages carried no closing block at all (the check above
+      // only knew about the *old* block), and 21 carried one with nothing to
+      // press. A page that persuades and then stops is not "readable but
+      // imperfect"; it cannot convert, so it is stale by the same argument.
+      const missingBlock = needsClosingBlock(html);
       // Kill switch: set BLOG_REBUILD_STALE_PAGES=off to keep every page exactly
       // as it is stored and only repair pages that fail the readability audit.
       const mayRebuildFooter = process.env.BLOG_REBUILD_STALE_PAGES !== 'off';
-      if ((!audit.ok || (staleFooter && mayRebuildFooter)) && post.content) {
+      const stale = staleFooter || missingBlock;
+      if ((!audit.ok || (stale && mayRebuildFooter)) && post.content) {
         try {
           const offer = post.opportunity_id
             ? (offers.get(post.opportunity_id) || { id: post.opportunity_id })
@@ -121,7 +128,7 @@ export async function restoreFromDB() {
             // footer rather than by a readability failure — say which, or every
             // log line reads "unreadable page X ()".
             console.warn('[DB] Rebuilt ' + post.slug + ' (' +
-              (audit.ok ? 'old closing block' : audit.issues.join(', ')) + ')');
+              (audit.ok ? (staleFooter ? 'old closing block' : 'no closing block') : audit.issues.join(', ')) + ')');
           } else {
             console.warn('[DB] Page still fails the audit after rebuild: ' + post.slug);
           }

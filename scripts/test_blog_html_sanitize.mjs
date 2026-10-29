@@ -21,7 +21,7 @@
 
 import chalk from "chalk";
 import { sanitizeArticleHTML, auditBlogHTML, escapeAttr } from "../utils/articleHtml.js";
-import { isStalePage } from "../utils/ctaBlock.js";
+import { isStalePage, needsClosingBlock } from "../utils/ctaBlock.js";
 import { isTestArtifact, orphanPageFiles, indexIsStale, articleBodyOf, plainTextOf } from "../utils/blogIndex.js";
 
 const results = [];
@@ -291,14 +291,47 @@ await check("cta: one at the top, one at the end, both real links", () => {
   return "2 buttons, top before article, end after";
 });
 
-await check("cta: an offer with no destination is not given a dead button", () => {
+await check("cta: an offer with no destination gets a real next step, not a dead button", () => {
   const orphan = buildHTML({ title: "T", slug: "s", content: CLEAN_FRAGMENT }, { offer_type: "service", title: "Studio Session" });
-  assert(!/class="cta-btn"/.test(orphan), "a button was rendered with nowhere to go");
   assert(/no link configured/.test(orphan), "the reader is not told what to do instead");
+  assert(!/href="\/ai-jobs\/apply\//.test(orphan), "a button still points at the tracker for an offer with no destination");
+  assert(/class="cta-btn cta-btn--alt" href="\/ai-jobs"/.test(orphan), "the reader is left with nothing to press");
   const direct = buildHTML({ title: "T", slug: "s", content: CLEAN_FRAGMENT }, { offer_type: "product", title: "Desk", destination_url: "https://shop.example/item" });
   assert(direct.includes('href="https://shop.example/item"'), "the offer's own destination URL was ignored");
   assert(direct.includes('rel="noopener"'), "an external destination has no rel=noopener");
-  return "orphan: message; direct URL: used with noopener";
+  return "orphan: honest message + a way on; direct URL: used with noopener";
+});
+
+// 2026-10-29. Counting the live corpus found 96 pages with no closing block and
+// 21 with a block but nothing to press. Neither fails the readability audit, so
+// the boot migration had never looked at them: isStalePage() only knew the old
+// generic footer. These are the checks that would have caught it — and the last
+// one is the one that matters most, because a predicate that disagrees with the
+// template rebuilds the same page on every boot, forever.
+await check("cta: a page that cannot convert is detected, and the rebuild converges", () => {
+  const fresh = buildHTML({ title: "T", slug: "s", content: CLEAN_FRAGMENT }, OFFER);
+  assert(!needsClosingBlock(fresh), "a freshly built page was flagged — restoreFromDB would rebuild it on every boot");
+
+  const noBlock = '<html><body><article><h1>T</h1><p>' + BODY_WORDS + '</p></article></body></html>';
+  assert(needsClosingBlock(noBlock), "a page with no closing block was not detected — the 96 live pages stay broken");
+
+  const blockNoButton = '<article><p>' + BODY_WORDS + '</p></article><div class="cta"><h2>Talk to us</h2><p>No link yet.</p></div>';
+  assert(needsClosingBlock(blockNoButton), "a block with nothing to press was not detected — the 21 live pages stay broken");
+
+  const legacy = '<article><p>' + BODY_WORDS + '</p></article><div style="text-align:center"><h2>Ready to Start?</h2></div>';
+  assert(needsClosingBlock(legacy), "the old footer page was not detected");
+
+  const noArticle = '<html><body><p>just text</p></body></html>';
+  assert(!needsClosingBlock(noArticle), "a page with no <article> was flagged — there is nothing to rebuild from");
+
+  // Convergence: whatever the template produces must satisfy the predicate, or
+  // every boot rewrites the same page. The no-destination branch is the one that
+  // used to produce a block with no button at all.
+  const orphan = buildHTML({ title: "T", slug: "s", content: CLEAN_FRAGMENT }, { offer_type: "service", title: "Studio Session" });
+  assert(!needsClosingBlock(orphan), "the no-destination page does not converge — it would be rebuilt on every boot");
+  const noOffer = buildHTML({ title: "T", slug: "s", content: CLEAN_FRAGMENT }, null);
+  assert(!needsClosingBlock(noOffer), "a page built with no offer at all does not converge");
+  return "missing block, button-less block and legacy footer detected; every rebuild is stable";
 });
 
 await check("cta: the page tells the reader what to have ready", () => {

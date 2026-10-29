@@ -18,6 +18,12 @@
  * `### heading`, `* bullet`) and pages carrying the model's own h1 on top of the
  * template's: both are part of the audit's rules now.
  *
+ * 2026-10-29: and pages that cannot convert. Counting the live corpus found 96
+ * pages with no closing block at all and 21 with a block but nothing to press —
+ * neither is a readability failure, so the audit passed them and the boot
+ * migration never looked at them. A page that persuades and then stops is broken
+ * for the same reason a blank one is.
+ *
  * It rebuilds each failing page from its stored article body (`content`) with the
  * same template the writers use, writes the static file, and (with --apply) saves
  * the repaired html_content back to Supabase.
@@ -57,6 +63,7 @@ const sb = createClient(url, key);
 // module (blogManager does not re-export it).
 const { buildHTML, updateIndex } = await import("./blogManager.js");
 const { auditBlogHTML } = await import("../utils/articleHtml.js");
+const { needsClosingBlock } = await import("../utils/ctaBlock.js");
 
 async function loadRows() {
   let query = sb
@@ -105,6 +112,7 @@ async function main() {
     }
     const audit = auditBlogHTML(html);
     if (!audit.ok) broken.push({ row, issues: audit.issues, fixable: !!row.content });
+    else if (needsClosingBlock(html)) broken.push({ row, issues: ["no closing block"], fixable: !!row.content });
   }
 
   console.log(`Checked ${rows.length} post(s); ${broken.length} need attention.`);
@@ -134,9 +142,9 @@ async function main() {
     }, offers.get(row.opportunity_id) || (row.opportunity_id ? { id: row.opportunity_id } : null));
 
     const audit = auditBlogHTML(html);
-    if (!audit.ok) {
+    if (!audit.ok || needsClosingBlock(html)) {
       stillBad++;
-      console.log(`  ! ${row.slug} still fails after rebuild: ${audit.issues.join(", ")}`);
+      console.log(`  ! ${row.slug} still fails after rebuild: ${audit.ok ? 'no closing block' : audit.issues.join(", ")}`);
       continue;
     }
 

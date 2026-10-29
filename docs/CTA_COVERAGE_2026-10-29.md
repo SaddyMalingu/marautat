@@ -61,7 +61,53 @@ Three facts, none of which was visible from the database:
    96 need a closing block. Those are template changes and therefore re-render
    those pages (`content` untouched, `BLOG_REBUILD_STALE_PAGES=off` still applies).
 
-## Next slice, in the order the numbers argue for
+## What shipped for it (same day)
+
+The two failing populations were invisible to the migration because they were not
+*stale*: `isStalePage()` only matched the pre-2026-10-29 generic footer text, and a
+page with **no closing block at all** passes both the readability audit and that
+check. So the boot restore had never looked at them.
+
+`utils/ctaBlock.js` now answers the question the migration should have asked:
+
+```js
+needsClosingBlock(html)   // has an <article>, but no closing block or nothing to press
+```
+
+Used by:
+- `scripts/blogManager.js` → `restoreFromDB()` rebuilds such a page on boot, from
+  its stored `content`, exactly like the old-footer migration does. `BLOG_REBUILD_STALE_PAGES=off`
+  still disables it. The log line says which reason fired:
+  `[DB] Rebuilt <slug> (no closing block)`.
+- `scripts/repair_blog_html.js` → dry-run now lists them, so you can see the list
+  before anything is rewritten: `npm run repair:blog-html`.
+- `scripts/audit_page_fidelity.mjs` → new count,
+  `no closing block / nothing to press … N`, and still verifies the prose is
+  byte-identical to `content` for every page.
+
+**The convergence rule.** A predicate that disagrees with the template rebuilds the
+same page on every single boot, forever. `ctaBlock()`'s no-destination branch used
+to emit a block with nothing to press — precisely what the new predicate calls
+broken. It now ends with `<a class="cta-btn cta-btn--alt" href="/ai-jobs">Browse
+other opportunities</a>`, so every branch of the template satisfies the predicate
+and the repair reaches a fixed point on the first pass. `test:blog-html` asserts
+this against the built page, the no-destination page and a page with no offer at
+all.
+
+## What to expect on the next deploy
+
+Up to 117 pages rebuild once (frames only — `content` untouched, verified by
+`audit:page-fidelity`). To see the list before trusting it:
+
+```bash
+npm run repair:blog-html        # dry run: lists every page it would rebuild, and why
+npm run audit:page-fidelity     # prose identical / differs / no closing block
+npm run audit:cta-coverage      # after the deploy: no-button count should be 0
+```
+
+If either audit looks wrong, `BLOG_REBUILD_STALE_PAGES=off` in Render stops the
+page rebuild entirely and leaves every stored page as it is.
+
 
 1. **Give the 96 button-less pages a closing block** — a third of the corpus
    currently persuades and stops. This is the largest conversion gain available,

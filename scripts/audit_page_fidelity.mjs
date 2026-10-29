@@ -30,7 +30,7 @@
 import dotenv from 'dotenv';
 import { createClient } from '@supabase/supabase-js';
 import { sanitizeArticleHTML } from '../utils/articleHtml.js';
-import { isStalePage } from '../utils/ctaBlock.js';
+import { isStalePage, needsClosingBlock } from '../utils/ctaBlock.js';
 import { articleBodyOf, plainTextOf } from '../utils/blogIndex.js';
 
 dotenv.config();
@@ -71,6 +71,7 @@ async function main() {
   const differ = [];
   const noBody = [];
   const stale = [];
+  const noBlock = [];
 
   for (const row of rows) {
     const stored = articleBodyOf(row.html_content);
@@ -81,6 +82,9 @@ async function main() {
     if (a === b) match.push(row);
     else differ.push({ row, storedWords: words(a), expectedWords: words(b), stored: a, expected: b });
     if (isStalePage(row.html_content)) stale.push(row);
+    // A page that persuades and then stops. Counted separately from the old
+    // footer because it is a different failure: nothing to press at all.
+    if (needsClosingBlock(row.html_content)) noBlock.push(row);
   }
 
   console.log(`Checked ${rows.length} published post(s).\n`);
@@ -88,6 +92,7 @@ async function main() {
   console.log(`  prose differs .............................. ${differ.length}`);
   console.log(`  no <article> body in stored page ........... ${noBody.length}`);
   console.log(`  still on the pre-2026-10-29 footer ......... ${stale.length}`);
+  console.log(`  no closing block / nothing to press ........ ${noBlock.length}`);
 
   if (differ.length) {
     console.log('\nDIFFERENCES — inspect these by hand:');
