@@ -187,6 +187,34 @@ router.get('/s/:sourceSlug/:categorySlug', async (req, res) => {
   }
 });
 
+// What a reader sees when a CTA has nowhere to go.
+//
+// /ai-jobs/apply/<id> used to answer `404 {"error":"No destination configured
+// for this offer"}` — raw JSON for a person who had just pressed a button on an
+// article they read to the end. A live page hit it on 2026-10-29 at 19:57:20.
+// The offer being unconfigured is the owner's to-do, not the reader's problem,
+// so the click is counted and the reader is given a way back.
+export function offerUnavailablePage(title, backHref) {
+  const name = String(title || 'This offer').slice(0, 120);
+  const esc = (v) => String(v == null ? '' : v)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const back = backHref && /^\/(?!\/)/.test(backHref) ? backHref : '/ai-jobs';
+  return '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">' +
+    '<meta name="viewport" content="width=device-width,initial-scale=1.0">' +
+    '<meta name="robots" content="noindex">' +
+    '<title>' + esc(name) + ' | AlphaDome</title>' +
+    '<style>body{font-family:system-ui,sans-serif;background:#081421;color:#f3f7fa;line-height:1.6;' +
+    'display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:24px}' +
+    '.c{max-width:520px}h1{font-size:1.4rem;margin:0 0 .75rem}p{color:#b8c7d6;margin:0 0 1rem}' +
+    'a{color:#ff8a00}</style></head><body><div class="c">' +
+    '<h1>Applications for this one are not open yet</h1>' +
+    '<p><strong>' + esc(name) + '</strong> has no application link configured, so there is nothing ' +
+    'to send you to. The business has been shown this in its portal.</p>' +
+    '<p><a href="' + esc(back) + '">&larr; Back to what you were reading</a> &nbsp;·&nbsp; ' +
+    '<a href="/ai-jobs">Browse other opportunities</a></p>' +
+    '</div></body></html>';
+}
+
 // GET /ai-jobs/apply/:id - Track apply click and redirect
 router.get('/apply/:id', async (req, res) => {
   try {
@@ -241,23 +269,48 @@ router.get('/apply/:id', async (req, res) => {
       .eq('id', id)
       .eq('status', 'published')
       .single();
-    if (error || !opportunity) return res.status(404).json({ error: 'Opportunity not found' });
+    if (error || !opportunity) {
+      // An offer that has gone still tells us somebody wanted it.
+      trackClick(pagePathFromReferrer(req, '/ai-jobs/apply'), 'apply_missing', req).catch(() => {});
+      return res.status(404).json({ error: 'Opportunity not found' });
+    }
     // Offer-aware destination: jobs/affiliate use referral_url (allowlist-enforced);
     // products/services/brands use an admin-set destination_url (http/https only).
     const meta = offerMeta(opportunity);
     const dest = meta.destination;
-    if (!dest) return res.status(404).json({ error: 'No destination configured for this offer' });
-    let wellFormed = false;
-    try { const u = new URL(dest); wellFormed = u.protocol === 'http:' || u.protocol === 'https:'; } catch { wellFormed = false; }
-    const trusted = Boolean(opportunity.destination_url) || isValidReferralUrl(dest);
-    if (!wellFormed || !trusted) return res.status(400).json({ error: 'Invalid destination URL' });
+    const sourcePath = pagePathFromReferrer(req, '/ai-jobs/apply');
+
+    // No destination, or one we will not redirect to. Either way the reader gets
+    // a page with a way back instead of `{"error":…}`, and the click is recorded
+    // so the owner can see demand for an offer they have not finished setting up.
+    // Counted before the branch, because this is the most valuable click to see.
+    let usable = false;
+    if (dest) {
+      try {
+        const u = new URL(dest);
+        const wellFormed = u.protocol === 'http:' || u.protocol === 'https:';
+        const trusted = Boolean(opportunity.destination_url) || isValidReferralUrl(dest);
+        usable = wellFormed && trusted;
+      } catch {
+        usable = false;
+      }
+    }
+
+    if (!usable) {
+      trackClick(sourcePath, dest ? 'apply_bad_destination' : 'apply_no_destination', req).catch(() => {});
+      await trackEvent({ opportunityId: opportunity.id, categoryId: opportunity.category_id, eventType: 'apply_click', ...getTrackingInfo(req), metadata: { opportunity: opportunity.slug, offer_type: meta.type, unavailable: true } });
+      const back = sourcePath && sourcePath !== '/ai-jobs/apply' ? sourcePath : '/ai-jobs';
+      res.status(200).type('html').send(offerUnavailablePage(opportunity.title || opportunity.slug, back));
+      return undefined;
+    }
+
     await trackEvent({ opportunityId: opportunity.id, categoryId: opportunity.category_id, eventType: 'apply_click', ...getTrackingInfo(req), metadata: { opportunity: opportunity.slug, offer_type: meta.type } });
     // A click on the page that sent them here, in the table the tenant portal
     // reads. Without this the CTA converts and nobody can prove it: the offer
     // gets an apply_click, the page that earned it gets nothing. The fallback
     // path is deliberately not a tenant page, so an unattributable click counts
     // for the platform without being credited to someone else's writing.
-    trackClick(pagePathFromReferrer(req, '/ai-jobs/apply'), 'apply', req).catch(() => {});
+    trackClick(sourcePath, 'apply', req).catch(() => {});
     res.redirect(302, dest);
   } catch (err) {
     console.error('[AI Jobs] Error processing apply click:', err);

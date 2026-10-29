@@ -100,12 +100,23 @@ ok('no insert recorded for /blog index via this hook', received.every(r => r.pag
 // empty and /tenant/writers-flow/analytics could only ever print 0.0% CTR.
 // This runs the real line out of routes/aiJobs.js, not a copy of it.
 const aiJobsSrc = fs.readFileSync('routes/aiJobs.js', 'utf8');
-const clickLine = (aiJobsSrc.match(/\n\s*(trackClick\(pagePathFromReferrer\(req, '\/ai-jobs\/apply'\), 'apply', req\)\.catch\(\(\) => \{\}\);)/) || [])[1];
-ok('extracted the real click line from routes/aiJobs.js', Boolean(clickLine), String(clickLine));
+// The real lines, lifted out of the route and executed here.
+const realPathDecl = "const sourcePath = pagePathFromReferrer(req, '/ai-jobs/apply');";
+const realClickLine = "trackClick(sourcePath, 'apply', req).catch(() => {});";
+ok('extracted the real attribution lines from routes/aiJobs.js',
+  aiJobsSrc.includes(realPathDecl) && aiJobsSrc.includes(realClickLine));
 
 const clickApp = express();
+// new Function, not eval: an ES module is strict, and a strict eval keeps
+// `const sourcePath` inside the eval, so the click line could not see it.
+const runApply = new Function('req', 'pagePathFromReferrer', 'trackClick',
+  realPathDecl + '\n' + realClickLine);
 clickApp.get('/ai-jobs/apply/:id', async (req, res) => {
-  eval(clickLine);
+  try {
+    runApply(req, pagePathFromReferrer, trackClick);
+  } catch (e) {
+    console.log('apply harness error:', e.message);
+  }
   res.send('redirected');
 });
 const cSrv = clickApp.listen(0, '127.0.0.1');

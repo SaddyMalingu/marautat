@@ -1,0 +1,8 @@
+ M package.json
+ M routes/aiJobs.js
+ M scripts/test_tenant_branding_analytics.mjs
+ M test_analytics_tracking.mjs
+?? docs/CTA_COVERAGE_2026-10-29.md
+?? q1.txt
+?? scripts/audit_cta_coverage.mjs
+?? scripts/test_apply_unavailable.mjs

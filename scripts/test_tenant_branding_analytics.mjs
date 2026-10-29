@@ -159,10 +159,10 @@ const aiJobs = fs.readFileSync('routes/aiJobs.js', 'utf8');
 const analytics = fs.readFileSync('utils/analytics.js', 'utf8');
 
 ok('the apply route records the click, not just the offer event',
-  /router\.get\('\/apply\/:id'[\s\S]*?trackClick\(pagePathFromReferrer\(req, '\/ai-jobs\/apply'\), 'apply', req\)/.test(aiJobs));
+  /router\.get\('\/apply\/:id'[\s\S]*?trackClick\(sourcePath, 'apply', req\)/.test(aiJobs));
 ok('the click is written before the redirect, so it cannot be skipped',
-  aiJobs.indexOf("trackClick(pagePathFromReferrer(req, '/ai-jobs/apply'), 'apply', req)") <
-  aiJobs.indexOf("res.redirect(302, dest)"));
+  aiJobs.indexOf("trackClick(sourcePath, 'apply', req)") > -1 &&
+  aiJobs.indexOf("trackClick(sourcePath, 'apply', req)") < aiJobs.indexOf("res.redirect(302, dest)"));
 ok('an unattributable click is never credited to a tenant page',
   /pagePathFromReferrer\(req, '\/ai-jobs\/apply'\)/.test(aiJobs) &&
   !/trackClick\('\/blog\//.test(aiJobs));
