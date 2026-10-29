@@ -26,6 +26,10 @@ import chalk from 'chalk';
 import { VOICE_PROFILES, listVoiceProfiles, resolveTenantVoice, buildVoicePromptBlock } from '../utils/tenantVoice.js';
 import { buildArticlePrompt, buildRepairPrompt, buildReviewPrompt, buildAngleBrief, resolveCta } from '../utils/blogWriter.js';
 import { analyzeArticle, qualityBrief, describeQuality, QUALITY_TARGETS } from '../utils/blogQuality.js';
+import {
+  PLAYBOOKS, playbookFor, conversionBrief, readinessCard,
+  weakTitleReason, TITLE_SHAPES, ASK_LADDER,
+} from '../utils/conversionPlaybook.js';
 
 const logInfo = (msg) => console.log(chalk.blue(`i ${msg}`));
 const logPass = (msg) => console.log(chalk.green(`+ ${msg}`));
@@ -287,6 +291,124 @@ await check('the gate is deterministic, so a score can be trusted in a log', asy
   assert(a.score === b.score && a.words === b.words, 'two runs of the same HTML disagreed');
   assert(/\/100/.test(describeQuality(a)), 'describeQuality is not a score line');
   return describeQuality(a);
+});
+
+// --- conversion playbook (2026-10-29) ---------------------------------------
+// The corpus was well written and still lost the click. These checks pin the
+// two measurements that explain it: Mercor completed 22 of 159 started
+// applications, and on LinkedIn every command-shaped title died.
+
+await check('every offer type has its own playbook, not a buyer template', async () => {
+  const types = Object.keys(PLAYBOOKS);
+  assert(types.length === 6, `expected 6 offer types, got ${types.length}: ${types.join(',')}`);
+  for (const t of types) {
+    const p = playbookFor({ offer_type: t });
+    assert(p.type === t, `${t} resolved to ${p.type}`);
+    for (const field of ['reader', 'decision', 'blocker', 'objection', 'askEarly', 'askMid', 'askClose']) {
+      assert(p[field] && String(p[field]).length > 20, `${t} has no usable ${field}`);
+    }
+    assert(p.proof.length >= 3, `${t} lists ${p.proof.length} proofs`);
+    assert(p.readiness.length >= 3, `${t} lists ${p.readiness.length} readiness items`);
+    assert(p.afterClick.length >= 3, `${t} lists ${p.afterClick.length} after-click steps`);
+  }
+  const unknown = playbookFor({ offer_type: 'nonsense' });
+  assert(unknown.type === 'service', `unknown type did not fall back to service: ${unknown.type}`);
+  return `${types.length} types, each with readiness and an after-click sequence`;
+});
+
+await check('the job brief pre-answers the application, not the job advert', async () => {
+  const brief = conversionBrief({ offer_type: 'job' }, { price: 'USD 75' });
+  assert(/Before you apply/.test(brief), 'no readiness section for jobs');
+  assert(/CV saved as a PDF/.test(brief), 'the CV requirement is not named');
+  assert(/assessment/.test(brief), 'the assessment step is not named — 159 started, 22 finished');
+  assert(/ASK LADDER/.test(brief), 'no ask ladder');
+  assert(/USD 75/.test(brief), 'the listed figure is not pushed into the first paragraph');
+  const buyer = conversionBrief({ offer_type: 'service' }, { price: 'KES 1,500' });
+  assert(!/CV saved as a PDF/.test(buyer), 'the service brief inherited the candidate readiness list');
+  assert(/Before you get in touch/.test(buyer), 'service readiness heading missing: ' + buyer.slice(0, 200));
+  return 'job readiness list + ask ladder present; service list stays separate';
+});
+
+await check('the briefs now carry the conversion job into the prompt', async () => {
+  const post = { title: 'ML Engineer pay: what $75/hr means after tax and hours', angle: 'awareness', stage: 2, angleName: 'Awareness', angleDescription: 'Help readers understand the offer' };
+  const voice = resolveTenantVoice({ site: { id: 'mercor', name: 'Mercor' }, offer: JOB });
+  const prompt = buildArticlePrompt({ offer: JOB, post, voice });
+  for (const needle of ['THE CONVERSION JOB', 'ASK LADDER', 'Before you apply', 'Mid-page ask', 'First 100 words']) {
+    assert(prompt.includes(needle), `prompt is missing "${needle}"`);
+  }
+  assert(/\$75|USD 75/.test(prompt), 'the rate is not in the brief');
+  const repair = buildRepairPrompt({ offer: JOB, post, voice, draft: '<p>x</p>', issues: '- thin' });
+  assert(/THE CONVERSION JOB/.test(repair), 'repair prompt dropped the conversion commission');
+  assert(/mid-page ask/i.test(repair), 'repair prompt does not ask for a mid-page ask');
+  return `${prompt.length} chars incl. ask ladder`;
+});
+
+await check('titles that died on LinkedIn are rejected by name', async () => {
+  const dead = [
+    'Unlock Your Future as a Defense Analyst',
+    'Master the Defense Analyst Assessment With These Tips',
+    'Ready to Work as a Remote Defense Analyst?',
+    'Discover How PhD LifeScience Researchers Work',
+    'What is a Chief of Staff? A Complete Guide for 2026',
+    'Apply Now!',
+  ];
+  for (const t of dead) assert(weakTitleReason(t), `accepted a losing title: ${t}`);
+  const alive = [
+    'The day-to-day life of a Physics PhD coding expert',
+    'Is $150/hr really what a senior software engineer earns?',
+    'What the Chief of Staff application asks for, before you start it',
+    'What Kassangas Music Shop costs in Nairobi',
+  ];
+  for (const t of alive) assert(!weakTitleReason(t), `rejected a working title: ${t} (${weakTitleReason(t)})`);
+  assert(Object.keys(TITLE_SHAPES).length === 6, 'title shapes do not cover every offer type');
+  assert(ASK_LADDER.length === 3, 'the ask ladder is not three rungs');
+  return '6 losing patterns rejected, 4 working shapes accepted';
+});
+
+await check('a job page with no readiness section is named, not passed', async () => {
+  const job = analyzeArticle(PROSE, { offerType: 'job', title: 'Unlock Your Future as a Defense Analyst' });
+  const jobCodes = job.issues.map((i) => i.code);
+  assert(jobCodes.includes('no-readiness'), 'a job page without "Before you apply" passed: ' + jobCodes.join(','));
+  assert(jobCodes.includes('weak-title'), 'the weak title was not flagged: ' + jobCodes.join(','));
+  assert(job.conversion.readinessHeading === false, 'readinessHeading should be false');
+  // The check adapts to the offer type instead of accepting any "Before you …".
+  const asService = analyzeArticle(PROSE, { offerType: 'service' });
+  const svcIssue = asService.issues.find((i) => i.code === 'no-readiness');
+  assert(svcIssue, 'a service page without a readiness section was passed');
+  assert(/Before you get in touch/.test(svcIssue.detail), 'service detail asked for the wrong verb: ' + svcIssue.detail);
+  const withHeading = analyzeArticle('<h2>Before you get in touch</h2><p>Send the scope and the date you need it finished.</p>' + PROSE, { offerType: 'service' });
+  assert(!withHeading.issues.some((i) => i.code === 'no-readiness'), 'a page with the right heading still failed');
+  return 'job: no-readiness + weak-title; service: verb-specific heading accepted';
+});
+
+await check('one ask at the bottom is not enough', async () => {
+  const line = 'The studio diary decides the rate, so a Tuesday morning session costs less than the same room on a Saturday afternoon.';
+  const mid = [0, 1, 2, 3].map((i) => `<p>${line} This is point ${i + 1} of the same argument about timing and price.</p>`).join('');
+  const tail = [5, 6, 7].map((i) => `<p>${line} It follows that the quote for session ${i} should list the same three lines.</p>`).join('');
+  const html = `<h2>The room</h2>${mid}<h2>The price</h2>${tail}<p>Send us the song count and the date, and we will quote KES 1,500 against that scope line by line.</p>`;
+  const a = analyzeArticle(html, { offerType: 'service' });
+  assert(a.conversion.midAsk === false, 'a page with one closing ask reported a mid-page ask');
+  assert(a.issues.map((i) => i.code).includes('no-mid-ask'), 'no-mid-ask was not raised: ' + a.issues.map((i) => i.code).join(','));
+  return `midAsk=${a.conversion.midAsk}, firstPerson=${a.conversion.firstPerson}`;
+});
+
+await check('a repeated paragraph blocks the page', async () => {
+  const para = 'You have compared, assessed and prepared, and the next step is the application form itself. It asks for a CV, your availability and the rate you will accept, and it takes about twenty minutes to finish.';
+  const a = analyzeArticle(`<p>${para}</p><p>${para}</p>` + PROSE, { offerType: 'job' });
+  assert(a.conversion.duplicateParagraphs >= 1, 'the repeated paragraph was not counted');
+  assert(a.critical.includes('duplicate-paragraph'), 'a repeated paragraph did not block: ' + a.critical.join(','));
+  return `${a.conversion.duplicateParagraphs} duplicate(s) blocking`;
+});
+
+await check('the readiness card lists what the reader needs before the click', async () => {
+  const card = readinessCard({ offer_type: 'job' });
+  assert(/<h3>Before you apply<\/h3>/.test(card), 'no heading: ' + card.slice(0, 60));
+  assert((card.match(/<li>/g) || []).length >= 5, 'fewer than five readiness items');
+  assert(/CV/.test(card), 'the CV line is missing from the card');
+  assert(/rate/.test(card), 'the rate line is missing from the card');
+  const shop = readinessCard({ offer_type: 'product' });
+  assert(/Before you order/.test(shop), 'product card heading wrong: ' + shop.slice(0, 60));
+  return `${(card.match(/<li>/g) || []).length} items on the job card`;
 });
 
 const failed = results.filter((r) => r.status === 'FAIL');

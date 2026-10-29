@@ -256,6 +256,60 @@ await check("escapeAttr covers the four dangerous characters", () => {
 });
 
 // ---------------------------------------------------------------------------
+// The closing block (2026-10-29). Every page on the site used to end with the
+// same three lines — "Ready to Start? / This opportunity is available now. /
+// [Apply Now]" — on a job, a product and a course alike, and the button pointed
+// at a redirect that 404s when the offer had no destination configured.
+await check("cta: the generic block is gone from every page", () => {
+  const html = buildHTML({ title: "T", slug: "s", content: CLEAN_FRAGMENT }, OFFER);
+  assert(!/Ready to Start\?/.test(html), "the old 'Ready to Start?' heading is still on the page");
+  assert(!/This opportunity is available now/.test(html), "the old availability line survived");
+  return "old block removed";
+});
+
+await check("cta: the heading names the actual offer", () => {
+  const job = { id: "abc", offer_type: "job", title: "ML Engineer", compensation_max: 75, compensation_currency: "USD", location_text: "Remote" };
+  const html = buildHTML({ title: "T", slug: "s", content: CLEAN_FRAGMENT }, job);
+  assert(html.includes("Apply for ML Engineer"), "the heading does not name the role");
+  assert(/USD 75 per hour/.test(html), "the rate is missing from the block");
+  assert(/Remote/.test(html), "the location is missing from the block");
+  const svc = buildHTML({ title: "T", slug: "s", content: CLEAN_FRAGMENT }, { id: "x", offer_type: "service", title: "Studio Session" });
+  assert(svc.includes("Get Studio Session priced"), "service heading is not a quote ask");
+  assert(!/Learn More/.test(svc), "'Learn More' — the weakest verb in commercial copy — came back");
+  return "job names the role and rate; service asks for a quote";
+});
+
+await check("cta: one at the top, one at the end, both real links", () => {
+  const html = buildHTML({ title: "T", slug: "s", content: CLEAN_FRAGMENT }, { id: "offer-1", offer_type: "job", title: "ML Engineer" });
+  const buttons = html.match(/class="cta-btn"/g) || [];
+  assert(buttons.length === 2, `expected 2 buttons, found ${buttons.length}`);
+  assert((html.match(/href="\/ai-jobs\/apply\/offer-1"/g) || []).length === 2, "the buttons do not point at the tracked redirect");
+  assert(html.indexOf('cta-top') < html.indexOf("<article>"), "the top CTA is not above the article");
+  assert(html.lastIndexOf('class="cta-btn"') > html.indexOf("</article>"), "the closing CTA is not after the article");
+  return "2 buttons, top before article, end after";
+});
+
+await check("cta: an offer with no destination is not given a dead button", () => {
+  const orphan = buildHTML({ title: "T", slug: "s", content: CLEAN_FRAGMENT }, { offer_type: "service", title: "Studio Session" });
+  assert(!/class="cta-btn"/.test(orphan), "a button was rendered with nowhere to go");
+  assert(/no link configured/.test(orphan), "the reader is not told what to do instead");
+  const direct = buildHTML({ title: "T", slug: "s", content: CLEAN_FRAGMENT }, { offer_type: "product", title: "Desk", destination_url: "https://shop.example/item" });
+  assert(direct.includes('href="https://shop.example/item"'), "the offer's own destination URL was ignored");
+  assert(direct.includes('rel="noopener"'), "an external destination has no rel=noopener");
+  return "orphan: message; direct URL: used with noopener";
+});
+
+await check("cta: the page tells the reader what to have ready", () => {
+  const job = buildHTML({ title: "T", slug: "s", content: CLEAN_FRAGMENT }, { id: "j1", offer_type: "job", title: "ML Engineer" });
+  assert(/Before you apply/.test(job), "a job page has no readiness list above the button");
+  assert(/CV saved as a PDF/.test(job), "the readiness list does not mention the CV");
+  const shop = buildHTML({ title: "T", slug: "s", content: CLEAN_FRAGMENT }, { id: "p1", offer_type: "product", title: "Desk" });
+  assert(/Before you order/.test(shop), "a product page inherited the wrong readiness heading");
+  assert(!/CV saved as a PDF/.test(shop), "the product page was given the candidate list");
+  return "job: CV list; product: order list";
+});
+
+// ---------------------------------------------------------------------------
 const failed = results.filter((r) => r.status === "FAIL");
 console.log("");
 if (failed.length) {

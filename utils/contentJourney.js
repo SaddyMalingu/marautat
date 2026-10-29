@@ -10,6 +10,17 @@ const isJobOffer = (job) => !job || !job.offer_type ? true : job.offer_type === 
 const offerCurrency = (job) => (job && job.compensation_currency) || 'KES';
 const offerPrice = (job) => (job && job.compensation_max != null ? job.compensation_max : null);
 
+// A rate the reader can recognise in the title. The LinkedIn export is blunt
+// about why this matters: "Is $150/hr really what a senior software engineer
+// earns?" reached 94% out-of-network and 153 impressions, while "Salary Guide"
+// phrasing reached 23. The figure is the hook; the word "guide" is not.
+const rateLabel = (job) => {
+  const n = offerPrice(job);
+  if (n == null) return '';
+  const cur = offerCurrency(job);
+  return (cur === 'USD' ? '$' : cur + ' ') + n + '/hr';
+};
+
 const CONTENT_ANGLES = {
   // Each angle represents a different stage in the reader's journey
   awareness: {
@@ -18,8 +29,8 @@ const CONTENT_ANGLES = {
     templates: [
       {
         title: (job) => isJobOffer(job)
-          ? `What is a ${job.title}? A Complete Guide for ${new Date().getFullYear()}`
-          : `${job.title}: A Complete Guide for ${new Date().getFullYear()}`,
+          ? `What a ${job.title} Actually Does All Day`
+          : `${job.title}: What It Is, Who It Suits, What It Costs`,
         slug: (slug) => `${slug}-guide`,
         prompt: (job) => isJobOffer(job)
           ? `Write an educational blog post explaining what a ${job.title} does, why this role matters in the industry, and who should consider this career. Include: role overview, day-to-day responsibilities, industry demand, and career outlook. HTML format, NO markdown.`
@@ -27,7 +38,7 @@ const CONTENT_ANGLES = {
       },
       {
         title: (job) => isJobOffer(job)
-          ? `${job.title} Salary Guide: What You Can Actually Earn`
+          ? (rateLabel(job) ? `Is ${rateLabel(job)} Really What a ${job.title} Earns?` : `${job.title} Pay: What the Hourly Rate Really Means`)
           : `${job.title}: What It Costs and What You Get`,
         slug: (slug) => `${slug}-salary`,
         prompt: (job) => isJobOffer(job)
@@ -52,7 +63,7 @@ const CONTENT_ANGLES = {
       },
       {
         title: (job) => isJobOffer(job)
-          ? `Essential Skills for ${job.title}s: Do You Have What It Takes?`
+          ? `The Skills ${job.title} Work Actually Rewards`
           : `What to Check Before You Choose ${job.title}`,
         slug: (slug) => `${slug}-skills`,
         prompt: (job) => isJobOffer(job)
@@ -68,7 +79,7 @@ const CONTENT_ANGLES = {
     templates: [
       {
         title: (job) => isJobOffer(job)
-          ? `How to Pass the ${job.title} Assessment: Complete Prep Guide`
+          ? `What the ${job.title} Assessment Asks For, and How to Prepare`
           : `How to Prepare Before You Contact ${job.title}`,
         slug: (slug) => `${slug}-prep`,
         prompt: (job) => isJobOffer(job)
@@ -77,7 +88,7 @@ const CONTENT_ANGLES = {
       },
       {
         title: (job) => isJobOffer(job)
-          ? `Building a ${job.title} Portfolio That Gets You Hired`
+          ? `The Portfolio a ${job.title} Hiring Manager Actually Reads`
           : `How to Brief ${job.title} So You Get the Right Result`,
         slug: (slug) => `${slug}-portfolio`,
         prompt: (job) => isJobOffer(job)
@@ -93,7 +104,7 @@ const CONTENT_ANGLES = {
     templates: [
       {
         title: (job) => isJobOffer(job)
-          ? `How to Get Hired as a ${job.title}: Step-by-Step`
+          ? `Applying for ${job.title} Work: What Happens, Step by Step`
           : `How to Get Started with ${job.title}: Step by Step`,
         slug: (slug) => `${slug}-hired`,
         prompt: (job) => isJobOffer(job)
@@ -102,7 +113,7 @@ const CONTENT_ANGLES = {
       },
       {
         title: (job) => isJobOffer(job)
-          ? `Remote ${job.title} Jobs: Work from Anywhere Guide`
+          ? `Where Remote ${job.title} Jobs Are Actually Listed`
           : `Taking ${job.title} Beyond a Single Site`,
         slug: (slug) => `${slug}-remote`,
         prompt: (job) => isJobOffer(job)
@@ -118,7 +129,7 @@ const CONTENT_ANGLES = {
     templates: [
       {
         title: (job) => isJobOffer(job)
-          ? `${job.title} Career Roadmap: Junior to Senior in 5 Years`
+          ? `What Changes in Five Years of ${job.title} Work`
           : `${job.title}: Getting More Value in the First Year`,
         slug: (slug) => `${slug}-roadmap`,
         prompt: (job) => isJobOffer(job)

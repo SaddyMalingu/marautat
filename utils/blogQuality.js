@@ -15,7 +15,13 @@
  *
  * Deliberately heuristic, deterministic and dependency-free: the same HTML must
  * always score the same, offline, so the rule can be tested and tuned.
+ *
+ * 2026-10-29: the gate now also measures conversion — whether the offer arrives
+ * in the first screen, whether there is an ask in the middle as well as at the
+ * end, whether the page tells the reader what the next step demands, whether the
+ * business ever speaks in first person, and whether the title is a promise.
  */
+import { weakTitleReason } from './conversionPlaybook.js';
 
 export const QUALITY_TARGETS = {
   // A page shorter than this is a note, not a blog post. Buyer pages run a
@@ -105,7 +111,7 @@ function blocks(html) {
  *   summary: string
  * }}
  */
-export function analyzeArticle(html) {
+export function analyzeArticle(html, options) {
   const text = textOf(html);
   const words = wordsOf(text);
   const list = blocks(html);
@@ -146,6 +152,59 @@ export function analyzeArticle(html) {
   const numbers = words.filter((w) => /\d/.test(w)).length;
   const lower = text.toLowerCase();
   const cta = CTA.test(lower.slice(Math.floor(lower.length * 0.65))) || CTA.test(lower.slice(-400));
+
+  // --- conversion rules -----------------------------------------------------
+  // Added 2026-10-29, after two measurements said the corpus was well-written
+  // and still did not convert:
+  //   · Mercor referrals: 159 applications started, 22 completed (13.8%).
+  //     Nothing on the page had told the reader what the form would ask for.
+  //   · 48 LinkedIn articles: median 91 impressions, and every title built as a
+  //     command ("Unlock…", "Master…", "Ready to…") reached 0-25 people, while
+  //     situational titles reached 59,563 and 3,726.
+  // So: the offer must arrive in the first screen, the ask must appear mid-page
+  // as well as at the end, the next step must be spelled out, and the title must
+  // not be a promise.
+  const opts = options || {};
+  const offerType = String(opts.offerType || '').toLowerCase();
+  const flat = words.join(' ').toLowerCase();
+  const opening = flat.split(' ').slice(0, 110).join(' ');
+  const midWindow = flat.split(' ').slice(Math.floor(words.length * 0.3), Math.floor(words.length * 0.75)).join(' ');
+  const distinctNumbers = new Set(words.filter((w) => /\d/.test(w)).map((w) => w.replace(/[^0-9.]/g, ''))).size;
+  const firstPerson = (text.match(/\b(?:we|our|us)\b/gi) || []).length;
+
+  const norm = paragraphs.map((p) => p.text.toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim());
+  const seenParas = new Map();
+  let duplicateParagraphs = 0;
+  for (const p of norm) {
+    if (wordsOf(p).length < 20) continue;
+    const n = (seenParas.get(p) || 0) + 1;
+    seenParas.set(p, n);
+    if (n === 2) duplicateParagraphs++;
+  }
+
+  // The heading must use the verb this offer type actually asks for: a job page
+  // that says "Before you get in touch" is a buyer template with the nouns
+  // swapped, which is exactly the bug the widened engine shipped.
+  const READINESS_VERB = {
+    job: /before you (?:apply|start the application)/i,
+    product: /before you (?:order|buy)/i,
+    course: /before you (?:enrol|enroll|sign up)/i,
+    service: /before you (?:get in touch|request|enquire|enquire|contact|send)/i,
+    affiliate: /before you (?:click|sign up|open)/i,
+    brand: /before you (?:get in touch|call|visit|contact|come in)/i,
+  };
+  const readinessRe = READINESS_VERB[offerType] || null;
+  const readinessHeading = readinessRe ? readinessRe.test(text) : false;
+  const requiresReadiness = Boolean(readinessRe);
+  const offerInOpening = distinctNumbers > 0 || CTA.test(opening) || /\b(?:kes|usd|ksh|\$)\b/i.test(opening);
+  const midAsk = CTA.test(midWindow);
+  const weakTitle = weakTitleReason(opts.title);
+
+  const conversion = {
+    offerType: offerType || 'unspecified',
+    offerInOpening, midAsk, readinessHeading, firstPerson, distinctNumbers,
+    duplicateParagraphs, weakTitle, wordCount: words.length,
+  };
 
   // --- hard rules -----------------------------------------------------------
   if (words.length < QUALITY_TARGETS.minWords) {
@@ -193,6 +252,31 @@ export function analyzeArticle(html) {
     add('no-cta', 'no call to action in the closing third', 6, false);
   }
 
+  // --- conversion verdict ---------------------------------------------------
+  if (duplicateParagraphs) {
+    add('duplicate-paragraph', duplicateParagraphs + ' paragraph(s) repeat word for word — the fallback composer shipped this on live pages', 12, true);
+  }
+  if (requiresReadiness && !readinessHeading) {
+    const verb = offerType === 'job' ? 'apply' : offerType === 'product' ? 'order'
+      : offerType === 'course' ? 'enrol' : offerType === 'affiliate' ? 'click' : 'get in touch';
+    add('no-readiness', 'no "Before you ' + verb + '" section; the reader meets the requirements at the form instead of here', 10, false);
+  }
+  if (!offerInOpening) {
+    add('no-offer-early', 'the first 110 words name no figure, price or next step', 8, false);
+  }
+  if (!midAsk) {
+    add('no-mid-ask', 'the only ask is at the end; a reader who leaves at the halfway point is never invited to act', 6, false);
+  }
+  if (distinctNumbers < 3) {
+    add('thin-specifics', distinctNumbers + ' distinct figures on the page (floor 3)', 6, false);
+  }
+  if (firstPerson < 1) {
+    add('no-first-person', 'the business never speaks in first person, so the page reads like a directory listing', 4, false);
+  }
+  if (weakTitle) {
+    add('weak-title', 'title is a promise rather than a situation: ' + weakTitle, 0, false);
+  }
+
   const firstWords = paragraphs.slice(0, 6).map((p) => (wordsOf(p.text)[0] || '').toLowerCase());
   if (firstWords.length >= 4) {
     const counts = new Map();
@@ -218,7 +302,7 @@ export function analyzeArticle(html) {
   return {
     score, ok, critical, words: words.length, paragraphs: paragraphs.length,
     headings: headings.length, listWordRatio, listOnlySections,
-    avgSentencesPerParagraph, numbers, cta, issues, summary,
+    avgSentencesPerParagraph, numbers, cta, issues, summary, conversion,
   };
 }
 

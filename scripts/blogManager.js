@@ -20,6 +20,17 @@ import { buildArticlePrompt, buildRepairPrompt, buildReviewPrompt } from '../uti
 // The referee. Measures what the draft actually delivered so a thin page cannot
 // be reported as a success, and names the failures a repair prompt must fix.
 import { analyzeArticle, qualityBrief, describeQuality } from '../utils/blogQuality.js';
+// The closing block. Until 2026-10-29 every page ended with the same three
+// lines — "Ready to Start? / This opportunity is available now. / [Apply Now]" —
+// on a job, a product and a course alike, linking to a redirect that 404s when
+// the offer has no destination. utils/ctaBlock.js writes it from the offer.
+import { ctaBlock } from '../utils/ctaBlock.js';
+
+// Slugs the verifier and the provider smoke test generate. They are real posts
+// with real HTML, and until 2026-10-29 they were published to /blog alongside
+// articles — 36 of them were live in the public index. They are now written as
+// drafts and never get a static page.
+const TEST_ARTIFACT = /^(?:verify-writers-flow-|test-ai-specialist-)/i;
 // Each tenant writes in its own voice, resolved from its own settings or, when
 // it has none, deterministically from its identity.
 import { resolveTenantVoice } from '../utils/tenantVoice.js';
@@ -899,7 +910,7 @@ async function generateJourney(oppId, opts) {
     // rewrite when it fails. Skipped when the tier is already known dry, when the
     // copy was composed locally (that copy is prose by construction) or when the
     // run budget cannot afford a second call for this page.
-    var quality = analyzeArticle(content);
+    var quality = analyzeArticle(content, { offerType: o && o.offer_type, title: post.title });
     var repairHeadroom = budgetMs <= 0 || Date.now() - runStart < budgetMs * 0.75;
     if (!composed && aiUsable && !lastAiError && !quality.ok && repairHeadroom) {
       var repaired = await ai(buildRepairPrompt({
@@ -907,7 +918,7 @@ async function generateJourney(oppId, opts) {
       }), capFor());
       if (repaired) {
         var candidate = clean(repaired);
-        var candidateQuality = analyzeArticle(candidate);
+        var candidateQuality = analyzeArticle(candidate, { offerType: o && o.offer_type, title: post.title });
         if (candidateQuality.score > quality.score) {
           console.log('[GEN] Repaired ' + post.slug + ': ' + describeQuality(quality) + ' → ' + describeQuality(candidateQuality));
           content = candidate;
@@ -928,12 +939,16 @@ async function generateJourney(oppId, opts) {
     var reviewHeadroom = budgetMs <= 0 || Date.now() - runStart < budgetMs * 0.6;
     if (rev && !composed && !lastAiError && reviewHeadroom) {
       content = await reviewContent(content, post.title, capFor(), { offer: o, post: post, voice: voice, analysis: quality });
-      quality = analyzeArticle(content);
+      quality = analyzeArticle(content, { offerType: o && o.offer_type, title: post.title });
     }
     var thumb = null;
     if (img) thumb = await genImage(o.title + ' ' + post.angleName, post.slug);
     var postData = { title: post.title, slug: post.slug, content: content, thumb: thumb };
-    fs.writeFileSync(path.join(BLOG, post.slug + '.html'), buildHTML(postData, o), 'utf8');
+    // A verifier run must not leave a public page behind. The row is written as a
+    // draft (saveToDB) and the static file is skipped, so /blog never shows it.
+    if (!TEST_ARTIFACT.test(String(post.slug || ''))) {
+      fs.writeFileSync(path.join(BLOG, post.slug + '.html'), buildHTML(postData, o), 'utf8');
+    }
     await saveToDB(postData, o, post.angle);
     existing.push(content);
     res.push({
@@ -1036,12 +1051,22 @@ const BLOG_STYLE = ':root{--bg:#081421;--accent:#ff8a00;--text:#f3f7fa;--muted:#
   + 'table{width:100%;border-collapse:collapse;margin:1rem 0}'
   + 'th,td{border:1px solid rgba(255,255,255,.18);padding:.5rem .75rem;text-align:left;color:var(--muted)}'
   + 'th{background:rgba(255,255,255,.06);color:var(--text)}'
-  + 'img{max-width:100%;border-radius:8px;margin:1rem 0}';
+  + 'img{max-width:100%;border-radius:8px;margin:1rem 0}'
+  + '.cta{text-align:center;padding:2rem;margin:2rem 0;background:rgba(255,255,255,.05);border-radius:12px;border:1px solid rgba(255,138,0,.35)}'
+  + '.cta h2{margin-top:0}'
+  + '.cta ul{display:inline-block;text-align:left;max-width:38rem}'
+  + '.cta-btn{display:inline-block;background:var(--accent);color:#000;padding:1rem 2rem;border-radius:8px;text-decoration:none;font-weight:700;margin-top:.5rem}'
+  + '.cta-facts{color:var(--accent);font-weight:600}'
+  + '.cta-top{text-align:left;padding:1rem 1.25rem;margin:1rem 0;display:flex;gap:1rem;align-items:center;justify-content:space-between;flex-wrap:wrap}'
+  + '.cta-top p{margin:0}'
+  + '.cta-top .cta-btn{margin:0;padding:.75rem 1.25rem}';
 
 export function buildHTML(post, job) {
-  const id = job?.id;
-  const cta = (job && job.cta_label) || OFFER_CTA[job && job.offer_type] || 'Apply Now';
-  const availLine = (job && job.offer_type && job.offer_type !== 'job') ? 'This offer is available now.' : 'This opportunity is available now.';
+  // The button used to be three fixed lines on every page in the catalogue.
+  // `utils/ctaBlock.js` now writes it from the offer itself, and adds a compact
+  // copy above the article so a reader who never scrolls still has a way out.
+  const topCta = ctaBlock(job, { variant: 'top' });
+  const endCta = ctaBlock(job);
   // The article body is the only model-authored HTML on the page, so it is the
   // only place a stray <style>/<html>/white background can arrive. Sanitising it
   // here — and not just in clean() — is what protects pages rebuilt from stored
@@ -1057,17 +1082,22 @@ export function buildHTML(post, job) {
   // repair: restoreFromDB()/repair_blog_html.js pass the row's own timestamp.
   const pubDate = post.date ? new Date(post.date).toLocaleDateString() : new Date().toLocaleDateString();
   const VM = '<meta name="google-site-verification" content="nQc8r4A_tjZX4469pNlpTR5hf7bfjEazZtITnrrHZUU">';
-  return '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">' + VM + '<title>' + title + ' | AlphaDome</title><meta name="description" content="' + desc + '"><link rel="canonical" href="' + (process.env.SITE_URL || 'https://alphadome.onrender.com') + '/blog/' + post.slug + '.html"><style>' + BLOG_STYLE + '</style></head><body><div class="c"><nav><a href="/">AlphaDome</a> / <a href="/ai-jobs">AI Jobs</a> / <a href="/blog">Blog</a></nav><article><h1>' + title + '</h1><p style="color:var(--muted)">Published ' + pubDate + ' | ' + rt + ' min read</p>' + img + body + '</article><div style="text-align:center;padding:2rem;margin:2rem 0;background:rgba(255,255,255,.05);border-radius:12px"><h2>Ready to Start?</h2><p>' + availLine + '</p><a href="/ai-jobs/apply/' + id + '" style="display:inline-block;background:var(--accent);color:#000;padding:1rem 2rem;border-radius:8px;text-decoration:none;font-weight:600">' + escapeAttr(cta) + '</a></div></div></body></html>';
+  return '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">' + VM + '<title>' + title + ' | AlphaDome</title><meta name="description" content="' + desc + '"><link rel="canonical" href="' + (process.env.SITE_URL || 'https://alphadome.onrender.com') + '/blog/' + post.slug + '.html"><style>' + BLOG_STYLE + '</style></head><body><div class="c"><nav><a href="/">AlphaDome</a> / <a href="/ai-jobs">AI Jobs</a> / <a href="/blog">Blog</a></nav>' + topCta + '<article><h1>' + title + '</h1><p style="color:var(--muted)">Published ' + pubDate + ' | ' + rt + ' min read</p>' + img + body + '</article>' + endCta + '</div></body></html>';
 }
 
 async function saveToDB(post, job, category) {
   try {
+    // Test artifacts must never reach the public index. The verifier's own pages
+    // ("verify-writers-flow-20261022130935") were live on /blog for weeks, next
+    // to real articles, because a run that failed halfway left the row behind.
+    // Drafts are invisible to the index and still inspectable from the console.
+    const isTestArtifact = TEST_ARTIFACT.test(String(post.slug || ''));
     const row = {
       slug: post.slug, title: post.title, content: post.content,
       html_content: buildHTML(post, job), opportunity_id: job?.id,
       category: category, thumbnail_url: post.thumb,
       meta_description: post.content.replace(/<[^>]*>/g, "").substring(0, 160),
-      status: "published"
+      status: isTestArtifact ? "draft" : "published"
     };
     // Ownership: a tenant must stay able to remove a post it paid for, even
     // after the source offer is deleted. tenant_id is nullable (phase-1 schema).

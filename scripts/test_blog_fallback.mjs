@@ -72,13 +72,16 @@ await check("every angle publishes under its own slug", async () => {
 });
 
 // The journey was job-only; buyer copy must not have replaced the career copy
-// that the legacy Mercor catalog depends on.
+// that the legacy Mercor catalog depends on. The titles themselves changed on
+// 2026-10-29 (the LinkedIn export showed command-shaped titles reaching 1-25
+// people), so this now pins the *intent* of each page, not its old wording.
 await check("job offers keep the career journey", async () => {
   const job = { ...OFFER, offer_type: "job", title: "ML Engineer", slug: "ml-engineer" };
   const titles = getContentJourney(job).map((x) => x.title).join(" | ");
-  assert(/Salary Guide/.test(titles), `job journey lost its salary post: ${titles}`);
-  assert(/Career Roadmap/.test(titles), `job journey lost its roadmap post: ${titles}`);
-  assert(/Get Hired as a ML Engineer/.test(titles), `job journey lost its hiring post: ${titles}`);
+  assert(/Earns\?|Hourly Rate Really Means|Pay/.test(titles), `job journey lost its pay post: ${titles}`);
+  assert(/Five Years/.test(titles), `job journey lost its progression post: ${titles}`);
+  assert(/Applying for ML Engineer Work/.test(titles), `job journey lost its hiring post: ${titles}`);
+  assert(/Before you|Assessment Asks For/.test(titles), `job journey lost its preparation post: ${titles}`);
   assert(getContentJourney(job).length === 9, "job journey length changed");
   return "career titles intact for offer_type=job";
 });
@@ -87,7 +90,7 @@ await check("job offers keep the career journey", async () => {
 // (live 2026-10-22: /blog carried "How to Get Hired as a Kassangas Music Shop").
 await check("service offers get buyer copy, not career copy", async () => {
   const titles = journey.map((x) => x.title).join(" | ");
-  for (const careerOnly of ["Salary Guide", "Career Roadmap", "Portfolio That Gets You Hired", "Remote "]) {
+  for (const careerOnly of ["Salary Guide", "Career Roadmap", "Portfolio That Gets You Hired", "Remote ", "Five Years", "Applying for"]) {
     assert(!titles.includes(careerOnly), `service journey still says "${careerOnly}": ${titles}`);
   }
   assert(titles.includes("What It Costs"), `service journey lost its pricing post: ${titles}`);

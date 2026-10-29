@@ -16,6 +16,7 @@
  * Pure text assembly — no model calls, no IO — so the brief is testable offline.
  */
 import { FRAGMENT_ONLY } from './articleHtml.js';
+import { conversionBrief, playbookFor, weakTitleReason } from './conversionPlaybook.js';
 
 export const FALLBACK_CTA = {
   job: 'Apply now',
@@ -225,6 +226,14 @@ function shapeRules(post, facts, cta) {
     '7. Close with one paragraph of two to three sentences that uses the call to action "' + cta +
       '" and says exactly what the reader should bring or do next. No "conclusion" heading.',
     '8. Optional <h3> sub-headings inside a section, at most one per section. No tables of contents, no "Introduction"/"Conclusion" headings.',
+    // Rules 9-12 exist because the measured failure was not style but
+    // conversion: 88% of the legacy corpus put the only ask in the final
+    // paragraph, and Mercor lost 86% of started applications at the form.
+    '9. First 100 words: name what is on offer' + (facts.price ? ', the figure (' + facts.price + ')' : '') +
+      ' and the next step. The scene sets the mood in sentence one; the reader must know what this page is selling before the second paragraph ends.',
+    '10. Mid-page ask: at the start of section four, one sentence that gives the reader permission to stop reading — it says what happens if they act now and what to have ready. It must not be the closing paragraph repeated.',
+    '11. Answer the hesitation named in THE CONVERSION JOB inside the body. A page that only sells at the end convinces nobody who is skimming.',
+    '12. Never invent the middle of the journey: no invented application steps, assessment format, delivery promise, guarantee or processing time. Describe what the reader should ask for instead.',
   ].join('\n');
 }
 
@@ -398,6 +407,7 @@ export function buildArticlePrompt(input) {
   lines.push('THE READER');
   lines.push('A person who searched for "' + (post.title || facts.title) + '". They are ' +
     (voice.audience || 'deciding whether this is worth their money') + '. ' +
+    'More precisely, they are ' + playbookFor(offer).reader + '. ' +
     'They will leave in ten seconds if the first paragraph reads like a brochure. They will stay if it names the situation they are already in.');
   lines.push('');
   lines.push('THIS PAGE');
@@ -415,6 +425,15 @@ export function buildArticlePrompt(input) {
   }
   lines.push('');
   lines.push(shapeRules(post, facts, facts.cta));
+  lines.push('');
+  lines.push('THE CONVERSION JOB — why this page exists');
+  lines.push(conversionBrief(offer, facts));
+  lines.push('- The page is not finished when the reader understands. It is finished when they act.');
+  const weak = weakTitleReason(post.title);
+  if (weak) {
+    lines.push('- Title warning: the assigned title uses a pattern that measurably loses readers (' + weak + '). ' +
+      'Do not repeat the title in the body; earn the click with the first sentence instead.');
+  }
   lines.push('');
   lines.push('LENGTH AND RHYTHM');
   lines.push('- ' + min + ' to ' + max + ' words of body copy. Meeting the floor matters more than the ceiling: a thin page is the failure mode this brief exists to fix.');
@@ -461,6 +480,10 @@ export function buildRepairPrompt(input) {
     '- At least five <h2> sections. Every section starts with prose; lists only ever follow prose.',
     '- Under 30% of the words inside <li> elements, and no more than two lists in the whole page.',
     '- One worked example with numbers, and one honest paragraph about what this is not.',
+    '- The offer' + (facts.price ? ' and the figure (' + facts.price + ')' : '') + ' named inside the first 100 words.',
+    '- A mid-page ask around the middle of the article, not only at the end.',
+    '- A "Before you ' + (facts.type === 'job' ? 'apply' : facts.type === 'product' ? 'order' : 'get in touch') +
+      '" section listing what the reader must have ready, and a short passage on what happens after they act.',
     '- A closing paragraph that uses "' + facts.cta + '".',
     '- Facts must survive the rewrite. Keep every true specific; remove anything invented.',
     '',
@@ -470,6 +493,9 @@ export function buildRepairPrompt(input) {
     '- Opening scene: ' + brief.scene,
     '- Must answer: ' + brief.covers.join('; ') + '.',
     '- Avoid: ' + brief.avoid + '.',
+    '',
+    'THE CONVERSION JOB (unchanged)',
+    conversionBrief(input.offer, facts),
     '',
     (voice.promptBlock || ''),
     '',
