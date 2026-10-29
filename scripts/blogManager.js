@@ -98,7 +98,10 @@ export async function restoreFromDB() {
       // passes the audit. Without this, every healthy page keeps the generic
       // "Ready to Start? / Apply Now" until someone regenerates it by hand.
       const staleFooter = isStalePage(html);
-      if ((!audit.ok || staleFooter) && post.content) {
+      // Kill switch: set BLOG_REBUILD_STALE_PAGES=off to keep every page exactly
+      // as it is stored and only repair pages that fail the readability audit.
+      const mayRebuildFooter = process.env.BLOG_REBUILD_STALE_PAGES !== 'off';
+      if ((!audit.ok || (staleFooter && mayRebuildFooter)) && post.content) {
         try {
           const offer = post.opportunity_id
             ? (offers.get(post.opportunity_id) || { id: post.opportunity_id })
@@ -132,7 +135,10 @@ export async function restoreFromDB() {
     // behind by a post that is no longer published keeps appearing on /blog —
     // the verifier's own pages were doing exactly that, 93 links deep. Anything
     // this restore did not just write is stale: drop it.
-    const written = new Set(live.filter((p) => p.html_content).map((p) => p.slug + '.html'));
+    // Keep a page for every published post, not just the ones we rebuilt: a row
+    // with a null html_content is skipped by the loop above, and deriving "keep"
+    // from rebuilt posts would have deleted a live article's page.
+    const written = new Set(live.map((p) => p.slug + '.html'));
     let pruned = 0;
     try {
       for (const file of orphanPageFiles(fs.readdirSync(BLOG), written)) {

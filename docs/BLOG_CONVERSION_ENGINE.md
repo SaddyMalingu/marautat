@@ -182,6 +182,16 @@ and which are still on the old footer. It issues SELECTs only.
 `test:blog-html` pins the comparison itself (including a tampered-page case), so
 the audit cannot pass by being blind.
 
+**Two guarantees worth stating explicitly:**
+
+1. No published article's page is ever deleted. The prune keeps a file for every
+   published row (`written` is built from all of them, not only the rebuilt
+   ones) and only removes files that no published post owns.
+2. The footer rebuild can be switched off entirely with
+   `BLOG_REBUILD_STALE_PAGES=off`. With it off, the restore still repairs pages
+   that fail the readability audit — the pre-2026-10-29 behaviour — and leaves
+   every other stored page byte-for-byte as it is.
+
 ## How to use it
 
 ```js
