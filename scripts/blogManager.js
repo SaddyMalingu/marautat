@@ -24,7 +24,7 @@ import { analyzeArticle, qualityBrief, describeQuality } from '../utils/blogQual
 // lines — "Ready to Start? / This opportunity is available now. / [Apply Now]" —
 // on a job, a product and a course alike, linking to a redirect that 404s when
 // the offer has no destination. utils/ctaBlock.js writes it from the offer.
-import { ctaBlock } from '../utils/ctaBlock.js';
+import { ctaBlock, isStalePage } from '../utils/ctaBlock.js';
 
 // Slugs the verifier and the provider smoke test generate. They are real posts
 // with real HTML, and until 2026-10-29 they were published to /blog alongside
@@ -79,7 +79,7 @@ export async function restoreFromDB() {
       // code path produces those strings any more — so rebuild it even though it
       // passes the audit. Without this, every healthy page keeps the generic
       // "Ready to Start? / Apply Now" until someone regenerates it by hand.
-      const staleFooter = /Ready to Start\?|This (?:opportunity|offer) is available now\./.test(html);
+      const staleFooter = isStalePage(html);
       if ((!audit.ok || staleFooter) && post.content) {
         try {
           const offer = post.opportunity_id

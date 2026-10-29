@@ -41,6 +41,17 @@ const AFTER = {
 const esc = (v) => String(v == null ? '' : v)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
+// The block that used to close every page. No code path produces these strings
+// any more, so a stored page that still carries one was written by the old
+// template and must be rebuilt — `restoreFromDB()` uses this to migrate the
+// existing corpus on boot instead of leaving 300 pages on the generic button.
+const LEGACY_FOOTER = /Ready to Start\?|This (?:opportunity|offer) is available now\./;
+
+/** True when a stored page still carries the pre-2026-10-29 closing block. */
+export function isStalePage(html) {
+  return LEGACY_FOOTER.test(String(html || ''));
+}
+
 const type = (offer) => {
   const t = String((offer && offer.offer_type) || 'job').toLowerCase();
   return LABEL[t] ? t : 'job';

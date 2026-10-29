@@ -21,6 +21,7 @@
 
 import chalk from "chalk";
 import { sanitizeArticleHTML, auditBlogHTML, escapeAttr } from "../utils/articleHtml.js";
+import { isStalePage } from "../utils/ctaBlock.js";
 
 const results = [];
 const record = (status, name, detail = "") => {
@@ -307,6 +308,17 @@ await check("cta: the page tells the reader what to have ready", () => {
   assert(/Before you order/.test(shop), "a product page inherited the wrong readiness heading");
   assert(!/CV saved as a PDF/.test(shop), "the product page was given the candidate list");
   return "job: CV list; product: order list";
+});
+
+await check("cta: a stored page on the old template is detected as stale", () => {
+  const legacy = '<div class="c"><article><h1>Old</h1><p>' + BODY_WORDS + '</p></article>'
+    + '<div style="text-align:center"><h2>Ready to Start?</h2><p>This opportunity is available now.</p>'
+    + '<a href="/ai-jobs/apply/abc">Apply Now</a></div></div>';
+  assert(isStalePage(legacy), "the legacy footer was not recognised, so restoreFromDB would never migrate it");
+  const fresh = buildHTML({ title: "T", slug: "s", content: CLEAN_FRAGMENT }, OFFER);
+  assert(!isStalePage(fresh), "a freshly built page was flagged as stale — restoreFromDB would rebuild it on every boot");
+  assert(!isStalePage(""), "empty input was treated as a legacy page");
+  return "legacy footer detected, new page clear";
 });
 
 // ---------------------------------------------------------------------------
