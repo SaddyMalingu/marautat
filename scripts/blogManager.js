@@ -71,10 +71,15 @@ export async function restoreFromDB() {
     // at all instead of being filtered out again on every boot.
     const artifacts = data.filter((p) => isTestArtifact(p.slug));
     if (artifacts.length) {
-      const slugs = artifacts.map((p) => p.slug);
-      const { error: demoteErr } = await sb.from('blog_posts').update({ status: 'draft' }).in('slug', slugs);
-      if (demoteErr) console.warn('[DB] Could not demote verifier pages: ' + demoteErr.message);
-      else console.warn('[DB] Demoted ' + slugs.length + ' verifier page(s) to draft');
+      try {
+        const slugs = artifacts.map((p) => p.slug);
+        const { error: demoteErr } = await sb.from('blog_posts').update({ status: 'draft' }).in('slug', slugs);
+        if (demoteErr) console.warn('[DB] Could not demote verifier pages: ' + demoteErr.message);
+        else console.warn('[DB] Demoted ' + slugs.length + ' verifier page(s) to draft');
+      } catch (e) {
+        // A failed demotion must not abort a restore that has already written pages.
+        console.warn('[DB] Could not demote verifier pages: ' + e.message);
+      }
     }
     const live = data.filter((p) => !isTestArtifact(p.slug));
     let rebuilt = 0;
