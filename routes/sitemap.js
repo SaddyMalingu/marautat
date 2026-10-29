@@ -8,7 +8,7 @@
 import { Router } from 'express';
 import fs from 'fs';
 import path from 'path';
-import { getActiveSources, getActiveCategories, getCategoriesForSource, getOpportunities } from '../utils/aiJobsService.js';
+import { getActiveSources, getActiveCategories, getCategoriesForSource, getOpportunities, getActiveSiteTenants, getOffersByTenant } from '../utils/aiJobsService.js';
 
 const router = Router();
 const SITE_URL = process.env.SITE_URL || 'https://alphadome.onrender.com';
@@ -79,6 +79,40 @@ router.get('/sitemap.xml', async (req, res) => {
       }
     } catch (e) {
       console.warn('[Sitemap] blog pages unavailable:', e.message);
+    }
+
+    // --- Tenant hubs (/ai-jobs/t/:slug) -----------------------------------
+    // These are the pages a client pays for and hands out — and until 2026-10-29
+    // they were advertised nowhere: not in this sitemap, and not linked from
+    // /ai-jobs. The only way a crawler could reach one was if somebody shared
+    // the URL. Gated by the same flag as the routes, so the sitemap never
+    // points at a 404 when multi-tenancy is off.
+    if (String(process.env.AI_JOBS_MULTITENANT || '').toLowerCase() === 'true') {
+      try {
+        const tenants = await getActiveSiteTenants();
+        for (const tenant of tenants) {
+          if (!tenant.slug) continue;
+          xml += `
+  <url>
+    <loc>${SITE_URL}/ai-jobs/t/${tenant.slug}</loc>
+    <changefreq>daily</changefreq>
+    <priority>0.8</priority>
+  </url>`;
+          const offers = await getOffersByTenant(tenant.id, { limit: 200 });
+          for (const offer of offers) {
+            if (!offer.slug) continue;
+            xml += `
+  <url>
+    <loc>${SITE_URL}/ai-jobs/t/${tenant.slug}/o/${offer.slug}</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>${offer.updated_at || offer.created_at ? `
+    <lastmod>${String(offer.updated_at || offer.created_at).slice(0, 10)}</lastmod>` : ''}
+  </url>`;
+          }
+        }
+      } catch (e) {
+        console.warn('[Sitemap] tenant hubs unavailable:', e.message);
+      }
     }
 
     // --- Mercor (legacy paths, unchanged) ---

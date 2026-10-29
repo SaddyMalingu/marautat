@@ -9,6 +9,7 @@ import {
   getActiveSources,
   getSourceBySlug,
   getSiteTenantBySlug,
+  getActiveSiteTenants,
   getActiveCategories,
   getCategoriesForSource,
   getOffersByTenant,
@@ -70,8 +71,11 @@ router.get('/', async (req, res) => {
   try {
     const categories = await getActiveCategories();
     const sources = await getActiveSources();
+    // Tenant hubs, when the flag is on: the site's own landing page should be a
+    // way in to the businesses it hosts, not a dead end that only lists Mercor.
+    const tenants = MULTITENANT ? await getActiveSiteTenants() : [];
     await trackEvent({ eventType: 'page_view', ...getTrackingInfo(req), metadata: { page: 'ai-jobs-landing' } });
-    res.send(renderAiJobsLanding(categories, sources));
+    res.send(renderAiJobsLanding(categories, sources, tenants));
   } catch (err) {
     console.error('[AI Jobs] Error rendering landing page:', err);
     res.status(500).send('Error loading AI Jobs page');

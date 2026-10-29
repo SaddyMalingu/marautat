@@ -346,6 +346,26 @@ async function getSiteTenantBySlug(slug) {
 }
 
 /**
+ * Get every active site tenant. Used where the whole list matters rather than
+ * one slug: the sitemap and the /ai-jobs landing page both have to advertise
+ * every tenant hub, and neither had any way to see them.
+ */
+async function getActiveSiteTenants({ limit = 200 } = {}) {
+  const { data, error } = await supabase
+    .from('site_tenants')
+    .select('id, slug, name')
+    .eq('is_active', true)
+    .order('name')
+    .limit(limit);
+  if (error) {
+    // A deployment without the phase-3 table simply has no hubs to advertise.
+    console.error('[AI Jobs] Error fetching site tenants:', error.message);
+    return [];
+  }
+  return data || [];
+}
+
+/**
  * Get published offers for a tenant, optionally filtered by offer_type and/or
  * category. This is the general "any offer" query (jobs, products, services,
  * brands, affiliate, courses).
@@ -400,6 +420,7 @@ export {
   getActiveSources,
   getSourceBySlug,
   getSiteTenantBySlug,
+  getActiveSiteTenants,
   getActiveCategories,
   getCategoriesForSource,
   getOffersByTenant,

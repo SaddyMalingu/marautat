@@ -75,6 +75,9 @@ import {
 } from "./utils/scanPay.js";
 
 import aiJobsRouter from "./routes/aiJobs.js";
+// Tenant portal session tokens carry their own signature so a session can
+// outlive the process that issued it (every deploy restarts the server).
+import { TENANT_SESSION_COOKIE, signTenantSession, verifyTenantSession, tenantSessionSecret } from "./utils/tenantSession.js";
 import sitemapRouter from "./routes/sitemap.js";
 import aiJobsAdminRouter from "./routes/aiJobsAdmin.js";
 import aiJobsGuidesRouter from "./routes/aiJobsGuides.js";
@@ -2227,7 +2230,8 @@ function getTenantPhoneFromRequest(req) {
 // be authenticated by something the browser sends on its own. A header only
 // exists while JS is running; the cookie is what survives F5 (and a tab
 // restored from history). HttpOnly keeps the token out of reach of page script.
-const TENANT_SESSION_COOKIE = "td_session";
+// The name comes from utils/tenantSession.js, together with the signing that
+// lets a token outlive the process that issued it.
 
 function parseCookieHeader(header) {
   const out = {};
@@ -2272,6 +2276,11 @@ function getTenantSessionToken(req) {
   return req.headers["x-tenant-session"] || req.query.session || getTenantSessionCookie(req) || "";
 }
 
+// A logout must take effect on the instance handling it. Tokens held by
+// processes that have since restarted cannot be recalled — the TTL is the
+// bound — but a token used on the instance that logged it out is refused.
+const revokedTenantTokens = new Map();
+
 function cleanupExpiredTenantSessions() {
   const now = Date.now();
   for (const [token, session] of tenantSessions.entries()) {
@@ -2279,22 +2288,50 @@ function cleanupExpiredTenantSessions() {
       tenantSessions.delete(token);
     }
   }
+  for (const [token, expiresAt] of revokedTenantTokens.entries()) {
+    if (expiresAt <= now) revokedTenantTokens.delete(token);
+  }
 }
 
 function createTenantSession(tenant) {
   cleanupExpiredTenantSessions();
-  const token = crypto.randomBytes(24).toString("hex");
   const expiresAt = Date.now() + TENANT_SESSION_TTL_MS;
-  tenantSessions.set(token, {
+  const record = {
     tenantId: tenant.id,
     tenantPhone: tenant.client_phone,
     tenantName: tenant.client_name || "",
     expiresAt,
-  });
+    jti: crypto.randomBytes(8).toString("hex"),
+  };
+  // Signed, so the session survives a restart — which is every deploy. The Map
+  // stays as the same-process record: it is what makes logout immediate rather
+  // than "wait for the token to expire".
+  const token = signTenantSession(record, tenantSessionSecret()) || crypto.randomBytes(24).toString("hex");
+  record.token = token;
+  tenantSessions.set(token, record);
   return {
     token,
     expiresAt,
   };
+}
+
+// A logout must take effect on the instance handling it. Tokens held by
+// processes that have since restarted cannot be recalled — the TTL is the
+// bound — but a token used on the instance that logged it out is refused.
+const revokedTenantTokens = new Map();
+
+/** Session for a token, from memory or from the token itself. */
+function readTenantSession(token) {
+  const raw = String(token || "").trim();
+  if (!raw) return null;
+  cleanupExpiredTenantSessions();
+  const local = tenantSessions.get(raw);
+  if (local && local.expiresAt > Date.now()) return local;
+  if (local) tenantSessions.delete(raw);
+  const signed = verifyTenantSession(raw, tenantSessionSecret());
+  if (!signed) return null;
+  if (revokedTenantTokens.has(raw)) return null;
+  return signed;
 }
 
 function isTenantRecordActive(tenant) {
@@ -2472,9 +2509,10 @@ async function tenantDashboardAuth(req, res, next) {
   // instead of a dead "Unauthorized" page they cannot recover from.
   const cookieToken = getTenantSessionCookie(req);
   if (cookieToken) {
-    cleanupExpiredTenantSessions();
-    const session = tenantSessions.get(cookieToken);
-    if (session && session.expiresAt > Date.now()) return next();
+    // Signed tokens are validated without any in-memory state, so a session
+    // issued before the last deploy still opens the portal.
+    const session = readTenantSession(cookieToken);
+    if (session) return next();
     // Serving the shell is safe: it is static markup and every data route is
     // behind tenantSessionAuth, so an expired session can only show the form.
     clearTenantSessionCookie(res, req);
@@ -2552,16 +2590,15 @@ app.post("/tenant/session/login", async (req, res) => {
 
 
 function tenantSessionAuth(req, res, next) {
-  cleanupExpiredTenantSessions();
-
   const token = String(getTenantSessionToken(req) || "").trim();
   if (!token) {
     return res.status(401).json({ error: "Missing tenant session token" });
   }
 
-  const session = tenantSessions.get(token);
-  if (!session || session.expiresAt <= Date.now()) {
-    tenantSessions.delete(token);
+  // Memory first (immediate logout), then the token's own signature (a session
+  // that outlived a restart).
+  const session = readTenantSession(token);
+  if (!session) {
     return res.status(401).json({ error: "Tenant session expired or invalid" });
   }
 
@@ -2591,9 +2628,13 @@ app.post("/tenant/session/logout", (req, res) => {
     return res.status(400).json({ error: "Missing tenant session token" });
   }
 
-  const revoked = tenantSessions.delete(token);
+  const local = tenantSessions.delete(token);
+  // Recall the token on this instance. A signed token living in another
+  // process (or a browser that kept the cookie) expires on its own TTL.
+  const signed = verifyTenantSession(token, tenantSessionSecret());
+  if (signed) revokedTenantTokens.set(token, signed.expiresAt);
   clearTenantSessionCookie(res, req);
-  return res.json({ ok: true, revoked });
+  return res.json({ ok: true, revoked: Boolean(local || signed) });
 });
 
 // ===== TENANT: Writer's Flow — Research & Outreach =====
