@@ -192,6 +192,30 @@ the audit cannot pass by being blind.
    that fail the readability audit — the pre-2026-10-29 behaviour — and leaves
    every other stored page byte-for-byte as it is.
 
+### Verifying a deploy
+
+```bash
+npm run verify:blog-deploy        # SITE_URL=… to point at staging
+```
+
+Checks what a visitor sees, not what the build log claims: the index responds,
+advertises no verifier page, still lists the corpus; a sample spread across the
+list all serve, all carry the current footer, and the closing block names the
+offer with two buttons; and a verifier URL returns 404.
+
+Result of the 2026-10-29 deploy:
+
+```
+Index: 200, 169267 bytes, 299 article links
+PASS  index advertises no verifier page — 0 found
+PASS  every sampled article still serves — 14 pages ok
+PASS  every sampled page is on the current footer — 14 pages ok
+PASS  verifier pages are no longer public — status 404
+```
+
+337 published − 38 demoted verifier/smoke pages = 299 listed. The
+`[DB] Demoted N verifier page(s) to draft` line in the boot log confirms N.
+
 ## How to use it
 
 ```js
