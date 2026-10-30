@@ -29,8 +29,8 @@
 
 import dotenv from 'dotenv';
 import { createClient } from '@supabase/supabase-js';
-import { sanitizeArticleHTML } from '../utils/articleHtml.js';
-import { isStalePage, needsClosingBlock } from '../utils/ctaBlock.js';
+import { sanitizeArticleHTML, auditBlogHTML } from '../utils/articleHtml.js';
+import { isStalePage, needsClosingBlock, pageNeedsRebuild } from '../utils/ctaBlock.js';
 import { articleBodyOf, plainTextOf } from '../utils/blogIndex.js';
 
 dotenv.config();
@@ -72,6 +72,8 @@ async function main() {
   const noBody = [];
   const stale = [];
   const noBlock = [];
+  const willRebuild = [];
+  const stranded = [];
 
   for (const row of rows) {
     const stored = articleBodyOf(row.html_content);
@@ -85,6 +87,15 @@ async function main() {
     // A page that persuades and then stops. Counted separately from the old
     // footer because it is a different failure: nothing to press at all.
     if (needsClosingBlock(row.html_content)) noBlock.push(row);
+    // The number the operator actually wants: how many pages will the *next*
+    // deploy rewrite? Computed by the same function the boot restore calls, so it
+    // cannot disagree with the boot log. A row that needs rebuilding but has no
+    // stored `content` is stranded: the restore will look at it and move on.
+    const verdict = pageNeedsRebuild({ html: row.html_content, auditOk: auditBlogHTML(row.html_content).ok });
+    if (verdict.rebuild) {
+      willRebuild.push({ row, reason: verdict.reason });
+      if (!row.content) stranded.push(row);
+    }
   }
 
   console.log(`Checked ${rows.length} published post(s).\n`);
@@ -93,6 +104,10 @@ async function main() {
   console.log(`  no <article> body in stored page ........... ${noBody.length}`);
   console.log(`  still on the pre-2026-10-29 footer ......... ${stale.length}`);
   console.log(`  no closing block / nothing to press ........ ${noBlock.length}`);
+  console.log(`  the next boot would rebuild ............... ${willRebuild.length}   (same rule the restore runs)`);
+  if (stranded.length) {
+    console.log(`  ...of those, no stored content to rebuild .. ${stranded.length}   (stranded — the restore skips them)`);
+  }
 
   if (differ.length) {
     console.log('\nDIFFERENCES — inspect these by hand:');
@@ -120,6 +135,11 @@ async function main() {
     console.log('\nSTILL ON THE OLD FOOTER (the boot rebuild has not processed these yet):');
     for (const r of stale.slice(0, 40)) console.log('  ' + r.slug);
     if (stale.length > 40) console.log(`  … and ${stale.length - 40} more`);
+  }
+
+  if (stranded.length) {
+    console.log('\nNEEDS REBUILDING BUT HAS NO STORED BODY (fix the content, not the page):');
+    for (const r of stranded) console.log('  ' + r.slug);
   }
 
   console.log('\nRead-only audit: no rows or files were modified.');

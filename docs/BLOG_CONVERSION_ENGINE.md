@@ -152,6 +152,35 @@ First deploy result: `Restored 337 posts (240 rebuilt from their article body)`.
 Six sampled pages verified live — no legacy block, offer named in the heading,
 readiness list present, two buttons.
 
+### The second gap, and the fixed point (2026-10-29, evening)
+
+That migration only knew the **old** footer, so the pages that had never had one
+were invisible to it: 96 of the 308 live pages carried no closing block at all,
+and 21 carried one whose only content was a sentence. Neither state fails the
+readability audit, so `restoreFromDB()` copied them byte-for-byte on every boot.
+
+`pageNeedsRebuild()` in `utils/ctaBlock.js` is now the whole decision — audit
+failure, old footer, missing block, nothing to press — and the boot restore, the
+repair script and the tests all call it, so no copy of the rule can drift:
+
+```js
+pageNeedsRebuild({ html, auditOk, issues, mayRebuildFooter })
+// → { rebuild: true, reason: 'no closing block' }
+```
+
+The reason is what the boot log prints (`[DB] Rebuilt <slug> (no closing block)`),
+so an operator sees which rule fired without cross-referencing the audit.
+
+**The rule this path lives or dies by:** a predicate that disagrees with the
+template rewrites the same pages on *every* boot, and nobody notices because the
+site still looks fine. `ctaBlock()`'s no-destination branch used to emit a block
+with nothing to press — exactly what the predicate calls broken — so it now ends
+with a link to `/ai-jobs`. `npm run test:boot-convergence` proves the fixed point
+offline: it boots a corpus of stored pages (no block, block with no button, old
+footer, unreadable, no `<article>`, no `content`, healthy), asserts boot 1
+rebuilds exactly the broken ones, then asserts boots 2–5 rebuild **nothing** —
+across 30 offer-type × destination combinations, including the kill switch.
+
 ### What a rebuild actually changes (and what it cannot)
 
 `restoreFromDB()` re-renders the page **from `blog_posts.content`** and writes the

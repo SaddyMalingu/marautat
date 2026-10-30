@@ -24,7 +24,7 @@ import { analyzeArticle, qualityBrief, describeQuality } from '../utils/blogQual
 // lines — "Ready to Start? / This opportunity is available now. / [Apply Now]" —
 // on a job, a product and a course alike, linking to a redirect that 404s when
 // the offer has no destination. utils/ctaBlock.js writes it from the offer.
-import { ctaBlock, isStalePage, needsClosingBlock } from '../utils/ctaBlock.js';
+import { ctaBlock, pageNeedsRebuild } from '../utils/ctaBlock.js';
 // The prune/index rules for the boot restore, kept pure so they are testable.
 import { isTestArtifact, orphanPageFiles, indexIsStale } from '../utils/blogIndex.js';
 
@@ -91,24 +91,19 @@ export async function restoreFromDB() {
       // copies html_content byte-for-byte on every boot. Rebuild it from the
       // stored article body instead, and persist the repair.
       const audit = auditBlogHTML(html);
-      // The closing block was rewritten on 2026-10-29: it names the offer, prints
-      // the figure, lists what to have ready and appears above the article too.
-      // A page still carrying the old fixed block is stale by definition — no
-      // code path produces those strings any more — so rebuild it even though it
-      // passes the audit. Without this, every healthy page keeps the generic
-      // "Ready to Start? / Apply Now" until someone regenerates it by hand.
-      const staleFooter = isStalePage(html);
-      // Two further states the audit cannot see, both measured on the live corpus
-      // on 2026-10-29: 96 pages carried no closing block at all (the check above
-      // only knew about the *old* block), and 21 carried one with nothing to
-      // press. A page that persuades and then stops is not "readable but
-      // imperfect"; it cannot convert, so it is stale by the same argument.
-      const missingBlock = needsClosingBlock(html);
-      // Kill switch: set BLOG_REBUILD_STALE_PAGES=off to keep every page exactly
-      // as it is stored and only repair pages that fail the readability audit.
-      const mayRebuildFooter = process.env.BLOG_REBUILD_STALE_PAGES !== 'off';
-      const stale = staleFooter || missingBlock;
-      if ((!audit.ok || (stale && mayRebuildFooter)) && post.content) {
+      // Why this page needs rebuilding — the closing-block rules (old footer, no
+      // block at all, a block with nothing to press) and the readability audit
+      // both live in pageNeedsRebuild(), because the repair script and the
+      // convergence test have to reach the same verdict as this loop.
+      const decision = pageNeedsRebuild({
+        html,
+        auditOk: audit.ok,
+        issues: audit.issues,
+        // Kill switch: BLOG_REBUILD_STALE_PAGES=off keeps every page exactly as
+        // stored and only repairs pages that fail the readability audit.
+        mayRebuildFooter: process.env.BLOG_REBUILD_STALE_PAGES !== 'off',
+      });
+      if (decision.rebuild && post.content) {
         try {
           const offer = post.opportunity_id
             ? (offers.get(post.opportunity_id) || { id: post.opportunity_id })
@@ -124,11 +119,9 @@ export async function restoreFromDB() {
             html = fixed;
             rebuilt++;
             await sb.from('blog_posts').update({ html_content: fixed }).eq('slug', post.slug);
-            // The audit list is empty when the rebuild was triggered by the stale
-            // footer rather than by a readability failure — say which, or every
-            // log line reads "unreadable page X ()".
-            console.warn('[DB] Rebuilt ' + post.slug + ' (' +
-              (audit.ok ? (staleFooter ? 'old closing block' : 'no closing block') : audit.issues.join(', ')) + ')');
+            // The reason comes from the same function that made the decision, so
+            // the log cannot describe a rule other than the one that fired.
+            console.warn('[DB] Rebuilt ' + post.slug + ' (' + decision.reason + ')');
           } else {
             console.warn('[DB] Page still fails the audit after rebuild: ' + post.slug);
           }

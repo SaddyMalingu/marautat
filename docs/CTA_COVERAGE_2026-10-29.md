@@ -105,8 +105,26 @@ npm run audit:page-fidelity     # prose identical / differs / no closing block
 npm run audit:cta-coverage      # after the deploy: no-button count should be 0
 ```
 
+**The second boot is the one that matters.** A rebuild that does not converge
+rewrites the same pages on every deploy, and the site still looks fine while it
+happens. That is now a test rather than a hope:
+
+```bash
+npm run test:boot-convergence   # 11 checks: boot 1 repairs, boots 2-5 do nothing
+```
+
+It boots a corpus of stored pages — no block, block with no button, old footer,
+unreadable, no `<article>`, no `content`, healthy — through the same
+`pageNeedsRebuild()` the restore calls, and asserts the second boot rebuilds
+zero pages across 30 offer-type × destination combinations. I proved the test is
+not vacuous by removing the no-destination button from `ctaBlock()`: four checks
+failed with the exact pages named, then passed again on restore. On Render, the
+equivalent check is the boot log: the first deploy prints
+`Rebuilt <slug> (no closing block)` lines, the second prints none.
+
 If either audit looks wrong, `BLOG_REBUILD_STALE_PAGES=off` in Render stops the
 page rebuild entirely and leaves every stored page as it is.
+
 
 
 1. **Give the 96 button-less pages a closing block** — a third of the corpus

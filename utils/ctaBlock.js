@@ -86,6 +86,42 @@ export function needsClosingBlock(html) {
   return !hasClosingBlock(s) || !hasCtaButton(s);
 }
 
+/**
+ * Should the boot restore rebuild this stored page, and why?
+ *
+ * This is the *whole* decision `restoreFromDB()` makes, in one place, because
+ * three callers need the same answer and a second copy would drift: the boot
+ * restore (rebuild and persist), `repair_blog_html.js` (list what it would
+ * rebuild) and `test_boot_convergence.mjs` (prove the second boot rebuilds
+ * nothing). The test cannot import the restore loop — it needs a database — but
+ * it can import this, so what it proves is the code that actually runs.
+ *
+ * `reason` is what the boot log prints after the slug, so an operator reading
+ * `[DB] Rebuilt <slug> (no closing block)` knows which rule fired without
+ * cross-referencing the audit.
+ *
+ * @param {{html: string, auditOk: boolean, issues?: string[], mayRebuildFooter?: boolean}} state
+ * @returns {{rebuild: boolean, reason: string}}
+ */
+export function pageNeedsRebuild(state) {
+  const s = String((state && state.html) || '');
+  const auditOk = !!(state && state.auditOk);
+  // Defaults to on: the kill switch is an operator escape hatch set to the
+  // literal string 'off', not an opt-in.
+  const mayRebuildFooter = !(state && state.mayRebuildFooter === false);
+  const issues = (state && state.issues) || [];
+
+  // A page that fails the readability audit is rebuilt whatever the switch says;
+  // the switch only protects pages that pass it.
+  if (!auditOk) {
+    return { rebuild: true, reason: issues.length ? issues.join(', ') : 'failed the audit' };
+  }
+  if (!mayRebuildFooter) return { rebuild: false, reason: 'footer rebuild disabled' };
+  if (isStalePage(s)) return { rebuild: true, reason: 'old closing block' };
+  if (needsClosingBlock(s)) return { rebuild: true, reason: 'no closing block' };
+  return { rebuild: false, reason: 'current' };
+}
+
 const type = (offer) => {
   const t = String((offer && offer.offer_type) || 'job').toLowerCase();
   return LABEL[t] ? t : 'job';

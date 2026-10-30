@@ -42,6 +42,7 @@
     "test:scan-pay": "node scripts/test_scan_pay.mjs",
     "test:wf-create": "node scripts/test_wf_campaign_create.mjs",
     "test:discovery-form": "node scripts/test_discovery_form_feedback.mjs",
+    "test:boot-convergence": "node scripts/test_boot_convergence.mjs",
     "repair:blog-html": "node scripts/repair_blog_html.js",
     "audit:page-fidelity": "node scripts/audit_page_fidelity.mjs",
     "audit:cta-coverage": "node scripts/audit_cta_coverage.mjs",

@@ -63,7 +63,10 @@ const sb = createClient(url, key);
 // module (blogManager does not re-export it).
 const { buildHTML, updateIndex } = await import("./blogManager.js");
 const { auditBlogHTML } = await import("../utils/articleHtml.js");
-const { needsClosingBlock } = await import("../utils/ctaBlock.js");
+// The same decision the boot restore makes, so this dry run lists exactly what the
+// next deploy would rebuild — including the old-footer pages, which this script
+// used to miss because it only tested for a *missing* block.
+const { pageNeedsRebuild } = await import("../utils/ctaBlock.js");
 
 async function loadRows() {
   let query = sb
@@ -82,7 +85,10 @@ async function offersById(ids) {
   if (!unique.length) return map;
   const { data, error } = await sb
     .from("opportunities")
-    .select("id, title, offer_type, cta_label")
+    // The closing block is written from the offer (utils/ctaBlock.js), so the same
+    // columns the boot restore selects are needed here: without them a repaired
+    // page would lose the figure, the place and the offer's own destination URL.
+    .select("id, title, offer_type, cta_label, compensation_max, compensation_currency, location_text, destination_url, referral_url, application_url")
     .in("id", unique);
   if (error) {
     // A missing column must not stop the repair: the template only degrades the
@@ -111,8 +117,8 @@ async function main() {
       continue;
     }
     const audit = auditBlogHTML(html);
-    if (!audit.ok) broken.push({ row, issues: audit.issues, fixable: !!row.content });
-    else if (needsClosingBlock(html)) broken.push({ row, issues: ["no closing block"], fixable: !!row.content });
+    const decision = pageNeedsRebuild({ html, auditOk: audit.ok, issues: audit.issues });
+    if (decision.rebuild) broken.push({ row, issues: [decision.reason], fixable: !!row.content });
   }
 
   console.log(`Checked ${rows.length} post(s); ${broken.length} need attention.`);
@@ -141,10 +147,13 @@ async function main() {
       date: row.created_at || row.updated_at || null,
     }, offers.get(row.opportunity_id) || (row.opportunity_id ? { id: row.opportunity_id } : null));
 
-    const audit = auditBlogHTML(html);
-    if (!audit.ok || needsClosingBlock(html)) {
+    // The rebuilt page is only accepted if it would pass the same check on the
+    // next boot — otherwise this script writes a page the restore rebuilds again.
+    const after = auditBlogHTML(html);
+    const verdict = pageNeedsRebuild({ html, auditOk: after.ok, issues: after.issues });
+    if (verdict.rebuild) {
       stillBad++;
-      console.log(`  ! ${row.slug} still fails after rebuild: ${audit.ok ? 'no closing block' : audit.issues.join(", ")}`);
+      console.log(`  ! ${row.slug} still fails after rebuild: ${verdict.reason}`);
       continue;
     }
 
