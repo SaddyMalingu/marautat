@@ -871,15 +871,15 @@ function wfRenderShareCard(payload) {
   // on a member account, so the composer is pre-filled from the server-composed
   // body and the tenant presses Post.
   const linkedinBody = (d.linkedin && d.linkedin.text) || caption;
+  const xText = (d.x && d.x.text) || caption;
   const linkedinMobile = wfIsMobileShare();
   // LinkedIn's composer takes the post body from `text`, but truncates it at the
   // first ampersand even when percent-encoded, so this copy spells "and" instead.
+  // Desktop only: the app ignores `text` and posts a bare link, so mobile copies
+  // instead (see the Copy + open button) — one paste is the price of the caption
+  // surviving on a phone.
   const linkedinUrl = 'https://www.linkedin.com/feed/?shareActive=true&text='
     + encodeURIComponent(linkedinBody.replace(/&/g, ' and '));
-  // The article link, so a phone still gets a preview card rather than nothing.
-  const linkedinShareUrl = d.absolute_url
-    ? 'https://www.linkedin.com/sharing/share-offsite/?url=' + encodeURIComponent(d.absolute_url)
-    : 'https://www.linkedin.com/feed/';
   const source = d.mode === 'ai' ? 'AI-written card' : 'Composed from the page';
   document.getElementById('wfShareTitle').textContent = d.title || d.slug;
   document.getElementById('wfShareSub').textContent =
@@ -917,11 +917,12 @@ function wfRenderShareCard(payload) {
     <a class="btn btn-sm btn-info" href="${esc(d.url || '')}" target="_blank" rel="noopener">Open page</a>
     <button class="btn btn-sm btn-outline-info" id="wfShareCopyCaption" type="button">Copy caption</button>
     <a class="btn btn-sm btn-success" href="https://wa.me/?text=${encodeURIComponent(caption)}" target="_blank" rel="noopener">WhatsApp</a>
-    ${d.x
-      ? `<button class="btn btn-sm btn-success" id="wfSharePostX" type="button" title="Publishes through the X API">Post to X</button>`
-      : `<a class="btn btn-sm btn-outline-secondary" href="https://twitter.com/intent/tweet?text=${encodeURIComponent(d.hook || '')}&url=${encodeURIComponent(d.absolute_url || '')}" target="_blank" rel="noopener">X</a>`}
-    <button class="btn btn-sm btn-outline-secondary" id="wfShareCopyLinkedIn" type="button">Copy for LinkedIn</button>
-    <a class="btn btn-sm btn-outline-secondary" id="wfShareLinkedIn" href="${esc(linkedinMobile ? linkedinShareUrl : linkedinUrl)}" target="_blank" rel="noopener" title="${linkedinMobile ? 'Opens LinkedIn with the article link — tap Copy for LinkedIn first, then paste' : 'Opens LinkedIn with the post typed in — you press Post'}">${linkedinMobile ? 'LinkedIn (link)' : 'LinkedIn'}</a>
+    <button class="btn btn-sm btn-info" id="wfShareCopyLinkedIn" type="button" title="The only path that carries the full caption on web AND in the LinkedIn app">Copy for LinkedIn</button>
+    ${linkedinMobile
+      ? `<button class="btn btn-sm btn-outline-secondary" id="wfShareLinkedInMobile" type="button" title="Copies the caption, then opens LinkedIn — paste it into the post">Copy + open LinkedIn</button>`
+      : `<a class="btn btn-sm btn-outline-secondary" id="wfShareLinkedIn" href="${esc(linkedinUrl)}" target="_blank" rel="noopener" title="Opens LinkedIn with the post typed in — you press Post">LinkedIn</a>`}
+    ${d.x ? `<button class="btn btn-sm btn-success" id="wfSharePostX" type="button" title="Publishes through the X API">Post to X</button>` : ''}
+    <a class="btn btn-sm btn-outline-secondary" href="https://twitter.com/intent/tweet?text=${encodeURIComponent(xText)}" target="_blank" rel="noopener" title="Opens X with the post typed in — you press Post">X (prefill)</a>
     <button class="btn btn-sm btn-outline-secondary" id="wfShareDone" type="button">Close</button>`;
 
   const copyUrl = document.getElementById('wfShareCopyUrl');
@@ -932,6 +933,14 @@ function wfRenderShareCard(payload) {
   if (postX) postX.addEventListener('click', () => wfPostShareToX(d.slug, (d.x && d.x.text) || caption));
   const copyLinkedIn = document.getElementById('wfShareCopyLinkedIn');
   if (copyLinkedIn) copyLinkedIn.addEventListener('click', () => wfCopyText(linkedinBody, 'LinkedIn post copied'));
+  // On a phone the app drops any prefilled text, so hand over the caption first and
+  // then open the app. Copy is started inside the gesture; the short delay lets the
+  // clipboard write finish before navigating away (iOS cancels it otherwise).
+  const linkedInMobileBtn = document.getElementById('wfShareLinkedInMobile');
+  if (linkedInMobileBtn) linkedInMobileBtn.addEventListener('click', () => {
+    wfCopyText(linkedinBody, 'Caption copied — paste it into the post');
+    setTimeout(() => { window.location.href = 'https://www.linkedin.com/feed/'; }, 400);
+  });
   const done = document.getElementById('wfShareDone');
   if (done) done.addEventListener('click', wfCloseShare);
 }

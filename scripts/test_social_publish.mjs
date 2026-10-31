@@ -430,8 +430,14 @@ ok('both marketplace buttons open in a new tab without leaking the opener',
 // Distribution wiring in the portal.
 ok('the Share modal asks for the composed copy', dash.includes('/prefill`'));
 ok('the desktop composer prefill path still exists', dash.includes('shareActive=true'));
-ok('a phone gets the link-share page instead of the composer that drops text',
-  dash.includes('wfIsMobileShare') && dash.includes('sharing/share-offsite'));
+ok('a phone copies the caption instead of posting a bare link',
+  dash.includes('wfIsMobileShare') && dash.includes('wfShareLinkedInMobile') && dash.includes('Caption copied'));
+ok('the desktop composer prefill survives for the web case', dash.includes('shareActive=true'));
+ok('copy is offered as the primary LinkedIn action',
+  dash.includes('btn btn-sm btn-info" id="wfShareCopyLinkedIn"'));
+ok('the portal no longer advertises a link-only LinkedIn share', !dash.includes('LinkedIn (link)'));
+ok('an X prefill link sits beside the API post',
+  dash.includes('twitter.com/intent/tweet') && dash.includes('/publish/x'));
 ok('X is published from the portal through the API', dash.includes('/publish/x'));
 ok('there is no LinkedIn publish path anywhere in the portal', !/publish\/linkedin/i.test(dash));
 ok('the portal tells the tenant LinkedIn is theirs to post', dash.includes('prepared for you to post'));
