@@ -48,8 +48,10 @@ import { offerSlugFor, planOfferImport, attachReferrals } from '../utils/browser
 import {
   REFERRAL_PACE_MS,
   TURING_CLOSE_MODAL_EXPR,
+  TURING_DETAIL_REFERRAL_EXPR,
   TURING_MODAL_CANDIDATES_EXPR,
   TURING_REFERRAL_HOST,
+  jobIdFromUrl,
   normalizeReferralCapture,
   planReferralBackfill,
   referralCaptureHeadline,
@@ -939,6 +941,28 @@ console.log('\n-- coverage --');
 
   ok('the headline is readable', referralCaptureHeadline(planned).startsWith('2 links ready'));
   eq('an empty plan still explains itself', referralCaptureHeadline({}), '0 links ready');
+
+  // Verified live 2026-10-31: a card click navigates to a job detail page.
+  eq('the real job id is read off the detail url', jobIdFromUrl('https://work.turing.com/jobs?jobId=112467'), '112467');
+  eq('the plain listing has no job id', jobIdFromUrl('https://work.turing.com/jobs'), null);
+  eq('a junk url is not a job id', jobIdFromUrl('not a url'), null);
+  ok('the detail expression excludes the Refer & Earn nav link',
+    TURING_DETAIL_REFERRAL_EXPR.includes('isNavReferEarn') && TURING_DETAIL_REFERRAL_EXPR.includes('referral\\s*bonus'));
+  ok('the card expression reports which affordance it clicked',
+    turingOpenReferralExpr(0).includes("by: 'referral_link'"));
+
+  const evidential = normalizeReferralCapture({
+    title: 'Project Lead - AI Training',
+    pageUrl: 'https://work.turing.com/jobs?jobId=112467',
+    candidates: ['https://work.turing.com/jobs?jobId=112467'],
+    clickedBy: 'amount',
+    modalText: 'Explore roles',
+    buttons: ['Apply Now']
+  });
+  eq('a capture carries the job id', evidential.jobId, '112467');
+  eq('a capture carries what was clicked', evidential.clickedBy, 'amount');
+  ok('a capture always keeps the page text as evidence', evidential.modalText === 'Explore roles');
+  ok('a capture always keeps the card buttons', evidential.buttons.length === 1);
 }
 
 // ---------------------------------------------------------------------------

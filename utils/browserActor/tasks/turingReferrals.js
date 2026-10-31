@@ -141,6 +141,57 @@ export const TURING_CLOSE_MODAL_EXPR = `(() => {
 })()`;
 
 /**
+ * Find the referral affordance on a JOB DETAIL page.
+ *
+ * Verified live 2026-10-31: clicking a card's rate badge does not open a modal, it
+ * navigates to `work.turing.com/jobs?jobId=112467`. The referral control lives on
+ * *that* page, so after navigation the search has to run against the detail page
+ * instead of the card.
+ *
+ * "Refer & Earn" is excluded on purpose: it is the nav link to the tenant's
+ * referral **dashboard**, which is not a per-job link and is the most damaging
+ * false positive available here.
+ */
+export const TURING_DETAIL_REFERRAL_EXPR = `(() => {
+  const clean = (v) => String(v == null ? '' : v).replace(/\\s+/g, ' ').trim();
+  const isNavReferEarn = (text) => /refer\\s*(&|and)\\s*earn/i.test(text);
+  const clickable = Array.from(document.querySelectorAll('button, a, [role="button"]'));
+
+  const bonus = clickable.find((el) => /referral\\s*bonus/i.test(clean(el.innerText)) && !isNavReferEarn(clean(el.innerText)));
+  if (bonus) {
+    bonus.scrollIntoView({ block: 'center' });
+    bonus.click();
+    return JSON.stringify({ ok: true, clicked: true, by: 'referral_bonus', text: clean(bonus.innerText).slice(0, 80), url: String(location.href) });
+  }
+
+  const invite = clickable.find((el) => /\\b(refer|referral|invite)\\b/i.test(clean(el.innerText)) && !isNavReferEarn(clean(el.innerText)));
+  if (invite) {
+    invite.scrollIntoView({ block: 'center' });
+    invite.click();
+    return JSON.stringify({ ok: true, clicked: true, by: 'refer_word', text: clean(invite.innerText).slice(0, 80), url: String(location.href) });
+  }
+
+  return JSON.stringify({
+    ok: false,
+    reason: 'no_detail_referral_affordance',
+    url: String(location.href),
+    labels: clickable.map((el) => clean(el.innerText)).filter(Boolean).slice(0, 25)
+  });
+})()`;
+
+/** The real per-role identifier, once a card has been opened. */
+export function jobIdFromUrl(url) {
+  try {
+    const parsed = new URL(String(url || ''));
+    const id = parsed.searchParams.get('jobId');
+    return id && /^\d+$/.test(id) ? id : null;
+  } catch {
+    return null;
+  }
+}
+
+
+/**
  * Pick the referral link for ONE role.
  *
  * This is deliberately NOT `pickReferralUrl` from turing.js. That picker answers
@@ -208,7 +259,10 @@ export function normalizeReferralCapture({
   candidates = [],
   clickedBy = null,
   pageUrl = null,
-  host = TURING_REFERRAL_HOST
+  host = TURING_REFERRAL_HOST,
+  modalText = null,
+  affordance = null,
+  buttons = []
 } = {}) {
   const list = (Array.isArray(candidates) ? candidates : [])
     .map((value) => String(value || '').trim())
@@ -220,11 +274,18 @@ export function normalizeReferralCapture({
     index,
     title: clean,
     externalId: clean ? `turing:${roleKey(clean)}` : null,
+    // The real per-role id, learned only after the card is opened. Useful for a
+    // destination_url that goes to the role instead of the whole listing.
+    jobId: jobIdFromUrl(pageUrl),
     clickedBy: clickedBy || null,
     pageUrl: pageUrl || null,
     referralUrl: referralUrl || null,
-    // Kept so a human can see what the picker rejected, instead of trusting a blank.
+    // Kept on EVERY capture, not just failures: it is the only way to tell a
+    // selector change from a marketplace that genuinely has no per-job link.
     candidates: list.slice(0, 10),
+    modalText: modalText ? String(modalText).slice(0, 300) : null,
+    affordance: affordance || clickedBy || null,
+    buttons: (Array.isArray(buttons) ? buttons : []).slice(0, 10),
     reason: referralUrl ? 'picked' : list.length ? 'no_confident_pick' : 'no_candidates'
   };
 }

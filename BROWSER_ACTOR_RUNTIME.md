@@ -435,6 +435,34 @@ BROWSER_ACTOR_PROFILES={"malingu-ventures":"<morelogin envId>"}
 Without it the script stops with `profile_unmapped` and writes nothing — the
 identity layer refuses to guess which browser belongs to which tenant.
 
+#### What the live run proved (2026-10-31, P-4, roles 1-2)
+
+The mechanism works end to end — profile started, listing rendered, cards clicked,
+evidence written — but it captured **zero** links, and the reason is a fact about
+the marketplace rather than a bug:
+
+- Opening a role **navigates to a real per-role page**: `work.turing.com/jobs?jobId=112467`.
+  The original adapter note ("no per-card href") was true of the card, wrong about
+  the destination: clicking the rate badge exposes a stable `jobId`.
+- **The job detail page has no referral control.** Every clickable on it was nav or
+  a filter chip: `Toggle menu · Home · Jobs · Applications · Refer & Earn ·
+  Complete Profile · All 226 · Priority 12 · …`. No "Apply Now", no "Referral
+  bonus". So `turingDetailReferralExpr` correctly reported
+  `no_detail_referral_affordance` for both roles.
+- The per-job link is therefore expected to come from the **`Refer & Earn`
+  dashboard** (`/dashboard/job_referral`), which is where the tenant mints links.
+  That is the next slice, not a selector tweak.
+
+Two bugs the run exposed and this fix closes:
+
+- `turingOpenReferralExpr` returns `by`, but the runner read `opened.clickedBy`, so
+  a click that definitely happened was recorded as `clickedBy: null`.
+- `isListingPage` compared only the pathname, and `?jobId=…` keeps the pathname
+  `/jobs`. So the runner believed it was still on the listing while reading a
+  **detail page**, and would have kept clicking stale card indexes. It now treats a
+  `jobId` as leaving the listing and navigates back between roles.
+
+
 
 ## Next steps, in revenue order
 

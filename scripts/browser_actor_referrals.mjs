@@ -34,8 +34,10 @@ import {
   REFERRAL_MODAL_TIMEOUT_MS,
   REFERRAL_PACE_MS,
   TURING_CLOSE_MODAL_EXPR,
+  TURING_DETAIL_REFERRAL_EXPR,
   TURING_MODAL_CANDIDATES_EXPR,
   TURING_REFERRAL_HOST,
+  jobIdFromUrl,
   normalizeReferralCapture,
   planReferralBackfill,
   referralCaptureHeadline,
@@ -145,37 +147,58 @@ async function captureOne({ host, port, index }) {
   }
 
   let opened = await evaluateJson({ host, port, expression: turingOpenReferralExpr(index) });
+  let pageUrl = opened?.url || probe.url || TURING_PLATFORM.listUrl;
+  let clickedBy = opened?.by || null;
+  let affordance = opened?.text || null;
+  let note = null;
 
-  // "details" means the card expanded; the referral link lives inside it, so ask again.
-  if (opened?.ok && opened.clickedBy === 'details') {
+  // Opening a role takes you to a JOB DETAIL page (`?jobId=112467`), not a modal —
+  // verified live. The referral control lives there, so the search continues on the
+  // page we just landed on instead of clicking the card again.
+  const jobId = jobIdFromUrl(pageUrl);
+  if (jobId) {
+    await sleep(1_200);
+    const detail = await evaluateJson({ host, port, expression: TURING_DETAIL_REFERRAL_EXPR });
+    if (detail?.url) pageUrl = detail.url;
+    if (detail?.ok && detail.clicked) {
+      clickedBy = detail.by;
+      affordance = detail.text || affordance;
+    } else {
+      note = detail?.reason || 'no_detail_referral';
+      // The labels are the evidence: they name what the page offers instead.
+      affordance = (Array.isArray(detail?.labels) ? detail.labels : []).join(' | ').slice(0, 200) || affordance;
+    }
+  } else if (opened?.ok && opened.clicked && clickedBy === 'details') {
+    // "details" only expanded the card; the referral link is inside it.
     await sleep(900);
     const second = await evaluateJson({ host, port, expression: turingOpenReferralExpr(index) });
-    if (second?.ok && second.clicked) opened = second;
+    if (second?.ok && second.clicked) {
+      clickedBy = second.by;
+      affordance = second.text || affordance;
+      pageUrl = second.url || pageUrl;
+    }
   }
 
-  const modal = opened?.ok && opened.clicked ? await waitForModalCandidates({ host, port }) : null;
+  const modal = clickedBy ? await waitForModalCandidates({ host, port }) : null;
 
   const capture = normalizeReferralCapture({
     index,
     title: probe.title,
     candidates: modal?.candidates || [],
-    clickedBy: opened?.clickedBy || null,
-    pageUrl: opened?.url || probe.url || TURING_PLATFORM.listUrl
+    clickedBy,
+    pageUrl,
+    modalText: modal?.text || note,
+    affordance,
+    buttons: probe.buttons
   });
-  if (!capture.referralUrl) {
-    capture.reason = opened?.reason || capture.reason;
-    capture.affordance = opened?.clickedBy || null;
-    capture.modalText = (modal?.text || '').slice(0, 200) || null;
-    capture.buttons = Array.isArray(probe.buttons) ? probe.buttons.slice(0, 8) : [];
-  }
+  if (!capture.referralUrl && note) capture.reason = note;
 
   await evaluateJson({ host, port, expression: TURING_CLOSE_MODAL_EXPR });
 
-  // A card click can navigate. Leaving silently would make every later index point
-  // at a different page, so the caller is told and goes back. Query strings change
-  // legitimately, so this compares host + path instead of the whole URL.
-  const leftListing = Boolean(opened?.url) && !isListingPage(opened.url);
-  return { capture, leftListing, note: leftListing ? 'navigated' : null };
+  // Leaving the listing means every later index would point at a different page,
+  // so the caller is told and goes back rather than capturing the wrong roles.
+  const leftListing = Boolean(jobId) || !isListingPage(pageUrl);
+  return { capture, leftListing, note: leftListing ? 'navigated' : note };
 }
 
 /** True when the URL is still the roles listing, query string and all. */
