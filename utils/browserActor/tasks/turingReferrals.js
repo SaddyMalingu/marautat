@@ -143,19 +143,30 @@ export const TURING_CLOSE_MODAL_EXPR = `(() => {
 /**
  * Find the referral affordance on a JOB DETAIL page.
  *
- * Verified live 2026-10-31: clicking a card's rate badge does not open a modal, it
- * navigates to `work.turing.com/jobs?jobId=112467`. The referral control lives on
- * *that* page, so after navigation the search has to run against the detail page
- * instead of the card.
+ * Verified live 2026-10-31 by reading the DOM of `jobs?jobId=112467`, after the
+ * tenant confirmed every role has its own referral link:
  *
- * "Refer & Earn" is excluded on purpose: it is the nav link to the tenant's
- * referral **dashboard**, which is not a per-job link and is the most damaging
- * false positive available here.
+ *     <div>    "Remote Analyst Referral Bonus · $750  Share & earn $750"</div>
+ *     <span>   "Referral Bonus · $750"</span>          <- a LABEL, not clickable
+ *     <button> "Share & earn $750"</button>            <- the real control
+ *
+ * The first version searched for "referral bonus" among clickables and therefore
+ * found nothing: the label is a span and the button never says those words. The
+ * text to match is "Share & earn".
+ *
+ * "Refer & Earn" stays excluded: it is the nav link to the referral dashboard.
  */
 export const TURING_DETAIL_REFERRAL_EXPR = `(() => {
   const clean = (v) => String(v == null ? '' : v).replace(/\\s+/g, ' ').trim();
-  const isNavReferEarn = (text) => /refer\\s*(&|and)\\s*earn/i.test(text);
+  const isNavReferEarn = (text) => /^refer\\s*(&|and)\\s*earn$/i.test(text);
   const clickable = Array.from(document.querySelectorAll('button, a, [role="button"]'));
+
+  const share = clickable.find((el) => /share\\s*(&|and|-)?\\s*earn/i.test(clean(el.innerText)));
+  if (share) {
+    share.scrollIntoView({ block: 'center' });
+    share.click();
+    return JSON.stringify({ ok: true, clicked: true, by: 'share_and_earn', text: clean(share.innerText).slice(0, 80), url: String(location.href) });
+  }
 
   const bonus = clickable.find((el) => /referral\\s*bonus/i.test(clean(el.innerText)) && !isNavReferEarn(clean(el.innerText)));
   if (bonus) {
@@ -175,9 +186,16 @@ export const TURING_DETAIL_REFERRAL_EXPR = `(() => {
     ok: false,
     reason: 'no_detail_referral_affordance',
     url: String(location.href),
-    labels: clickable.map((el) => clean(el.innerText)).filter(Boolean).slice(0, 25)
+    // Priority on the evidence: anything with a dollar amount is where a referral
+    // control would be, and "Share & earn" is what this page calls it.
+    labels: clickable
+      .map((el) => clean(el.innerText))
+      .filter(Boolean)
+      .filter((text) => /share|refer|earn|\\$|apply/i.test(text))
+      .slice(0, 25)
   });
 })()`;
+
 
 /** The real per-role identifier, once a card has been opened. */
 export function jobIdFromUrl(url) {
@@ -241,6 +259,11 @@ export function pickRoleReferralUrl(candidates = [], { host = TURING_REFERRAL_HO
 
   const best = scored[0];
   return best && best.score > 0 ? best.value : null;
+}
+
+/** True when at least one candidate is a usable per-role referral link. */
+export function hasReferralCandidate(candidates = [], { host = TURING_REFERRAL_HOST, title = '' } = {}) {
+  return Boolean(pickRoleReferralUrl(candidates, { host, title }));
 }
 
 /**

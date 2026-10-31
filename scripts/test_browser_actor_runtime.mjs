@@ -51,6 +51,7 @@ import {
   TURING_DETAIL_REFERRAL_EXPR,
   TURING_MODAL_CANDIDATES_EXPR,
   TURING_REFERRAL_HOST,
+  hasReferralCandidate,
   jobIdFromUrl,
   normalizeReferralCapture,
   planReferralBackfill,
@@ -948,6 +949,11 @@ console.log('\n-- coverage --');
   eq('a junk url is not a job id', jobIdFromUrl('not a url'), null);
   ok('the detail expression excludes the Refer & Earn nav link',
     TURING_DETAIL_REFERRAL_EXPR.includes('isNavReferEarn') && TURING_DETAIL_REFERRAL_EXPR.includes('referral\\s*bonus'));
+  // Live DOM (jobId=112467): "Referral Bonus · $750" is a span LABEL; the clickable
+  // is <button>Share & earn $750</button>. Matching only "referral bonus" found
+  // nothing on a page that plainly offers a referral.
+  ok('the detail expression clicks the control that actually exists',
+    TURING_DETAIL_REFERRAL_EXPR.includes('share') && TURING_DETAIL_REFERRAL_EXPR.includes("by: 'share_and_earn'"));
   ok('the card expression reports which affordance it clicked',
     turingOpenReferralExpr(0).includes("by: 'referral_link'"));
 
@@ -963,6 +969,32 @@ console.log('\n-- coverage --');
   eq('a capture carries what was clicked', evidential.clickedBy, 'amount');
   ok('a capture always keeps the page text as evidence', evidential.modalText === 'Explore roles');
   ok('a capture always keeps the card buttons', evidential.buttons.length === 1);
+
+  // Live shape, verified from the share dialog's readonly input:
+  //   https://work.turing.com/r/xako-8LrQK   (jobId=112467)
+  const liveLink = 'https://work.turing.com/r/xako-8LrQK';
+  ok('the live per-role link shape is recognised', hasReferralCandidate([liveLink]));
+  ok('a dialog that is merely open is not enough', !hasReferralCandidate([]));
+  ok('the referral dashboard is not a per-role link',
+    !hasReferralCandidate(['https://work.turing.com/dashboard/job_referral']));
+  const liveCapture = normalizeReferralCapture({ title: 'Project Lead - AI Training', candidates: [liveLink] });
+  eq('the live link is picked, not rejected', liveCapture.referralUrl, liveLink);
+  eq('and it reports a confident pick', liveCapture.reason, 'picked');
+
+  // Two roles must never collapse to one link: that is the whole per-role premise.
+  const perRole = planReferralBackfill({
+    offers: [
+      { id: 'r1', title: 'Project Lead - AI Training', external_id: 'turing:project-lead-ai-training', referral_url: null },
+      { id: 'r2', title: 'Business Analyst - US', external_id: 'turing:business-analyst-us', referral_url: null }
+    ],
+    captures: [
+      normalizeReferralCapture({ title: 'Project Lead - AI Training', candidates: [liveLink] }),
+      normalizeReferralCapture({ title: 'Business Analyst - US', candidates: ['https://work.turing.com/r/Qm3t-Zp8W'] })
+    ]
+  });
+  eq('each role gets its own link', perRole.updates.length, 2);
+  ok('the two links are different',
+    perRole.updates[0].referral_url !== perRole.updates[1].referral_url);
 }
 
 // ---------------------------------------------------------------------------

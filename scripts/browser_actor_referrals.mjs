@@ -37,6 +37,7 @@ import {
   TURING_DETAIL_REFERRAL_EXPR,
   TURING_MODAL_CANDIDATES_EXPR,
   TURING_REFERRAL_HOST,
+  hasReferralCandidate,
   jobIdFromUrl,
   normalizeReferralCapture,
   planReferralBackfill,
@@ -125,15 +126,20 @@ async function ensureCards({ host, port, needed, maxClicks = 30 }) {
 }
 
 /**
- * The modal renders after the click, so poll instead of reading once. A dialog that
- * never appears is reported as such — not as "no link", which would be a lie.
+ * Wait for the share dialog to actually contain a link.
+ *
+ * Verified live 2026-10-31: clicking "Share & earn" opens the dialog immediately,
+ * but the readonly input that holds `https://work.turing.com/r/xako-8LrQK` is filled
+ * a beat later. An earlier version returned as soon as `inDialog` was true, read an
+ * empty input, and reported a marketplace with no links as if that were the truth.
+ * So: poll until a candidate parses as a referral link, and only then give up.
  */
 async function waitForModalCandidates({ host, port, maxMs = REFERRAL_MODAL_TIMEOUT_MS }) {
   const startedAt = Date.now();
   let last = null;
   while (Date.now() - startedAt < maxMs) {
     last = await evaluateJson({ host, port, expression: TURING_MODAL_CANDIDATES_EXPR });
-    if (last?.ok && (last.inDialog || (Array.isArray(last.candidates) && last.candidates.length))) return last;
+    if (last?.ok && hasReferralCandidate(last.candidates || [], { host: TURING_REFERRAL_HOST })) return last;
     await sleep(400);
   }
   return last;
