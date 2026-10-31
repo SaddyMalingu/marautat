@@ -1,0 +1,82 @@
+/**
+ * Marketplace coverage (2026-10-31)
+ *
+ * The collector's progress file lives on the operator's machine, because the
+ * browser does. The portal runs elsewhere and cannot read it — so the portal shows
+ * what actually survived the trip: how many roles were captured per marketplace,
+ * how many are live, and how many still have no referral link (i.e. are earning
+ * nothing).
+ *
+ * Pure: the route passes the tenant's offer rows, joined to their source.
+ */
+
+const EMPTY = { total: 0, published: 0, drafts: 0, missingReferral: 0 };
+
+/**
+ * Which marketplace owns this offer.
+ *
+ * `source_id` is the correct answer, but it is null on rows imported before the
+ * `opportunity_sources` seed was applied — and reporting 30 offers as
+ * "Unattributed" tells a tenant nothing. The importer's own slug convention
+ * (`<tenant>-<source>-<role>`) is our data, not a guess about the marketplace, so
+ * it is used as the fallback.
+ */
+const SLUG_SOURCES = [
+  ['turing', 'Turing'],
+  ['micro1', 'Micro1'],
+  ['mercor', 'Mercor']
+];
+
+function sourceOf(offer) {
+  if (offer.source?.slug) {
+    return { slug: String(offer.source.slug), name: String(offer.source.name || offer.source.slug) };
+  }
+  const slug = String(offer.slug || '').toLowerCase();
+  for (const [key, name] of SLUG_SOURCES) {
+    if (slug.includes(`-${key}-`)) return { slug: key, name };
+  }
+  return { slug: 'unsourced', name: 'Unattributed' };
+}
+
+export function summarizeCoverage(offers = []) {
+  const bySource = new Map();
+  let total = 0;
+  let published = 0;
+  let drafts = 0;
+  let missingReferral = 0;
+
+  for (const offer of Array.isArray(offers) ? offers : []) {
+    if (!offer) continue;
+    total += 1;
+
+    const isPublished = String(offer.status || '').toLowerCase() === 'published';
+    const hasReferral = Boolean(String(offer.referral_url || '').trim());
+    if (isPublished) published += 1; else drafts += 1;
+    if (!hasReferral) missingReferral += 1;
+
+    const { slug, name } = sourceOf(offer);
+    const row = bySource.get(slug) || { slug, name, ...EMPTY };
+    row.total += 1;
+    if (isPublished) row.published += 1; else row.drafts += 1;
+    if (!hasReferral) row.missingReferral += 1;
+    bySource.set(slug, row);
+  }
+
+  return {
+    total,
+    published,
+    drafts,
+    missingReferral,
+    // Most-captured marketplace first: that is the one earning the most attention.
+    sources: [...bySource.values()].sort((a, b) => b.total - a.total)
+  };
+}
+
+/** One line a tenant can read without interpreting numbers. */
+export function coverageHeadline(summary) {
+  if (!summary || !summary.total) return 'No marketplace roles captured yet.';
+  const parts = summary.sources.map(
+    (s) => `${s.name}: ${s.total} captured, ${s.published} live, ${s.missingReferral} without a referral link`
+  );
+  return parts.join(' · ');
+}

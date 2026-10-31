@@ -46,6 +46,7 @@ import { normalizeTuringItem, normalizeTuringCollection, pickReferralUrl, toOffe
 import { referralForRole, isReferralUrlForHost } from '../utils/browserActor/referrals.js';
 import { offerSlugFor, planOfferImport, attachReferrals } from '../utils/browserActor/offersImport.js';
 import { sanitizeOfferPatch } from '../utils/offerPatch.js';
+import { summarizeCoverage, coverageHeadline } from '../utils/coverage.js';
 import { cliArgsFor, isBusinessFailure } from '../utils/browserActor/moreloginClient.js';
 
 let pass = 0;
@@ -803,6 +804,36 @@ console.log('\n-- offer patch --');
   eq('a known offer_type is accepted', sanitizeOfferPatch({ offer_type: 'Job' }).patch.offer_type, 'job');
   eq('an empty title is refused', sanitizeOfferPatch({ title: '   ' }).errors.length, 1);
   eq('an empty body says so instead of silently succeeding', sanitizeOfferPatch({}).errors[0], 'nothing to update');
+}
+
+// ---------------------------------------------------------------------------
+// 11. Coverage: what the tenant captured, and what still earns nothing
+// ---------------------------------------------------------------------------
+console.log('\n-- coverage --');
+
+{
+  const rows = [
+    { status: 'draft', referral_url: null, source: { slug: 'turing', name: 'Turing' } },
+    { status: 'draft', referral_url: 'https://turing.com/r/a', source: { slug: 'turing', name: 'Turing' } },
+    { status: 'published', referral_url: 'https://turing.com/r/b', source: { slug: 'turing', name: 'Turing' } },
+    { status: 'draft', referral_url: null, source: { slug: 'micro1', name: 'Micro1' } },
+    { status: 'draft', referral_url: null, source: null }
+  ];
+  const summary = summarizeCoverage(rows);
+  eq('coverage counts every offer', summary.total, 5);
+  eq('published is counted separately', summary.published, 1);
+  eq('drafts are the rest', summary.drafts, 4);
+  eq('offers with no referral link are surfaced', summary.missingReferral, 3);
+  eq('offers are grouped by marketplace', summary.sources.length, 3);
+  eq('the biggest marketplace comes first', summary.sources[0].slug, 'turing');
+  eq('per-marketplace missing links are counted', summary.sources[0].missingReferral, 1);
+  ok('an offer with no source is not silently dropped', summary.sources.some((s) => s.slug === 'unsourced'));
+  const fallback = summarizeCoverage([{ status: 'draft', referral_url: null, slug: 'malingu-ventures-turing-illustrator' }]);
+  eq('a missing source row falls back to the slug convention', fallback.sources[0].slug, 'turing');
+  eq('and carries a readable name', fallback.sources[0].name, 'Turing');
+  eq('an empty tenant reports zero', summarizeCoverage([]).total, 0);
+  ok('the headline names the marketplace', coverageHeadline(summary).includes('Turing'));
+  eq('an empty tenant gets a useful headline', coverageHeadline({ total: 0 }), 'No marketplace roles captured yet.');
 }
 
 // ---------------------------------------------------------------------------

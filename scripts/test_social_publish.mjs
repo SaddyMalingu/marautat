@@ -438,6 +438,8 @@ ok('copy is offered as the primary LinkedIn action',
 ok('the portal no longer advertises a link-only LinkedIn share', !dash.includes('LinkedIn (link)'));
 ok('an X prefill link sits beside the API post',
   dash.includes('twitter.com/intent/tweet') && dash.includes('/publish/x'));
+ok('the portal shows marketplace coverage, not the collector progress file',
+  dash.includes('/tenant/blogger/coverage') && dash.includes('wfCoverage') && !dash.includes('collect_progress'));
 ok('X is published from the portal through the API', dash.includes('/publish/x'));
 ok('there is no LinkedIn publish path anywhere in the portal', !/publish\/linkedin/i.test(dash));
 ok('the portal tells the tenant LinkedIn is theirs to post', dash.includes('prepared for you to post'));

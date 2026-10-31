@@ -5060,6 +5060,30 @@ app.get('/tenant/blogger/offers/:id/posts', tenantSessionAuth, async (req, res) 
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// GET /tenant/blogger/coverage — what this tenant has actually captured from each
+// marketplace. The collector runs on the operator's machine (the browser does), so
+// the portal cannot watch its progress file; this reports the outcome instead:
+// captured, live, and how many offers still have no referral link (earning nothing).
+app.get('/tenant/blogger/coverage', tenantSessionAuth, async (req, res) => {
+  try {
+    const ctx = await tenantSiteFromSession(req);
+    if (!ctx) return res.status(404).json({ error: 'Tenant not found' });
+    const { data, error } = await supabase
+      .from('opportunities')
+      .select('id, slug, status, referral_url, source:opportunity_sources(slug, name)')
+      .eq('tenant_id', ctx.site.id);
+    if (error) throw error;
+    const { summarizeCoverage, coverageHeadline } = await import('./utils/coverage.js');
+    const summary = summarizeCoverage(data || []);
+    res.json({
+      ok: true,
+      ...summary,
+      headline: coverageHeadline(summary),
+      hubPath: '/ai-jobs/t/' + ctx.site.slug
+    });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // PATCH /tenant/blogger/offers/:id — the portal could create and delete offers
 // but not edit them, so a tenant had no way to attach the per-role referral link
 // that actually earns. Whitelisted fields only (utils/offerPatch.js): slug, status

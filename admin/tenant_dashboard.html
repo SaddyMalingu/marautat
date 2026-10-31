@@ -1177,6 +1177,27 @@ function wfBloggerHtml(ctx) {
     </div>`;
 }
 
+// Reads the OUTCOME of collection, not the run: a run happens on the operator's
+// machine (the browser lives there), so the portal reports what actually landed.
+async function wfLoadCoverage(el) {
+  if (!el) return;
+  try {
+    const r = await apiJson('/tenant/blogger/coverage');
+    if (!r.ok || !r.data?.ok) { el.textContent = 'Coverage unavailable right now.'; return; }
+    const d = r.data;
+    if (!d.total) {
+      el.innerHTML = 'No marketplace roles captured yet — connect Turing or Micro1 to start.';
+      return;
+    }
+    const needs = Number(d.missingReferral || 0);
+    el.innerHTML = `<strong>Coverage.</strong> ${esc(d.headline || '')}`
+      + (needs ? ` · <span style="color:#f59e0b">${needs} offer${needs === 1 ? '' : 's'} earn nothing until a referral link is added</span>` : '')
+      + ` · <a href="${esc(d.hubPath || '')}" target="_blank" rel="noopener">public page</a>`;
+  } catch {
+    el.textContent = 'Coverage unavailable right now.';
+  }
+}
+
 async function renderWritersFlow() {
   const sp = document.getElementById('spa');
   sp.innerHTML = spinner("Loading Writer's Flow...");
@@ -1209,6 +1230,20 @@ async function renderWritersFlow() {
     </ul>
     <div class="wf-tab" id="wf-outreach" style="display:${wfTab === 'outreach' ? '' : 'none'}">${wfOutreachHtml()}</div>
     <div class="wf-tab" id="wf-blogger" style="display:${wfTab === 'blogger' ? '' : 'none'}">${wfBloggerHtml(ctx)}</div>`;
+
+  // Coverage strip: how much of each marketplace this tenant has captured, how much
+  // is live, and how many offers still earn nothing for want of a referral link.
+  const bloggerTab = document.getElementById('wf-blogger');
+  if (bloggerTab) {
+    const strip = document.createElement('div');
+    strip.id = 'wfCoverage';
+    strip.className = 'mb-2';
+    strip.style.fontSize = '.82rem';
+    strip.style.color = 'var(--text-muted)';
+    strip.textContent = 'Checking marketplace coverage…';
+    bloggerTab.insertBefore(strip, bloggerTab.firstChild);
+    wfLoadCoverage(strip);
+  }
 
   // Reopen the list the tenant was already looking at — and the one generation
   // just filled — so a re-render never hides the pages they paid for.
