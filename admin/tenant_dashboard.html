@@ -663,6 +663,7 @@ function wfOfferRows(offers) {
       <td class="text-center"><button class="btn btn-sm ${n ? 'btn-outline-info' : 'btn-outline-secondary'}" data-act="posts" data-id="${esc(o.id)}">${n ? n + ' page' + (n === 1 ? '' : 's') : 'Pages'}</button></td>
       <td class="text-end">
         ${o.status !== 'published' ? `<button class="btn btn-sm btn-success me-1" data-act="publish" data-id="${esc(o.id)}">Publish</button>` : ''}
+        <button class="btn btn-sm btn-outline-secondary me-1" data-act="referral" data-id="${esc(o.id)}" data-url="${esc(o.referral_url || '')}" title="${o.referral_url ? 'Referral link set' : 'No referral link yet — this offer earns nothing'}">${o.referral_url ? 'Referral ✓' : 'Referral'}</button>
         <button class="btn btn-sm btn-outline-info me-1" data-act="blog" data-id="${esc(o.id)}">Optimize</button>
         <button class="btn btn-sm btn-outline-danger" data-act="del" data-id="${esc(o.id)}">Delete</button>
       </td>
@@ -789,6 +790,40 @@ function wfCopyText(text, okMsg) {
   } else fallback();
 }
 
+// LinkedIn has no supported share link that carries post text. On a desktop
+// browser `feed?shareActive=true&text=` pre-fills the composer; on a phone the
+// same URL is handed to the LinkedIn app, which opens the feed and silently
+// drops the text. The two paths therefore diverge: desktop pre-fills, mobile
+// shares the article link (so a preview card exists) and relies on
+// "Copy for LinkedIn" plus a paste.
+function wfIsMobileShare() {
+  const ua = navigator.userAgent || '';
+  if (/Android|iPhone|iPad|iPod|Mobile/i.test(ua)) return true;
+  return Boolean(navigator.maxTouchPoints > 1 && window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+}
+
+// X is the one platform published through an API (the server holds the token).
+// Everything else about sharing stays human-in-the-loop.
+async function wfPostShareToX(slug, text) {
+  if (!slug || !text) return;
+  if (!confirm('Publish this post to X now?')) return;
+  const r = await apiJson(`/tenant/blogger/posts/${encodeURIComponent(slug)}/publish/x`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text })
+  });
+  if (r.ok && r.data?.ok) {
+    toast('Posted to X');
+    if (r.data.tweet?.url) window.open(r.data.tweet.url, '_blank', 'noopener');
+    return;
+  }
+  if (r.status === 409) {
+    toast('X is not connected for this account yet — copy the post instead', 'err');
+    return;
+  }
+  toast(r.data?.message || 'Could not post to X', 'err');
+}
+
 async function wfOpenShareCard(slug) {
   if (!slug) return;
   const el = wfShareEl();
@@ -798,7 +833,13 @@ async function wfOpenShareCard(slug) {
   document.getElementById('wfShareBody').innerHTML = spinner('Reading this page…');
   document.getElementById('wfShareActions').innerHTML = '';
 
-  const r = await apiJson(`/tenant/blogger/posts/${encodeURIComponent(slug)}/share`);
+  // /prefill returns the card plus the composed X and LinkedIn copy. A host that
+  // predates the distribution layer still answers /share, so fall back to it
+  // rather than leaving the tenant with an empty modal.
+  let r = await apiJson(`/tenant/blogger/posts/${encodeURIComponent(slug)}/prefill`);
+  if (!r.ok || !r.data?.ok) {
+    r = await apiJson(`/tenant/blogger/posts/${encodeURIComponent(slug)}/share`);
+  }
   const actions = document.getElementById('wfShareActions');
   if (!r.ok || !r.data?.ok) {
     document.getElementById('wfShareSub').textContent = '';
@@ -811,12 +852,34 @@ async function wfOpenShareCard(slug) {
   }
   wfRenderShareCard(r.data);
 }
-function wfRenderShareCard(d) {
+// /prefill nests the card under `card` and adds x / linkedin compositions;
+// /share returns the card flat. One renderer, one shape.
+function wfNormalizeSharePayload(payload) {
+  if (!payload || !payload.card) return payload;
+  return Object.assign({}, payload.card, {
+    absolute_url: payload.absolute_url,
+    slug: payload.slug,
+    x: payload.x,
+    linkedin: payload.linkedin,
+    warnings: payload.warnings || []
+  });
+}
+function wfRenderShareCard(payload) {
+  const d = wfNormalizeSharePayload(payload);
   const caption = [d.hook, d.excerpt, d.absolute_url].filter(Boolean).join('\n\n');
+  // Assisted publishing, not automation: LinkedIn does not permit automated posts
+  // on a member account, so the composer is pre-filled from the server-composed
+  // body and the tenant presses Post.
+  const linkedinBody = (d.linkedin && d.linkedin.text) || caption;
+  const linkedinMobile = wfIsMobileShare();
   // LinkedIn's composer takes the post body from `text`, but truncates it at the
   // first ampersand even when percent-encoded, so this copy spells "and" instead.
   const linkedinUrl = 'https://www.linkedin.com/feed/?shareActive=true&text='
-    + encodeURIComponent(caption.replace(/&/g, ' and '));
+    + encodeURIComponent(linkedinBody.replace(/&/g, ' and '));
+  // The article link, so a phone still gets a preview card rather than nothing.
+  const linkedinShareUrl = d.absolute_url
+    ? 'https://www.linkedin.com/sharing/share-offsite/?url=' + encodeURIComponent(d.absolute_url)
+    : 'https://www.linkedin.com/feed/';
   const source = d.mode === 'ai' ? 'AI-written card' : 'Composed from the page';
   document.getElementById('wfShareTitle').textContent = d.title || d.slug;
   document.getElementById('wfShareSub').textContent =
@@ -841,21 +904,34 @@ function wfRenderShareCard(d) {
       ${bullets ? `<ul class="wf-share-text" style="padding-left:1.1rem;margin:7px 0 0">${bullets}</ul>` : ''}
     </div>
     <div><div class="wf-share-lbl">Excerpt · paste-ready</div><div class="wf-share-quote">${esc(d.excerpt || '')}</div></div>
-    ${tags ? `<div><div class="wf-share-lbl">Hashtags</div><div class="wf-share-tags">${tags}</div></div>` : ''}`;
+    ${tags ? `<div><div class="wf-share-lbl">Hashtags</div><div class="wf-share-tags">${tags}</div></div>` : ''}
+    ${(d.x || (d.warnings && d.warnings.length)) ? `<div>
+      <div class="wf-share-lbl">Distribution</div>
+      ${d.x ? `<div class="wf-share-text">X · ${d.x.weighted || 0} of 280 characters</div>` : ''}
+      <div class="wf-share-text">LinkedIn · prepared for you to post</div>
+      ${(d.warnings || []).map((w) => `<div class="wf-share-text" style="color:#f59e0b">${esc(w)}</div>`).join('')}
+    </div>` : ''}`;
 
   const actions = document.getElementById('wfShareActions');
   actions.innerHTML = `
     <a class="btn btn-sm btn-info" href="${esc(d.url || '')}" target="_blank" rel="noopener">Open page</a>
     <button class="btn btn-sm btn-outline-info" id="wfShareCopyCaption" type="button">Copy caption</button>
     <a class="btn btn-sm btn-success" href="https://wa.me/?text=${encodeURIComponent(caption)}" target="_blank" rel="noopener">WhatsApp</a>
-    <a class="btn btn-sm btn-outline-secondary" href="https://twitter.com/intent/tweet?text=${encodeURIComponent(d.hook || '')}&url=${encodeURIComponent(d.absolute_url || '')}" target="_blank" rel="noopener">X</a>
-    <a class="btn btn-sm btn-outline-secondary" id="wfShareLinkedIn" href="${esc(linkedinUrl)}" target="_blank" rel="noopener" title="Opens LinkedIn with the caption already typed in">LinkedIn</a>
+    ${d.x
+      ? `<button class="btn btn-sm btn-success" id="wfSharePostX" type="button" title="Publishes through the X API">Post to X</button>`
+      : `<a class="btn btn-sm btn-outline-secondary" href="https://twitter.com/intent/tweet?text=${encodeURIComponent(d.hook || '')}&url=${encodeURIComponent(d.absolute_url || '')}" target="_blank" rel="noopener">X</a>`}
+    <button class="btn btn-sm btn-outline-secondary" id="wfShareCopyLinkedIn" type="button">Copy for LinkedIn</button>
+    <a class="btn btn-sm btn-outline-secondary" id="wfShareLinkedIn" href="${esc(linkedinMobile ? linkedinShareUrl : linkedinUrl)}" target="_blank" rel="noopener" title="${linkedinMobile ? 'Opens LinkedIn with the article link — tap Copy for LinkedIn first, then paste' : 'Opens LinkedIn with the post typed in — you press Post'}">${linkedinMobile ? 'LinkedIn (link)' : 'LinkedIn'}</a>
     <button class="btn btn-sm btn-outline-secondary" id="wfShareDone" type="button">Close</button>`;
 
   const copyUrl = document.getElementById('wfShareCopyUrl');
   if (copyUrl) copyUrl.addEventListener('click', () => wfCopyText(d.absolute_url || '', 'Link copied'));
   const copyCaption = document.getElementById('wfShareCopyCaption');
   if (copyCaption) copyCaption.addEventListener('click', () => wfCopyText(caption, 'Caption copied'));
+  const postX = document.getElementById('wfSharePostX');
+  if (postX) postX.addEventListener('click', () => wfPostShareToX(d.slug, (d.x && d.x.text) || caption));
+  const copyLinkedIn = document.getElementById('wfShareCopyLinkedIn');
+  if (copyLinkedIn) copyLinkedIn.addEventListener('click', () => wfCopyText(linkedinBody, 'LinkedIn post copied'));
   const done = document.getElementById('wfShareDone');
   if (done) done.addEventListener('click', wfCloseShare);
 }
@@ -1197,6 +1273,24 @@ async function renderWritersFlow() {
       return;
     }
     if (act === 'closeposts') { wfHideOfferPosts(id); return; }
+    // The referral link is per offer (Turing mints one per role), so it is edited
+    // one offer at a time. A blank value clears it rather than saving an empty URL.
+    if (act === 'referral') {
+      const entered = prompt('Paste this role\'s referral link (leave blank to clear):', btn.dataset.url || '');
+      if (entered === null) return;
+      const value = String(entered).trim();
+      btn.disabled = true;
+      const r = await apiJson(`/tenant/blogger/offers/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ referral_url: value })
+      });
+      btn.disabled = false;
+      if (!r.ok) { toast(r.data?.error || 'Could not save the referral link', 'err'); return; }
+      toast(value ? 'Referral link saved' : 'Referral link cleared', 'ok');
+      renderWritersFlow();
+      return;
+    }
     if (act === 'sharepost') { await wfOpenShareCard(btn.dataset.slug); return; }
     if (act === 'reviewpost') {
       // The same review pass generation runs per post, on demand. It is a model

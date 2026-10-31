@@ -81,6 +81,13 @@ import { TENANT_SESSION_COOKIE, signTenantSession, verifyTenantSession, tenantSe
 import sitemapRouter from "./routes/sitemap.js";
 import aiJobsAdminRouter from "./routes/aiJobsAdmin.js";
 import aiJobsGuidesRouter from "./routes/aiJobsGuides.js";
+// Browser Actor Runtime: the agent-facing door to MoreLogin virtual browsers and
+// cloud phones. Mounted under /api/agents/browser and fail-closed (503) until
+// AGENT_API_KEY / ADMIN_KEY / ADMIN_PASS is set.
+import browserActorsRouter from "./routes/browserActors.js";
+// Social distribution: X publishes through API v2, LinkedIn is composed for the
+// tenant to post (assisted). Factory-mounted below, next to the share card.
+import { createSocialPublishRouter } from "./routes/socialPublish.js";
 
 // Define __dirname for ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -555,6 +562,11 @@ app.use('/', aiJobsAdminRouter);
 
 // AI Jobs Guide routes
 app.use('/', aiJobsGuidesRouter);
+
+// Browser Actor Runtime (MoreLogin virtual browsers + cloud phones for agents).
+// Its own key check lives in the router, so mounting it here cannot widen access
+// to any existing surface.
+app.use('/api/agents/browser', browserActorsRouter);
 
 // Secure route to download request.log for debugging
 app.get('/debug/request-log', (req, res) => {
@@ -5048,6 +5060,37 @@ app.get('/tenant/blogger/offers/:id/posts', tenantSessionAuth, async (req, res) 
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// PATCH /tenant/blogger/offers/:id — the portal could create and delete offers
+// but not edit them, so a tenant had no way to attach the per-role referral link
+// that actually earns. Whitelisted fields only (utils/offerPatch.js): slug, status
+// and tenant_id can never be changed through this route.
+app.patch('/tenant/blogger/offers/:id', tenantSessionAuth, async (req, res) => {
+  try {
+    const ctx = await tenantSiteFromSession(req);
+    if (!ctx) return res.status(404).json({ error: 'Tenant not found' });
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'Offer id is required' });
+
+    const { sanitizeOfferPatch } = await import('./utils/offerPatch.js');
+    const { patch, ignored, errors } = sanitizeOfferPatch(req.body || {});
+    if (errors.length) return res.status(400).json({ error: errors.join('; '), ignored });
+    if (!Object.keys(patch).length) return res.status(400).json({ error: 'nothing to update', ignored });
+
+    // Tenant scoping happens in the query, not in a post-fetch check: a foreign id
+    // simply matches no row and reports 404.
+    const { data, error } = await supabase
+      .from('opportunities')
+      .update({ ...patch, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .eq('tenant_id', ctx.site.id)
+      .select('id, slug, title, status, referral_url, destination_url, cta_label, offer_type')
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return res.status(404).json({ error: 'Offer not found for this tenant' });
+    res.json({ ok: true, offer: data, ignored });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // GET /tenant/blogger/posts/:slug/share — the page link plus a share card.
 // The portal's Share button used to have nothing behind it: a tenant could open
 // a page or delete it, but forwarding it to a customer meant copying a slug out
@@ -5090,6 +5133,16 @@ app.get('/tenant/blogger/posts/:slug/share', tenantSessionAuth, async (req, res)
     });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
+
+// Social publishing (2026-10-31): prefill for LinkedIn (assisted, a human presses
+// Post) and publish for X (API v2, automated). Mounted here because the tenant auth
+// helpers live in this scope; the handlers live in routes/socialPublish.js.
+app.use('/', createSocialPublishRouter({
+  tenantSessionAuth,
+  tenantSiteFromSession,
+  tenantOwnsPost,
+  supabase,
+}));
 
 // POST /tenant/blogger/posts/:slug/review — run the review/polish pass that
 // generation already runs per post, on demand, for one page. The response says
