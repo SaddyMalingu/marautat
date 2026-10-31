@@ -10,8 +10,8 @@ Nothing here is speculative — each line was observed in a log, a live run, or 
 | 3 | **HIGH** | Tenant session token `t=6f0c…` exposed in chat | Grants tenant portal access. Regenerate from the portal. | you |
 | 4 | MEDIUM | `npm audit`: 19 vulnerabilities (5 moderate, 13 high, **1 critical**) | Some may sit in the WhatsApp/payment paths. Needs a deliberate pass — blind `npm audit fix --force` is how a revenue path breaks. | later, separately |
 | 5 | MEDIUM | `[TENANT LOOKUP] Found 0 candidate(s) for '254786817637'` | Inbound from the main number resolves to **no tenant**, so the bot answers as generic Alphadome. A mapping gap in `bot_tenants` ↔ `site_tenants`. | later |
-| 6 | LOW | Only 12 of 228 Turing roles imported | Paging not built. Re-running the import adds only new roles; existing rows and their links are untouched. | next slice |
-| 7 | LOW | Referral links are pasted by hand, one per role | Turing mints a link per job (`expand card → referral bonus`). Automation needs two real clicks on a logged-in account — deliberately not built. | next slice |
+| 6 | MEDIUM | Only 78 of 226 Turing roles collected | First listing page plus 6 "Load more" clicks. Importing the same file again creates nothing; deeper paging still needs ~14 more clicks. | next slice |
+| 7 | **HIGH (revenue)** | 76 of 78 Turing offers have **no referral link** | They publish and rank but earn nothing. Turing mints a link per job (`expand card → referral bonus`); automation needs two real clicks on a logged-in account. | you / next slice |
 | 8 | INFO | The LinkedIn **app** cannot receive prefilled text | Vendor limitation, not a bug. Mobile copies the caption and opens LinkedIn; the paste is unavoidable. Documented in `BROWSER_ACTOR_RUNTIME.md`. | closed as limitation |
 | 9 | INFO | X posting returns `409 social_not_configured` until a token is set | Correct refusal, not a failure. `SOCIAL_X_TOKENS` unlocks `Post to X`; `X (prefill)` works without it. | you (optional) |
 
