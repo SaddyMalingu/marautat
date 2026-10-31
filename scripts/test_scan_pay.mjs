@@ -537,6 +537,17 @@ ok('the Micro1 button opens a new tab without handing over the opener',
 ok('the Micro1 button is on the Writer\'s Flow section, not inside one tab',
   dash.indexOf('id="wfMicro1Btn"') < dash.indexOf('data-tab="outreach"'));
 
+// ---- 9b. the Turing hand-off -----------------------------------------------
+ok('Writer\'s Flow carries a Connect Turing button', /id="wfTuringBtn"/.test(dash));
+ok('the Turing button points at the jobs page',
+  /href="https:\/\/work\.turing\.com\/jobs"/.test(dash));
+ok('the Turing button opens a new tab without handing over the opener',
+  /id="wfTuringBtn"[\s\S]{0,240}rel="noopener noreferrer"/.test(dash),
+  'anchor does not close with rel=noopener');
+ok('the Turing button sits beside Micro1, on the section header',
+  dash.indexOf('id="wfMicro1Btn"') < dash.indexOf('id="wfTuringBtn"') &&
+  dash.indexOf('id="wfTuringBtn"') < dash.indexOf('data-tab="outreach"'));
+
 // ---- 10. the page the customer opens --------------------------------------
 ok('the customer pay page exists', fs.existsSync('public/pay.html'));
 const payPage = fs.readFileSync('public/pay.html', 'utf8');

@@ -1106,12 +1106,17 @@ async function renderWritersFlow() {
     <div class="section-hdr"><i class="fa-solid fa-rocket"></i> Writer's Flow</div>
     <div class="d-flex justify-content-between align-items-start flex-wrap gap-2" style="margin-top:-10px;margin-bottom:16px;">
       <p class="text-muted" style="margin:0;">Grow your brand with automated research, outreach, and SEO content.</p>
-      <!-- Micro1 marketplace: where a tenant takes the writing/VA work the engine
-           cannot do itself. External, so it opens in a new tab and never becomes a
-           silent redirect inside the portal. -->
-      <a class="btn btn-outline-acc btn-sm" id="wfMicro1Btn" href="https://refer.micro1.ai/opportunities" target="_blank" rel="noopener noreferrer">
-        <i class="fa-solid fa-arrow-up-right-from-square me-1"></i>Connect Micro1
-      </a>
+      <!-- Micro1 and Turing: the marketplaces where a tenant takes the writing/VA
+           work the engine cannot do itself. Both external, so they open in a new
+           tab and never become a silent redirect inside the portal. -->
+      <div class="d-flex gap-2 flex-wrap">
+        <a class="btn btn-outline-acc btn-sm" id="wfMicro1Btn" href="https://refer.micro1.ai/opportunities" target="_blank" rel="noopener noreferrer">
+          <i class="fa-solid fa-arrow-up-right-from-square me-1"></i>Connect Micro1
+        </a>
+        <a class="btn btn-outline-acc btn-sm" id="wfTuringBtn" href="https://work.turing.com/jobs" target="_blank" rel="noopener noreferrer">
+          <i class="fa-solid fa-arrow-up-right-from-square me-1"></i>Connect Turing
+        </a>
+      </div>
     </div>
     <ul class="nav nav-pills gap-2 mb-3">
       <li class="nav-item"><button class="nav-link ${wfTab === 'outreach' ? 'active' : ''}" data-tab="outreach">Research &amp; Outreach</button></li>

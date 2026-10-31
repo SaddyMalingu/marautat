@@ -246,6 +246,9 @@ ok('go() still renders a spinner and resets the scroll',
   /sp\.innerHTML = spinner\(\);/.test(js) && /main\.scrollTo\(\{ top: 0/.test(js));
 ok('the Writer\'s Flow tab order still holds',
   html.indexOf('id="wfMicro1Btn"') < html.indexOf('data-tab="outreach"'));
+ok('the Turing button sits with Micro1, above the tabs',
+  html.indexOf('id="wfTuringBtn"') > html.indexOf('id="wfMicro1Btn"') &&
+  html.indexOf('id="wfTuringBtn"') < html.indexOf('data-tab="outreach"'));
 
 // ---- 15. The shell actually behaves: run it, do not just grep it ----------
 // No jsdom in this repo, so this is the same trick the QR suite uses: a DOM small
