@@ -285,7 +285,7 @@ await check("cta: one at the top, one at the end, both real links", () => {
   const html = buildHTML({ title: "T", slug: "s", content: CLEAN_FRAGMENT }, { id: "offer-1", offer_type: "job", title: "ML Engineer" });
   const buttons = html.match(/class="cta-btn"/g) || [];
   assert(buttons.length === 2, `expected 2 buttons, found ${buttons.length}`);
-  assert((html.match(/href="\/ai-jobs\/apply\/offer-1"/g) || []).length === 2, "the buttons do not point at the tracked redirect");
+  assert((html.match(/href="\/go\/offer-1"/g) || []).length === 2, "the buttons do not point at the tracked redirect");
   assert(html.indexOf('cta-top') < html.indexOf("<article>"), "the top CTA is not above the article");
   assert(html.lastIndexOf('class="cta-btn"') > html.indexOf("</article>"), "the closing CTA is not after the article");
   return "2 buttons, top before article, end after";
@@ -294,12 +294,21 @@ await check("cta: one at the top, one at the end, both real links", () => {
 await check("cta: an offer with no destination gets a real next step, not a dead button", () => {
   const orphan = buildHTML({ title: "T", slug: "s", content: CLEAN_FRAGMENT }, { offer_type: "service", title: "Studio Session" });
   assert(/no link configured/.test(orphan), "the reader is not told what to do instead");
-  assert(!/href="\/ai-jobs\/apply\//.test(orphan), "a button still points at the tracker for an offer with no destination");
+  assert(!/href="\/ai-jobs\/apply\//.test(orphan) && !/href="\/go\//.test(orphan), "a button still points at the tracker for an offer with no destination");
   assert(/class="cta-btn cta-btn--alt" href="\/ai-jobs"/.test(orphan), "the reader is left with nothing to press");
-  const direct = buildHTML({ title: "T", slug: "s", content: CLEAN_FRAGMENT }, { offer_type: "product", title: "Desk", destination_url: "https://shop.example/item" });
-  assert(direct.includes('href="https://shop.example/item"'), "the offer's own destination URL was ignored");
-  assert(direct.includes('rel="noopener"'), "an external destination has no rel=noopener");
-  return "orphan: honest message + a way on; direct URL: used with noopener";
+  // An offer with an id goes through /go/<id> even when it has its own URL: that is
+  // the only way the click is counted, and the redirect still delivers the reader to
+  // the very same URL. An offer with no id cannot be counted, so it keeps the URL.
+  const direct = buildHTML({ title: "T", slug: "s", content: CLEAN_FRAGMENT }, { id: "p1", offer_type: "product", title: "Desk", destination_url: "https://shop.example/item" });
+  assert(direct.includes('href="/go/p1"'), "an offer with an id did not route through /go — its clicks stay uncountable");
+  assert(!direct.includes('href="https://shop.example/item"'), "the provider URL is still on the page, so the click still leaves uncounted");
+  const noId = buildHTML({ title: "T", slug: "s", content: CLEAN_FRAGMENT }, { offer_type: "product", title: "Desk", destination_url: "https://shop.example/item" });
+  assert(noId.includes('href="https://shop.example/item"'), "an offer with no id lost its destination — there is nothing to count it against");
+  // An offer with no id is the only case where the provider URL reaches the page,
+  // so it is the only case that needs the opener handover rules.
+  assert(noId.includes('rel="noopener"'), "an external destination has no rel=noopener");
+  assert(!direct.includes('rel="noopener"'), "an internal /go link was marked as external");
+  return "orphan: honest message + a way on; id: /go; no id: direct URL with noopener";
 });
 
 // 2026-10-29. Counting the live corpus found 96 pages with no closing block and

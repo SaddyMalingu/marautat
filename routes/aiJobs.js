@@ -215,8 +215,25 @@ export function offerUnavailablePage(title, backHref) {
     '</div></body></html>';
 }
 
-// GET /ai-jobs/apply/:id - Track apply click and redirect
-router.get('/apply/:id', async (req, res) => {
+// GET /go/:id and GET /ai-jobs/apply/:id — count the click, then send the reader on.
+//
+// One handler, two paths, because they are the same act and a second copy of this
+// logic would drift. /go/:id is the link every blog CTA now carries: short, and
+// neutral about whether the offer is a job, a product or a course.
+// /ai-jobs/apply/:id keeps working for the 434 pages already published and for
+// anything anyone has bookmarked.
+//
+// The destination is resolved here and redirected to **unchanged** — no wrapper
+// URL, no added query string — so affiliate attribution is byte-identical to what
+// it was when the page linked to the provider directly. The one difference: the
+// click is recorded before the reader leaves, in the table the tenant portal reads.
+//
+// `humanFacing` matters for exactly one branch. A missing offer answers JSON on
+// /ai-jobs/apply/:id because API clients depend on that contract, but a person who
+// pressed a button at the end of a blog page must not be handed `{"error":…}`.
+export async function handleOfferClick(req, res, options = {}) {
+  const fallbackPath = options.fallbackPath || '/ai-jobs/apply';
+  const humanFacing = options.humanFacing === true;
   try {
     const { id } = req.params;
     const { createClient } = await import('@supabase/supabase-js');
@@ -271,14 +288,20 @@ router.get('/apply/:id', async (req, res) => {
       .single();
     if (error || !opportunity) {
       // An offer that has gone still tells us somebody wanted it.
-      trackClick(pagePathFromReferrer(req, '/ai-jobs/apply'), 'apply_missing', req).catch(() => {});
+      const missingFrom = pagePathFromReferrer(req, fallbackPath);
+      trackClick(missingFrom, 'apply_missing', req).catch(() => {});
+      if (humanFacing) {
+        // A person pressed a button, not an API client.
+        const back = missingFrom && missingFrom.indexOf('/blog/') === 0 ? missingFrom : '/ai-jobs';
+        return res.status(200).type('html').send(offerUnavailablePage('This opportunity', back));
+      }
       return res.status(404).json({ error: 'Opportunity not found' });
     }
     // Offer-aware destination: jobs/affiliate use referral_url (allowlist-enforced);
     // products/services/brands use an admin-set destination_url (http/https only).
     const meta = offerMeta(opportunity);
     const dest = meta.destination;
-    const sourcePath = pagePathFromReferrer(req, '/ai-jobs/apply');
+    const sourcePath = pagePathFromReferrer(req, fallbackPath);
 
     // No destination, or one we will not redirect to. Either way the reader gets
     // a page with a way back instead of `{"error":…}`, and the click is recorded
@@ -313,10 +336,19 @@ router.get('/apply/:id', async (req, res) => {
     trackClick(sourcePath, 'apply', req).catch(() => {});
     res.redirect(302, dest);
   } catch (err) {
-    console.error('[AI Jobs] Error processing apply click:', err);
+    console.error('[AI Jobs] Error processing offer click:', err);
+    // A person on a blog page gets a page back; an API client keeps the JSON.
+    if (humanFacing) {
+      res.status(200).type('html').send(offerUnavailablePage('This opportunity', '/ai-jobs'));
+      return;
+    }
     res.status(500).json({ error: 'Error processing request' });
   }
-});
+}
+
+// The original path. Unchanged contract, so anything already pointing here keeps
+// working — including the 434 published pages written before /go existed.
+router.get('/apply/:id', (req, res) => handleOfferClick(req, res, { fallbackPath: '/ai-jobs/apply' }));
 
 // POST /api/events - Track events (for client-side tracking)
 router.post('/api/events', async (req, res) => {

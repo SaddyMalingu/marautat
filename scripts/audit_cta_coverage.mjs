@@ -74,7 +74,9 @@ async function main() {
       if (!/class="cta/.test(body)) noCtaBlock.push(slug);
       return;
     }
-    const apply = hrefs.filter((h) => h.startsWith('/ai-jobs/apply/'));
+    // /go/<id> is the tracked link the CTA block now writes; /ai-jobs/apply/<id>
+    // is the older one. Both are answered by the same handler, so both count.
+    const apply = hrefs.filter((h) => h.startsWith('/go/') || h.startsWith('/ai-jobs/apply/'));
     if (apply.length) {
       tracked.push(slug);
       apply.forEach((h) => ids.add(h.split('/').pop()));

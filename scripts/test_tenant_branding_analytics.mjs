@@ -158,13 +158,15 @@ ok('the conversation analytics above it are untouched',
 const aiJobs = fs.readFileSync('routes/aiJobs.js', 'utf8');
 const analytics = fs.readFileSync('utils/analytics.js', 'utf8');
 
-ok('the apply route records the click, not just the offer event',
-  /router\.get\('\/apply\/:id'[\s\S]*?trackClick\(sourcePath, 'apply', req\)/.test(aiJobs));
+ok('the handler behind /go and /apply records the click, not just the offer event',
+  /export async function handleOfferClick[\s\S]*?trackClick\(sourcePath, 'apply', req\)/.test(aiJobs));
+ok('the old apply path still runs that one handler, so it cannot lose the click',
+  /router\.get\('\/apply\/:id', \(req, res\) => handleOfferClick\(/.test(aiJobs));
 ok('the click is written before the redirect, so it cannot be skipped',
   aiJobs.indexOf("trackClick(sourcePath, 'apply', req)") > -1 &&
   aiJobs.indexOf("trackClick(sourcePath, 'apply', req)") < aiJobs.indexOf("res.redirect(302, dest)"));
 ok('an unattributable click is never credited to a tenant page',
-  /pagePathFromReferrer\(req, '\/ai-jobs\/apply'\)/.test(aiJobs) &&
+  /pagePathFromReferrer\(req, fallbackPath\)/.test(aiJobs) &&
   !/trackClick\('\/blog\//.test(aiJobs));
 ok('the click is non-blocking', /trackClick\([\s\S]{0,90}\)\.catch\(\(\) => \{\}\)/.test(aiJobs));
 ok('all three tenant hub routes record their view',

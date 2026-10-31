@@ -98,6 +98,20 @@ export function repeatsFallbackNote(html) {
   return (String(html || '').match(FALLBACK_NOTE) || []).length > 1;
 }
 
+// A CTA that leaves for the provider without passing through this server: the
+// click converts, and nobody on this side can count it. 378 of the 434 live pages
+// were in exactly this state on 2026-10-31 — which is why "the blog works" was a
+// belief rather than a number.
+//
+// Rebuilding writes /go/<id> instead: same destination, one recorded hop in front
+// of it. Only the button is matched, so an external link in the article body does
+// not trigger a rebuild.
+const UNMETERED_BUTTON = /class="cta-btn[^"]*"[^>]*href="https?:\/\//i;
+
+export function usesUnmeteredLink(html) {
+  return UNMETERED_BUTTON.test(String(html || ''));
+}
+
 /**
  * Should the boot restore rebuild this stored page, and why?
  *
@@ -132,6 +146,7 @@ export function pageNeedsRebuild(state) {
   if (isStalePage(s)) return { rebuild: true, reason: 'old closing block' };
   if (needsClosingBlock(s)) return { rebuild: true, reason: 'no closing block' };
   if (repeatsFallbackNote(s)) return { rebuild: true, reason: 'repeated fallback note' };
+  if (usesUnmeteredLink(s)) return { rebuild: true, reason: 'unmetered provider link' };
   return { rebuild: false, reason: 'current' };
 }
 
@@ -140,11 +155,25 @@ const type = (offer) => {
   return LABEL[t] ? t : 'job';
 };
 
-/** Where the button goes: the offer's own URL if it has one, else the tracker. */
+/**
+ * Where the button goes.
+ *
+ * Any offer with an id goes through this server first, at /go/<id>: the click is
+ * recorded against the page that earned it, then the reader is 302'd to the
+ * offer's own URL **unchanged** — same URL, same affiliate parameters — so
+ * attribution is identical to linking the provider directly, and the only
+ * difference is that the click stops being invisible.
+ *
+ * On 2026-10-31, 378 of 434 live pages linked the provider directly and this
+ * server counted none of them. That is what this ordering fixes: the tracked path
+ * is preferred, not the fallback.
+ *
+ * An offer with no id cannot be counted, so it keeps the raw URL.
+ */
 export function ctaTarget(offer) {
+  if (offer && offer.id) return '/go/' + offer.id;
   const direct = offer && (offer.destination_url || offer.referral_url || offer.application_url);
   if (direct && /^https?:\/\//i.test(String(direct))) return String(direct);
-  if (offer && offer.id) return '/ai-jobs/apply/' + offer.id;
   return '';
 }
 

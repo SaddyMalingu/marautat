@@ -37,6 +37,7 @@
     "test:tenant-voice": "node scripts/test_tenant_voice_route.mjs",
     "test:tenant-branding": "node scripts/test_tenant_branding_analytics.mjs",
     "test:apply-fallback": "node scripts/test_apply_unavailable.mjs",
+    "test:go-redirect": "node scripts/test_go_redirect.mjs",
     "test:session-persistence": "node scripts/test_tenant_session_persistence.mjs",
     "test:hub-discovery": "node scripts/test_hub_discovery.mjs",
     "test:scan-pay": "node scripts/test_scan_pay.mjs",

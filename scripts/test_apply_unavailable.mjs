@@ -20,7 +20,9 @@ const ok = (name, cond, extra = '') => {
 };
 
 const src = fs.readFileSync('routes/aiJobs.js', 'utf8');
-const route = src.slice(src.indexOf("router.get('/apply/:id'"), src.indexOf('// POST /api/events'));
+// The handler is shared by /ai-jobs/apply/:id and /go/:id, so this slice covers the
+// one implementation both paths run.
+const route = src.slice(src.indexOf('export async function handleOfferClick'), src.indexOf('// POST /api/events'));
 
 // ---- 1. The dead end is gone ---------------------------------------------
 ok('an unconfigured offer no longer answers with JSON',
@@ -35,7 +37,9 @@ ok('a missing offer still returns JSON, for the API clients that depend on it',
 // ---- 2. The click is counted, and told apart from a working one ----------
 ok('a click with no destination is recorded', /trackClick\(sourcePath, dest \? 'apply_bad_destination' : 'apply_no_destination', req\)/.test(route));
 ok('a click on an offer that no longer exists is recorded too',
-  /trackClick\(pagePathFromReferrer\(req, '\/ai-jobs\/apply'\), 'apply_missing', req\)/.test(route));
+  /trackClick\(missingFrom, 'apply_missing', req\)/.test(route));
+ok('the recorded path falls back per route, not to one hard-coded path',
+  /pagePathFromReferrer\(req, fallbackPath\)/.test(route));
 ok('the offer funnel records it as an unavailable apply',
   /eventType: 'apply_click'[\s\S]{0,220}unavailable: true/.test(route));
 ok('the click is recorded before the reader is redirected',

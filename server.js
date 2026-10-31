@@ -74,7 +74,7 @@ import {
   stkReadinessMessage,
 } from "./utils/scanPay.js";
 
-import aiJobsRouter from "./routes/aiJobs.js";
+import aiJobsRouter, { handleOfferClick } from "./routes/aiJobs.js";
 // Tenant portal session tokens carry their own signature so a session can
 // outlive the process that issued it (every deploy restarts the server).
 import { TENANT_SESSION_COOKIE, signTenantSession, verifyTenantSession, tenantSessionSecret } from "./utils/tenantSession.js";
@@ -538,6 +538,14 @@ app.get('/blog/:slug', async (req, res) => {
 
 // AI Jobs & Mercor Referral Engine routes
 app.use('/ai-jobs', aiJobsRouter);
+
+// GET /go/:id — the link every blog CTA carries.
+//
+// Same handler as /ai-jobs/apply/:id, mounted at the root because the CTA is read
+// on a blog page and should look like one step, not like a funnel. It records the
+// click against the page that earned it, then 302s to the offer's own URL
+// unchanged, so affiliate attribution is exactly what it was before.
+app.get('/go/:id', (req, res) => handleOfferClick(req, res, { fallbackPath: '/go', humanFacing: true }));
 
 // Sitemap
 app.use('/', sitemapRouter);
