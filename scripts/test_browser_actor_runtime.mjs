@@ -45,6 +45,17 @@ import {
 import { normalizeTuringItem, normalizeTuringCollection, pickReferralUrl, toOfferDraft } from '../utils/browserActor/tasks/turing.js';
 import { referralForRole, isReferralUrlForHost } from '../utils/browserActor/referrals.js';
 import { offerSlugFor, planOfferImport, attachReferrals } from '../utils/browserActor/offersImport.js';
+import {
+  REFERRAL_PACE_MS,
+  TURING_CLOSE_MODAL_EXPR,
+  TURING_MODAL_CANDIDATES_EXPR,
+  TURING_REFERRAL_HOST,
+  normalizeReferralCapture,
+  planReferralBackfill,
+  referralCaptureHeadline,
+  turingCardProbeExpr,
+  turingOpenReferralExpr
+} from '../utils/browserActor/tasks/turingReferrals.js';
 import { sanitizeOfferPatch } from '../utils/offerPatch.js';
 import { summarizeCoverage, coverageHeadline } from '../utils/coverage.js';
 import { cliArgsFor, isBusinessFailure } from '../utils/browserActor/moreloginClient.js';
@@ -834,6 +845,100 @@ console.log('\n-- coverage --');
   eq('an empty tenant reports zero', summarizeCoverage([]).total, 0);
   ok('the headline names the marketplace', coverageHeadline(summary).includes('Turing'));
   eq('an empty tenant gets a useful headline', coverageHeadline({ total: 0 }), 'No marketplace roles captured yet.');
+}
+
+// ---------------------------------------------------------------------------
+// Per-role referral capture (Turing mints one link per JOB, not per account)
+// ---------------------------------------------------------------------------
+{
+  const probe = turingCardProbeExpr(3);
+  ok('the card probe is a page expression, not a driver call', typeof probe === 'string' && probe.includes('location.href'));
+  ok('the card probe scopes to the listing container', probe.includes('div.grid.gap-6.grid-cols-1'));
+  ok('the card probe clicks nothing', !probe.includes('.click()'));
+
+  const open = turingOpenReferralExpr(0);
+  ok('opening a role climbs the documented routes', open.includes('referral') && open.includes('details') && open.includes('amount'));
+  ok('the modal reader prefers the dialog over the whole document',
+    TURING_MODAL_CANDIDATES_EXPR.includes('[role="dialog"]') && TURING_MODAL_CANDIDATES_EXPR.includes('inDialog'));
+  ok('closing is attempted before the next card', TURING_CLOSE_MODAL_EXPR.includes('Escape'));
+
+  // The id must match what the importer wrote, or the link lands on nothing.
+  const capture = normalizeReferralCapture({
+    index: 0,
+    title: 'Project Lead - AI Training',
+    candidates: [
+      'https://work.turing.com/dashboard/job_referral',
+      'https://work.turing.com/jobs?ref=6f0c',
+      'https://evil.example.com/?ref=6f0c'
+    ]
+  });
+  eq('the captured id is the importer id', capture.externalId, 'turing:project-lead-ai-training');
+  eq('the per-job link wins over the dashboard', capture.referralUrl, 'https://work.turing.com/jobs?ref=6f0c');
+  eq('a pick is reported as picked', capture.reason, 'picked');
+
+  const dashboardOnly = normalizeReferralCapture({
+    title: 'Data Annotator',
+    candidates: ['https://work.turing.com/dashboard/job_referral']
+  });
+  eq('a dashboard link is never accepted as a referral', dashboardOnly.referralUrl, null);
+  eq('and the reason says so', dashboardOnly.reason, 'no_confident_pick');
+
+  const otherHost = normalizeReferralCapture({
+    title: 'Data Annotator',
+    candidates: ['https://micro1.ai/r/ABC123']
+  });
+  eq('another marketplace\'s link is refused', otherHost.referralUrl, null);
+
+  const empty = normalizeReferralCapture({ title: 'Data Annotator', candidates: [] });
+  eq('an unreadable modal is admitted, not guessed', empty.reason, 'no_candidates');
+
+  const offers = [
+    { id: 'o1', title: 'Project Lead - AI Training', external_id: 'turing:project-lead-ai-training', referral_url: null },
+    { id: 'o2', title: 'Business Analyst - US', external_id: 'turing:business-analyst-us', referral_url: null },
+    { id: 'o3', title: 'Medical Expert', external_id: 'turing:medical-expert', referral_url: 'https://work.turing.com/jobs?ref=KEPT' }
+  ];
+
+  const planned = planReferralBackfill({
+    offers,
+    captures: [
+      capture,
+      normalizeReferralCapture({ title: 'Business Analyst - US', candidates: ['https://work.turing.com/jobs?ref=BA99'] }),
+      normalizeReferralCapture({ title: 'Medical Expert', candidates: ['https://work.turing.com/jobs?ref=NEW'] }),
+      normalizeReferralCapture({ title: 'Role We Never Imported', candidates: ['https://work.turing.com/jobs?ref=GHOST'] }),
+      normalizeReferralCapture({ title: 'Business Analyst - US', candidates: ['https://work.turing.com/jobs?ref=DUP'] })
+    ]
+  });
+
+  eq('only unlinked offers are updated', planned.updates.length, 2);
+  eq('the link goes to the offer that created it', planned.updates[0].id, 'o1');
+  ok('an offer that already has a link is a conflict, not an overwrite',
+    planned.conflicts.some((row) => row.id === 'o3' && row.existing === 'https://work.turing.com/jobs?ref=KEPT'));
+  ok('a role with no offer writes nothing', planned.skipped.some((row) => row.reason === 'offer_not_found'));
+  ok('one link cannot be attached twice',
+    planned.conflicts.some((row) => ['already_has_a_different_link', 'duplicate_link', 'offer_already_assigned'].includes(row.reason)));
+  eq('an offer captured twice is queued once', planned.updates.filter((row) => row.id === 'o2').length, 1);
+
+  const same = planReferralBackfill({ offers, captures: [
+    normalizeReferralCapture({ title: 'Medical Expert', candidates: ['https://work.turing.com/jobs?ref=KEPT'] })
+  ] });
+  eq('re-capturing the same link is not a write', same.updates.length, 0);
+  ok('and it is reported as already linked', same.skipped.some((row) => row.reason === 'already_linked'));
+
+  const two = planReferralBackfill({
+    offers: [
+      { id: 'a', title: 'One', external_id: 'turing:one', referral_url: null },
+      { id: 'b', title: 'Two', external_id: 'turing:two', referral_url: null }
+    ],
+    captures: [
+      normalizeReferralCapture({ title: 'One', candidates: ['https://work.turing.com/jobs?ref=SAME'] }),
+      normalizeReferralCapture({ title: 'Two', candidates: ['https://work.turing.com/jobs?ref=SAME'] })
+    ]
+  });
+  eq('the same link on two roles is a bug, not data', two.updates.length, 1);
+  ok('and the second is surfaced as a duplicate', two.conflicts.some((row) => row.reason === 'duplicate_link'));
+
+  ok('the headline is readable', referralCaptureHeadline(planned).startsWith('2 links ready'));
+  eq('an empty plan still explains itself', referralCaptureHeadline({}), '0 links ready');
 }
 
 // ---------------------------------------------------------------------------

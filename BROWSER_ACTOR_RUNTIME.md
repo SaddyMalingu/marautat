@@ -397,6 +397,45 @@ unique per role. `attachReferrals()` fills in only what the tenant already holds
 *that specific role*, and reports the rest in `needsReferralLink` so the tenant can
 paste them (the offer form already has the field).
 
+### Per-role referral capture
+
+A role's own link is read from the live session, one role at a time:
+
+```powershell
+node scripts/browser_actor_referrals.mjs --tenant malingu-ventures --limit 3   # plan only
+node scripts/browser_actor_referrals.mjs --tenant malingu-ventures --from tmp/referrals.json --apply
+```
+
+This is a **click** on the tenant's logged-in account (`expand card → referral
+bonus`), not a read, so it lives in its own script behind its own flag instead of
+inside the collector. Default is plan-only; `--apply` attaches.
+
+Rules, each pinned by a test:
+
+- a link is accepted only when it carries a referral token (`?ref=`, `?code=`, `/r/`,
+  `referr`, `invite`) **and** sits on the marketplace host. `/dashboard/job_referral`
+  is never accepted, even though it contains the word "referral".
+- `pickRoleReferralUrl` exists because `pickReferralUrl` — written for the
+  tenant-level Refer & Earn page — *penalises* `/jobs` paths, which is exactly where
+  a per-job link lives. Reusing it captured nothing, and said nothing.
+- an offer that already has a link is a **conflict**, never an overwrite. The write is
+  additionally guarded by `.is('referral_url', null)`, so a race with the tenant
+  pasting a link by hand cannot clobber it.
+- the same link may not land on two offers.
+- a modal with no confident pick writes nothing and keeps its candidates in
+  `tmp/referrals.json` — that is a human decision, not an agent's.
+
+It needs the profile map, which is **not** in `.env` yet (earlier runs passed it
+inline in the shell, so nothing was persisted):
+
+```
+BROWSER_ACTOR_PROFILES={"malingu-ventures":"<morelogin envId>"}
+```
+
+Without it the script stops with `profile_unmapped` and writes nothing — the
+identity layer refuses to guess which browser belongs to which tenant.
+
+
 ## Next steps, in revenue order
 
 1. **Tender capture for one paying tenant** — smallest demo that closes a contract; wire `POST /capture` into the ABOSS worker and surface results in the tenant portal.

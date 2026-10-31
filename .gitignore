@@ -21,3 +21,6 @@ z_ready.json
 z_rev.json
 z_risk.json
 z_run1.txt
+
+# local capture artifacts (collector progress, collected roles, referral candidates)
+tmp/
