@@ -85,6 +85,14 @@ const LEGACY_TAIL = '<div style="text-align:center"><h2>Ready to Start?</h2>'
 const SILENT_TAIL = '<div class="cta"><h2>Apply for this role</h2>'
   + "<p>Send a message and the business will reply with the details.</p></div>";
 
+// A page carrying the no-destination note twice — the state 56 of the 434 live
+// pages were in on 2026-10-31, when the fallback branch returned the full block
+// before checking for the compact variant and printed it above the article too.
+const NOTE = "This offer has no link configured yet, so send a message and the business will reply with the details.";
+const FULL_FALLBACK = '<div class="cta"><h2>Apply for this role</h2><p>' + NOTE + "</p>"
+  + '<a class="cta-btn cta-btn--alt" href="/ai-jobs">Browse other opportunities</a></div>';
+const DOUBLE_NOTE = SHELL(ARTICLE + FULL_FALLBACK + FULL_FALLBACK);
+
 // A page that fails the readability audit for a reason of its own.
 const UNREADABLE = SHELL("<h1>T</h1><article><p>"
   + '<span style="background:#fff">**bold** copy that reached the page as literal characters</span></p></article>');
@@ -98,6 +106,9 @@ const CORPUS = [
   { slug: "no-block", title: "Defense Analyst Salary In Kenya", content: BODY, opportunity_id: "job-with-url", html_content: SHELL(ARTICLE), expect: "no closing block" },
   { slug: "silent-block", title: "Defense Analyst Salary In Kenya", content: BODY, opportunity_id: "job-with-url", html_content: SHELL(ARTICLE + SILENT_TAIL), expect: "no closing block" },
   { slug: "legacy-footer", title: "Defense Analyst Salary In Kenya", content: BODY, opportunity_id: "job-with-url", html_content: SHELL(ARTICLE + LEGACY_TAIL), expect: "old closing block" },
+  // The state 56 live pages were in on 2026-10-31: a real button, but the same
+  // "nothing configured" sentence above and below the article.
+  { slug: "double-note", title: "Defense Analyst Salary In Kenya", content: BODY, opportunity_id: null, html_content: DOUBLE_NOTE, expect: "repeated fallback note" },
   { slug: "unreadable", title: "T", content: BODY, opportunity_id: "job-with-url", html_content: UNREADABLE, expect: "audit" },
   // A page with no article body at all. It has stored content, so it is rebuilt on
   // its own merit — it fails the readability audit for thin content. The predicate's
@@ -162,9 +173,10 @@ await check("boot 1: the log names the rule that fired", () => {
   assert(byslug["no-block"] === "no closing block", "no-block logged '" + byslug["no-block"] + "'");
   assert(byslug["silent-block"] === "no closing block", "silent-block logged '" + byslug["silent-block"] + "'");
   assert(byslug["legacy-footer"] === "old closing block", "legacy-footer logged '" + byslug["legacy-footer"] + "'");
+  assert(byslug["double-note"] === "repeated fallback note", "double-note logged '" + byslug["double-note"] + "'");
   assert(/markdown-bold|white-background/.test(byslug["unreadable"] || ""),
     "the unreadable page logged '" + byslug["unreadable"] + "' instead of its audit issues");
-  return "no closing block / old closing block / audit issues";
+  return "no closing block / old closing block / repeated fallback note / audit issues";
 });
 
 await check("boot 2: rebuilds nothing at all — the fixed point", () => {

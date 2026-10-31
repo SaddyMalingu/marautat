@@ -86,6 +86,18 @@ export function needsClosingBlock(html) {
   return !hasClosingBlock(s) || !hasCtaButton(s);
 }
 
+// The honest sentence a no-destination offer gets. Live 2026-10-31: 56 of 434
+// pages carried it twice, once above the article and once below, because the
+// fallback branch returned the full block before checking for the compact
+// variant. Fixed in ctaBlock(); this lets the boot restore repair the pages that
+// were written while the bug was live.
+const FALLBACK_NOTE = /This offer has no link configured yet/g;
+
+/** True when the same "nothing configured" note is printed more than once. */
+export function repeatsFallbackNote(html) {
+  return (String(html || '').match(FALLBACK_NOTE) || []).length > 1;
+}
+
 /**
  * Should the boot restore rebuild this stored page, and why?
  *
@@ -119,6 +131,7 @@ export function pageNeedsRebuild(state) {
   if (!mayRebuildFooter) return { rebuild: false, reason: 'footer rebuild disabled' };
   if (isStalePage(s)) return { rebuild: true, reason: 'old closing block' };
   if (needsClosingBlock(s)) return { rebuild: true, reason: 'no closing block' };
+  if (repeatsFallbackNote(s)) return { rebuild: true, reason: 'repeated fallback note' };
   return { rebuild: false, reason: 'current' };
 }
 
@@ -189,10 +202,18 @@ export function ctaBlock(offer, opts) {
     // No destination and no offer id. The sentence is honest, but a page with
     // nothing to press is still a dead end — 21 live pages were in exactly this
     // state on 2026-10-29. Give the reader somewhere to go that is not a lie.
+    const alt = '<a class="cta-btn cta-btn--alt" href="/ai-jobs">Browse other opportunities</a>';
+    // The compact variant has to stay compact here too. Returning the full block
+    // early put an <h2> and the same sentence above the article *and* below it —
+    // visible on live pages the first time the no-destination branch was used.
+    if (options.variant === 'top') {
+      return '<div class="cta cta-top"><p><strong>' + heading + '</strong>' +
+        (facts ? ' — ' + esc(facts) : '') + '</p>' + alt + '</div>';
+    }
     return '<div class="cta"><h2>' + heading + '</h2>' +
       '<p>' + esc('This offer has no link configured yet, so send a message and the business will reply with the details.') + '</p>' +
       (facts ? '<p><strong>' + esc(facts) + '</strong></p>' : '') +
-      '<a class="cta-btn cta-btn--alt" href="/ai-jobs">Browse other opportunities</a></div>';
+      alt + '</div>';
   }
 
   const button = '<a class="cta-btn" href="' + esc(href) + '"' +

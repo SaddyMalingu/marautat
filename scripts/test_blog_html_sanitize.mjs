@@ -334,6 +334,18 @@ await check("cta: a page that cannot convert is detected, and the rebuild conver
   return "missing block, button-less block and legacy footer detected; every rebuild is stable";
 });
 
+await check("cta: a no-destination offer does not repeat itself above the article", () => {
+  // Live 2026-10-31: the fallback branch returned the full block before the
+  // variant was checked, so a page whose offer had no link printed the same
+  // heading and sentence twice — once above the article, once below.
+  const page = buildHTML({ title: "T", slug: "s", content: CLEAN_FRAGMENT }, { offer_type: "service", title: "Studio Session" });
+  const short = "This offer has no link configured yet";
+  assert(page.split(short).length - 1 === 1, "the fallback sentence appears " + (page.split(short).length - 1) + " times; expected once (closing block only)");
+  assert(/<div class="cta cta-top">/.test(page), "the compact top CTA was replaced by the full block");
+  assert(!/<div class="cta"><h2>[^<]*<\/h2><p>This offer has no link/.test(page.slice(0, page.indexOf("<article>"))), "the full closing block was rendered above the article");
+  return "one closing block, compact top CTA";
+});
+
 await check("cta: the page tells the reader what to have ready", () => {
   const job = buildHTML({ title: "T", slug: "s", content: CLEAN_FRAGMENT }, { id: "j1", offer_type: "job", title: "ML Engineer" });
   assert(/Before you apply/.test(job), "a job page has no readiness list above the button");

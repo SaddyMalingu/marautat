@@ -138,3 +138,60 @@ page rebuild entirely and leaves every stored page as it is.
 
 None of the three should be done by quietly re-rendering the corpus. Each needs
 the kill switch respected and a before/after diff the owner can read.
+
+## Measured live, 2026-10-31 (after the deploy of `96ac046f`)
+
+Every page on `/blog` was fetched and read, not estimated:
+
+```bash
+node scripts/audit_cta_coverage.mjs        # 434 pages, 0 without a button
+```
+
+| | 2026-10-30 (308 pages) | 2026-10-31 (434 pages) |
+|---|---|---|
+| No closing block at all | 96 | **0** |
+| Block but nothing to press | 21 | **0** |
+| Button goes to the provider | 191 | 378 |
+| Button goes through this site (measurable) | 0 | **0** |
+| Offer not linked at all — generic `/ai-jobs` button | 0 | **56** |
+
+The boot log for that deploy read `[DB] Restored 425 posts` and **no** `Rebuilt`
+lines, which is the fixed point: the button-less pages had already been rebuilt by
+an earlier boot with the same predicate, so the next one correctly did nothing.
+The log and the live census agree, and that is the only combination that means
+anything.
+
+### What the measurement changed
+
+**`btn=2` was the wrong metric.** A page can carry two buttons and still send the
+reader nowhere: 56 pages have both buttons pointing at `/ai-jobs` because their
+post has no `opportunity_id`, so `ctaBlock()` has no offer to name and no
+destination to resolve. Those pages now say so honestly instead of 404ing, but
+they cannot convert — they are one `opportunity_id` away from being both a working
+destination and a measurement point (`/ai-jobs/apply/<id>`).
+
+**A bug the census exposed, fixed here.** The no-destination branch returned the
+full block *before* the `variant: 'top'` check, so a page with an unlinked offer
+printed the same `<h2>` and the same "no link configured yet" sentence above the
+article and again below it. `ctaBlock()` now honours the compact variant in that
+branch, `repeatsFallbackNote()` lets the boot restore repair the 56 pages written
+while the bug was live, and both `test:blog-html` and `test:boot-convergence`
+assert it.
+
+**Content observation, not fixed.** The sampled page renders the article title and
+a `Published … | Reading time: 3 min` line **twice** — the template's own, then a
+copy that lives inside `blog_posts.content`. That pollution predates this work and
+no page rebuild can fix it: it would mean rewriting `content`, the one column every
+repair path deliberately leaves alone. It needs a separate, reviewed migration.
+
+## Next slice, in the order the numbers argue for
+
+1. **56 pages with no offer link.** Match those posts to their `opportunity_id`.
+   Each match turns a dead button into `/ai-jobs/apply/<id>` — a real destination
+   *and* a click this server can count. Cheapest revenue-adjacent work available.
+2. **378 provider-direct buttons.** The reader converts; the server learns nothing.
+   Routing them through `/ai-jobs/apply/<id>` (which already records the click and
+   redirects) makes the blog a measurable channel instead of a guess.
+3. **The duplicated title inside `content`.** Visible on live pages, needs a
+   deliberate content migration, not a page rebuild.
+
