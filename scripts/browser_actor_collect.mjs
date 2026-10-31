@@ -17,7 +17,7 @@ import { createMoreloginClient, redact } from '../utils/browserActor/moreloginCl
 import { createBrowserRuntime } from '../utils/browserActor/runtime.js';
 import { capturePage, resolveDebugTarget, CdpSession } from '../utils/browserActor/cdp.js';
 import { parseProfileMap, resolveIdentity, describeIdentity } from '../utils/browserActor/identity.js';
-import { TURING_PLATFORM, TURING_COLLECT_EXPR, normalizeTuringCollection, TURING_REFERRAL_URL, TURING_REFERRAL_EXPR, pickReferralUrl } from '../utils/browserActor/tasks/turing.js';
+import { TURING_PLATFORM, TURING_COLLECT_EXPR, normalizeTuringCollection, TURING_REFERRAL_URL, TURING_REFERRAL_EXPR, pickReferralUrl, TURING_LIST_COUNT_EXPR, TURING_LOAD_MORE_EXPR } from '../utils/browserActor/tasks/turing.js';
 
 const argv = process.argv.slice(2);
 function flag(name, fallback = null) {
@@ -48,6 +48,26 @@ async function evaluateJson({ host, port, expression }) {
   } finally {
     session.close();
   }
+}
+
+async function countCards({ host, port }) {
+  const value = await evaluateJson({ host, port, expression: TURING_LIST_COUNT_EXPR });
+  return Number(value) || 0;
+}
+
+async function clickLoadMore({ host, port }) {
+  return evaluateJson({ host, port, expression: TURING_LOAD_MORE_EXPR });
+}
+
+async function waitForCardsAbove({ host, port, above, maxMs = 15000 }) {
+  const startedAt = Date.now();
+  let last = above;
+  while (Date.now() - startedAt < maxMs) {
+    last = await countCards({ host, port });
+    if (last > above) return last;
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  return last;
 }
 
 async function waitForAbsent({ host, port, selector, maxMs }) {
@@ -112,44 +132,55 @@ async function main() {
     });
     console.error(`skeletonsCleared=${cleared}`);
 
-    const raw = await evaluateJson({ host: started.host, port: started.debugPort, expression: TURING_COLLECT_EXPR });
-
-    // Paging. Each click may append more cards or replace the page; merging what we
-    // have seen after every pass covers both, and normalisation dedupes by title.
-    const pages = Math.max(0, Number(flag('load-more', 0)) || 0);
-    const seen = new Map();
-    const absorb = (payload) => {
-      for (const item of (payload && payload.items) || []) {
-        const key = String(item.titleText || '').trim().toLowerCase();
-        if (key && !seen.has(key)) seen.set(key, item);
-      }
+    // Paging: click "Load more roles" in paced steps and write progress after each
+    // one, so a long run is watchable instead of several minutes of silence.
+    const clickBudget = Number(flag('load-more', 0)) || 0;
+    const progressPath = path.resolve(String(flag('progress', 'tmp/collect_progress.json')));
+    const history = [];
+    let cards = await countCards({ host: started.host, port: started.debugPort });
+    const writeProgress = (step, note) => {
+      const state = {
+        updatedAt: new Date().toISOString(),
+        tenant,
+        source: 'turing',
+        cards,
+        clicks: step,
+        clickBudget,
+        note: note || null,
+        progressFile: progressPath,
+        history
+      };
+      fs.mkdirSync(path.dirname(progressPath), { recursive: true });
+      fs.writeFileSync(progressPath, JSON.stringify(state, null, 2));
+      console.error(`progress cards=${cards} clicks=${step}/${clickBudget} ${note || ''}`);
     };
-    absorb(raw);
+    writeProgress(0, 'listing loaded');
 
-    let clicks = 0;
-    for (let page = 1; page <= pages; page += 1) {
-      const before = await evaluateJson({ host: started.host, port: started.debugPort, expression: COUNT_CARDS_EXPR }).catch(() => null);
-      const click = await evaluateJson({ host: started.host, port: started.debugPort, expression: CLICK_LOAD_MORE_EXPR }).catch(() => ({ clicked: false }));
-      if (!click || !click.clicked) {
-        console.error(`load-more: stopping at page ${page} (${(click && click.reason) || 'no button'})`);
+    for (let step = 1; step <= clickBudget; step += 1) {
+      const clicked = await clickLoadMore({ host: started.host, port: started.debugPort });
+      if (!clicked || clicked.clicked !== true) {
+        writeProgress(step - 1, `stopped: ${(clicked && clicked.reason) || 'not clicked'}`);
         break;
       }
-      clicks += 1;
-      // The list rebuilds behind skeletons, so wait for them to clear before reading.
-      const cleared = await waitForAbsent({
-        host: started.host,
-        port: started.debugPort,
-        selector: TURING_PLATFORM.wait.selector,
-        maxMs: TURING_PLATFORM.wait.maxMs
-      });
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      const next = await evaluateJson({ host: started.host, port: started.debugPort, expression: TURING_COLLECT_EXPR });
-      const after = await evaluateJson({ host: started.host, port: started.debugPort, expression: COUNT_CARDS_EXPR }).catch(() => null);
-      absorb(next);
-      console.error(`load-more: page ${page} cards ${before}->${after} cleared=${cleared} total=${seen.size}`);
+      const next = await waitForCardsAbove({ host: started.host, port: started.debugPort, above: cards });
+      history.push({ click: step, at: new Date().toISOString(), before: cards, after: next });
+      if (next <= cards) {
+        writeProgress(step, 'stopped: no growth');
+        break;
+      }
+      cards = next;
+      writeProgress(step, 'grew');
+      await new Promise((resolve) => setTimeout(resolve, 600)); // paced, not a hammer
     }
 
-    const result = normalizeTuringCollection({ ...raw, items: Array.from(seen.values()) });
+    const raw = await evaluateJson({ host: started.host, port: started.debugPort, expression: TURING_COLLECT_EXPR });
+
+    // The paging loop above grew the DOM monotonically (12 -> 24 -> 84 ...), so one
+    // read at the end covers every page. If a future redesign ever *replaces* the
+    // list instead of appending, the growth guard stops the loop rather than
+    // silently collecting only the last page — that is the failure this comment is
+    // here to prevent, and it is why the count is checked after every click.
+    const result = normalizeTuringCollection(raw);
 
     if (outPath) {
       const abs = path.resolve(String(outPath));

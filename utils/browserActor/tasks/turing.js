@@ -48,6 +48,30 @@ export const TURING_PLATFORM = Object.freeze({
 });
 
 /**
+ * Paging (2026-10-31) — the listing renders 12 cards and a "Load more roles"
+ * button; the tenant authorised clicking it to reach all ~228.
+ *
+ * Every click is a real interaction on a logged-in account, so it is paced and
+ * bounded: the collector stops when the button disappears OR the card count stops
+ * growing, and it writes progress after each step instead of going quiet for
+ * several minutes.
+ */
+export const TURING_LIST_COUNT_EXPR =
+  `document.querySelectorAll(${JSON.stringify(`${TURING_PLATFORM.listSelector} > div`)}).length`;
+
+/** Click "Load more roles". Returns {clicked, reason} so the loop can stop cleanly. */
+export const TURING_LOAD_MORE_EXPR = `(() => {
+  const clean = (v) => String(v == null ? '' : v).replace(/\\s+/g, ' ').trim();
+  const btn = Array.from(document.querySelectorAll('button, a'))
+    .find((el) => /load more|show more|see more/i.test(clean(el.innerText)));
+  if (!btn) return JSON.stringify({ clicked: false, reason: 'no_button' });
+  if (btn.disabled) return JSON.stringify({ clicked: false, reason: 'disabled' });
+  btn.scrollIntoView({ block: 'center' });
+  btn.click();
+  return JSON.stringify({ clicked: true });
+})()`;
+
+/**
  * Runs inside the page. Reads only what is on screen: no clicking, no scrolling,
  * no "Load more" — a first page of cards is enough to prove the path, and paging is
  * a deliberate decision, not an accident.
