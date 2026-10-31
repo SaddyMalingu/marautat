@@ -462,6 +462,38 @@ Two bugs the run exposed and this fix closes:
   **detail page**, and would have kept clicking stale card indexes. It now treats a
   `jobId` as leaving the listing and navigates back between roles.
 
+#### Where the link actually is (verified 2026-10-31, then working)
+
+The job page **does** offer a referral — the first attempt missed it twice over:
+
+1. The words "Referral Bonus · $750" are a **`<span>` label**. The clickable is
+   `<button>Share & earn $750</button>`, which never says "referral".
+2. The click opens a dialog titled *"Share this with your network"* **immediately**,
+   but the readonly input holding the link is filled a beat later. Waiting only for
+   `role="dialog"` read an empty box and reported a marketplace with no links.
+
+The link, confirmed two independent ways (the input's value, and
+`navigator.clipboard.writeText` hooked and then triggered by *Copy link*):
+
+```
+https://work.turing.com/r/<code>      e.g. r/xako-8LrQK
+```
+
+Two properties that shape every write:
+
+- **Each role gets its own code** — `Project Lead → r/xako-8LrQK`,
+  `Business Analyst → r/bpy0B4Jmoc` — which is the tenant's whole premise.
+- **Turing re-mints the code every time the dialog opens.** Opening the same role
+  twice yields a different code. A captured code is therefore never *more*
+  authoritative than one already stored, which is exactly why an offer that already
+  has a link is a conflict and never an overwrite. That guard fired on real data on
+  the first write: the hand-pasted `r/9PkwepYCFE` was kept.
+
+Side effect worth knowing: every capture adds an entry to the tenant's referral
+dashboard, whose header reads *Referrals 0 · Job links 4*. Capturing N roles grows
+that list by up to N.
+
+
 
 
 ## Next steps, in revenue order
