@@ -259,7 +259,7 @@ const PROSE = `
 <p>Four things do most of the work. The first is how many hours the room is booked for, which sounds obvious until you see that one quote covers a four hour block and the other covers eight. The second is who does the editing, because a session that ends at the desk is cheaper than one that ends at a finished master, and the difference is often two full working days.</p>
 <p>The third is the gear you actually use, not the gear on the website. A vintage console in the photographs costs money whether or not your session touches it, and you should ask directly what the rate includes. The fourth is the date. A Friday evening in December is not priced like a Tuesday morning in March, and a studio that quotes a flat rate has already decided who absorbs that difference.</p>
 <h2>A worked comparison</h2>
-<p>Take two quotes at KES 1,500 per hour and KES 2,200 per hour. On an eight hour session the second is 5,600 shillings more, which is the point where most buyers stop reading. Now add the mixing day the cheaper quote excludes at 4,000 shillings, the two revision rounds the other studio includes, and the transfer fee nobody mentioned until delivery. The gap narrows to under a thousand shillings and the cheaper quote is the one that asks more of your time.</p>
+<p>Take two quotes at KES 1,500 per hour and KES 2,200 per hour, both listed here as examples of the shape a quote takes rather than as our rate. On an eight hour session the second is 5,600 shillings more, which is the point where most buyers stop reading. Now add the mixing day the cheaper quote excludes at 4,000 shillings, the two revision rounds the other studio includes, and the transfer fee nobody mentioned until delivery. The gap narrows to under a thousand shillings and the cheaper quote is the one that asks more of your time.</p>
 <ul>
 <li>Ask every studio for the same three lines: hours in the room, hours after the room, and revisions included.</li>
 <li>Get the delivery date in writing, including who signs off the final master.</li>
@@ -270,7 +270,7 @@ const PROSE = `
 <p>There is room to negotiate, and it is almost never on the hourly rate. Ask for a second revision round instead of a discount, because revisions cost the studio time it has already scheduled and the rate is the number it uses to compare you with every other client. If the budget genuinely will not stretch, cut a song rather than an hour, since half a session produces a worse file than one finished track and you will pay twice for the same room.</p>
 <p>Trade scope for time when you can. A session booked for a Tuesday morning often costs less than the same session on a Saturday, and a delivery two weeks out costs less than one demanded in three days. Those are real savings that do not touch the quality of the work, and a studio will usually offer them if you ask before the booking is confirmed rather than after.</p>
 <h2>What this is not</h2>
-<p>A comparison sheet does not tell you which room sounds better, and it will not protect you from a studio that simply does not deliver. It also does not replace listening to previous work, which takes fifteen minutes and tells you more than any document. If a studio refuses to put scope in writing, the price is not the problem and a discount will not fix it.</p>
+<p>A comparison sheet does not tell you which room sounds better, and it will not protect you from a studio that simply does not deliver. It also does not replace listening to previous work, which takes fifteen minutes and tells you more than any document. If a studio refuses to put scope in writing, the price is not the problem and a discount will not fix it. And if you need a figure in the next ten minutes and will not read three lines of scope, this approach is not the right fit for you — call the studio and book the room instead.</p>
 <h2>The first conversation</h2>
 <p>Bring the three numbers you already know: how many songs, how many hours you can afford in the room, and the date you need the finished file. Ask for the same three lines from every studio you contact and keep the answers side by side. When you have them, request a quote from us and we will price the same scope line by line, so the comparison you make is the comparison we both agree on.</p>
 `;
@@ -409,6 +409,38 @@ await check('the readiness card lists what the reader needs before the click', a
   const shop = readinessCard({ offer_type: 'product' });
   assert(/Before you order/.test(shop), 'product card heading wrong: ' + shop.slice(0, 60));
   return `${(card.match(/<li>/g) || []).length} items on the job card`;
+});
+
+await check('a page that names where its figures came from is not accused of inventing them', async () => {
+  const withSource = PROSE.replace('both listed here as examples of the shape a quote takes rather than as our rate',
+    'according to the two quotes the studio sent last week');
+  const a = analyzeArticle(withSource);
+  assert(!a.issues.some((i) => i.code === 'unsourced-figures'),
+    'a page that cites its source was still flagged: ' + a.issues.map((i) => i.code).join(','));
+  return 'source named, trust rule silent';
+});
+
+await check('fabricated figures are named, not just counted', async () => {
+  // The shape a live page had on 2026-10-31: confident rates, a peer comparison
+  // table, and nothing anywhere saying where any of the numbers came from.
+  const invented = PROSE
+    .replace('both listed here as examples of the shape a quote takes rather than as our rate', '')
+    + '<table><tr><th>Studio</th><th>Rate</th></tr><tr><td>Rival A</td><td>KES 3,400 per hour</td></tr></table>';
+  const a = analyzeArticle(invented);
+  const hit = a.issues.find((i) => i.code === 'unsourced-figures');
+  assert(hit, 'unsourced money figures were not named: ' + a.issues.map((i) => i.code).join(','));
+  assert(/where any of them came from/.test(hit.detail), 'the issue does not say what is missing: ' + hit.detail);
+  return hit.detail;
+});
+
+await check('the page says who it is not for', async () => {
+  const a = analyzeArticle(PROSE);
+  assert(!a.issues.some((i) => i.code === 'no-qualifier'), 'a page with a disqualifier was still flagged');
+  const brochure = PROSE.replace(/And if you need a figure in the next ten minutes[^<]*/, '');
+  const b = analyzeArticle(brochure);
+  assert(b.issues.some((i) => i.code === 'no-qualifier'),
+    'a page that never disqualifies anyone passed silently: ' + b.issues.map((i) => i.code).join(','));
+  return 'named when absent, silent when present';
 });
 
 const failed = results.filter((r) => r.status === 'FAIL');

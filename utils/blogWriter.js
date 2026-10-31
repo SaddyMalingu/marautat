@@ -429,6 +429,12 @@ export function buildArticlePrompt(input) {
   lines.push('THE CONVERSION JOB — why this page exists');
   lines.push(conversionBrief(offer, facts));
   lines.push('- The page is not finished when the reader understands. It is finished when they act.');
+  // Two rules the quality gate measures and the repair pass names. Saying them here
+  // means the first draft complies instead of being rewritten for it: a figure the
+  // page cannot source is a liability, and a page that never disqualifies anyone
+  // sends the wrong reader to the form.
+  lines.push('- Every price, rate or percentage must say where it came from ("the listing states", "according to the posting", "as of this month") — and if you do not have the source, say the figure is not published instead of inventing one. Never print a competitor\'s or peer\'s rate that the business did not observe.');
+  lines.push('- Say plainly who this is NOT for, in one sentence, near the end: the reader who should stop here. It costs you nothing and saves the business a bad application.');
   const weak = weakTitleReason(post.title);
   if (weak) {
     lines.push('- Title warning: the assigned title uses a pattern that measurably loses readers (' + weak + '). ' +

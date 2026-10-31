@@ -61,6 +61,17 @@ const BANNED = [
 
 const CTA = /\b(call|contact|whatsapp|book|order|enquir|inquir|request a quote|apply|sign up|get in touch|talk to us|start (?:today|now)|send us|visit us|reserve|shop now|learn more)\b/i;
 
+// Money and percentages: the figures that carry the most weight with a reader, and
+// the ones worth lying about. Kept tight on purpose — "20 minutes" is a detail, not
+// a claim — so the unsourced-figures rule only fires on prices, rates and shares.
+const MONEY = /(?:kes|ksh|usd|eur|gbp|ngn|zar)\s?\d[\d,.]*|\$\s?\d[\d,.]*|£\s?\d[\d,.]*|€\s?\d[\d,.]*|\d+(?:\.\d+)?\s?(?:%|per hour|per month|per year|\/hour|\/hr)/gi;
+
+// "Where did that number come from?" — or an honest admission that nowhere did.
+const ATTRIBUTED = /\b(?:according to|listed\b|advertised\b|published (?:by|at|on|in)|as of|stated in|quoted (?:at|by|in)|our (?:listing|records|notes)|per the (?:posting|listing)|the (?:posting|listing|offer|brief|job ad|client) (?:says|lists|states|quotes)|no published|not published|unknown)\b/i;
+
+// Who this is not for. The cheapest qualification a page can carry.
+const QUALIFIER = /\b(?:this (?:role|job|offer|course|programme|program|placement) is not|is not the right (?:fit|choice|role)|not the right (?:fit|choice) for|do not apply|don['’]t apply|if that is not you|if you (?:are|'re) not (?:sure|ready|able)|walk away|skip this (?:one|page|role))\b/i;
+
 function textOf(html) {
   return String(html || '')
     .replace(/<(script|style)\b[\s\S]*?<\/\1>/gi, ' ')
@@ -272,6 +283,28 @@ export function analyzeArticle(html, options) {
   }
   if (firstPerson < 1) {
     add('no-first-person', 'the business never speaks in first person, so the page reads like a directory listing', 4, false);
+  }
+
+  // --- trust rules ----------------------------------------------------------
+  // Added 2026-10-31. The rules above *ask* for figures (no-specifics,
+  // thin-specifics), and on a salary page that pressure produced invented ones: a
+  // live page quoted "$65/hour" and printed a comparison table of three peer roles
+  // with rates nobody published. A reader who checks one figure, finds nothing
+  // behind it, and stops trusting the rest is the expensive failure — worse than a
+  // page with fewer numbers.
+  //
+  // So a page that prints money or percentages must somewhere say where they came
+  // from, or admit they are unknown. "The listed KES 50", "according to the
+  // posting", "not published" all count.
+  const money = (text.match(MONEY) || []).length;
+  if (money >= 2 && !ATTRIBUTED.test(text)) {
+    add('unsourced-figures', money + ' money/percentage figures and no sentence says where any of them came from', 10, false);
+  }
+  // The other half of qualifying a reader. A page that never says who this is not
+  // for sends the wrong people to the form and gives the right ones nothing to
+  // check themselves against.
+  if (!QUALIFIER.test(text)) {
+    add('no-qualifier', 'the page never says who this is not for, so the wrong reader applies and the right one hesitates', 6, false);
   }
   if (weakTitle) {
     add('weak-title', 'title is a promise rather than a situation: ' + weakTitle, 0, false);
