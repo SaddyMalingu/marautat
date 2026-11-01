@@ -34,6 +34,16 @@ import { maskEnvId, isValidEnvId } from './browserActor/identity.js';
 /** Where the sealing key comes from. Absent = the feature refuses to run. */
 export const ACCESS_KEY_ENV = 'TENANT_SECRET_KEY';
 
+/**
+ * The key being retired, if any.
+ *
+ * This is what makes rotation survivable. Without it, changing the sealing key makes every
+ * stored tenant key unreadable at once and turns a routine security action into a support
+ * queue. With it, the sequence is: set the old value here, set the new value in
+ * `TENANT_SECRET_KEY`, deploy, let tenants reconnect at their own pace, then remove this.
+ */
+export const ACCESS_KEY_PREVIOUS_ENV = 'TENANT_SECRET_KEY_PREVIOUS';
+
 /** Field inside site_tenants.metadata. */
 export const ACCESS_FIELD = 'browserAccess';
 
@@ -43,6 +53,15 @@ const PROVIDER = 'morelogin';
 export function secretsConfigured(env = process.env) {
   return Boolean(String(env[ACCESS_KEY_ENV] || '').trim());
 }
+
+/** Current + retiring key, trimmed, or null. */
+export function accessSecrets(env = process.env) {
+  return {
+    current: String(env[ACCESS_KEY_ENV] || '').trim() || null,
+    previous: String(env[ACCESS_KEY_PREVIOUS_ENV] || '').trim() || null
+  };
+}
+
 
 function deriveKey(secret) {
   // A passphrase or a 64-hex key both work; hashing to 32 bytes keeps the AES contract
@@ -86,6 +105,33 @@ export function fingerprintSecret(value) {
   if (!text) return null;
   return `sha256:${crypto.createHash('sha256').update(text).digest('hex').slice(0, 12)}`;
 }
+
+/**
+ * Open a seal with whatever the environment currently offers.
+ *
+ * Current key first, then the retiring one. Returns a `source` so an operator can see a
+ * seal that still needs the old key — the signal that a rotation is half-finished.
+ */
+export function openSecretFromEnv(sealed, env = process.env) {
+  const { current, previous } = accessSecrets(env);
+  if (current) {
+    const opened = openSecret(sealed, current);
+    if (opened) return { value: opened, source: 'current' };
+  }
+  if (previous) {
+    const opened = openSecret(sealed, previous);
+    if (opened) return { value: opened, source: 'previous' };
+  }
+  return { value: null, source: null };
+}
+
+/** Seal with the current key. Refuses (rather than storing plaintext) when unset. */
+export function sealSecretWithEnv(plaintext, env = process.env) {
+  const { current } = accessSecrets(env);
+  if (!current) throw new Error(`Cannot seal a credential without ${ACCESS_KEY_ENV}`);
+  return sealSecret(plaintext, current);
+}
+
 
 /** The stored record, normalised — or null when the tenant has connected nothing. */
 export function readAccess(metadata) {

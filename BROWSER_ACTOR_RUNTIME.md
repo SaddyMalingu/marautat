@@ -780,8 +780,38 @@ The cloud attach path (`cdpUrl` → websocket) in `utils/tenantBrowserProvider.j
 against the documented contract but has not been exercised end-to-end: this host's plan is
 out of daily starts (OPEN_FLAGS #16) and malingu-ventures runs a hosted **local** profile.
 The first BYO tenant run is the test — everything pure is covered by
-`npm run test:browser-access` (91 assertions), including the sealing, the masking, the
-refusals and the resolution order.
+`npm run test:browser-access` (100 assertions), including the sealing, the masking, the
+refusals, the resolution order and key rotation.
+
+### The sealing key, operationally
+
+`TENANT_SECRET_KEY` is the only secret this feature needs, and it has one rule that is easy
+to get wrong: **the portal seals, the runner opens, so both must hold the same value.** A
+mismatch is silent until a run starts and then reports `reconnect_required`, which looks
+like the tenant's fault.
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"   # generate
+npm run secrets:check                                                     # verify this host
+```
+
+`secrets:check` prints the `sha256:` fingerprint of the configured key(s) and, per tenant,
+whether their stored key opens — with `current`, with the **retiring** key, or not at all.
+Compare the fingerprint in the Render log with the one on the operator machine; equal
+fingerprints mean equal secrets, and neither side has to reveal it. Exit code is 1 if any
+tenant cannot be opened, so it can gate a deploy.
+
+Rotation is a three-step move, supported by `TENANT_SECRET_KEY_PREVIOUS`:
+
+1. `TENANT_SECRET_KEY_PREVIOUS=<old>` and `TENANT_SECRET_KEY=<new>`, on the portal **and**
+   every runner host.
+2. Deploy. Old seals keep opening (the runner logs that the tenant is on the retiring key);
+   new connects seal with the new key.
+3. Once `secrets:check` reports zero on the retiring key, remove
+   `TENANT_SECRET_KEY_PREVIOUS`.
+
+Without step 3 the old key stays valid forever, which defeats the point of rotating.
+
 
 ### Runner support
 

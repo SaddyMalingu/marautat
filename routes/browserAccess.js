@@ -25,13 +25,14 @@
 import { Router } from 'express';
 import {
   ACCESS_KEY_ENV,
+  accessSecrets,
   clearAccess,
   fingerprintSecret,
-  openSecret,
+  openSecretFromEnv,
   publicAccessStatus,
   readAccess,
   resolveAccessIdentity,
-  sealSecret,
+  sealSecretWithEnv,
   secretsConfigured,
   writeAccess
 } from '../utils/tenantAccess.js';
@@ -159,7 +160,7 @@ export function createBrowserAccessRouter({
         envId: chosen.envId,
         runtime: runtimeType,
         label: req.body?.label ? String(req.body.label).slice(0, 120) : (chosen.name || null),
-        keySealed: sealSecret(apiKey, env[ACCESS_KEY_ENV]),
+        keySealed: sealSecretWithEnv(apiKey, env),
         keyFingerprint: fingerprintSecret(apiKey),
         connectedAt: iso(),
         // A new key invalidates any earlier verdict: it may point at a different account.
@@ -197,7 +198,7 @@ export function createBrowserAccessRouter({
         });
       }
 
-      const apiKey = access.keySealed && canStore() ? openSecret(access.keySealed, env[ACCESS_KEY_ENV]) : null;
+      const apiKey = access.keySealed && canStore() ? openSecretFromEnv(access.keySealed, env).value : null;
       if (!apiKey) {
         // A seal that will not open is a configuration change, not a bad tenant: the
         // credential is unusable and only reconnecting fixes it.

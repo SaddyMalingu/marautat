@@ -20,13 +20,17 @@ import http from 'node:http';
 import express from 'express';
 import {
   ACCESS_KEY_ENV,
+  ACCESS_KEY_PREVIOUS_ENV,
+  accessSecrets,
   clearAccess,
   fingerprintSecret,
   openSecret,
+  openSecretFromEnv,
   publicAccessStatus,
   readAccess,
   resolveAccessIdentity,
   sealSecret,
+  sealSecretWithEnv,
   secretsConfigured,
   writeAccess
 } from '../utils/tenantAccess.js';
@@ -445,8 +449,38 @@ let noSecret = null;
 try { await resolveRunnerIdentity({ supabase: tenantDb(connectedMetadata), tenantSlug: 'acme', env: {} }); } catch (error) { noSecret = error; }
 eq('without the sealing key the run refuses rather than guessing', noSecret?.code, 'not_configured');
 
+// ---------------------------------------------------------------------------
+// Rotating the sealing key without breaking every tenant
+// ---------------------------------------------------------------------------
+
+const OLD = 'the-old-sealing-key';
+const NEW = 'the-new-sealing-key';
+const sealedWithOld = sealSecret(KEY, OLD);
+
+eq('the new key alone cannot open an old seal', openSecret(sealedWithOld, NEW), null);
+// This is the whole point of TENANT_SECRET_KEY_PREVIOUS: a rotation can be rolled out
+// without making every stored key unreadable in the same minute.
+const rotating = openSecretFromEnv(sealedWithOld, { [ACCESS_KEY_ENV]: NEW, [ACCESS_KEY_PREVIOUS_ENV]: OLD });
+eq('but with the retiring key configured it opens', rotating.value, KEY);
+eq('and the source says it is still on the old key', rotating.source, 'previous');
+
+const finished = openSecretFromEnv(sealSecretWithEnv(KEY, { [ACCESS_KEY_ENV]: NEW }), { [ACCESS_KEY_ENV]: NEW });
+eq('a fresh seal opens with the current key', finished.value, KEY);
+eq('and is reported as current', finished.source, 'current');
+
+const unknown = openSecretFromEnv(sealedWithOld, { [ACCESS_KEY_ENV]: NEW });
+eq('without the retiring key an old seal is unreadable', unknown.value, null);
+eq('and has no source', unknown.source, null);
+
+eq('accessSecrets normalises the pair', accessSecrets({ [ACCESS_KEY_ENV]: ' a ', [ACCESS_KEY_PREVIOUS_ENV]: ' ' }), { current: 'a', previous: null });
+
+let noEnv = false;
+try { sealSecretWithEnv(KEY, {}); } catch { noEnv = true; }
+ok('sealing with no key configured still refuses', noEnv);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
+
 
 
 

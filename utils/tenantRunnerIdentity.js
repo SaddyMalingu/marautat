@@ -22,7 +22,7 @@
  */
 import { BrowserActorError } from './browserActor/errors.js';
 import { parseProfileMap } from './browserActor/identity.js';
-import { openSecret, readAccess, secretsConfigured, ACCESS_KEY_ENV } from './tenantAccess.js';
+import { openSecretFromEnv, readAccess, secretsConfigured, ACCESS_KEY_ENV, ACCESS_KEY_PREVIOUS_ENV } from './tenantAccess.js';
 
 export const RUNNER_IDENTITY_SOURCES = Object.freeze(['tenant', 'hosted', 'default']);
 
@@ -57,7 +57,13 @@ export async function resolveRunnerIdentity({ supabase, tenantSlug, env = proces
         details: { tenant: slug, env: ACCESS_KEY_ENV }
       });
     }
-    const apiKey = openSecret(access.keySealed, env[ACCESS_KEY_ENV]);
+    const opened = openSecretFromEnv(access.keySealed, env);
+    if (opened.source === 'previous') {
+      // Half-finished rotation: this runs, but the tenant should reconnect so the seal
+      // moves to the current key and the retiring one can actually be removed.
+      console.error(`[runner-identity] tenant=${slug} still sealed with ${ACCESS_KEY_PREVIOUS_ENV} — ask them to reconnect`);
+    }
+    const apiKey = opened.value;
     if (!apiKey) {
       throw new BrowserActorError('profile_unmapped', `The stored MoreLogin key for "${slug}" can no longer be read`, {
         details: { tenant: slug, reason: 'reconnect_required' }
