@@ -785,9 +785,18 @@ refusals and the resolution order.
 
 ### Runner support
 
-`scripts/browser_actor_micro1.mjs` now calls `resolveRunnerIdentity`, so a tenant who
-connected their own profile is captured on it with their own key. The Turing runner still
-reads the env map only — deliberate, and the next thing to switch over.
+Every script that starts a browser now goes through `resolveRunnerIdentity({ supabase, tenantSlug })`:
+`browser_actor_micro1.mjs`, `browser_actor_referrals.mjs` (Turing), `browser_actor_collect.mjs`, and
+`browser_actor_inspect.mjs` (so an operator can debug a BYO tenant's profile). One resolver, one
+order — tenant → hosted → default → refuse — instead of five copies that could drift.
+
+Two deliberate exceptions:
+- `browser_actor_probe.mjs` (the host doctor) keeps the env map: it tests *this machine's*
+  MoreLogin install, not a tenant's account.
+- `browser_actor_inspect.mjs` writes its debugging artifact by hand rather than spreading the
+  identity object, because that object now carries the tenant's decrypted key and the artifact
+  is a file on disk.
+
 
 ### Source attribution (why the funnel said "Unattributed")
 

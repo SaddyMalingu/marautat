@@ -27,7 +27,9 @@ import path from 'node:path';
 import { createMoreloginClient, redact } from '../utils/browserActor/moreloginClient.js';
 import { createBrowserRuntime } from '../utils/browserActor/runtime.js';
 import { capturePage, captureScreenshot, resolveDebugTarget, CdpSession } from '../utils/browserActor/cdp.js';
-import { parseProfileMap, resolveIdentity, describeIdentity } from '../utils/browserActor/identity.js';
+import { maskEnvId } from '../utils/browserActor/identity.js';
+import { resolveRunnerIdentity } from '../utils/tenantRunnerIdentity.js';
+import { createClient } from '@supabase/supabase-js';
 
 const argv = process.argv.slice(2);
 function flag(name, fallback = null) {
@@ -201,15 +203,27 @@ async function evaluateJson({ host, port, expression }) {
   }
 }
 
-async function main() {
-  const identity = resolveIdentity({
-    tenantSlug: tenant,
-    map: parseProfileMap(process.env.BROWSER_ACTOR_PROFILES || ''),
-    defaultEnvId: process.env.BROWSER_ACTOR_DEFAULT_ENV_ID || ''
-  });
-  console.error(`tenant=${tenant} profile=${describeIdentity(identity).envIdMasked} headless=${headless}`);
+/**
+ * A Supabase client when this host has credentials, otherwise null.
+ *
+ * An operator debugging a BYO tenant needs the tenant's own profile, which lives in the
+ * database — the env map cannot know it. On a host without credentials the env map is
+ * still used, so this tool keeps working standalone.
+ */
+function maybeSupabase() {
+  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || process.env.SB_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.SB_SERVICE_ROLE_KEY;
+  if (!url || !key) return null;
+  return createClient(url, key);
+}
 
-  const runtime = createBrowserRuntime({ client: createMoreloginClient() });
+async function main() {
+  const identity = await resolveRunnerIdentity({ supabase: maybeSupabase(), tenantSlug: tenant });
+  console.error(`tenant=${tenant} profile=${maskEnvId(identity.envId)} source=${identity.source} headless=${headless}`);
+
+  const runtime = createBrowserRuntime({
+    client: createMoreloginClient(identity.apiKey ? { apiKey: identity.apiKey } : {})
+  });
   const started = await runtime.startProfile(identity.envId, { runtime: identity.runtime, headless });
   if (!started.debugPort) {
     console.error(`profile not ready (status=${started.status}); retry shortly`);
@@ -251,7 +265,20 @@ async function main() {
 
     const outPath = path.resolve(`${outBase}.json`);
     fs.mkdirSync(path.dirname(outPath), { recursive: true });
-    fs.writeFileSync(outPath, JSON.stringify({ identity: describeIdentity(identity), page, structure, cards }, null, 2));
+    // Written by hand rather than by spreading `identity`: that object now carries the
+    // tenant's decrypted API key, and this file is a debugging artifact on disk.
+    fs.writeFileSync(outPath, JSON.stringify({
+      identity: {
+        tenant,
+        envIdMasked: maskEnvId(identity.envId),
+        runtime: identity.runtime,
+        label: identity.label || null,
+        source: identity.source
+      },
+      page,
+      structure,
+      cards
+    }, null, 2));
     const pngPath = path.resolve(`${outBase}.png`);
     fs.writeFileSync(pngPath, Buffer.from(shot.data, 'base64'));
 

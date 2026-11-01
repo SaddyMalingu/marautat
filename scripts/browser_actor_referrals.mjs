@@ -30,7 +30,8 @@ import { createBrowserRuntime } from '../utils/browserActor/runtime.js';
 import { capturePage, resolveDebugTarget, CdpSession } from '../utils/browserActor/cdp.js';
 import { verifyReferralLink } from '../utils/browserActor/referralVerify.js';
 import { contentExprFor, describeEnrichment, planDescriptionUpdates } from '../utils/browserActor/enrichment.js';
-import { parseProfileMap, resolveIdentity, describeIdentity } from '../utils/browserActor/identity.js';
+import { maskEnvId } from '../utils/browserActor/identity.js';
+import { resolveRunnerIdentity } from '../utils/tenantRunnerIdentity.js';
 import { createRunStore, deriveRunStatus } from '../utils/browserActor/runs.js';
 import { TURING_PLATFORM, TURING_LIST_COUNT_EXPR, TURING_LOAD_MORE_EXPR } from '../utils/browserActor/tasks/turing.js';
 import {
@@ -389,24 +390,26 @@ async function finishRunTracking({ status, message, detail } = {}) {
  *      rebuilt, and the loop continues. A 40-minute unattended job must not be
  *      all-or-nothing.
  */
-async function runCapture({ existing = [] } = {}) {
-  const identity = resolveIdentity({
-    tenantSlug: tenant,
-    map: parseProfileMap(process.env.BROWSER_ACTOR_PROFILES || ''),
-    defaultEnvId: process.env.BROWSER_ACTOR_DEFAULT_ENV_ID || ''
+async function runCapture({ existing = [], supabase = null } = {}) {
+  // Identity first: a tenant who connected their own MoreLogin runs on their own profile
+  // and their own key; a tenant with neither is refused rather than guessed.
+  const runnerIdentity = await resolveRunnerIdentity({ supabase, tenantSlug: tenant });
+  console.error(`identity: source=${runnerIdentity.source} runtime=${runnerIdentity.runtime}`);
+  const runtime = createBrowserRuntime({
+    client: createMoreloginClient(runnerIdentity.apiKey ? { apiKey: runnerIdentity.apiKey } : {})
   });
-  const runtime = createBrowserRuntime({ client: createMoreloginClient() });
-  const started = await runtime.startProfile(identity.envId, {
-    runtime: identity.runtime,
+  const started = await runtime.startProfile(runnerIdentity.envId, {
+    runtime: runnerIdentity.runtime,
     headless: flag('headful', null) === null
   });
+
   if (!started.debugPort) {
     console.error(`profile not ready (status=${started.status})`);
     process.exit(1);
   }
   const host = started.host;
   const port = started.debugPort;
-  console.error(`tenant=${tenant} profile=${describeIdentity(identity).envIdMasked} port=${port}`);
+  console.error(`tenant=${tenant} profile=${maskEnvId(runnerIdentity.envId)} port=${port}`);
 
   const doneIndexes = new Set(
     (Array.isArray(existing) ? existing : [])
@@ -565,7 +568,7 @@ async function runCapture({ existing = [] } = {}) {
   } finally {
     await closeSession();
     if (flag('keep-open', null) === null) {
-      try { await runtime.closeProfile(identity.envId); } catch {}
+      try { await runtime.closeProfile(runnerIdentity.envId); } catch {}
     }
   }
 }
@@ -648,7 +651,7 @@ async function main() {
       console.error(`ignoring unreadable progress file: ${error?.message || error}`);
       prior = [];
     }
-    captures = await runCapture({ existing: prior });
+    captures = await runCapture({ existing: prior, supabase });
   }
 
   const plan = planReferralBackfill({ offers, captures, host: TURING_REFERRAL_HOST });

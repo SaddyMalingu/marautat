@@ -16,7 +16,9 @@ import path from 'node:path';
 import { createMoreloginClient, redact } from '../utils/browserActor/moreloginClient.js';
 import { createBrowserRuntime } from '../utils/browserActor/runtime.js';
 import { capturePage, resolveDebugTarget, CdpSession } from '../utils/browserActor/cdp.js';
-import { parseProfileMap, resolveIdentity, describeIdentity } from '../utils/browserActor/identity.js';
+import { createClient } from '@supabase/supabase-js';
+import { maskEnvId } from '../utils/browserActor/identity.js';
+import { resolveRunnerIdentity } from '../utils/tenantRunnerIdentity.js';
 import { TURING_PLATFORM, TURING_COLLECT_EXPR, normalizeTuringCollection, TURING_REFERRAL_URL, TURING_REFERRAL_EXPR, pickReferralUrl, TURING_LIST_COUNT_EXPR, TURING_LOAD_MORE_EXPR } from '../utils/browserActor/tasks/turing.js';
 
 const argv = process.argv.slice(2);
@@ -87,22 +89,37 @@ async function waitForAbsent({ host, port, selector, maxMs }) {
   }
 }
 
+/**
+ * A Supabase client when this host has credentials, otherwise null.
+ *
+ * The collector can run as a pure browser tool on a machine with no database — in which
+ * case the hosted env map is the only identity source, which `resolveRunnerIdentity`
+ * already handles. Returning null rather than throwing keeps that path working.
+ */
+function maybeSupabase() {
+  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || process.env.SB_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.SB_SERVICE_ROLE_KEY;
+  if (!url || !key) return null;
+  return createClient(url, key);
+}
+
 async function main() {
-  const identity = resolveIdentity({
-    tenantSlug: tenant,
-    map: parseProfileMap(process.env.BROWSER_ACTOR_PROFILES || ''),
-    defaultEnvId: process.env.BROWSER_ACTOR_DEFAULT_ENV_ID || ''
+  // A tenant who connected their own MoreLogin runs on their own profile and key; a
+  // tenant with neither is refused rather than guessed.
+  const runnerIdentity = await resolveRunnerIdentity({ supabase: maybeSupabase(), tenantSlug: tenant });
+  console.error(`identity: source=${runnerIdentity.source} runtime=${runnerIdentity.runtime}`);
+  const runtime = createBrowserRuntime({
+    client: createMoreloginClient(runnerIdentity.apiKey ? { apiKey: runnerIdentity.apiKey } : {})
   });
-  const runtime = createBrowserRuntime({ client: createMoreloginClient() });
-  const started = await runtime.startProfile(identity.envId, {
-    runtime: identity.runtime,
+  const started = await runtime.startProfile(runnerIdentity.envId, {
+    runtime: runnerIdentity.runtime,
     headless: flag('headful', null) === null
   });
   if (!started.debugPort) {
     console.error(`profile not ready (status=${started.status})`);
     process.exit(1);
   }
-  console.error(`tenant=${tenant} profile=${describeIdentity(identity).envIdMasked} port=${started.debugPort}`);
+  console.error(`tenant=${tenant} profile=${maskEnvId(runnerIdentity.envId)} port=${started.debugPort}`);
 
   try {
     // Refer-and-earn mode: read the tenant's own referral link, which is the CTA
@@ -198,7 +215,7 @@ async function main() {
     }, null, 2));
   } finally {
     if (flag('keep-open', null) === null) {
-      try { await runtime.closeProfile(identity.envId); } catch {}
+      try { await runtime.closeProfile(runnerIdentity.envId); } catch {}
     }
   }
 }
