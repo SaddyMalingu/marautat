@@ -341,6 +341,24 @@ async function runCapture({ existing = [] } = {}) {
       cards = await ensureCards({ host, port, needed: wanted });
     };
 
+    /**
+     * Read one role, and repair the listing before giving up on it.
+     *
+     * `card_not_found` means the listing is shorter than the index — usually a
+     * "Load more" that did not land. Not rebuilding on that turned 12 working roles
+     * into 48 failures, because every later index was probed against the same short
+     * listing. One retry after a rebuild costs a page load and saves the run.
+     */
+    const readRole = async (index) => {
+      const first = await captureOne({ host, port, index });
+      if (first.capture) return first;
+      console.error(`[${index}] no card at that index (${first.note}) — rebuilding and retrying once`);
+      await rebuild(index);
+      return captureOne({ host, port, index });
+    };
+
+    let consecutiveFailures = 0;
+
     for (let index = skip; index < windowEnd; index += 1) {
       if (doneIndexes.has(index)) {
         console.error(`[${index}] already captured — skipping`);
@@ -348,10 +366,12 @@ async function runCapture({ existing = [] } = {}) {
       }
 
       try {
-        const { capture, leftListing, note } = await captureOne({ host, port, index });
+        const { capture, leftListing, note } = await readRole(index);
         captures.push(capture || { index, title: null, externalId: null, referralUrl: null, reason: note || 'probe_failed' });
         const label = String(capture?.title || '(no title)').slice(0, 60);
         console.error(`[${index}] ${capture?.referralUrl ? 'LINK' : capture?.reason || note || 'no link'} — ${label}`);
+
+        consecutiveFailures = capture?.referralUrl ? 0 : consecutiveFailures + 1;
 
         if (leftListing) {
           // Recover instead of proceeding against the wrong page: every later index
@@ -364,11 +384,19 @@ async function runCapture({ existing = [] } = {}) {
         // page, and keep going; a re-run will retry whatever failed here.
         console.error(`[${index}] FAILED — ${error?.message || error}`);
         captures.push({ index, title: null, externalId: null, referralUrl: null, reason: `error:${error?.code || 'unknown'}` });
-        try { await rebuild(); } catch (rebuildError) {
+        consecutiveFailures += 1;
+        try { await rebuild(index); } catch (rebuildError) {
           console.error(`[${index}] rebuild failed too: ${rebuildError?.message || rebuildError}`);
         }
       } finally {
         save();
+      }
+
+      if (consecutiveFailures >= 5) {
+        // Five in a row means the marketplace changed under us (signed out, layout
+        // shift). Stopping is honest, and the progress file keeps everything so far.
+        console.error(`stopping after ${consecutiveFailures} consecutive failures — re-run to resume`);
+        break;
       }
 
       await sleep(pace);
