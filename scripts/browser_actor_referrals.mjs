@@ -323,10 +323,22 @@ async function runCapture({ existing = [] } = {}) {
     // place and is only used when the page is genuinely unknown. It pages only as far
     // as the role being captured — the old version paged to the end of the window on
     // every single role, which is why 42 roles took 40 minutes.
-    const rebuild = async (upTo = windowEnd) => {
+    const rebuild = async (upToIndex = windowEnd - 1) => {
       await capturePage({ host, port, url: TURING_PLATFORM.listUrl, timeoutMs: 45_000 });
+      // Wait for CARDS, not for skeletons to disappear: a freshly navigated page is
+      // blank for a moment, and "no skeletons" is equally true of a blank page. That
+      // mistake turned every rebuild into a card_not_found cascade.
+      const startedAt = Date.now();
+      while (Date.now() - startedAt < 15_000) {
+        if ((await countCards({ host, port })) > 0) break;
+        await sleep(400);
+      }
       await waitForSkeletons({ host, port });
-      cards = await ensureCards({ host, port, needed: Math.max(12, Math.min(upTo, needed)) });
+      // `upToIndex` is 0-based, so the card COUNT needed is index + 1. Passing the
+      // index straight through left the listing one card short and every following
+      // role failed against it.
+      const wanted = Math.max(12, Math.min(upToIndex + 1, needed));
+      cards = await ensureCards({ host, port, needed: wanted });
     };
 
     for (let index = skip; index < windowEnd; index += 1) {
@@ -345,7 +357,7 @@ async function runCapture({ existing = [] } = {}) {
           // Recover instead of proceeding against the wrong page: every later index
           // refers to a card that no longer exists.
           console.error(`[${index}] left the listing — returning`);
-          await rebuild(index + 1);
+          await rebuild(index);
         }
       } catch (error) {
         // One role timing out must not end a 40-minute run. Record it, rebuild the
