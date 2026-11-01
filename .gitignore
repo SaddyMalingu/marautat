@@ -24,3 +24,7 @@ z_run1.txt
 
 # local capture artifacts (collector progress, collected roles, referral candidates)
 tmp/
+# operator run logs from capture sessions (active run keeps writing its own)
+tmp_*.log
+tmp_*.json
+tmp_*.txt
