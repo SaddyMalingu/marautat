@@ -1665,11 +1665,16 @@ function wfAccessHtml(d) {
     <div class="d-flex gap-2 flex-wrap mt-2 align-items-end">
       ${d.connected
         ? `<button class="btn btn-info btn-sm" data-wfact="verify">Verify sessions</button>
+           ${d.runtime === 'cloud' ? '<button class="btn btn-outline-acc btn-sm" data-wfact="capture">Capture now (Micro1)</button>' : ''}
            <button class="btn btn-outline-light btn-sm" data-wfact="disconnect">Disconnect</button>`
         : `<input class="form-control form-control-sm" id="wfAccessKey" type="password" autocomplete="off"
                  placeholder="MoreLogin API key" style="max-width:280px" ${d.canStore ? '' : 'disabled'}>
            <button class="btn btn-info btn-sm" data-wfact="connect" ${d.canStore ? '' : 'disabled'}>Connect</button>`}
     </div>
+    ${d.connected && d.runtime !== 'cloud'
+      ? '<div class="text-muted" style="font-size:.74rem;margin-top:6px">This profile runs on the operator machine, so the operator starts runs there.</div>'
+      : ''}
+
     ${d.reauthRequired
       ? `<div style="color:#ef4444;font-size:.78rem;margin-top:6px">Sign in again inside your MoreLogin profile for ${esc((d.reauthPlatforms || []).join(', ') || 'a marketplace')}, then press Verify.</div>`
       : ''}`;
@@ -1755,6 +1760,23 @@ async function wfVerifyAccess(btn) {
   }
 }
 
+async function wfCaptureNow(btn) {
+  const label = btn ? btn.textContent : 'Capture';
+  if (btn) { btn.disabled = true; btn.textContent = 'Starting…'; }
+  try {
+    const r = await apiJson('/tenant/blogger/browser-access/capture', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ platform: 'micro1', limit: 12 })
+    });
+    if (!r.ok) { toast(r.data?.error || 'Could not start the capture', 'err'); return; }
+    toast('Capture started — progress appears in Collection control', 'ok');
+    // The run row exists now, so the control panel's poller picks it up (queued counts as
+    // active) and the tenant can watch it without keeping this panel focused.
+    await wfLoadControl();
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = label; }
+  }
+}
+
 async function wfDisconnectAccess(btn) {
   if (!confirm('Disconnect your browser? The stored key is deleted; your MoreLogin account is untouched.')) return;
   if (btn) btn.disabled = true;
@@ -1774,6 +1796,7 @@ function wfWireAccess() {
     if (act === 'connect') wfConnectAccess(btn);
     else if (act === 'connect-chosen') wfConnectChosen(btn);
     else if (act === 'verify') wfVerifyAccess(btn);
+    else if (act === 'capture') wfCaptureNow(btn);
     else if (act === 'disconnect') wfDisconnectAccess(btn);
   });
 }

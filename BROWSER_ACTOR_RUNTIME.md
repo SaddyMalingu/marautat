@@ -813,7 +813,31 @@ Rotation is a three-step move, supported by `TENANT_SECRET_KEY_PREVIOUS`:
 Without step 3 the old key stays valid forever, which defeats the point of rotating.
 
 
-### Runner support
+### The tenant can start the capture themselves
+
+Because a BYO profile is **cloud**, the browser is reachable from Render — so a tenant can
+press a button instead of waiting for an operator:
+
+```
+POST /tenant/blogger/browser-access/capture   { platform: 'micro1', limit?: 12 }
+  → 409 not_connected     no profile connected
+  → 409 local_runtime     their profile runs on the operator machine, not in the cloud
+  → 400 unsupported       only micro1 has a verified adapter
+  → 409 already_running   one run at a time, enforced by browser_actor_runs
+  → 202 { run }           a queued row + a spawned runner; the portal polls the row
+```
+
+The route does not run the capture inline: it queues a run, spawns the **same** script an
+operator would run (`--tenant … --apply --only-missing --run-id …`), and answers 202. The
+child's stdout goes to `tmp/run-<id>.log`, its report to `tmp/run-<id>.json`, and progress
+lands in the run row the portal already polls.
+
+Two consequences worth stating: the run costs one of the **tenant's** daily starts, and a
+Render redeploy during a run kills the child — which is why the row records what happened
+rather than leaving the tenant guessing. A durable job runner is the next step if this
+becomes the normal path.
+
+
 
 Every script that starts a browser now goes through `resolveRunnerIdentity({ supabase, tenantSlug })`:
 `browser_actor_micro1.mjs`, `browser_actor_referrals.mjs` (Turing), `browser_actor_collect.mjs`, and

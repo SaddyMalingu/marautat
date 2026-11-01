@@ -39,6 +39,13 @@ import {
 import { summarizeSignedIn } from '../utils/browserActor/signedIn.js';
 import { parseProfileMap } from '../utils/browserActor/identity.js';
 import { redact } from '../utils/browserActor/moreloginClient.js';
+import { canQueue, createRunStore } from '../utils/browserActor/runs.js';
+import {
+  CAPTURE_DEFAULT_LIMIT,
+  CAPTURE_MAX_LIMIT,
+  SERVER_SIDE_PLATFORMS,
+  defaultSpawnRun
+} from '../utils/portalCapture.js';
 
 const MIN_KEY_LENGTH = 8;
 
@@ -56,6 +63,7 @@ export function createBrowserAccessRouter({
   tenantSiteFromSession,
   supabase,
   provider,
+  spawnRun = defaultSpawnRun,
   env = process.env,
   now = () => Date.now()
 } = {}) {
@@ -63,6 +71,7 @@ export function createBrowserAccessRouter({
   const canStore = () => secretsConfigured(env);
   const iso = () => new Date(now()).toISOString();
   const fail = (res, status, error, extra = {}) => res.status(status).json({ ok: false, error, ...extra });
+  const runStore = createRunStore({ table: () => supabase.from('browser_actor_runs'), now });
 
   async function saveMetadata(site, metadata) {
     const { data, error } = await supabase
@@ -277,7 +286,88 @@ export function createBrowserAccessRouter({
     }
   });
 
+  /**
+   * Start a capture now, from the portal.
+   *
+   * The tenant presses the button because the browser is *theirs* and lives in the cloud;
+   * the portal only needs to start it and watch. Everything that can go wrong says so
+   * before a single start is spent — no profile, no cloud runtime, unsupported marketplace,
+   * or a run already in flight.
+   */
+  router.post('/tenant/blogger/browser-access/capture', tenantSessionAuth, async (req, res) => {
+    try {
+      const ctx = await tenantSiteFromSession(req);
+      if (!ctx) return fail(res, 404, 'Tenant not found');
+
+      const access = readAccess(ctx.site.metadata);
+      if (!access) {
+        return fail(res, 409, 'Connect your own browser first — the portal can only capture on a profile you own', {
+          reason: 'not_connected'
+        });
+      }
+      if (access.runtime !== 'cloud') {
+        // A local profile lives on the operator's machine; Render has no route to it.
+        return fail(res, 409, 'Your profile runs on the operator machine, so a run there has to be started by the operator', {
+          reason: 'local_runtime'
+        });
+      }
+
+      const platform = String(req.body?.platform || 'micro1').toLowerCase();
+      if (!SERVER_SIDE_PLATFORMS.includes(platform)) {
+        return fail(res, 400, `The portal can only capture ${SERVER_SIDE_PLATFORMS.join(', ')} on its own today`, {
+          supported: SERVER_SIDE_PLATFORMS
+        });
+      }
+
+      const requested = Number(req.body?.limit);
+      const limit = Number.isFinite(requested)
+        ? Math.min(Math.max(Math.trunc(requested), 1), CAPTURE_MAX_LIMIT)
+        : CAPTURE_DEFAULT_LIMIT;
+
+      // One run per tenant, using the same index the runners rely on: two captures on one
+      // profile would interleave clicks on the same listing.
+      const recent = await runStore.list({ tenantId: ctx.site.id, limit: 20 }).catch(() => []);
+      const gate = canQueue(recent, { kind: 'referrals', now: now() });
+      if (!gate.ok) return fail(res, 409, gate.message, { reason: 'already_running', run: gate.run || null });
+
+      const run = await runStore.queue({
+        tenantId: ctx.site.id,
+        kind: 'referrals',
+        sourceSlug: platform,
+        requestedBy: 'tenant:portal',
+        detail: { limit, platform, via: 'portal' }
+      });
+      if (!run?.id) return fail(res, 503, 'Run tracking is not set up on this host');
+
+      let spawned = null;
+      try {
+        spawned = spawnRun({ slug: ctx.site.slug, runId: run.id, limit, platform });
+      } catch (error) {
+        await runStore.finish({
+          runId: run.id,
+          status: 'failed',
+          done: 0, ok: 0, failed: 0, total: limit,
+          message: `could not start the runner: ${redact(error?.message || error)}`
+        }).catch(() => {});
+        return fail(res, 502, 'Could not start the runner on this host', { detail: redact(error?.message || error) });
+      }
+
+      console.error(`[browser-access] tenant=${ctx.site.slug} portal capture run=${run.id} pid=${spawned?.pid || '?'} limit=${limit}`);
+      res.status(202).json({
+        ok: true,
+        run: { id: run.id, status: 'queued', kind: 'referrals', platform, limit },
+        // The portal polls /tenant/blogger/writer-flow for this row; the tenant does not
+        // need to keep the tab open, and a redeploy will not orphan their import silently
+        // because the row records what happened.
+        note: `Started. It uses one MoreLogin profile start from your plan. Progress appears in Collection control.`
+      });
+    } catch (error) {
+      fail(res, error.status || 500, redact(error.message || 'Could not start the capture'));
+    }
+  });
+
   return router;
 }
+
 
 

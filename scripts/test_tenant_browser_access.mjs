@@ -478,8 +478,168 @@ let noEnv = false;
 try { sealSecretWithEnv(KEY, {}); } catch { noEnv = true; }
 ok('sealing with no key configured still refuses', noEnv);
 
+// ---------------------------------------------------------------------------
+// The portal starting a capture itself — only for a cloud profile the tenant owns
+// ---------------------------------------------------------------------------
+
+/**
+ * A database with both tables the capture route touches: the tenant row it reads metadata
+ * from, and `browser_actor_runs`, where the queued row must be visible and closable.
+ */
+function fakeCaptureDb(metadata = {}) {
+  const site = { id: 'site-1', slug: 'acme', metadata: { ...metadata } };
+  const runs = [];
+  const makeRuns = () => {
+    const api = {
+      insert(row) {
+        const created = { id: `run-${runs.length + 1}`, created_at: new Date().toISOString(), ...row };
+        runs.push(created);
+        return { select: () => ({ maybeSingle: async () => ({ data: created, error: null }) }) };
+      },
+      select() {
+        const filters = [];
+        const chain = {
+          eq: (col, val) => { filters.push([col, val]); return chain; },
+          order: () => chain,
+          limit: () => chain,
+          maybeSingle: async () => ({ data: runs.filter((r) => filters.every(([c, v]) => r[c] === v))[0] || null, error: null }),
+          then: (resolve) => resolve({ data: runs.filter((r) => filters.every(([c, v]) => r[c] === v)), error: null })
+        };
+        return chain;
+      },
+      update(patch) {
+        const filters = [];
+        const chain = {
+          eq: (col, val) => { filters.push([col, val]); return chain; },
+          select: () => chain,
+          maybeSingle: async () => {
+            const hit = runs.filter((r) => filters.every(([c, v]) => r[c] === v))[0] || null;
+            if (hit) Object.assign(hit, patch);
+            return { data: hit, error: null };
+          }
+        };
+        return chain;
+      }
+    };
+    return api;
+  };
+  return {
+    site,
+    runs,
+    from(table) {
+      if (table === 'browser_actor_runs') return makeRuns();
+      return {
+        update(patch) {
+          const chain = {
+            eq: () => chain,
+            select: () => chain,
+            maybeSingle: async () => {
+              Object.assign(site, patch);
+              return { data: site, error: null };
+            }
+          };
+          return chain;
+        }
+      };
+    }
+  };
+}
+
+async function withCaptureServer({ db, spawnRun }) {
+  const app = express();
+  app.use(express.json());
+  app.use('/', createBrowserAccessRouter({
+    tenantSessionAuth: (req, _res, next) => next(),
+    tenantSiteFromSession: async () => ({ site: { id: db.site.id, slug: db.site.slug, metadata: db.site.metadata } }),
+    supabase: db,
+    provider: goodProvider,
+    spawnRun,
+    env: { [ACCESS_KEY_ENV]: SECRET }
+  }));
+  const server = http.createServer(app);
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  return { base: `http://127.0.0.1:${server.address().port}`, close: () => new Promise((resolve) => server.close(resolve)) };
+}
+
+const cloudAccess = { browserAccess: { provider: 'morelogin', envId: '2116562908359495680', runtime: 'cloud', keySealed: sealed, connectedAt: '2026-11-02T10:00:00.000Z' } };
+const localAccess = { browserAccess: { provider: 'morelogin', envId: '2116562908359495680', runtime: 'local', keySealed: sealed, connectedAt: '2026-11-02T10:00:00.000Z' } };
+
+{
+  const db = fakeCaptureDb({});
+  const server = await withCaptureServer({ db, spawnRun: () => { throw new Error('should not spawn'); } });
+  try {
+    const res = await call(server.base, 'POST', '/tenant/blogger/browser-access/capture', { platform: 'micro1' });
+    eq('a tenant with no browser cannot start a capture', res.status, 409);
+    eq('and is told why', res.body.reason, 'not_connected');
+  } finally {
+    await server.close();
+  }
+}
+
+{
+  // A local profile lives on the operator's machine; pretending otherwise would start nothing.
+  const db = fakeCaptureDb(localAccess);
+  const server = await withCaptureServer({ db, spawnRun: () => { throw new Error('should not spawn'); } });
+  try {
+    const res = await call(server.base, 'POST', '/tenant/blogger/browser-access/capture', { platform: 'micro1' });
+    eq('a local profile cannot be captured from the portal', res.status, 409);
+    eq('and says so plainly', res.body.reason, 'local_runtime');
+  } finally {
+    await server.close();
+  }
+}
+
+{
+  const db = fakeCaptureDb(cloudAccess);
+  const server = await withCaptureServer({ db, spawnRun: () => ({ pid: 1 }) });
+  try {
+    const res = await call(server.base, 'POST', '/tenant/blogger/browser-access/capture', { platform: 'turing' });
+    eq('an unsupported marketplace is refused', res.status, 400);
+    eq('and lists what is supported', res.body.supported, ['micro1']);
+  } finally {
+    await server.close();
+  }
+}
+
+{
+  const db = fakeCaptureDb(cloudAccess);
+  const spawned = [];
+  const server = await withCaptureServer({ db, spawnRun: (args) => { spawned.push(args); return { pid: 4242 }; } });
+  try {
+    const res = await call(server.base, 'POST', '/tenant/blogger/browser-access/capture', { platform: 'micro1', limit: 999 });
+    eq('a cloud capture is accepted', res.status, 202);
+    eq('a run row is created', db.runs.length, 1);
+    eq('the run starts queued so the portal can watch it', db.runs[0].status, 'queued');
+    eq('the runner is started with the run id', spawned[0].runId, db.runs[0].id);
+    // A hard cap keeps a single portal-triggered run short.
+    eq('the limit is clamped rather than trusted', spawned[0].limit, 24);
+    ok('the tenant is told a start was spent', /one morelogin profile start/i.test(res.body.note));
+
+    const again = await call(server.base, 'POST', '/tenant/blogger/browser-access/capture', { platform: 'micro1' });
+    eq('a second capture is refused while one is queued', again.status, 409);
+    eq('with the reason the UI acts on', again.body.reason, 'already_running');
+  } finally {
+    await server.close();
+  }
+}
+
+{
+  const db = fakeCaptureDb(cloudAccess);
+  const server = await withCaptureServer({ db, spawnRun: () => { throw new Error('spawn failed'); } });
+  try {
+    const res = await call(server.base, 'POST', '/tenant/blogger/browser-access/capture', { platform: 'micro1' });
+    eq('a runner that cannot start is a 502', res.status, 502);
+    // Leaving the row queued would make the portal wait for a process that is not there.
+    eq('and the run is closed as failed', db.runs[0].status, 'failed');
+  } finally {
+    await server.close();
+  }
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
+
+
 
 
 
