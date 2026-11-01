@@ -707,6 +707,88 @@ Measured on the live dashboard: **12 cards, ~350 ms per link, ~2.2 s per body**.
 sample run produced 4/4 links `match` with bodies of 5,391 and 3,168 characters.
 
 
+
+## Tenant-owned browser access (BYO MoreLogin, 2026-11-02)
+
+The tenant brings their own MoreLogin account and profile, signs into Micro1/Turing **on
+their own machine**, and hands Alphadome an API key. We never see a password or an OTP, so
+"could an Alphadome employee log in as me?" is answered by architecture rather than policy.
+
+### Why this shape
+
+| | Hosted (operator's profiles) | BYO (this) |
+|---|---|---|
+| Custody of the session | ours | the tenant's |
+| Password/OTP visible to us | during a remote login | never |
+| Daily start quota | ours (OPEN_FLAGS #16) | theirs |
+| Fingerprint / IP a marketplace sees | our proxies | their own machine |
+| What we store | nothing | one sealed API key per tenant |
+
+### The flow
+
+```
+tenant (5 min, their machine)     portal
+  create MoreLogin account   →    Writer's Flow → Your own browser
+  create one profile         →    paste the MoreLogin API key → Connect
+  sign into Micro1/Turing         (profile list is read live from their account)
+  inside that profile
+                             →    Verify sessions  → "connected · micro1 + turing"
+```
+
+Endpoints (all tenant-session scoped):
+
+```
+GET  /tenant/blogger/browser-access            status + which profile a run would use
+POST /tenant/blogger/browser-access/connect    { apiKey, envId?, label?, runtime? }
+POST /tenant/blogger/browser-access/verify     start once, read each marketplace listing
+POST /tenant/blogger/browser-access/disconnect
+```
+
+### What is stored, and what is never returned
+
+`site_tenants.metadata.browserAccess`:
+
+```json
+{ "envId": "2116…", "runtime": "cloud", "label": "Acme Studio",
+  "keySealed": "v1.<iv>.<tag>.<ct>", "keyFingerprint": "sha256:ab12…",
+  "connectedAt": "...", "verifiedAt": "...", "verifiedPlatforms": ["micro1"],
+  "reauthRequired": false, "reauthPlatforms": [], "lastCheckedAt": "..." }
+```
+
+- The key is **AES-256-GCM** sealed under `TENANT_SECRET_KEY`. Missing that env var ⇒
+  connecting is refused with the variable named; nothing is stored in the clear.
+- `publicAccessStatus` is the only shape a tenant sees: **no key, no ciphertext, no
+  fingerprint**, and the profile id is masked.
+- `disconnect` deletes the record and leaves the tenant's MoreLogin account untouched.
+
+### Three rules the endpoints enforce
+
+1. **A key may only bind a profile it owns.** `connect` reads the profile list live from the
+   tenant's account; an `envId` outside that list is a 403, and an account with several
+   profiles must choose (409 with the list).
+2. **Runs prefer the tenant's own profile.** `resolveRunnerIdentity` order is
+   tenant → hosted → default → refuse. A seal that will not open stops the run with
+   `reconnect_required`; it never falls back to the operator's profile, because running as
+   the wrong account is worse than stopping.
+3. **"Verified" is evidence.** `verify` starts the profile once and reads each listing:
+   cards ⇒ `signed_in`, a sign-in affordance and no cards ⇒ `login_wall` ⇒ written as
+   `reauthRequired`. A check that could not run is a 502 and **never** becomes "signed out".
+
+### Not yet verified live
+
+The cloud attach path (`cdpUrl` → websocket) in `utils/tenantBrowserProvider.js` is written
+against the documented contract but has not been exercised end-to-end: this host's plan is
+out of daily starts (OPEN_FLAGS #16) and malingu-ventures runs a hosted **local** profile.
+The first BYO tenant run is the test — everything pure is covered by
+`npm run test:browser-access` (91 assertions), including the sealing, the masking, the
+refusals and the resolution order.
+
+### Runner support
+
+`scripts/browser_actor_micro1.mjs` now calls `resolveRunnerIdentity`, so a tenant who
+connected their own profile is captured on it with their own key. The Turing runner still
+reads the env map only — deliberate, and the next thing to switch over.
+
 ### Source attribution (why the funnel said "Unattributed")
 
 `migrations/2026-10-31_seed_micro1_turing_sources.sql` was **never applied**, so

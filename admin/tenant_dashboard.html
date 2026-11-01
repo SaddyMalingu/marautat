@@ -1637,7 +1637,149 @@ function wfWireControl() {
   });
 }
 
+// ══════════════════════════════ YOUR OWN BROWSER ══════════════════════════════
+// The tenant brings their own MoreLogin profile: they sign into Micro1/Turing on their own
+// machine and hand over a key, never a password. Alphadome stores the key sealed and never
+// returns it, which is why this panel shows a masked profile id and nothing else.
+let wfAccessData = null;
+
+function wfAccessChip(d) {
+  if (!d.connected) return '<span class="text-muted">not connected</span>';
+  if (d.reauthRequired) return '<span style="color:#ef4444;font-weight:600">reconnect needed</span>';
+  if (d.verifiedAt) return '<span style="color:#22c55e;font-weight:600">connected</span>';
+  return '<span style="color:#f59e0b;font-weight:600">connected · unverified</span>';
+}
+
+function wfAccessHtml(d) {
+  const verified = d.verifiedAt ? new Date(d.verifiedAt).toLocaleString('en-KE') : null;
+  const platforms = Array.isArray(d.platforms) && d.platforms.length ? d.platforms.join(' + ') : null;
+  return `
+    <div style="font-size:.84rem">
+      <strong>Your own browser.</strong> ${wfAccessChip(d)}
+      <div class="text-muted" style="font-size:.76rem">${esc(d.hint || '')}</div>
+      ${d.connected ? `<div class="text-muted" style="font-size:.74rem;margin-top:4px">
+        Profile ${esc(d.envIdMasked || '—')}${d.label ? ` · ${esc(d.label)}` : ''}${verified ? ` · verified ${esc(verified)}` : ''}${platforms ? ` · ${esc(platforms)}` : ''}
+        ${d.runSource === 'tenant' ? '' : ' · <span style="color:#f59e0b">runs still use the hosted profile</span>'}
+      </div>` : ''}
+    </div>
+    <div class="d-flex gap-2 flex-wrap mt-2 align-items-end">
+      ${d.connected
+        ? `<button class="btn btn-info btn-sm" data-wfact="verify">Verify sessions</button>
+           <button class="btn btn-outline-light btn-sm" data-wfact="disconnect">Disconnect</button>`
+        : `<input class="form-control form-control-sm" id="wfAccessKey" type="password" autocomplete="off"
+                 placeholder="MoreLogin API key" style="max-width:280px" ${d.canStore ? '' : 'disabled'}>
+           <button class="btn btn-info btn-sm" data-wfact="connect" ${d.canStore ? '' : 'disabled'}>Connect</button>`}
+    </div>
+    ${d.reauthRequired
+      ? `<div style="color:#ef4444;font-size:.78rem;margin-top:6px">Sign in again inside your MoreLogin profile for ${esc((d.reauthPlatforms || []).join(', ') || 'a marketplace')}, then press Verify.</div>`
+      : ''}`;
+}
+
+async function wfLoadAccess() {
+  const box = document.getElementById('wfAccessBody');
+  if (!box) return;
+  const r = await apiJson('/tenant/blogger/browser-access');
+  if (!r.ok || !r.data?.ok) {
+    box.innerHTML = `<div class="text-muted" style="font-size:.84rem">${esc(r.data?.error || 'Could not read your browser connection.')}</div>`;
+    return;
+  }
+  wfAccessData = r.data;
+  box.innerHTML = wfAccessHtml(r.data);
+}
+
+async function wfConnectAccess(btn) {
+  const input = document.getElementById('wfAccessKey');
+  const apiKey = input ? String(input.value || '').trim() : '';
+  if (!apiKey) { toast('Paste your MoreLogin API key first', 'err'); return; }
+  const label = btn ? btn.textContent : 'Connect';
+  if (btn) { btn.disabled = true; btn.textContent = 'Checking…'; }
+  try {
+    const r = await apiJson('/tenant/blogger/browser-access/connect', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ apiKey })
+    });
+    if (!r.ok) {
+      // 409 with a profile list means "choose one": surface it rather than swallowing it.
+      const choices = Array.isArray(r.data?.profiles) ? r.data.profiles : [];
+      toast(r.data?.error || 'Could not connect that key', 'err');
+      if (choices.length > 1 && input) {
+        input.outerHTML = `<select class="form-select form-select-sm" id="wfAccessProfile" style="max-width:280px">
+          ${choices.map((p) => `<option value="${esc(p.envId)}">${esc(p.name || p.envId)}</option>`).join('')}
+        </select><button class="btn btn-info btn-sm mt-1" data-wfact="connect-chosen">Use this profile</button>`;
+      }
+      return;
+    }
+    toast('Connected. Press Verify to confirm the sessions.', 'ok');
+    await wfLoadAccess();
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = label; }
+  }
+}
+
+async function wfConnectChosen(btn) {
+  const select = document.getElementById('wfAccessProfile');
+  const envId = select ? select.value : '';
+  const input = document.getElementById('wfAccessKey');
+  const apiKey = input ? String(input.value || '').trim() : '';
+  if (!envId) { toast('Choose a profile', 'err'); return; }
+  if (!apiKey) { toast('The key box was replaced — paste the key again', 'err'); return; }
+  if (btn) btn.disabled = true;
+  const r = await apiJson('/tenant/blogger/browser-access/connect', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ apiKey, envId })
+  });
+  if (!r.ok) toast(r.data?.error || 'Could not connect that profile', 'err');
+  else toast('Connected', 'ok');
+  await wfLoadAccess();
+}
+
+async function wfVerifyAccess(btn) {
+  const label = btn ? btn.textContent : 'Verify';
+  if (btn) { btn.disabled = true; btn.textContent = 'Checking…'; }
+  try {
+    const r = await apiJson('/tenant/blogger/browser-access/verify', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({})
+    });
+    if (r.status >= 400) { toast(r.data?.error || 'Could not check the profile', 'err'); return; }
+    const states = r.data?.states || {};
+    const signedIn = Object.entries(states).filter(([, state]) => state === 'signed_in').map(([platform]) => platform);
+    const walls = Object.entries(states).filter(([, state]) => state === 'login_wall').map(([platform]) => platform);
+    if (walls.length && !signedIn.length) {
+      toast(`Signed out of ${walls.join(', ')} — sign in again inside MoreLogin, then verify`, 'err');
+    } else if (signedIn.length) {
+      toast(`Signed in: ${signedIn.join(', ')}${walls.length ? ` · signed out: ${walls.join(', ')}` : ''}`, 'ok');
+    } else {
+      toast('Could not tell — try again in a minute', 'err');
+    }
+    await wfLoadAccess();
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = label; }
+  }
+}
+
+async function wfDisconnectAccess(btn) {
+  if (!confirm('Disconnect your browser? The stored key is deleted; your MoreLogin account is untouched.')) return;
+  if (btn) btn.disabled = true;
+  const r = await apiJson('/tenant/blogger/browser-access/disconnect', { method: 'POST' });
+  if (!r.ok) toast(r.data?.error || 'Could not disconnect', 'err');
+  else toast('Disconnected', 'ok');
+  await wfLoadAccess();
+}
+
+function wfWireAccess() {
+  const panel = document.getElementById('wfAccess');
+  if (!panel) return;
+  panel.addEventListener('click', (ev) => {
+    const btn = ev.target.closest('button[data-wfact]');
+    if (!btn || btn.disabled) return;
+    const act = btn.dataset.wfact;
+    if (act === 'connect') wfConnectAccess(btn);
+    else if (act === 'connect-chosen') wfConnectChosen(btn);
+    else if (act === 'verify') wfVerifyAccess(btn);
+    else if (act === 'disconnect') wfDisconnectAccess(btn);
+  });
+}
+
 async function renderWritersFlow() {
+
   // A re-render replaces the panel, so an old poller would keep querying a DOM node that
   // no longer exists. Stopping here is what keeps the timer count at one.
   wfStopPolling();
@@ -1698,6 +1840,20 @@ async function renderWritersFlow() {
     bloggerTab.insertBefore(control, strip);
     wfWireControl();
     wfLoadControl();
+
+    // "Your own browser" sits above the collection controls: until a tenant's sessions are
+    // connected, every run below it is reading somebody else's profile — and the tenant
+    // should see that before they press anything.
+    const access = document.createElement('div');
+    access.id = 'wfAccess';
+    access.className = 'panel mb-3';
+    access.innerHTML = '<div class="panel-title d-flex justify-content-between align-items-center flex-wrap gap-2">'
+      + '<span><i class="fa-solid fa-key me-1"></i> Your own browser</span>'
+      + '<span class="text-muted" style="font-size:.72rem">you sign in · we only hold a key</span></div>'
+      + `<div id="wfAccessBody">${spinner('Checking your browser connection...')}</div>`;
+    bloggerTab.insertBefore(access, control);
+    wfWireAccess();
+    wfLoadAccess();
   }
 
   // Reopen the list the tenant was already looking at — and the one generation

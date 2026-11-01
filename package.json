@@ -41,6 +41,7 @@
     "test:browser-actor": "node scripts/test_browser_actor_runtime.mjs",
     "test:writer-flow": "node scripts/test_writer_flow.mjs",
     "test:micro1": "node scripts/test_micro1_adapter.mjs",
+    "test:browser-access": "node scripts/test_tenant_browser_access.mjs",
     "test:social-publish": "node scripts/test_social_publish.mjs",
     "browser:doctor": "node scripts/browser_actor_probe.mjs doctor",
     "browser:inspect": "node scripts/browser_actor_inspect.mjs",

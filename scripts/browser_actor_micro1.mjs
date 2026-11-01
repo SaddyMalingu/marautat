@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Micro1 capture (2026-11-02) — the first marketplace adapter that is not Turing.
+ * Micro1 capture (2026-11-02) â€” the first marketplace adapter that is not Turing.
  *
  * What it does, in one pass, as the tenant:
  *   1. reads `refer.micro1.ai/opportunities` cards (h2 title, openings, skills, pay)
@@ -34,7 +34,8 @@ import { createClient } from '@supabase/supabase-js';
 import { createMoreloginClient, redact } from '../utils/browserActor/moreloginClient.js';
 import { createBrowserRuntime } from '../utils/browserActor/runtime.js';
 import { capturePage, resolveDebugTarget, CdpSession } from '../utils/browserActor/cdp.js';
-import { parseProfileMap, resolveIdentity, describeIdentity } from '../utils/browserActor/identity.js';
+import { maskEnvId } from '../utils/browserActor/identity.js';
+import { resolveRunnerIdentity } from '../utils/tenantRunnerIdentity.js';
 import { verifyReferralLink } from '../utils/browserActor/referralVerify.js';
 import { planOfferImport } from '../utils/browserActor/offersImport.js';
 import { describeEnrichment } from '../utils/browserActor/enrichment.js';
@@ -171,24 +172,24 @@ async function loadTenantContext() {
  *
  * Two passes, because they disagree about what is expensive:
  *
- *   Pass 1 (links)  — never leaves the listing. Click, read, next. One navigation total.
- *   Pass 2 (bodies) — one navigation per role, because the job page is client-rendered.
+ *   Pass 1 (links)  â€” never leaves the listing. Click, read, next. One navigation total.
+ *   Pass 2 (bodies) â€” one navigation per role, because the job page is client-rendered.
  *
  * Doing them interleaved would mean one navigation per role for the link *and* the body,
  * which is double the work for the same result. Splitting them also means `--no-descriptions`
  * is a real speed dial rather than an untested branch.
  */
 async function runCapture({ existingOffers = [] } = {}) {
-  const identity = resolveIdentity({
-    tenantSlug: tenant,
-    map: parseProfileMap(process.env.BROWSER_ACTOR_PROFILES || ''),
-    defaultEnvId: process.env.BROWSER_ACTOR_DEFAULT_ENV_ID || ''
-  });
-  const runtime = createBrowserRuntime({ client: createMoreloginClient() });
+  // Identity first: a tenant who connected their own MoreLogin runs on their own profile
+  // and their own key, and a tenant with neither is refused rather than guessed.
+  const runnerIdentity = await resolveRunnerIdentity({ supabase: loadSupabase(), tenantSlug: tenant });
+  console.error(`identity: source=${runnerIdentity.source} runtime=${runnerIdentity.runtime} profile=${runnerIdentity.envId}`);
+  const client = createMoreloginClient(runnerIdentity.apiKey ? { apiKey: runnerIdentity.apiKey } : {});
+  const runtime = createBrowserRuntime({ client });
   // MoreLogin caps **starts per day**. Two consequences, both deliberate:
   //
   //   1. A start failure is classified before it is retried. If the plan's allowance is
-  //      spent, retrying is exactly what wastes it — so the run stops with the one
+  //      spent, retrying is exactly what wastes it â€” so the run stops with the one
   //      instruction that helps (wait for the reset, or upgrade), and says that nothing
   //      was lost.
   //   2. A start that *does* succeed must be worth it: `--only-missing` filters the
@@ -196,14 +197,14 @@ async function runCapture({ existingOffers = [] } = {}) {
   let started = null;
   for (let attempt = 1; attempt <= 2 && !started; attempt += 1) {
     try {
-      started = await runtime.startProfile(identity.envId, {
-        runtime: identity.runtime,
+      started = await runtime.startProfile(runnerIdentity.envId, {
+        runtime: runnerIdentity.runtime,
         headless: flag('headful', null) === null
       });
     } catch (error) {
       const failure = classifyProviderFailure(error);
       if (!failure.retryable) {
-        console.error(`\nSTOPPED — ${failure.code}`);
+        console.error(`\nSTOPPED â€” ${failure.code}`);
         console.error(String(error?.message || error));
         console.error(`\n${failure.actionable}\n`);
         const quota = new Error(failure.actionable);
@@ -212,8 +213,8 @@ async function runCapture({ existingOffers = [] } = {}) {
         throw quota;
       }
       if (attempt === 2) throw error;
-      console.error(`profile start failed (${error?.message || error}) — releasing it and retrying`);
-      try { await runtime.closeProfile(identity.envId); } catch {}
+      console.error(`profile start failed (${error?.message || error}) â€” releasing it and retrying`);
+      try { await runtime.closeProfile(runnerIdentity.envId); } catch {}
       await sleep(6_000);
     }
   }
@@ -223,14 +224,14 @@ async function runCapture({ existingOffers = [] } = {}) {
   }
   const host = started.host;
   const port = started.debugPort;
-  console.error(`tenant=${tenant} profile=${describeIdentity(identity).envIdMasked} port=${port}`);
+  console.error(`tenant=${tenant} profile=${maskEnvId(runnerIdentity.envId)} port=${port}`);
 
   const captures = [];
   try {
     await capturePage({ host, port, url: MICRO1_PLATFORM.listUrl, timeoutMs: 45_000 });
     const listing = await waitForListing({ host, port });
     if (!listing.ok || !listing.count) {
-      console.error(`listing did not render (waited ${listing.waitedMs}ms) — nothing captured`);
+      console.error(`listing did not render (waited ${listing.waitedMs}ms) â€” nothing captured`);
       return { captures, listing };
     }
     console.error(`listing: ${listing.count} cards after ${listing.waitedMs}ms`);
@@ -247,7 +248,7 @@ async function runCapture({ existingOffers = [] } = {}) {
       onlyMissing
     });
     const window = plan.window;
-    console.error(`listing: ${plan.considered} cards · ${plan.alreadyImported} already imported${onlyMissing ? ' (skipped)' : ''}`);
+    console.error(`listing: ${plan.considered} cards Â· ${plan.alreadyImported} already imported${onlyMissing ? ' (skipped)' : ''}`);
     console.error(`reading cards ${skip + 1}..${skip + window.length}`);
     runState.total = window.length;
 
@@ -260,7 +261,7 @@ async function runCapture({ existingOffers = [] } = {}) {
         await evaluateJson({ host, port, expression: MICRO1_CLOSE_DIALOGS_EXPR });
 
         // The share link field *persists* across clicks. Reading "any micro1 URL on the
-        // page" therefore returned the previous card's link when a click was slow — two
+        // page" therefore returned the previous card's link when a click was slow â€” two
         // different roles captured with one job id, which looks like success and pays for
         // the wrong job. So: snapshot the candidates first, and accept only a link that
         // was not there before this click.
@@ -272,7 +273,7 @@ async function runCapture({ existingOffers = [] } = {}) {
         const opened = await evaluateJson({ host, port, expression: micro1OpenReferralExpr(item.title) });
         if (!opened.ok) {
           capture.reason = opened.reason || 'open_failed';
-          console.error(`[${item.index}] ${capture.reason} — ${String(item.title).slice(0, 50)}${opened.buttons ? ` · buttons: ${opened.buttons.join(' / ')}` : ''}${opened.titles ? ` · titles: ${opened.titles.slice(0, 4).join(' / ')}` : ''}`);
+          console.error(`[${item.index}] ${capture.reason} â€” ${String(item.title).slice(0, 50)}${opened.buttons ? ` Â· buttons: ${opened.buttons.join(' / ')}` : ''}${opened.titles ? ` Â· titles: ${opened.titles.slice(0, 4).join(' / ')}` : ''}`);
         } else {
           // Poll for a *new* candidate rather than sleeping a fixed time: the field is
           // written a beat after the click, and a fixed wait is either too short (stale
@@ -290,19 +291,19 @@ async function runCapture({ existingOffers = [] } = {}) {
             // Never fall back to a link that was already on the page: that is another
             // role's link, and attaching it is worse than leaving this role unlinked.
             capture.reason = 'link_not_yielded';
-            console.error(`[${item.index}] no NEW link appeared after ${waited}ms — ${String(item.title).slice(0, 50)}`);
+            console.error(`[${item.index}] no NEW link appeared after ${waited}ms â€” ${String(item.title).slice(0, 50)}`);
           } else {
             capture.referralUrl = picked;
             capture.jobId = (picked.match(/\/post\/([0-9a-f-]{16,})/i) || [])[1] || null;
             capture.externalId = capture.jobId ? `micro1:${capture.jobId}` : null;
             capture.url = micro1JobUrl(capture.jobId);
-            console.error(`[${item.index}] LINK ${capture.jobId} (${waited}ms) — ${String(item.title).slice(0, 60)}`);
+            console.error(`[${item.index}] LINK ${capture.jobId} (${waited}ms) â€” ${String(item.title).slice(0, 60)}`);
           }
         }
       } catch (error) {
         // One card must never end the run: record it and keep going.
         capture.reason = `error:${error?.code || 'unknown'}`;
-        console.error(`[${item.index}] FAILED — ${error?.message || error}`);
+        console.error(`[${item.index}] FAILED â€” ${error?.message || error}`);
       }
       captures.push(capture);
       runState.done += 1;
@@ -314,7 +315,7 @@ async function runCapture({ existingOffers = [] } = {}) {
       if (capture.jobId) {
         const clash = captures.find((other) => other !== capture && other.jobId === capture.jobId);
         if (clash) {
-          console.error(`[${item.index}] duplicate job ${capture.jobId} already used by "${clash.title}" — discarding this link`);
+          console.error(`[${item.index}] duplicate job ${capture.jobId} already used by "${clash.title}" â€” discarding this link`);
           capture.referralUrl = null;
           capture.jobId = null;
           capture.reason = 'duplicate_job_id';
@@ -339,7 +340,7 @@ async function runCapture({ existingOffers = [] } = {}) {
             console.error(`[${capture.index}] body unreadable (${detail?.chars || 0} chars)`);
           }
         } catch (error) {
-          console.error(`[${capture.index}] body failed — ${error?.message || error}`);
+          console.error(`[${capture.index}] body failed â€” ${error?.message || error}`);
         }
         await beatRun();
       }
@@ -351,7 +352,7 @@ async function runCapture({ existingOffers = [] } = {}) {
   } finally {
     if (sharedSession) { try { sharedSession.close(); } catch {} sharedSession = null; }
     if (flag('keep-open', null) === null) {
-      try { await runtime.closeProfile(identity.envId); } catch {}
+      try { await runtime.closeProfile(runnerIdentity.envId); } catch {}
     }
   }
 }
@@ -363,11 +364,11 @@ async function startRunTracking(supabase, tenantRow) {
   try {
     runState.store = createRunStore({ table: () => supabase.from('browser_actor_runs') });
     const run = await runState.store.claim({ runId: String(runIdFlag) });
-    if (!run) { console.error('run tracking: that run does not exist — capturing anyway'); runState.store = null; return; }
+    if (!run) { console.error('run tracking: that run does not exist â€” capturing anyway'); runState.store = null; return; }
     runState.runId = run.id;
     console.error(`run tracking: ${run.id} (${run.status})`);
   } catch (error) {
-    console.error(`run tracking unavailable: ${error?.message || error} — capturing anyway`);
+    console.error(`run tracking unavailable: ${error?.message || error} â€” capturing anyway`);
     runState.store = null;
   }
 }
@@ -495,7 +496,7 @@ async function applyCaptures({ supabase, tenantRow, offers, sourceId, captures }
   return { ...result, rows };
 }
 
-/** Coverage as the database holds it now — not as the loop hoped. */
+/** Coverage as the database holds it now â€” not as the loop hoped. */
 async function readCoverage(supabase, tenantId) {
   const { data, error } = await supabase
     .from('opportunities')
@@ -514,12 +515,12 @@ async function main() {
   const { captures, listing } = await runCapture({ existingOffers: offers });
   const withLink = captures.filter((capture) => capture.referralUrl);
   const withBody = captures.filter((capture) => capture.content);
-  console.error(`captured: ${captures.length} roles · ${withLink.length} links · ${withBody.length} bodies`);
+  console.error(`captured: ${captures.length} roles Â· ${withLink.length} links Â· ${withBody.length} bodies`);
 
   const applied = await applyCaptures({ supabase, tenantRow, offers, sourceId, captures });
   if (applied.error) console.error(`insert failed: ${applied.error}`);
   if (apply) console.error(`imported ${applied.inserted} draft offers (${applied.withLinks} with a verified link)`);
-  else console.error(`plan only — ${applied.planned} new offers would be created; re-run with --apply`);
+  else console.error(`plan only â€” ${applied.planned} new offers would be created; re-run with --apply`);
 
   const coverage = await readCoverage(supabase, tenantRow.id);
   if (coverage) {

@@ -89,6 +89,8 @@ import browserActorsRouter from "./routes/browserActors.js";
 // tenant to post (assisted). Factory-mounted below, next to the share card.
 import { createSocialPublishRouter } from "./routes/socialPublish.js";
 import { createWriterFlowRouter } from "./routes/writerFlow.js";
+import { createBrowserAccessRouter } from "./routes/browserAccess.js";
+import { createTenantBrowserProvider } from "./utils/tenantBrowserProvider.js";
 
 // Define __dirname for ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -5107,6 +5109,17 @@ app.use('/', createWriterFlowRouter({
   tenantSessionAuth,
   tenantSiteFromSession,
   supabase,
+}));
+
+// Tenant-owned browser access (2026-11-02): the tenant brings their own MoreLogin account
+// and profile, signs in on their own machine, and hands over a key — never a password. The
+// key is sealed with TENANT_SECRET_KEY before it is stored and is not returned by any
+// endpoint. The provider is created once here; it builds a MoreLogin client per tenant key.
+app.use('/', createBrowserAccessRouter({
+  tenantSessionAuth,
+  tenantSiteFromSession,
+  supabase,
+  provider: createTenantBrowserProvider(),
 }));
 
 // PATCH /tenant/blogger/offers/:id — the portal could create and delete offers
