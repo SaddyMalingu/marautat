@@ -10,7 +10,7 @@
  * Pure: the route passes the tenant's offer rows, joined to their source.
  */
 
-const EMPTY = { total: 0, published: 0, drafts: 0, missingReferral: 0 };
+const EMPTY = { total: 0, published: 0, drafts: 0, missingReferral: 0, verified: 0, wrong: 0 };
 
 /**
  * Which marketplace owns this offer.
@@ -44,6 +44,8 @@ export function summarizeCoverage(offers = []) {
   let published = 0;
   let drafts = 0;
   let missingReferral = 0;
+  let verified = 0;
+  let wrong = 0;
 
   for (const offer of Array.isArray(offers) ? offers : []) {
     if (!offer) continue;
@@ -51,14 +53,24 @@ export function summarizeCoverage(offers = []) {
 
     const isPublished = String(offer.status || '').toLowerCase() === 'published';
     const hasReferral = Boolean(String(offer.referral_url || '').trim());
+    // A verdict is only meaningful for a link that exists; the audit writes one of
+    // 'match' | 'mismatch' | 'unresolvable', and null means "never checked".
+    const verdict = hasReferral ? String(offer.link_verdict || '').toLowerCase() : '';
+    const isVerified = verdict === 'match';
+    const isWrong = verdict === 'mismatch';
+
     if (isPublished) published += 1; else drafts += 1;
     if (!hasReferral) missingReferral += 1;
+    if (isVerified) verified += 1;
+    if (isWrong) wrong += 1;
 
     const { slug, name } = sourceOf(offer);
     const row = bySource.get(slug) || { slug, name, ...EMPTY };
     row.total += 1;
     if (isPublished) row.published += 1; else row.drafts += 1;
     if (!hasReferral) row.missingReferral += 1;
+    if (isVerified) row.verified += 1;
+    if (isWrong) row.wrong += 1;
     bySource.set(slug, row);
   }
 
@@ -67,6 +79,10 @@ export function summarizeCoverage(offers = []) {
     published,
     drafts,
     missingReferral,
+    verified,
+    wrong,
+    // How many links exist but have never been resolved. Not an error — just unknown.
+    uncheckedLinks: Math.max(0, total - missingReferral - verified - wrong),
     // Most-captured marketplace first: that is the one earning the most attention.
     sources: [...bySource.values()].sort((a, b) => b.total - a.total)
   };
@@ -78,5 +94,13 @@ export function coverageHeadline(summary) {
   const parts = summary.sources.map(
     (s) => `${s.name}: ${s.total} captured, ${s.published} live, ${s.missingReferral} without a referral link`
   );
-  return parts.join(' · ');
+  const line = parts.join(' · ');
+  if (summary.wrong) {
+    // Lead with the thing that costs money, not with the total.
+    return `${summary.wrong} referral link${summary.wrong === 1 ? '' : 's'} point at the wrong job · ${line}`;
+  }
+  if (summary.verified) {
+    return `${summary.verified} referral link${summary.verified === 1 ? '' : 's'} verified · ${line}`;
+  }
+  return line;
 }

@@ -861,6 +861,24 @@ console.log('\n-- coverage --');
   eq('an empty tenant reports zero', summarizeCoverage([]).total, 0);
   ok('the headline names the marketplace', coverageHeadline(summary).includes('Turing'));
   eq('an empty tenant gets a useful headline', coverageHeadline({ total: 0 }), 'No marketplace roles captured yet.');
+
+  // Link health: a verification verdict is what turns "has a link" into "has a link
+  // that pays for THIS job".
+  const withVerdicts = summarizeCoverage([
+    { status: 'published', referral_url: 'https://work.turing.com/r/A', link_verdict: 'match', slug: 'x-turing-a' },
+    { status: 'draft', referral_url: 'https://work.turing.com/r/B', link_verdict: 'mismatch', slug: 'x-turing-b' },
+    { status: 'draft', referral_url: 'https://work.turing.com/r/C', link_verdict: null, slug: 'x-turing-c' },
+    { status: 'draft', referral_url: null, slug: 'x-turing-d' }
+  ]);
+  eq('a verified link is counted', withVerdicts.verified, 1);
+  eq('a wrong link is counted separately', withVerdicts.wrong, 1);
+  eq('a link never checked is reported as unchecked', withVerdicts.uncheckedLinks, 1);
+  ok('the headline leads with the wrong link', coverageHeadline(withVerdicts).startsWith('1 referral link point'),
+    coverageHeadline(withVerdicts));
+  ok('and says what is wrong, not just that something is', coverageHeadline(withVerdicts).includes('wrong job'));
+  eq('per-marketplace health is counted too', withVerdicts.sources[0].wrong, 1);
+  ok('a healthy tenant still mentions verification',
+    coverageHeadline(summarizeCoverage([{ status: 'draft', referral_url: 'https://x.test/a', link_verdict: 'match' }])).includes('verified'));
 }
 
 // ---------------------------------------------------------------------------

@@ -1190,7 +1190,13 @@ async function wfLoadCoverage(el) {
       return;
     }
     const needs = Number(d.missingReferral || 0);
+    const wrong = Number(d.wrong || 0);
+    const unchecked = Number(d.uncheckedLinks || 0);
+    // Link health first: a link pointing at the wrong job is the one thing here that
+    // costs money while looking fine everywhere else.
     el.innerHTML = `<strong>Coverage.</strong> ${esc(d.headline || '')}`
+      + (wrong ? ` · <span style="color:#ef4444">these point at a different job — replace or clear them</span>` : '')
+      + (unchecked ? ` · <span style="color:#94a3b8">${unchecked} link${unchecked === 1 ? '' : 's'} not yet verified</span>` : '')
       + (needs ? ` · <span style="color:#f59e0b">${needs} offer${needs === 1 ? '' : 's'} earn nothing until a referral link is added</span>` : '')
       + ` · <a href="${esc(d.hubPath || '')}" target="_blank" rel="noopener">public page</a>`;
   } catch {

@@ -27,6 +27,9 @@ function flag(name, fallback = null) {
 
 const tenantSlug = String(flag('tenant', '')).trim();
 const clearMismatches = flag('clear-mismatches', null) !== null;
+// Recording is what lets the portal show link health without resolving every link on
+// each page load. --no-record keeps the audit purely diagnostic.
+const recordVerdicts = flag('no-record', null) === null;
 if (!tenantSlug) {
   console.error('usage: --tenant <slug> [--clear-mismatches]');
   process.exit(1);
@@ -71,6 +74,29 @@ async function main() {
   const matches = results.filter((r) => r.verdict === 'match');
   const unknown = results.filter((r) => r.verdict === 'unresolvable');
 
+  // Persist the verdict so the portal can answer "is any link wrong?" without
+  // resolving 76 URLs on every page load. If the columns are not migrated yet this
+  // fails once and the audit still reports everything it found.
+  let recorded = 0;
+  let recordError = null;
+  if (recordVerdicts) {
+    const checkedAt = new Date().toISOString();
+    for (const row of results) {
+      const { error: recordFailure } = await supabase
+        .from('opportunities')
+        .update({ link_verdict: row.verdict, link_checked_at: checkedAt })
+        .eq('id', row.id);
+      if (recordFailure) {
+        recordError = recordFailure.message;
+        break;
+      }
+      recorded += 1;
+    }
+    if (recordError) {
+      console.error(`could not record verdicts (${recordError}) — apply migrations/2026-11-01_add_referral_link_verification.sql`);
+    }
+  }
+
   let cleared = [];
   if (clearMismatches && mismatches.length) {
     for (const row of mismatches) {
@@ -95,6 +121,7 @@ async function main() {
       action: clearMismatches ? 'cleared' : 'needs_replacing'
     })),
     unresolvable: unknown.map((r) => ({ title: r.title, reason: r.reason })),
+    recorded: recordVerdicts ? { count: recorded, error: recordError } : 'skipped',
     cleared
   }, null, 2));
 }

@@ -514,6 +514,22 @@ does not resolve to its role. `scripts/browser_actor_audit_links.mjs` runs the s
 check across stored links: `11 checked → 10 match, 1 mismatch`, and the mismatch was
 cleared and replaced with a verified one.
 
+#### Link health in the portal
+
+The audit records its verdict per offer (`link_verdict`, `link_checked_at` — see
+`migrations/2026-11-01_add_referral_link_verification.sql`), so the coverage strip
+can answer *"is any link wrong?"* without resolving 76 URLs on every page load:
+
+- `76 links verified` — every stored link resolves to its own job.
+- `1 referral link points at the wrong job` — leads the line, because this is the
+  only number here that costs money while looking fine everywhere else.
+- `N links not yet verified` — honest unknown, shown when the column is null or the
+  migration is not applied. **Unknown is never rendered as healthy.**
+
+`GET /api/agents/browser/referral-audit?tenant=<slug>` returns the same verdicts on
+demand, and `GET /tenant/blogger/coverage` feeds the strip.
+
+
 
 
 

@@ -5068,10 +5068,20 @@ app.get('/tenant/blogger/coverage', tenantSessionAuth, async (req, res) => {
   try {
     const ctx = await tenantSiteFromSession(req);
     if (!ctx) return res.status(404).json({ error: 'Tenant not found' });
-    const { data, error } = await supabase
+    // `link_verdict` is written by the referral audit. On a database where that
+    // migration has not been applied the query fails, and coverage still works — it
+    // just cannot report link health, which is honest ("unknown"), not "all fine".
+    const base = 'id, slug, status, referral_url, source:opportunity_sources(slug, name)';
+    let { data, error } = await supabase
       .from('opportunities')
-      .select('id, slug, status, referral_url, source:opportunity_sources(slug, name)')
+      .select(`${base}, link_verdict, link_checked_at`)
       .eq('tenant_id', ctx.site.id);
+    if (error) {
+      ({ data, error } = await supabase
+        .from('opportunities')
+        .select(base)
+        .eq('tenant_id', ctx.site.id));
+    }
     if (error) throw error;
     const { summarizeCoverage, coverageHeadline } = await import('./utils/coverage.js');
     const summary = summarizeCoverage(data || []);
