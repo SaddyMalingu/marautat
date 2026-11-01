@@ -1341,7 +1341,306 @@ async function wfLoadCoverage(el) {
   }
 }
 
+// ══════════════════════════════════ COLLECTION CONTROL ══════════════════════════════════
+// The portal cannot run the collector: the leased browser lives on the operator's
+// machine. So this panel does the two things it can do honestly — show the run the
+// tenant asked for (with a heartbeat, not a spinner), and execute the one job that
+// needs no browser at all: verifying the stored referral links.
+let wfControlTimer = null;
+let wfControlData = null;
+
+function wfStopPolling() {
+  if (wfControlTimer) { clearInterval(wfControlTimer); wfControlTimer = null; }
+}
+
+function wfAgo(iso) {
+  if (!iso) return '—';
+  const ms = Date.now() - new Date(iso).getTime();
+  if (!Number.isFinite(ms)) return '—';
+  if (ms < 60000) return Math.max(1, Math.round(ms / 1000)) + 's ago';
+  if (ms < 3600000) return Math.round(ms / 60000) + 'm ago';
+  if (ms < 86400000) return Math.round(ms / 3600000) + 'h ago';
+  return Math.round(ms / 86400000) + 'd ago';
+}
+
+// Status colours follow the same rule as the offers table: a link nobody has proven is
+// never painted green.
+function wfLinkChip(state) {
+  const map = {
+    wrong: ['#ef4444', 'wrong job'],
+    unchecked: ['#f59e0b', 'unverified'],
+    missing: ['#94a3b8', 'no link'],
+    verified: ['#22c55e', 'verified']
+  };
+  const pair = map[state] || ['#94a3b8', state || 'unknown'];
+  return `<span style="color:${pair[0]};font-weight:600">${esc(pair[1])}</span>`;
+}
+
+function wfRunChip(status) {
+  const map = {
+    queued: ['#94a3b8', 'queued'],
+    running: ['#38bdf8', 'running'],
+    succeeded: ['#22c55e', 'done'],
+    partial: ['#f59e0b', 'with gaps'],
+    failed: ['#ef4444', 'failed'],
+    cancelled: ['#94a3b8', 'cancelled']
+  };
+  const pair = map[String(status || '').toLowerCase()] || ['#94a3b8', status || '—'];
+  return `<span style="color:${pair[0]};font-weight:600">${esc(pair[1])}</span>`;
+}
+
+function wfFunnelHtml(d) {
+  const rows = Array.isArray(d.platforms) ? d.platforms : [];
+  if (!rows.length) {
+    return '<div class="text-muted" style="font-size:.84rem">No marketplace roles captured yet.</div>';
+  }
+  return `
+    <div class="table-responsive">
+      <table class="table table-sm mb-0 align-middle" style="font-size:.82rem">
+        <thead><tr>
+          <th>Marketplace</th><th class="text-center">Captured</th><th class="text-center">Live</th>
+          <th class="text-center">Linked</th><th class="text-center">Verified</th><th style="width:130px">Earning</th>
+        </tr></thead>
+        <tbody>
+          ${rows.map(p => `
+            <tr>
+              <td>${esc(p.name)}</td>
+              <td class="text-center">${p.captured}</td>
+              <td class="text-center">${p.live}</td>
+              <td class="text-center">${p.linked}${p.missing ? ` <span style="color:#f59e0b">(${p.missing} none)</span>` : ''}</td>
+              <td class="text-center">${p.verified}${p.wrong ? ` <span style="color:#ef4444">(${p.wrong} wrong)</span>` : ''}</td>
+              <td>
+                <div class="progress" style="height:6px;background:#1e293b">
+                  <div class="progress-bar" style="width:${p.verifiedShare}%;background:${p.verifiedShare ? '#22c55e' : '#334155'}"></div>
+                </div>
+                <span class="text-muted" style="font-size:.72rem">${p.verifiedShare}% verified</span>
+              </td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+}
+function wfActiveRunHtml(d) {
+  const runs = d.runs || {};
+  const active = (runs.recent || []).find(r => ['running', 'queued'].indexOf(String(r.status)) >= 0);
+  if (!active) return '';
+  const pct = active.total ? Math.min(100, Math.round((active.done / active.total) * 100)) : 0;
+  const beat = active.heartbeatAt ? new Date(active.heartbeatAt).getTime() : 0;
+  // Same rule as the server: a run that stopped beating is not "in progress".
+  const stalled = String(active.status) === 'running' && beat > 0 && Date.now() - beat > 300000;
+  return `
+    <div class="mb-2" style="border:1px solid var(--border);border-radius:8px;padding:8px 10px;">
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <span style="font-size:.84rem">${wfRunChip(active.status)} · ${esc(active.kind)}${active.source ? ' · ' + esc(active.source) : ''}
+          <span class="text-muted">${active.total ? ' · ' + active.done + '/' + active.total : ''} · updated ${esc(wfAgo(active.heartbeatAt))}</span></span>
+        <button class="btn btn-outline-light btn-sm" data-wfact="cancel" data-run="${esc(active.id)}">Cancel</button>
+      </div>
+      <div class="progress mt-2" style="height:6px;background:#1e293b">
+        <div class="progress-bar" style="width:${pct}%;background:${stalled ? '#ef4444' : '#38bdf8'}"></div>
+      </div>
+      ${stalled ? '<div style="color:#ef4444;font-size:.78rem;margin-top:4px">This run stopped reporting. Re-running resumes from the last captured role.</div>' : ''}
+      ${String(active.status) === 'queued' ? '<div class="text-muted" style="font-size:.78rem;margin-top:4px">Waiting for a runner — no browser is attached to this tenant yet.</div>' : ''}
+    </div>`;
+}
+
+function wfActionsHtml(d) {
+  const actions = (d.nextActions || []).slice(0, 3);
+  if (!actions.length) {
+    return '<div style="color:#22c55e;font-size:.84rem">Nothing needs attention: every captured role has a verified link and is live.</div>';
+  }
+  const colours = { critical: '#ef4444', high: '#f59e0b', medium: '#38bdf8', low: '#94a3b8' };
+  return '<ul style="list-style:none;padding:0;margin:0;font-size:.84rem">' + actions.map(a => {
+    const colour = colours[a.severity] || '#94a3b8';
+    const kind = a.action || {};
+    const button = kind.type === 'verify'
+      ? '<button class="btn btn-info btn-sm ms-2" data-wfact="verify">Verify now</button>'
+      : kind.type === 'queue'
+        ? `<button class="btn btn-outline-acc btn-sm ms-2" data-wfact="queue" data-kind="${esc(kind.kind)}" data-refresh="${kind.detail && kind.detail.refresh ? '1' : '0'}">Queue it</button>`
+        : kind.type === 'filter'
+          ? `<button class="btn btn-outline-light btn-sm ms-2" data-wfact="filter" data-filter="${esc(kind.link)}">Show them</button>`
+          : '';
+    return `<li style="display:flex;gap:8px;align-items:flex-start;margin-bottom:6px">
+        <span style="color:${colour};font-weight:700">•</span>
+        <span><strong style="color:${colour}">${esc(a.label)}</strong>
+          <span class="text-muted"> — ${esc(a.hint)}</span>${button}</span>
+      </li>`;
+  }).join('') + '</ul>';
+}
+
+function wfLinkQueueHtml(d) {
+  const queue = d.links && Array.isArray(d.links.queue) ? d.links.queue : [];
+  if (!queue.length) return '<div style="color:#22c55e;font-size:.84rem">No links need attention.</div>';
+  return `
+    <div class="table-responsive" style="max-height:280px;overflow:auto">
+      <table class="table table-sm mb-0 align-middle" style="font-size:.8rem">
+        <thead><tr><th>Offer</th><th>Link</th><th>State</th><th></th></tr></thead>
+        <tbody>
+          ${queue.map(row => `
+            <tr>
+              <td>${esc(String(row.title).slice(0, 52))}<div class="text-muted" style="font-size:.72rem">${esc(row.platform)}</div></td>
+              <td>${row.url
+                ? `<a href="${esc(row.url)}" target="_blank" rel="noopener" style="font-size:.74rem">${esc(String(row.url).replace(/^https?:\/\//, '').slice(0, 42))}</a>`
+                : '<span class="text-muted">—</span>'}</td>
+              <td>${wfLinkChip(row.state)}${row.note ? `<div class="text-muted" style="font-size:.7rem">${esc(row.note)}</div>` : ''}</td>
+              <td class="text-end text-nowrap">
+                ${row.url ? `<button class="btn btn-outline-light btn-sm" data-wfact="resolve" data-id="${esc(row.id)}" data-act="recheck">Check</button>` : ''}
+                ${row.state === 'wrong' ? `<button class="btn btn-outline-danger btn-sm ms-1" data-wfact="resolve" data-id="${esc(row.id)}" data-act="clear">Clear</button>` : ''}
+                ${row.state === 'wrong' ? `<button class="btn btn-outline-light btn-sm ms-1" data-wfact="resolve" data-id="${esc(row.id)}" data-act="accept">Accept</button>` : ''}
+              </td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+function wfControlHtml(d) {
+  const runs = d.runs || {};
+  const identity = d.identity || {};
+  const counts = (d.links && d.links.counts) || {};
+  const verifyLabel = counts.unchecked ? `Verify links (${counts.unchecked})` : 'Verify links';
+  return `
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-2">
+      <div style="font-size:.84rem">
+        <strong>${esc(runs.headline || '')}</strong>
+        <div class="text-muted" style="font-size:.76rem">
+          ${identity.mapped ? 'Browser identity: ' + esc(identity.label) : esc(identity.label || 'No browser identity mapped.')}
+          ${runs.available === false ? ' · run history unavailable until the migration is applied' : ''}
+        </div>
+      </div>
+      <div class="d-flex gap-2 flex-wrap">
+        <button class="btn btn-info btn-sm" data-wfact="verify" ${!counts.unchecked && !counts.wrong ? 'disabled title="Nothing unverified right now"' : ''}>${esc(verifyLabel)}</button>
+        <button class="btn btn-outline-acc btn-sm" data-wfact="queue" data-kind="referrals" data-refresh="0">Capture links</button>
+        <button class="btn btn-outline-acc btn-sm" data-wfact="queue" data-kind="referrals" data-refresh="1">Fill descriptions</button>
+      </div>
+    </div>
+    ${wfActiveRunHtml(d)}
+    ${wfFunnelHtml(d)}
+    <div class="mt-3"><div class="text-muted" style="font-size:.74rem;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Next</div>${wfActionsHtml(d)}</div>
+    <div class="mt-3"><div class="text-muted" style="font-size:.74rem;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Links that need you</div>${wfLinkQueueHtml(d)}</div>`;
+}
+
+async function wfLoadControl() {
+  const box = document.getElementById('wfControlBody');
+  if (!box) { wfStopPolling(); return; }
+  const r = await apiJson('/tenant/blogger/writer-flow');
+  if (!r.ok || !r.data?.ok) {
+    box.innerHTML = `<div class="text-muted" style="font-size:.85rem">${esc(r.data?.error || 'Could not load collection status right now.')}</div>`;
+    return;
+  }
+  wfControlData = r.data;
+  box.innerHTML = wfControlHtml(r.data);
+  // Poll only while a run is genuinely in flight, and stop when it is not: a timer that
+  // keeps hitting the database for a finished tenant is how polling gets a bad name.
+  if (r.data.runs && r.data.runs.active) {
+    if (!wfControlTimer) wfControlTimer = setInterval(() => { wfLoadControl(); }, 12000);
+  } else {
+    wfStopPolling();
+  }
+}
+
+async function wfVerifyLinks(btn) {
+  const label = btn ? btn.textContent : 'Verify links';
+  if (btn) { btn.disabled = true; btn.textContent = 'Checking…'; }
+  try {
+    const r = await apiJson('/tenant/blogger/links/verify', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({})
+    });
+    if (r.status >= 400) { toast(r.data?.error || 'Verification failed', 'err'); return; }
+    const v = r.data?.verdicts || {};
+    const bits = [];
+    if (v.match) bits.push(`${v.match} confirmed`);
+    if (v.mismatch) bits.push(`${v.mismatch} point at the wrong job`);
+    if (v.unresolvable) bits.push(`${v.unresolvable} unreachable`);
+    if (r.data?.skipped) bits.push(`${r.data.skipped} accepted by you`);
+    toast(
+      bits.length ? `Links checked — ${bits.join(' · ')}` : (r.data?.message || 'Nothing to check'),
+      v.mismatch ? 'err' : 'ok'
+    );
+    await wfLoadControl();
+    await wfLoadCoverage(document.getElementById('wfCoverage'));
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = label; }
+  }
+}
+
+async function wfQueueRun(kind, refresh, btn) {
+  const label = btn ? btn.textContent : 'Queue';
+  if (btn) { btn.disabled = true; btn.textContent = 'Queueing…'; }
+  try {
+    const r = await apiJson('/tenant/blogger/runs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind: kind || 'referrals', refresh: Boolean(refresh), limit: 120 })
+    });
+    if (!r.ok) { toast(r.data?.error || 'Could not queue the run', 'err'); return; }
+    toast(r.data?.message || 'Run queued', 'ok');
+    // The worker command is logged rather than shown: it is for the operator, and a
+    // tenant staring at a shell command they cannot run is not a control.
+    if (r.data?.command) console.info('[writer-flow] worker command:', r.data.command);
+    await wfLoadControl();
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = label; }
+  }
+}
+
+async function wfCancelRun(runId, btn) {
+  if (!runId) return;
+  if (!confirm('Cancel this run? Work already captured is kept.')) return;
+  if (btn) btn.disabled = true;
+  const r = await apiJson(`/tenant/blogger/runs/${encodeURIComponent(runId)}/cancel`, { method: 'POST' });
+  if (!r.ok) toast(r.data?.error || 'Could not cancel the run', 'err');
+  else toast('Run cancelled', 'ok');
+  await wfLoadControl();
+}
+
+async function wfResolveLink(id, action, btn) {
+  if (!id || !action) return;
+  if (action === 'clear' && !confirm('Remove this link? The offer will show as missing a link until a capture fills it.')) return;
+  const label = btn ? btn.textContent : 'Go';
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  try {
+    const r = await apiJson(`/tenant/blogger/links/${encodeURIComponent(id)}/resolve`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action })
+    });
+    if (!r.ok) { toast(r.data?.error || 'Could not resolve this link', 'err'); return; }
+    toast(r.data?.message || 'Done', action === 'recheck' && r.data?.offer?.link_verdict === 'mismatch' ? 'err' : 'ok');
+    await wfLoadControl();
+    await wfLoadCoverage(document.getElementById('wfCoverage'));
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = label; }
+  }
+}
+
+// "Show them" jumps to the existing offers table with the matching filter applied —
+// repeating the list inside the panel would give the tenant two places to fix one thing.
+function wfApplyLinkFilter(kind) {
+  const links = document.getElementById('wfFilterLinks');
+  const status = document.getElementById('wfFilterStatus');
+  if (kind === 'drafts' && status) { status.value = 'draft'; status.dispatchEvent(new Event('change')); return; }
+  if (links && kind) { links.value = kind === 'missing' ? 'none' : kind; links.dispatchEvent(new Event('change')); }
+}
+
+function wfWireControl() {
+  const panel = document.getElementById('wfControl');
+  if (!panel) return;
+  // Delegated, and attached to the panel rather than the buttons: the body is re-rendered
+  // on every poll, and listeners on replaced nodes would stop firing after 12 seconds.
+  panel.addEventListener('click', (ev) => {
+    const btn = ev.target.closest('button[data-wfact]');
+    if (!btn || btn.disabled) return;
+    const act = btn.dataset.wfact;
+    if (act === 'verify') wfVerifyLinks(btn);
+    else if (act === 'queue') wfQueueRun(btn.dataset.kind || 'referrals', btn.dataset.refresh === '1', btn);
+    else if (act === 'cancel') wfCancelRun(btn.dataset.run, btn);
+    else if (act === 'resolve') wfResolveLink(btn.dataset.id, btn.dataset.act, btn);
+    else if (act === 'filter') wfApplyLinkFilter(btn.dataset.filter);
+  });
+}
+
 async function renderWritersFlow() {
+  // A re-render replaces the panel, so an old poller would keep querying a DOM node that
+  // no longer exists. Stopping here is what keeps the timer count at one.
+  wfStopPolling();
   const sp = document.getElementById('spa');
   sp.innerHTML = spinner("Loading Writer's Flow...");
   let ctx;
@@ -1386,6 +1685,19 @@ async function renderWritersFlow() {
     strip.textContent = 'Checking marketplace coverage…';
     bloggerTab.insertBefore(strip, bloggerTab.firstChild);
     wfLoadCoverage(strip);
+
+    // Collection control sits above the coverage strip: the strip is the outcome, this
+    // is the work — and the work is what a tenant can act on.
+    const control = document.createElement('div');
+    control.id = 'wfControl';
+    control.className = 'panel mb-3';
+    control.innerHTML = '<div class="panel-title d-flex justify-content-between align-items-center flex-wrap gap-2">'
+      + '<span><i class="fa-solid fa-gauge-high me-1"></i> Collection control</span>'
+      + '<span class="text-muted" style="font-size:.72rem">per-tenant · updates while a run is live</span></div>'
+      + `<div id="wfControlBody">${spinner('Loading collection status...')}</div>`;
+    bloggerTab.insertBefore(control, strip);
+    wfWireControl();
+    wfLoadControl();
   }
 
   // Reopen the list the tenant was already looking at — and the one generation

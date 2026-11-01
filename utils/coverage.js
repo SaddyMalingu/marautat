@@ -27,7 +27,7 @@ const SLUG_SOURCES = [
   ['mercor', 'Mercor']
 ];
 
-function sourceOf(offer) {
+export function sourceOf(offer) {
   if (offer.source?.slug) {
     return { slug: String(offer.source.slug), name: String(offer.source.name || offer.source.slug) };
   }

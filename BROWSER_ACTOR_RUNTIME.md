@@ -569,3 +569,68 @@ demand, and `GET /tenant/blogger/coverage` feeds the strip.
 4. **Screenshots + evidence** — a tender PDF/screenshot is what a procurement buyer forwards internally.
 5. **Move leases into Postgres** — only when a second server instance exists.
 
+
+## Writer's Flow controls (2026-11-02)
+
+The portal could show *outcomes* — coverage, link health — but nothing about the *work*:
+no way to start a run, no way to watch one, and no way to act on a link that verification
+had already proven wrong. The Writer's Flow section now has a **Collection control** panel,
+per tenant, with three capabilities.
+
+### The split that makes it honest
+
+| Work | Where it runs | Why |
+|---|---|---|
+| **Verify links** | inside the HTTP request | One `GET` per link. No browser, so the tenant gets an answer in the same click. |
+| **Capture / refresh** | on the operator's machine | The leased browser lives there. The portal records the *request* and shows the exact worker command. |
+
+A page that cannot do something should say so rather than spin. A queued run reads
+*"waiting for a runner"*; a run whose heartbeat is older than 5 minutes reads *"stopped
+reporting"* — never *"running"*.
+
+### Endpoints
+
+```
+GET  /tenant/blogger/writer-flow        funnel per marketplace, run history, next actions
+POST /tenant/blogger/links/verify       { limit? }  verify now, write verdicts, log a run
+POST /tenant/blogger/links/:id/resolve  { action: recheck | clear | accept }
+POST /tenant/blogger/runs               { kind, limit, skip, refresh }  queue for a runner
+POST /tenant/blogger/runs/:id/cancel
+```
+
+Every query is tenant-scoped in the query, never in a post-fetch check.
+
+### The three rules the panel enforces
+
+1. **Unknown is not healthy.** A link with no verdict is *unverified* (amber), not *ok*.
+   A database without the runs table says *"run history unavailable"*, not *"no runs"*.
+2. **A human decision outranks the robot.** `accept` writes `link_note = 'accepted by
+   tenant'`, and the verifier skips those rows. Only an explicit *Check* retires the
+   override — the tenant asking again is the only thing that clears it.
+3. **Clearing keeps the reason.** `clear` nulls `referral_url` but stores
+   `cleared by tenant: pointed at <job>`, so the audit trail outlives the wrong link.
+
+### Run tracking
+
+`browser_actor_runs` (see `migrations/2026-11-02_writer_flow_runs.sql`), one row per run:
+
+- `queued -> running -> succeeded | partial | failed | cancelled`
+- a **partial unique index** on `(tenant_id, kind) WHERE status IN ('queued','running')`
+  means two operators on two machines cannot both claim one tenant's capture.
+- the runner heartbeats every ~2s from `scripts/browser_actor_referrals.mjs`; a crash
+  closes the row as `failed` rather than leaving it looking alive.
+
+Worker hand-off:
+
+```bash
+node scripts/browser_actor_referrals.mjs --tenant <slug> --limit 120 --skip 0 --apply --run-id <uuid>
+# or, without the id: --claim takes the oldest queued run for that tenant
+```
+
+### Tests
+
+`npm run test:writer-flow` — 134 assertions covering the heartbeat/stall rules,
+partial-vs-success, the one-active-run rule, the human-override rule, the funnel
+arithmetic, the store's payloads (against an in-memory table), the endpoints over real
+HTTP, and the not-yet-migrated deployment the production database is currently in.
+

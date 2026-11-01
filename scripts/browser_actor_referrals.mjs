@@ -31,6 +31,7 @@ import { capturePage, resolveDebugTarget, CdpSession } from '../utils/browserAct
 import { verifyReferralLink } from '../utils/browserActor/referralVerify.js';
 import { contentExprFor, describeEnrichment, planDescriptionUpdates } from '../utils/browserActor/enrichment.js';
 import { parseProfileMap, resolveIdentity, describeIdentity } from '../utils/browserActor/identity.js';
+import { createRunStore, deriveRunStatus } from '../utils/browserActor/runs.js';
 import { TURING_PLATFORM, TURING_LIST_COUNT_EXPR, TURING_LOAD_MORE_EXPR } from '../utils/browserActor/tasks/turing.js';
 import {
   REFERRAL_MODAL_TIMEOUT_MS,
@@ -67,6 +68,11 @@ const verifyLinks = flag('no-verify', null) === null;
 // --refresh ignores the progress file: used to back-fill descriptions on offers whose
 // referral link is already attached, where the normal resume would skip them.
 const refresh = flag('refresh', null) !== null;
+// Run tracking. `--run-id` picks up a specific run the portal queued; `--claim` takes
+// the oldest queued run for this tenant. Without either, the script runs standalone and
+// the portal simply sees no run — it does not see a fake one.
+const runIdFlag = flag('run-id');
+const claimQueued = flag('claim', null) !== null;
 
 if (!tenant) {
   console.error('usage: --tenant <slug> [--limit 5] [--skip 0] [--out tmp/referrals.json] [--apply] [--from file]');
@@ -302,6 +308,75 @@ async function loadTenantContext() {
 }
 
 /**
+ * Run tracking for the portal.
+ *
+ * The portal cannot see this script, so the script has to say what it is doing — but
+ * nothing here may ever interrupt a capture. Every call is guarded: if the runs table
+ * is missing, or the network blips, the run continues and only the reporting is lost.
+ *
+ * The heartbeat is deliberately time-based (2s) rather than per-role: a role takes a
+ * couple of seconds, so this is roughly one small UPDATE per role, which is what makes
+ * the portal's progress bar move at human speed instead of in bursts.
+ */
+const runState = { store: null, runId: null, total: 0, done: 0, ok: 0, failed: 0, lastBeat: 0 };
+
+async function startRunTracking(supabase, tenantRow) {
+  if (!runIdFlag && !claimQueued) return;
+  try {
+    runState.store = createRunStore({ table: () => supabase.from('browser_actor_runs') });
+    const run = runIdFlag
+      ? await runState.store.claim({ runId: String(runIdFlag) })
+      : await runState.store.claimNext({ tenantId: tenantRow.id, kind: 'referrals' });
+    if (!run) {
+      console.error('run tracking: nothing queued to claim — continuing without a run record');
+      return;
+    }
+    runState.runId = run.id;
+    runState.total = Number(run.total_items) || 0;
+    console.error(`run tracking: ${run.id} (${run.status})${runState.total ? ` of ${runState.total}` : ''}`);
+  } catch (error) {
+    console.error(`run tracking unavailable: ${error?.message || error} — capturing anyway`);
+    runState.store = null;
+  }
+}
+
+async function beatRun({ force = false } = {}) {
+  if (!runState.store || !runState.runId) return;
+  const nowMs = Date.now();
+  if (!force && nowMs - runState.lastBeat < 2000) return;
+  runState.lastBeat = nowMs;
+  try {
+    await runState.store.progress({
+      runId: runState.runId,
+      done: runState.done,
+      ok: runState.ok,
+      failed: runState.failed,
+      total: runState.total || undefined
+    });
+  } catch (error) {
+    console.error(`run heartbeat failed: ${error?.message || error}`);
+  }
+}
+
+async function finishRunTracking({ status, message, detail } = {}) {
+  if (!runState.store || !runState.runId) return;
+  try {
+    await runState.store.finish({
+      runId: runState.runId,
+      status: status || deriveRunStatus({ done: runState.done, ok: runState.ok, failed: runState.failed, total: runState.total }),
+      done: runState.done,
+      ok: runState.ok,
+      failed: runState.failed,
+      total: runState.total || undefined,
+      message,
+      detail
+    });
+  } catch (error) {
+    console.error(`run could not be closed: ${error?.message || error}`);
+  }
+}
+
+/**
  * Drive the live session.
  *
  * Two properties this function did not have, learned the hard way on a 72-role run
@@ -364,6 +439,9 @@ async function runCapture({ existing = [] } = {}) {
     // Fixed once: a later rebuild may page less far, and the loop bound must not
     // shrink with it or the run would stop early and silently.
     const windowEnd = Math.min(cards, needed);
+    // The portal's denominator, taken from the listing itself rather than from --limit:
+    // a tenant who asked for 140 roles against a 84-card listing should see 84.
+    if (!runState.total) runState.total = Math.max(0, windowEnd - skip);
 
     if (windowEnd <= skip) {
       console.error(`the listing stops at ${cards} cards — nothing in the requested window`);
@@ -465,6 +543,13 @@ async function runCapture({ existing = [] } = {}) {
         }
       } finally {
         save();
+        // Counted here, in `finally`, for the same reason the capture file is: a role
+        // that threw still consumed one unit of the run, and a progress bar that only
+        // counts successes never reaches its own total.
+        runState.done += 1;
+        const gotLink = Boolean(captures[captures.length - 1]?.referralUrl);
+        if (gotLink) runState.ok += 1; else runState.failed += 1;
+        await beatRun();
       }
 
       if (consecutiveFailures >= 5) {
@@ -543,6 +628,7 @@ async function applyDescriptions({ supabase, updates }) {
 async function main() {
   const { supabase, tenantRow, offers } = await loadTenantContext();
   console.error(`tenant=${tenantRow.slug} offers=${offers.length}`);
+  await startRunTracking(supabase, tenantRow);
 
   let captures = [];
   if (fromFile) {
@@ -649,13 +735,31 @@ async function main() {
   }
 
   console.log(JSON.stringify(report, null, 2));
+
+  // Closed last, and with the numbers the database was asked to hold rather than the
+  // ones the loop hoped for: the portal's history is only worth having if it is true.
+  await finishRunTracking({
+    message: report.enrichment
+      ? `${report.enrichment.full}/${report.enrichment.marketplace} offers with full text, ${report.enrichment.thin} thin`
+      : referralCaptureHeadline(plan),
+    detail: {
+      captured: report.captured,
+      withLink: report.withLink,
+      applied: report.applied || null,
+      descriptions: report.enrichment || null
+    }
+  });
 }
 
-main().catch((error) => {
+main().catch(async (error) => {
   console.error(redact(error?.message || String(error)));
   if (error?.code) console.error(`code: ${error.code}`);
+  // A crashed run must not stay "running" in the portal: it is exactly the state that
+  // makes a dead run look alive.
+  await finishRunTracking({ status: 'failed', message: String(error?.message || error).slice(0, 300) });
   process.exit(1);
 });
+
 
 
 

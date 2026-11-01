@@ -11,6 +11,10 @@
  *   tenant_id     — the route scopes by session; accepting it here would be a
  *                   cross-tenant write waiting to happen
  *   id, source_id, created_at, updated_at — not the tenant's to set
+ *   link_verdict, link_checked_at, link_note — the *result* of verification and the
+ *                   record of a human decision about a link. Letting a tenant set these
+ *                   would let them mark their own links verified, which is the one
+ *                   claim this whole subsystem exists to keep honest.
  *
  * Anything outside the allowlist is dropped rather than rejected, so an older
  * client posting the whole row does not fail; the response says what changed.
@@ -29,7 +33,11 @@ export const PATCHABLE_FIELDS = Object.freeze([
   'location_text'
 ]);
 
-const LOCKED_FIELDS = Object.freeze(['id', 'slug', 'status', 'tenant_id', 'source_id', 'created_at', 'updated_at', 'published_at']);
+const LOCKED_FIELDS = Object.freeze([
+  'id', 'slug', 'status', 'tenant_id', 'source_id', 'created_at', 'updated_at', 'published_at',
+  'link_verdict', 'link_checked_at', 'link_note'
+]);
+
 const URL_FIELDS = Object.freeze(['referral_url', 'destination_url']);
 const OFFER_TYPES = Object.freeze(['job', 'product', 'service', 'brand', 'affiliate', 'course']);
 

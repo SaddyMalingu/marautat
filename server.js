@@ -88,6 +88,7 @@ import browserActorsRouter from "./routes/browserActors.js";
 // Social distribution: X publishes through API v2, LinkedIn is composed for the
 // tenant to post (assisted). Factory-mounted below, next to the share card.
 import { createSocialPublishRouter } from "./routes/socialPublish.js";
+import { createWriterFlowRouter } from "./routes/writerFlow.js";
 
 // Define __dirname for ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -5096,6 +5097,17 @@ app.get('/tenant/blogger/coverage', tenantSessionAuth, async (req, res) => {
     });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
+
+// Writer's Flow controls (2026-11-02): progress monitoring, plus the buttons that act
+// on it. Verification runs inside the request (it needs no browser); collection is
+// queued for a runner, because the leased browser lives on the operator's machine.
+// Every handler takes the tenant from the session, so the panel is per-tenant by
+// construction rather than by a filter someone has to remember to add.
+app.use('/', createWriterFlowRouter({
+  tenantSessionAuth,
+  tenantSiteFromSession,
+  supabase,
+}));
 
 // PATCH /tenant/blogger/offers/:id — the portal could create and delete offers
 // but not edit them, so a tenant had no way to attach the per-role referral link
