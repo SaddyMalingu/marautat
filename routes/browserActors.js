@@ -15,6 +15,7 @@
  *   POST   /api/agents/browser/capture           one-shot: lease -> start -> read page -> release
  *   GET    /api/agents/browser/phones            cloud phone inventory
  *   POST   /api/agents/browser/phones/open       open one cloud phone
+ *   GET    /api/agents/browser/referral-audit    where each stored referral link really lands
  *
  * Fail-closed by design: with no AGENT_API_KEY / ADMIN_KEY / ADMIN_PASS set the
  * router answers 503 instead of exposing a browser farm to the internet.
@@ -35,11 +36,13 @@ import { createSessionBroker, publicSession, clampLease } from '../utils/browser
 import { createMoreloginClient } from '../utils/browserActor/moreloginClient.js';
 import { createBrowserRuntime } from '../utils/browserActor/runtime.js';
 import { capturePage } from '../utils/browserActor/cdp.js';
+import { verifyReferralLink } from '../utils/browserActor/referralVerify.js';
 
 const router = Router();
 
 const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
+const supabaseReady = Boolean(supabaseUrl && supabaseKey);
 const supabase =
   supabaseUrl && supabaseKey
     ? createClient(supabaseUrl, supabaseKey)
@@ -425,6 +428,88 @@ router.post('/capture', async (req, res) => {
     if (shouldClose && identity && identity.runtime === 'local') {
       try { await runtime().closeProfile(identity.envId); } catch {}
     }
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Referral link audit (read-only)
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve every referral link this tenant has stored and report where it lands.
+ *
+ * A wrong affiliate link is worse than a missing one: it pays for a job the
+ * candidate never read about. Read-only on purpose — a GET must never rewrite a
+ * revenue field. Use scripts/browser_actor_audit_links.mjs --clear-mismatches to
+ * act on the findings.
+ */
+router.get('/referral-audit', async (req, res) => {
+  try {
+    const tenant = tenantOf(req);
+    if (!tenant) throw new BrowserActorError('invalid_request', 'tenant is required');
+
+    if (!supabaseReady) {
+      return res.status(503).json({
+        ok: false,
+        error: 'not_configured',
+        message: 'Auditing stored referral links needs SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY'
+      });
+    }
+
+    const { data: tenantRow, error: tenantError } = await supabase
+      .from('site_tenants').select('id, slug').eq('slug', tenant).maybeSingle();
+    if (tenantError) throw tenantError;
+    if (!tenantRow) {
+      throw new BrowserActorError('invalid_request', `No tenant with slug "${tenant}"`);
+    }
+
+    const cap = Math.min(Math.max(Number(req.query.limit) || 200, 1), 500);
+    const { data: offers, error: offersError } = await supabase
+      .from('opportunities')
+      .select('id, title, referral_url')
+      .eq('tenant_id', tenantRow.id)
+      .not('referral_url', 'is', null)
+      .limit(cap);
+    if (offersError) throw offersError;
+
+    const rows = Array.isArray(offers) ? offers : [];
+    const results = [];
+
+    // Bounded concurrency: a tenant with 200 links must not open 200 sockets.
+    const queue = [...rows];
+    const workers = Array.from({ length: Math.min(4, Math.max(1, queue.length)) }, async () => {
+      while (queue.length) {
+        const offer = queue.shift();
+        const check = await verifyReferralLink({ url: offer.referral_url, expectedTitle: offer.title });
+        results.push({
+          id: offer.id,
+          title: offer.title,
+          referral_url: offer.referral_url,
+          verdict: check.verdict,
+          reason: check.reason,
+          points_at: check.resolvedTitle || null
+        });
+      }
+    });
+    await Promise.all(workers);
+
+    const mismatches = results.filter((row) => row.verdict === 'mismatch');
+    const unresolvable = results.filter((row) => row.verdict === 'unresolvable');
+
+    res.json({
+      ok: mismatches.length === 0,
+      tenant: tenantRow.slug,
+      checked: results.length,
+      verdicts: {
+        match: results.filter((row) => row.verdict === 'match').length,
+        mismatch: mismatches.length,
+        unresolvable: unresolvable.length
+      },
+      mismatches,
+      unresolvable
+    });
+  } catch (error) {
+    sendError(res, error);
   }
 });
 

@@ -479,6 +479,13 @@ eq('profiles lists the mapped tenant', profiles.status, 200);
 ok('profiles never expose a raw envId', !profiles.text.includes(TENANT_ENV_ID), profiles.text.slice(0, 200));
 ok('profiles keep a masked id for correlation', profiles.text.includes(MASKED_ENV_ID), profiles.text.slice(0, 200));
 
+// Referral audit: read-only, and honest when it cannot reach the database.
+const auditNoTenant = await call('/referral-audit');
+ok('a referral audit without a tenant is refused', auditNoTenant.status >= 400 && auditNoTenant.status < 500, auditNoTenant.text.slice(0, 160));
+const auditNoDb = await call('/referral-audit?tenant=acme');
+eq('an audit without database credentials says so', auditNoDb.status, 503);
+eq('and names the missing config, not a mystery', auditNoDb.body?.error, 'not_configured');
+
 const created = await call('/sessions', { method: 'POST', body: { tenant: 'acme', purpose: 'tender-capture' } });
 eq('a mapped tenant gets a session', created.status, 201);
 eq('the session carries the attach port as a number', created.body.attach.port, closedPort);
