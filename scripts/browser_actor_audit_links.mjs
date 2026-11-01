@@ -75,25 +75,42 @@ async function main() {
   const unknown = results.filter((r) => r.verdict === 'unresolvable');
 
   // Persist the verdict so the portal can answer "is any link wrong?" without
-  // resolving 76 URLs on every page load. If the columns are not migrated yet this
-  // fails once and the audit still reports everything it found.
+  // resolving 76 URLs on every page load.
+  //
+  // Grouped by verdict, not one UPDATE per row: 76 sequential round-trips took long
+  // enough that a run could be interrupted after all the work was done and before
+  // anything was saved. Two queries cannot be interrupted the same way.
   let recorded = 0;
   let recordError = null;
   if (recordVerdicts) {
     const checkedAt = new Date().toISOString();
+    const byVerdict = new Map();
     for (const row of results) {
-      const { error: recordFailure } = await supabase
-        .from('opportunities')
-        .update({ link_verdict: row.verdict, link_checked_at: checkedAt })
-        .eq('id', row.id);
-      if (recordFailure) {
-        recordError = recordFailure.message;
-        break;
+      if (!row.id) continue;
+      const bucket = byVerdict.get(row.verdict) || [];
+      bucket.push(row.id);
+      byVerdict.set(row.verdict, bucket);
+    }
+    for (const [verdict, ids] of byVerdict) {
+      for (let at = 0; at < ids.length; at += 50) {
+        const chunk = ids.slice(at, at + 50);
+        const { data, error: recordFailure } = await supabase
+          .from('opportunities')
+          .update({ link_verdict: verdict, link_checked_at: checkedAt })
+          .in('id', chunk)
+          .select('id');
+        if (recordFailure) {
+          recordError = recordFailure.message;
+          break;
+        }
+        recorded += Array.isArray(data) ? data.length : 0;
       }
-      recorded += 1;
+      if (recordError) break;
     }
     if (recordError) {
       console.error(`could not record verdicts (${recordError}) — apply migrations/2026-11-01_add_referral_link_verification.sql`);
+    } else {
+      console.error(`recorded ${recorded} verdict(s)`);
     }
   }
 

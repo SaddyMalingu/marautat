@@ -648,8 +648,102 @@ async function renderOnboarding() {
 // ═══ WRITER'S FLOW (Growth): Research & Outreach + Blogger ═══
 let wfTab = 'blogger';
 
+// ─── Offer list: filter and sort ────────────────────────────────────────────
+// The offers table is the tenant's working set, and it mixes four different things:
+// live pages vs drafts, offers whose referral link is verified vs ones that earn
+// nothing, offers already written vs never touched. Filtering is client-side because
+// the whole list already arrived with /tenant/blogger — no new route, no round trip.
+const wfOfferState = { status: 'all', links: 'all', pages: 'all', sort: 'title', dir: 'asc' };
+
+/** 'none' | 'verified' | 'wrong' | 'unchecked' — what the referral link really is. */
+function wfOfferLinkState(o) {
+  if (!String(o.referral_url || '').trim()) return 'none';
+  const verdict = String(o.link_verdict || '').toLowerCase();
+  if (verdict === 'match') return 'verified';
+  if (verdict === 'mismatch') return 'wrong';
+  return 'unchecked';
+}
+
+function wfLinkBadge(o) {
+  const state = wfOfferLinkState(o);
+  if (state === 'none') return '<span class="badge" style="background:#6b7280" title="No referral link — this offer earns nothing">none</span>';
+  if (state === 'verified') return '<span class="badge" style="background:#10b981" title="Resolves to this job">verified</span>';
+  if (state === 'wrong') return '<span class="badge" style="background:#ef4444" title="This link lands on a DIFFERENT job">wrong job</span>';
+  return '<span class="badge" style="background:#f59e0b" title="Never checked since it was attached">unverified</span>';
+}
+
+function wfFilterOffers(offers) {
+  const s = wfOfferState;
+  const filtered = offers.filter((o) => {
+    const status = String(o.status || 'draft').toLowerCase();
+    if (s.status !== 'all' && status !== s.status) return false;
+    if (s.links !== 'all' && wfOfferLinkState(o) !== s.links) return false;
+    if (s.pages !== 'all') {
+      const optimized = Number(o.page_count || 0) > 0;
+      if (s.pages === 'optimized' && !optimized) return false;
+      if (s.pages === 'not' && optimized) return false;
+    }
+    return true;
+  });
+
+  const key = {
+    title: (o) => String(o.title || '').toLowerCase(),
+    status: (o) => String(o.status || ''),
+    links: (o) => wfOfferLinkState(o),
+    pages: (o) => Number(o.page_count || 0),
+    price: (o) => Number(o.compensation_max || 0)
+  }[s.sort] || ((o) => String(o.title || '').toLowerCase());
+
+  return filtered.sort((a, b) => {
+    const left = key(a);
+    const right = key(b);
+    const cmp = left < right ? -1 : left > right ? 1 : 0;
+    return s.dir === 'asc' ? cmp : -cmp;
+  });
+}
+
+function wfRenderOffers(offers) {
+  const body = document.getElementById('wfOfferBody');
+  if (!body) return;
+  const rows = wfFilterOffers(offers);
+  body.innerHTML = rows.length
+    ? wfOfferRows(rows)
+    : '<tr><td colspan="7" class="text-muted text-center p-3">No offers match this filter.</td></tr>';
+  const count = document.getElementById('wfOfferCount');
+  if (count) count.textContent = `${rows.length} of ${offers.length}`;
+}
+
+function wfWireOfferFilters(offers) {
+  const bind = (id, field) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.value = wfOfferState[field];
+    el.onchange = () => { wfOfferState[field] = el.value; wfRenderOffers(offers); };
+  };
+  bind('wfFilterStatus', 'status');
+  bind('wfFilterLinks', 'links');
+  bind('wfFilterPages', 'pages');
+  // Clicking a header sorts by it; clicking again reverses. No arrow glyph is faked
+  // until it is actually the active sort, so the header never lies about the order.
+  document.querySelectorAll('#wf-blogger [data-wfsort]').forEach((th) => {
+    th.style.cursor = 'pointer';
+    th.title = 'Sort by ' + th.textContent.trim();
+    th.onclick = () => {
+      const field = th.dataset.wfsort;
+      if (wfOfferState.sort === field) {
+        wfOfferState.dir = wfOfferState.dir === 'asc' ? 'desc' : 'asc';
+      } else {
+        wfOfferState.sort = field;
+        wfOfferState.dir = 'asc';
+      }
+      wfRenderOffers(offers);
+    };
+  });
+  wfRenderOffers(offers);
+}
+
 function wfOfferRows(offers) {
-  if (!offers.length) return `<tr><td colspan="6" class="text-muted text-center p-3">No offers yet — create your first one above.</td></tr>`;
+  if (!offers.length) return `<tr><td colspan="7" class="text-muted text-center p-3">No offers yet — create your first one above.</td></tr>`;
   return offers.map(o => {
     // The pages are the deliverable, so they get a column of their own instead
     // of ending as a toast the tenant cannot click.
@@ -661,6 +755,7 @@ function wfOfferRows(offers) {
       <td>${badge(o.status)}</td>
       <td>${o.compensation_max != null ? esc(o.compensation_currency || 'KES') + ' ' + Number(o.compensation_max).toLocaleString() : '—'}</td>
       <td class="text-center"><button class="btn btn-sm ${n ? 'btn-outline-info' : 'btn-outline-secondary'}" data-act="posts" data-id="${esc(o.id)}">${n ? n + ' page' + (n === 1 ? '' : 's') : 'Pages'}</button></td>
+      <td>${wfLinkBadge(o)}</td>
       <td class="text-end">
         ${o.status !== 'published' ? `<button class="btn btn-sm btn-success me-1" data-act="publish" data-id="${esc(o.id)}">Publish</button>` : ''}
         <button class="btn btn-sm btn-outline-secondary me-1" data-act="referral" data-id="${esc(o.id)}" data-url="${esc(o.referral_url || '')}" title="${o.referral_url ? 'Referral link set' : 'No referral link yet — this offer earns nothing'}">${o.referral_url ? 'Referral ✓' : 'Referral'}</button>
@@ -668,7 +763,7 @@ function wfOfferRows(offers) {
         <button class="btn btn-sm btn-outline-danger" data-act="del" data-id="${esc(o.id)}">Delete</button>
       </td>
     </tr>
-    <tr class="wf-posts-row" data-for="${esc(o.id)}" style="display:none"><td colspan="6" class="wf-posts-cell"></td></tr>`;
+    <tr class="wf-posts-row" data-for="${esc(o.id)}" style="display:none"><td colspan="7" class="wf-posts-cell"></td></tr>`;
   }).join('');
 }
 
@@ -1170,9 +1265,39 @@ function wfBloggerHtml(ctx) {
       </form>
     </div>
     <div class="panel p-0">
-      <div class="panel-title px-3 pt-3">Your Offers</div>
+      <div class="panel-title px-3 pt-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <span>Your Offers</span>
+        <span class="d-flex align-items-center gap-2 flex-wrap">
+          <select id="wfFilterStatus" class="form-select form-select-sm" style="width:auto" title="Published or draft">
+            <option value="all">All statuses</option>
+            <option value="published">Published</option>
+            <option value="draft">Drafts</option>
+          </select>
+          <select id="wfFilterLinks" class="form-select form-select-sm" style="width:auto" title="Referral link health">
+            <option value="all">Any link</option>
+            <option value="verified">Link verified</option>
+            <option value="unchecked">Link unverified</option>
+            <option value="wrong">Link points elsewhere</option>
+            <option value="none">No link (earns nothing)</option>
+          </select>
+          <select id="wfFilterPages" class="form-select form-select-sm" style="width:auto" title="Whether pages have been written">
+            <option value="all">Any pages</option>
+            <option value="optimized">Optimized</option>
+            <option value="not">Not optimized</option>
+          </select>
+          <span id="wfOfferCount" class="text-muted" style="font-size:.78rem"></span>
+        </span>
+      </div>
       <div class="table-responsive">
-        <table class="table table-sm mb-0 align-middle"><thead><tr><th>Title</th><th>Type</th><th>Status</th><th>Price</th><th class="text-center">Pages</th><th></th></tr></thead><tbody>${wfOfferRows(offers)}</tbody></table>
+        <table class="table table-sm mb-0 align-middle"><thead><tr>
+          <th data-wfsort="title">Title</th>
+          <th>Type</th>
+          <th data-wfsort="status">Status</th>
+          <th data-wfsort="price">Price</th>
+          <th class="text-center" data-wfsort="pages">Pages</th>
+          <th data-wfsort="links">Link</th>
+          <th></th>
+        </tr></thead><tbody id="wfOfferBody">${wfOfferRows(offers)}</tbody></table>
       </div>
     </div>`;
 }
@@ -1265,6 +1390,8 @@ async function renderWritersFlow() {
   // The outreach tab is only reachable by click, but the campaign list should be
   // warm when they get there; wiring here keeps the panel inert until rendered.
   wfWireOutreach();
+  // Offers: filters + sortable headers, wired once the table exists in the DOM.
+  if (document.getElementById('wfOfferBody')) wfWireOfferFilters(ctx.offers || []);
 
   // Voice controls. Saving writes site_tenants.metadata.voice, so the choice
   // survives deploys and applies to every later run for this tenant.

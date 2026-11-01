@@ -440,6 +440,15 @@ ok('an X prefill link sits beside the API post',
   dash.includes('twitter.com/intent/tweet') && dash.includes('/publish/x'));
 ok('the portal shows marketplace coverage, not the collector progress file',
   dash.includes('/tenant/blogger/coverage') && dash.includes('wfCoverage') && !dash.includes('collect_progress'));
+// The offers list is the tenant's working set, so it must be filterable by the three
+// things that decide whether an offer earns: is it live, is its link real, has it
+// been written.
+ok('offers can be filtered by status, link health and pages',
+  dash.includes('wfFilterStatus') && dash.includes('wfFilterLinks') && dash.includes('wfFilterPages'));
+ok('offers can be sorted by column', dash.includes('data-wfsort') && dash.includes('wfOfferState'));
+ok('a link pointing at another job is visible in the list, not just the strip',
+  dash.includes('wrong job') && dash.includes('wfLinkBadge'));
+ok('an offer with no referral link says so plainly', dash.includes('earns nothing'));
 ok('X is published from the portal through the API', dash.includes('/publish/x'));
 ok('there is no LinkedIn publish path anywhere in the portal', !/publish\/linkedin/i.test(dash));
 ok('the portal tells the tenant LinkedIn is theirs to post', dash.includes('prepared for you to post'));
