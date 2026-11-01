@@ -514,7 +514,34 @@ does not resolve to its role. `scripts/browser_actor_audit_links.mjs` runs the s
 check across stored links: `11 checked → 10 match, 1 mismatch`, and the mismatch was
 cleared and replaced with a verified one.
 
-#### Link health in the portal
+#### Provenance: which links are ours, and which are the tenant's
+
+Verified 2026-11-01 against the live database:
+
+| Marketplace | Links | Where they came from | Payee check |
+|---|---|---|---|
+| Turing | 71 | **us** — every row created by the importer on 2026-10-31, each carrying `external_id` = `turing:<role>` | 71 distinct `/r/<code>`, one per role |
+| Micro1 | 5 | **the tenant** — created 2026-10-28…30, `external_id` null on all five | 1 distinct `referralCode` across all five: their own account code |
+
+No Micro1 adapter exists, and the collector cannot write one:
+`scripts/browser_actor_collect.mjs` refuses any platform other than `turing`, and
+`utils/browserActor/tasks/` contains only `turing.js`. So nothing of ours has ever
+touched those five links, and the run that produced the 71 could not have produced a
+Micro1 URL.
+
+`planCodeIntegrity()` checks the thing title-verification cannot: **does this link
+pay the tenant?** A link can open the correct job while carrying someone else's
+referral code, and then the tenant does the work and another account is paid.
+
+- query codes (`?referralCode=`) are **account level** — repeats are normal, and a
+  different code is a different payee, so it is flagged `foreign_code`;
+- path codes (`/r/<code>`) are **per role** — a repeat means two offers claim one
+  role, so it is flagged `shared_code`.
+
+Both rules are decided by URL shape, not by code frequency: a first attempt guessed
+"the most common code is the account" and immediately flagged all five Micro1 links as
+duplicates of each other, which is exactly how correct account-level links look.
+
 
 The audit records its verdict per offer (`link_verdict`, `link_checked_at` — see
 `migrations/2026-11-01_add_referral_link_verification.sql`), so the coverage strip

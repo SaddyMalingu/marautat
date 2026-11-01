@@ -61,8 +61,10 @@ import {
 } from '../utils/browserActor/tasks/turingReferrals.js';
 import {
   decodeHtmlEntities,
+  extractReferralCode,
   judgeReferralLink,
   normalizeTitleForCompare,
+  planCodeIntegrity,
   verifyReferralLink
 } from '../utils/browserActor/referralVerify.js';
 import { sanitizeOfferPatch } from '../utils/offerPatch.js';
@@ -1083,6 +1085,42 @@ console.log('\n-- coverage --');
   });
   eq('an unreachable link is not written either', offline.verdict, 'unresolvable');
   ok('and the reason is explicit', offline.reason.startsWith('fetch_failed'));
+
+  // --- Is every link paying THIS tenant? ---
+  eq('a Turing code is read off the path', extractReferralCode('https://work.turing.com/r/xako-8LrQK'), 'xako-8LrQK');
+  eq('a Micro1 code is read off the query',
+    extractReferralCode('https://jobs.micro1.ai/post/abc?referralCode=98fb722e&utm_source=referral'), '98fb722e');
+  eq('a link with no code returns null', extractReferralCode('https://work.turing.com/jobs'), null);
+
+  const clean = planCodeIntegrity([
+    { id: 'a', title: 'Role A', referral_url: 'https://work.turing.com/r/AAA' },
+    { id: 'b', title: 'Role B', referral_url: 'https://work.turing.com/r/BBB' },
+    { id: 'c', title: 'M1 A', referral_url: 'https://jobs.micro1.ai/post/1?referralCode=TENANT' },
+    { id: 'd', title: 'M1 B', referral_url: 'https://jobs.micro1.ai/post/2?referralCode=TENANT' }
+  ]);
+  eq('one code per Turing role is clean', clean.issues.length, 0);
+  eq('Micro1 shows as one account-level code', clean.summary['micro1.ai:query'].codes, 1);
+  eq('Micro1 is classified as account level', clean.summary['micro1.ai:query'].kind, 'query');
+  eq('Turing shows one code per role', clean.summary['turing.com:path'].codes, 2);
+  ok('and is classified as per-role', clean.summary['turing.com:path'].kind === 'path');
+
+  // The failure that pays somebody else: correct job, wrong referral code.
+  const foreign = planCodeIntegrity([
+    { id: 'a', title: 'M1 A', referral_url: 'https://jobs.micro1.ai/post/1?referralCode=MINE' },
+    { id: 'b', title: 'M1 B', referral_url: 'https://jobs.micro1.ai/post/2?referralCode=MINE' },
+    { id: 'c', title: 'M1 C', referral_url: 'https://jobs.micro1.ai/post/3?referralCode=SOMEONE_ELSE' }
+  ]);
+  eq('a link paying another account is caught', foreign.issues.length, 1);
+  eq('and named as a foreign code', foreign.issues[0].reason, 'foreign_code');
+  eq('with the code it actually pays', foreign.issues[0].code, 'SOMEONE_ELSE');
+  ok('and what it should pay', foreign.issues[0].detail.includes('MINE'));
+
+  // Two roles sharing one Turing code means one of them is mislabelled.
+  const shared = planCodeIntegrity([
+    { id: 'a', title: 'Role A', referral_url: 'https://work.turing.com/r/SAME' },
+    { id: 'b', title: 'Role B', referral_url: 'https://work.turing.com/r/SAME' }
+  ]);
+  ok('two roles sharing one code is flagged', shared.issues.some((i) => i.reason === 'shared_code'));
 }
 
 // ---------------------------------------------------------------------------

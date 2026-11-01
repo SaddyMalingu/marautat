@@ -168,3 +168,123 @@ export async function verifyReferralLink({
     status: response.status
   };
 }
+
+/**
+ * Where the code lives, and what that means.
+ *
+ *   path   `/r/<code>`      — the code IS the role (Turing). Repeats are duplicates.
+ *   query  `?referralCode=` — the code is the account (Micro1). Repeats are normal,
+ *                             and a *different* code means a different payee.
+ *
+ * Deriving this from URL shape rather than code frequency matters: a first version
+ * guessed "the most common code is the account" and immediately flagged all five
+ * Micro1 links as duplicates of each other, which is exactly how they are supposed
+ * to look.
+ */
+export function parseReferralCode(url) {
+  try {
+    const parsed = new URL(String(url || ''));
+    for (const name of ['referralCode', 'ref', 'code']) {
+      const value = parsed.searchParams.get(name);
+      if (value && String(value).trim()) return { code: String(value).trim(), kind: 'query' };
+    }
+    const path = parsed.pathname.match(/\/r\/([^/]+)\/?$/i);
+    if (path) return { code: decodeURIComponent(path[1]).trim(), kind: 'path' };
+    return { code: null, kind: 'none' };
+  } catch {
+    return { code: null, kind: 'none' };
+  }
+}
+
+/** The referral code a link carries, if it carries one. */
+export function extractReferralCode(url) {
+  return parseReferralCode(url).code;
+}
+
+/**
+ * Cross-link integrity: is every stored link paying *this* tenant?
+ *
+ * Title verification proves a link lands on the right job. It does NOT prove the
+ * link credits the tenant — a link can open the correct job while carrying somebody
+ * else's referral code, and then the tenant does the work and another account gets
+ * paid. That is the failure this check exists for.
+ *
+ * Rules, chosen by where the code lives:
+ *
+ *   - **query codes (account level):** the tenant's dominant code should cover the
+ *     marketplace. A link carrying anything else pays somebody else. Flagged.
+ *   - **path codes (per role):** one code per role, so the same code on two offers
+ *     means one of them is mislabelled. Flagged.
+ *
+ * Pure: takes rows, returns findings. No network, no database.
+ */
+export function planCodeIntegrity(rows = [], { dominantShare = 0.5 } = {}) {
+  const groups = new Map();
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const url = String(row?.referral_url || '').trim();
+    if (!url) continue;
+    let host = 'unknown';
+    try { host = new URL(url).hostname.replace(/^www\./, ''); } catch { host = 'unknown'; }
+    const shortHost = host.endsWith('turing.com') ? 'turing.com' : host.endsWith('micro1.ai') ? 'micro1.ai' : host;
+    const { code, kind } = parseReferralCode(url);
+    if (kind === 'none') continue;
+    const key = `${shortHost}|${kind}`;
+    if (!groups.has(key)) groups.set(key, { host: shortHost, kind, rows: [] });
+    groups.get(key).rows.push({ ...row, code });
+  }
+
+  const issues = [];
+  const summary = {};
+
+  for (const { host, kind, rows: groupRows } of groups.values()) {
+    const counts = new Map();
+    for (const row of groupRows) counts.set(row.code, (counts.get(row.code) || 0) + 1);
+    const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+    const dominant = ranked[0] || null;
+    const key = `${host}:${kind}`;
+    summary[key] = {
+      links: groupRows.length,
+      codes: ranked.length,
+      kind,
+      dominantCode: dominant ? dominant[0] : null,
+      dominantCount: dominant ? dominant[1] : 0
+    };
+
+    if (kind === 'query') {
+      const dominantIsMost = Boolean(dominant) && dominant[1] / groupRows.length >= dominantShare;
+      if (!dominantIsMost) continue;
+      for (const row of groupRows) {
+        if (row.code === dominant[0]) continue;
+        issues.push({
+          offerId: row.id || null,
+          title: row.title || null,
+          code: row.code,
+          expectedCode: dominant[0],
+          reason: 'foreign_code',
+          detail: `${host} pays ${dominant[0]} on ${dominant[1]} of ${groupRows.length} links; this one pays ${row.code}`
+        });
+      }
+      continue;
+    }
+
+    // Per-role codes: a repeat means two offers claim the same role.
+    for (const [code, count] of ranked) {
+      if (count <= 1) continue;
+      const titles = groupRows.filter((r) => r.code === code).map((r) => r.title || '(untitled)');
+      issues.push({
+        offerId: null,
+        title: titles[0],
+        code,
+        expectedCode: null,
+        reason: 'shared_code',
+        detail: `${code} is attached to ${count} offers: ${titles.join(' | ')}`
+      });
+    }
+  }
+
+  return {
+    issues,
+    summary,
+    checked: (Array.isArray(rows) ? rows : []).filter((row) => row && row.referral_url).length
+  };
+}

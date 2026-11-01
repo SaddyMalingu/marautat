@@ -16,7 +16,7 @@
  */
 import 'dotenv/config';
 import { createClient } from '@supabase/supabase-js';
-import { verifyReferralLink } from '../utils/browserActor/referralVerify.js';
+import { verifyReferralLink, planCodeIntegrity } from '../utils/browserActor/referralVerify.js';
 
 const argv = process.argv.slice(2);
 function flag(name, fallback = null) {
@@ -73,6 +73,17 @@ async function main() {
   const mismatches = results.filter((r) => r.verdict === 'mismatch');
   const matches = results.filter((r) => r.verdict === 'match');
   const unknown = results.filter((r) => r.verdict === 'unresolvable');
+
+  // Title verification says "right job". This says "right payee". A link can land on
+  // the correct job while crediting another account, which pays the wrong person for
+  // work the tenant did.
+  const codeIntegrity = planCodeIntegrity(results);
+  for (const [host, stat] of Object.entries(codeIntegrity.summary)) {
+    console.error(`  codes ${host}: ${stat.codes} distinct across ${stat.links} links (dominant ${stat.dominantCode} ×${stat.dominantCount})`);
+  }
+  for (const issue of codeIntegrity.issues) {
+    console.error(`  CODE ISSUE ${issue.reason}: ${issue.detail}`);
+  }
 
   // Persist the verdict so the portal can answer "is any link wrong?" without
   // resolving 76 URLs on every page load.
@@ -138,6 +149,7 @@ async function main() {
       action: clearMismatches ? 'cleared' : 'needs_replacing'
     })),
     unresolvable: unknown.map((r) => ({ title: r.title, reason: r.reason })),
+    codeIntegrity,
     recorded: recordVerdicts ? { count: recorded, error: recordError } : 'skipped',
     cleared
   }, null, 2));
