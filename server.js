@@ -5072,16 +5072,19 @@ app.get('/tenant/blogger/coverage', tenantSessionAuth, async (req, res) => {
     // migration has not been applied the query fails, and coverage still works — it
     // just cannot report link health, which is honest ("unknown"), not "all fine".
     const base = 'id, slug, status, referral_url, source:opportunity_sources(slug, name)';
-    let { data, error } = await supabase
-      .from('opportunities')
-      .select(`${base}, link_verdict, link_checked_at`)
-      .eq('tenant_id', ctx.site.id);
-    if (error) {
-      ({ data, error } = await supabase
+    const build = (withVerdict, withSoftDelete) => {
+      let query = supabase
         .from('opportunities')
-        .select(base)
-        .eq('tenant_id', ctx.site.id));
-    }
+        .select(withVerdict ? `${base}, link_verdict, link_checked_at` : base)
+        .eq('tenant_id', ctx.site.id);
+      // Deleted offers are hidden from coverage: they are not part of what the tenant
+      // is currently working, and counting them would overstate the catalogue.
+      if (withSoftDelete) query = query.is('deleted_at', null);
+      return query;
+    };
+    let { data, error } = await build(true, true);
+    if (error) ({ data, error } = await build(false, true));  // link_verdict not migrated
+    if (error) ({ data, error } = await build(false, false)); // deleted_at not migrated
     if (error) throw error;
     const { summarizeCoverage, coverageHeadline } = await import('./utils/coverage.js');
     const summary = summarizeCoverage(data || []);
@@ -5210,16 +5213,53 @@ app.post('/tenant/blogger/posts/:slug/review', tenantSessionAuth, async (req, re
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// DELETE /tenant/blogger/offers/:id
+// DELETE /tenant/blogger/offers/:id — SOFT delete (2026-11-01).
+//
+// This used to remove the row, which orphaned the pages the tenant had paid to
+// generate and destroyed the referral link attached to it, with no undo. A misclick
+// cost real money. Now it stamps `deleted_at`: the offer leaves the public hub and
+// its /go redirect stops working, but the row, its pages and its link survive and can
+// be restored.
 app.delete('/tenant/blogger/offers/:id', tenantSessionAuth, async (req, res) => {
   try {
     const ctx = await tenantSiteFromSession(req);
     if (!ctx) return res.status(404).json({ error: 'Tenant not found' });
-    const { data: offer } = await supabase.from('opportunities').select('id')
-      .eq('id', req.params.id).eq('tenant_id', ctx.site.id).maybeSingle();
-    if (!offer) return res.status(404).json({ error: 'Offer not found' });
-    await supabase.from('opportunities').delete().eq('id', req.params.id);
-    res.json({ ok: true });
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'Offer id is required' });
+    const { data, error } = await supabase
+      .from('opportunities')
+      .update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .eq('tenant_id', ctx.site.id)
+      .is('deleted_at', null)
+      .select('id');
+    if (error) {
+      // Before the migration lands the column does not exist; refusing is better than
+      // silently hard-deleting what the tenant expected to be recoverable.
+      return res.status(500).json({ error: `Could not delete: ${error.message}` });
+    }
+    if (!data || !data.length) return res.status(404).json({ error: 'Offer not found' });
+    res.json({ ok: true, deleted: true, restorable: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /tenant/blogger/offers/:id/restore — undo a soft delete.
+app.post('/tenant/blogger/offers/:id/restore', tenantSessionAuth, async (req, res) => {
+  try {
+    const ctx = await tenantSiteFromSession(req);
+    if (!ctx) return res.status(404).json({ error: 'Tenant not found' });
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'Offer id is required' });
+    const { data, error } = await supabase
+      .from('opportunities')
+      .update({ deleted_at: null, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .eq('tenant_id', ctx.site.id)
+      .not('deleted_at', 'is', null)
+      .select('id, title, status');
+    if (error) return res.status(500).json({ error: error.message });
+    if (!data || !data.length) return res.status(404).json({ error: 'No deleted offer with that id' });
+    res.json({ ok: true, restored: data[0] });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

@@ -449,6 +449,10 @@ ok('offers can be sorted by column', dash.includes('data-wfsort') && dash.includ
 ok('a link pointing at another job is visible in the list, not just the strip',
   dash.includes('wrong job') && dash.includes('wfLinkBadge'));
 ok('an offer with no referral link says so plainly', dash.includes('earns nothing'));
+// Delete is reversible: the row survives so the pages and the referral link do too.
+ok('deleting an offer is a soft delete with a restore path',
+  dash.includes("data-act=\"restore\"") && dash.includes('/restore'));
+ok('a deleted offer is a filter state, not a hole', dash.includes('<option value="deleted">Deleted</option>'));
 ok('X is published from the portal through the API', dash.includes('/publish/x'));
 ok('there is no LinkedIn publish path anywhere in the portal', !/publish\/linkedin/i.test(dash));
 ok('the portal tells the tenant LinkedIn is theirs to post', dash.includes('prepared for you to post'));

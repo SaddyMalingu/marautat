@@ -676,7 +676,16 @@ function wfFilterOffers(offers) {
   const s = wfOfferState;
   const filtered = offers.filter((o) => {
     const status = String(o.status || 'draft').toLowerCase();
-    if (s.status !== 'all' && status !== s.status) return false;
+    const isDeleted = Boolean(o.deleted_at);
+    // Delete is a soft delete now, so a deleted offer is a state the tenant can look
+    // at and undo — not a hole where something used to be. It stays out of every other
+    // view, so "All" means "all the ones I still have".
+    if (s.status === 'deleted') {
+      if (!isDeleted) return false;
+    } else {
+      if (isDeleted) return false;
+      if (s.status !== 'all' && status !== s.status) return false;
+    }
     if (s.links !== 'all' && wfOfferLinkState(o) !== s.links) return false;
     if (s.pages !== 'all') {
       const optimized = Number(o.page_count || 0) > 0;
@@ -757,10 +766,12 @@ function wfOfferRows(offers) {
       <td class="text-center"><button class="btn btn-sm ${n ? 'btn-outline-info' : 'btn-outline-secondary'}" data-act="posts" data-id="${esc(o.id)}">${n ? n + ' page' + (n === 1 ? '' : 's') : 'Pages'}</button></td>
       <td>${wfLinkBadge(o)}</td>
       <td class="text-end">
-        ${o.status !== 'published' ? `<button class="btn btn-sm btn-success me-1" data-act="publish" data-id="${esc(o.id)}">Publish</button>` : ''}
+        ${o.deleted_at
+          ? `<button class="btn btn-sm btn-outline-success" data-act="restore" data-id="${esc(o.id)}" title="Put it back — the offer and its pages were never removed">Restore</button>`
+          : `${o.status !== 'published' ? `<button class="btn btn-sm btn-success me-1" data-act="publish" data-id="${esc(o.id)}">Publish</button>` : ''}
         <button class="btn btn-sm btn-outline-secondary me-1" data-act="referral" data-id="${esc(o.id)}" data-url="${esc(o.referral_url || '')}" title="${o.referral_url ? 'Referral link set' : 'No referral link yet — this offer earns nothing'}">${o.referral_url ? 'Referral ✓' : 'Referral'}</button>
         <button class="btn btn-sm btn-outline-info me-1" data-act="blog" data-id="${esc(o.id)}">Optimize</button>
-        <button class="btn btn-sm btn-outline-danger" data-act="del" data-id="${esc(o.id)}">Delete</button>
+        <button class="btn btn-sm btn-outline-danger" data-act="del" data-id="${esc(o.id)}">Delete</button>`}
       </td>
     </tr>
     <tr class="wf-posts-row" data-for="${esc(o.id)}" style="display:none"><td colspan="7" class="wf-posts-cell"></td></tr>`;
@@ -1272,6 +1283,7 @@ function wfBloggerHtml(ctx) {
             <option value="all">All statuses</option>
             <option value="published">Published</option>
             <option value="draft">Drafts</option>
+            <option value="deleted">Deleted</option>
           </select>
           <select id="wfFilterLinks" class="form-select form-select-sm" style="width:auto" title="Referral link health">
             <option value="all">Any link</option>
@@ -1501,7 +1513,15 @@ async function renderWritersFlow() {
       renderWritersFlow();
       return;
     }
-    if (act === 'del' && !confirm('Delete this offer?')) return;
+    if (act === 'restore') {
+      btn.disabled = true;
+      const r = await apiJson(`/tenant/blogger/offers/${id}/restore`, { method: 'POST' });
+      if (!r.ok) { toast(r.data?.error || 'Restore failed', 'err'); btn.disabled = false; return; }
+      toast('Offer restored', 'ok');
+      renderWritersFlow();
+      return;
+    }
+    if (act === 'del' && !confirm('Move this offer to Deleted? Its pages and referral link are kept, and you can restore it.')) return;
     const url = `/tenant/blogger/offers/${id}` + (act === 'publish' ? '/publish' : act === 'blog' ? '/blog' : '');
     btn.disabled = true;
     const r = await apiJson(url, { method: act === 'del' ? 'DELETE' : 'POST' });

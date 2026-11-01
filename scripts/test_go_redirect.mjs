@@ -43,6 +43,14 @@ ok('/go/:id runs the same handler as /ai-jobs/apply/:id',
   /app\.get\('\/go\/:id',[^;]*handleOfferClick\(req, res, \{ fallbackPath: '\/go', humanFacing: true \}\)/.test(serverSrc));
 ok('/ai-jobs/apply/:id still works for every page already published',
   /router\.get\('\/apply\/:id', \(req, res\) => handleOfferClick\(req, res, \{ fallbackPath: '\/ai-jobs\/apply' \}\)/.test(routeSrc));
+// Soft delete (2026-11-01): a click on a deleted offer must not reach the tenant's
+// affiliate URL, and deleting must not destroy the row the referral link lives on.
+ok('a soft-deleted offer cannot redirect a click', /\.is\('deleted_at', null\)/.test(handler));
+ok('deleting an offer stamps deleted_at instead of removing the row',
+  /app\.delete\('\/tenant\/blogger\/offers\/:id'[\s\S]{0,700}deleted_at/.test(serverSrc));
+ok('the old hard delete is gone',
+  !/app\.delete\('\/tenant\/blogger\/offers\/:id'[\s\S]{0,700}\.delete\(\)/.test(serverSrc));
+ok('a deleted offer can be restored', /app\.post\('\/tenant\/blogger\/offers\/:id\/restore'/.test(serverSrc));
 ok('the redirect logic exists once, not once per path',
   (routeSrc.match(/res\.redirect\(302, dest\)/g) || []).length === 1);
 

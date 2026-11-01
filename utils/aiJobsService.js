@@ -160,22 +160,31 @@ async function getOpportunities({
  * Get a single opportunity by slug.
  */
 async function getOpportunityBySlug(slug) {
-  const { data, error } = await supabase
-    .from('opportunities')
-    .select(`
-      *,
-      category:opportunity_categories(*),
-      source:opportunity_sources(*)
-    `)
-    .eq('slug', slug)
-    .eq('status', 'published')
-    .single();
-  
+  const build = (withSoftDelete) => {
+    let query = supabase
+      .from('opportunities')
+      .select(`
+        *,
+        category:opportunity_categories(*),
+        source:opportunity_sources(*)
+      `)
+      .eq('slug', slug)
+      .eq('status', 'published');
+    if (withSoftDelete) query = query.is('deleted_at', null);
+    return query.single();
+  };
+
+  let { data, error } = await build(true);
+  if (error && /deleted_at/i.test(error.message || '')) {
+    // Migration not applied yet: serve the page rather than a 404 for every offer.
+    ({ data, error } = await build(false));
+  }
+
   if (error) {
     console.error('[AI Jobs] Error fetching opportunity:', error.message);
     return null;
   }
-  
+
   return data;
 }
 
@@ -372,16 +381,26 @@ async function getActiveSiteTenants({ limit = 200 } = {}) {
  */
 async function getOffersByTenant(tenantId, { offerType = null, categoryId = null, limit = 50 } = {}) {
   if (!tenantId) return [];
-  let query = supabase
-    .from('opportunities')
-    .select('*, category:opportunity_categories(*)')
-    .eq('tenant_id', tenantId)
-    .eq('status', 'published')
-    .order('published_at', { ascending: false })
-    .limit(limit);
-  if (offerType) query = query.eq('offer_type', offerType);
-  if (categoryId) query = query.eq('category_id', categoryId);
-  const { data, error } = await query;
+  const build = (withSoftDelete) => {
+    let query = supabase
+      .from('opportunities')
+      .select('*, category:opportunity_categories(*)')
+      .eq('tenant_id', tenantId)
+      .eq('status', 'published');
+    // A soft-deleted offer must disappear from the tenant's public hub even though
+    // its row still exists (so the tenant can restore it).
+    if (withSoftDelete) query = query.is('deleted_at', null);
+    query = query.order('published_at', { ascending: false }).limit(limit);
+    if (offerType) query = query.eq('offer_type', offerType);
+    if (categoryId) query = query.eq('category_id', categoryId);
+    return query;
+  };
+
+  let { data, error } = await build(true);
+  if (error && /deleted_at/i.test(error.message || '')) {
+    // Migration not applied yet: an empty hub would look like a business outage.
+    ({ data, error } = await build(false));
+  }
   if (error) {
     console.error('[AI Jobs] Error fetching tenant offers:', error.message);
     return [];

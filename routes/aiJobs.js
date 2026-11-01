@@ -285,6 +285,9 @@ export async function handleOfferClick(req, res, options = {}) {
       .select('*, category:opportunity_categories(*)')
       .eq('id', id)
       .eq('status', 'published')
+      // A soft-deleted offer must not redirect anyone: the tenant removed it, and its
+      // pages may still be live long enough for an old link to be clicked.
+      .is('deleted_at', null)
       .single();
     if (error || !opportunity) {
       // An offer that has gone still tells us somebody wanted it.
