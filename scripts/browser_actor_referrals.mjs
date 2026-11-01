@@ -251,11 +251,19 @@ async function loadTenantContext() {
 }
 
 /**
- * Drive the live session: page to the requested window, then read one role at a
- * time. Every role is paced, and leaving the listing is recovered rather than
- * ignored.
+ * Drive the live session.
+ *
+ * Two properties this function did not have, learned the hard way on a 72-role run
+ * that died at role 43 with `CDP call Runtime.evaluate timed out` and saved nothing:
+ *
+ *   1. **Every capture is persisted the moment it is read.** The link is already
+ *      minted on the marketplace side, so losing the record wastes the work even
+ *      though the link itself is stable and can be read again.
+ *   2. **One bad role cannot end the run.** A timeout is recorded, the page is
+ *      rebuilt, and the loop continues. A 40-minute unattended job must not be
+ *      all-or-nothing.
  */
-async function runCapture() {
+async function runCapture({ existing = [] } = {}) {
   const identity = resolveIdentity({
     tenantSlug: tenant,
     map: parseProfileMap(process.env.BROWSER_ACTOR_PROFILES || ''),
@@ -274,7 +282,27 @@ async function runCapture() {
   const port = started.debugPort;
   console.error(`tenant=${tenant} profile=${describeIdentity(identity).envIdMasked} port=${port}`);
 
-  const captures = [];
+  const doneIndexes = new Set(
+    (Array.isArray(existing) ? existing : [])
+      .filter((row) => row && row.referralUrl && Number.isFinite(Number(row.index)))
+      .map((row) => Number(row.index))
+  );
+  const captures = Array.isArray(existing) ? [...existing] : [];
+
+  // Written after every single role: a crash costs one role, not the run.
+  const save = () => {
+    try {
+      fs.mkdirSync(path.dirname(outPath), { recursive: true });
+      fs.writeFileSync(
+        outPath,
+        JSON.stringify({ tenant, updatedAt: new Date().toISOString(), requested: { skip, limit }, captures }, null, 2)
+      );
+    } catch (error) {
+      console.error(`could not save progress: ${error?.message || error}`);
+    }
+  };
+  if (doneIndexes.size) console.error(`resuming: ${doneIndexes.size} capture(s) already on disk`);
+
   try {
     await capturePage({ host, port, url: TURING_PLATFORM.listUrl, timeoutMs: 45_000 });
     const cleared = await waitForSkeletons({ host, port });
@@ -282,25 +310,55 @@ async function runCapture() {
     let cards = await ensureCards({ host, port, needed });
     console.error(`skeletonsCleared=${cleared} cards=${cards} window=${skip + 1}..${skip + limit}`);
 
-    if (cards <= skip) {
+    // Fixed once: a later rebuild may page less far, and the loop bound must not
+    // shrink with it or the run would stop early and silently.
+    const windowEnd = Math.min(cards, needed);
+
+    if (windowEnd <= skip) {
       console.error(`the listing stops at ${cards} cards — nothing in the requested window`);
       return captures;
     }
 
-    for (let index = skip; index < Math.min(cards, needed); index += 1) {
-      const { capture, leftListing, note } = await captureOne({ host, port, index });
-      captures.push(capture || { index, title: null, externalId: null, referralUrl: null, reason: note || 'probe_failed' });
-      const label = String(capture?.title || '(no title)').slice(0, 60);
-      console.error(`[${index}] ${capture?.referralUrl ? 'LINK' : capture?.reason || note || 'no link'} — ${label}`);
+    // Rebuilding the listing is the expensive part of this loop, so it lives in one
+    // place and is only used when the page is genuinely unknown. It pages only as far
+    // as the role being captured — the old version paged to the end of the window on
+    // every single role, which is why 42 roles took 40 minutes.
+    const rebuild = async (upTo = windowEnd) => {
+      await capturePage({ host, port, url: TURING_PLATFORM.listUrl, timeoutMs: 45_000 });
+      await waitForSkeletons({ host, port });
+      cards = await ensureCards({ host, port, needed: Math.max(12, Math.min(upTo, needed)) });
+    };
 
-      if (leftListing) {
-        // Recover instead of proceeding against the wrong page: every later index
-        // refers to a card that no longer exists.
-        console.error(`[${index}] left the listing — returning`);
-        await capturePage({ host, port, url: TURING_PLATFORM.listUrl, timeoutMs: 45_000 });
-        await waitForSkeletons({ host, port });
-        cards = await ensureCards({ host, port, needed });
+    for (let index = skip; index < windowEnd; index += 1) {
+      if (doneIndexes.has(index)) {
+        console.error(`[${index}] already captured — skipping`);
+        continue;
       }
+
+      try {
+        const { capture, leftListing, note } = await captureOne({ host, port, index });
+        captures.push(capture || { index, title: null, externalId: null, referralUrl: null, reason: note || 'probe_failed' });
+        const label = String(capture?.title || '(no title)').slice(0, 60);
+        console.error(`[${index}] ${capture?.referralUrl ? 'LINK' : capture?.reason || note || 'no link'} — ${label}`);
+
+        if (leftListing) {
+          // Recover instead of proceeding against the wrong page: every later index
+          // refers to a card that no longer exists.
+          console.error(`[${index}] left the listing — returning`);
+          await rebuild(index + 1);
+        }
+      } catch (error) {
+        // One role timing out must not end a 40-minute run. Record it, rebuild the
+        // page, and keep going; a re-run will retry whatever failed here.
+        console.error(`[${index}] FAILED — ${error?.message || error}`);
+        captures.push({ index, title: null, externalId: null, referralUrl: null, reason: `error:${error?.code || 'unknown'}` });
+        try { await rebuild(); } catch (rebuildError) {
+          console.error(`[${index}] rebuild failed too: ${rebuildError?.message || rebuildError}`);
+        }
+      } finally {
+        save();
+      }
+
       await sleep(pace);
     }
     return captures;
@@ -355,7 +413,19 @@ async function main() {
     captures = Array.isArray(raw) ? raw : Array.isArray(raw.captures) ? raw.captures : [];
     console.error(`captures from ${fromFile}: ${captures.length}`);
   } else {
-    captures = await runCapture();
+    // Resume from whatever the last run managed to save. A CDP timeout at role 43
+    // used to throw 43 captures away; now it costs one role.
+    let prior = [];
+    try {
+      if (fs.existsSync(outPath)) {
+        const raw = JSON.parse(fs.readFileSync(outPath, 'utf8'));
+        prior = Array.isArray(raw?.captures) ? raw.captures : Array.isArray(raw) ? raw : [];
+      }
+    } catch (error) {
+      console.error(`ignoring unreadable progress file: ${error?.message || error}`);
+      prior = [];
+    }
+    captures = await runCapture({ existing: prior });
   }
 
   const plan = planReferralBackfill({ offers, captures, host: TURING_REFERRAL_HOST });
