@@ -28,6 +28,7 @@ import { createClient } from '@supabase/supabase-js';
 import { createMoreloginClient, redact } from '../utils/browserActor/moreloginClient.js';
 import { createBrowserRuntime } from '../utils/browserActor/runtime.js';
 import { capturePage, resolveDebugTarget, CdpSession } from '../utils/browserActor/cdp.js';
+import { verifyReferralLink } from '../utils/browserActor/referralVerify.js';
 import { parseProfileMap, resolveIdentity, describeIdentity } from '../utils/browserActor/identity.js';
 import { TURING_PLATFORM, TURING_LIST_COUNT_EXPR, TURING_LOAD_MORE_EXPR } from '../utils/browserActor/tasks/turing.js';
 import {
@@ -61,6 +62,7 @@ const pace = Number(flag('pace', REFERRAL_PACE_MS)) || REFERRAL_PACE_MS;
 const outPath = path.resolve(String(flag('out', 'tmp/referrals.json')));
 const fromFile = flag('from');
 const apply = flag('apply', null) !== null;
+const verifyLinks = flag('no-verify', null) === null;
 
 if (!tenant) {
   console.error('usage: --tenant <slug> [--limit 5] [--skip 0] [--out tmp/referrals.json] [--apply] [--from file]');
@@ -357,14 +359,41 @@ async function main() {
   }
 
   const plan = planReferralBackfill({ offers, captures, host: TURING_REFERRAL_HOST });
+
+  // A link is only written if it provably lands on the role it is attached to.
+  // "The dialog showed me a code" is not proof; resolving it is.
+  const verification = [];
+  if (verifyLinks) {
+    for (const update of plan.updates) {
+      const check = await verifyReferralLink({ url: update.referral_url, expectedTitle: update.title });
+      verification.push({
+        title: update.title,
+        referral_url: update.referral_url,
+        verdict: check.verdict,
+        reason: check.reason,
+        resolvedTitle: check.resolvedTitle || null
+      });
+      if (check.verdict !== 'match') {
+        plan.skipped.push({ title: update.title, reason: `unverified_${check.verdict}` });
+      }
+    }
+    const rejected = new Set(verification.filter((row) => row.verdict !== 'match').map((row) => row.referral_url));
+    if (rejected.size) {
+      console.error(`refusing ${rejected.size} link(s) that do not resolve to their role`);
+      plan.updates = plan.updates.filter((update) => !rejected.has(update.referral_url));
+    }
+  }
+
   const report = {
     tenant: tenantRow.slug,
     mode: fromFile ? 'from_file' : 'capture',
     requested: fromFile ? null : { skip, limit },
     captured: captures.length,
     withLink: captures.filter((row) => row && row.referralUrl).length,
+    verified: verifyLinks ? { checked: verification.length, match: verification.filter((v) => v.verdict === 'match').length } : 'skipped',
     headline: referralCaptureHeadline(plan),
-    plan
+    plan,
+    verification
   };
 
   // Always persist, even when nothing was attached: the candidates behind a

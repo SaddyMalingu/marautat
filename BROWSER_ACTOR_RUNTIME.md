@@ -482,16 +482,38 @@ https://work.turing.com/r/<code>      e.g. r/xako-8LrQK
 Two properties that shape every write:
 
 - **Each role gets its own code** — `Project Lead → r/xako-8LrQK`,
-  `Business Analyst → r/bpy0B4Jmoc` — which is the tenant's whole premise.
-- **Turing re-mints the code every time the dialog opens.** Opening the same role
-  twice yields a different code. A captured code is therefore never *more*
-  authoritative than one already stored, which is exactly why an offer that already
-  has a link is a conflict and never an overwrite. That guard fired on real data on
-  the first write: the hand-pasted `r/9PkwepYCFE` was kept.
+  `Business Analyst → r/bpy0B4Jmoc`.
+- **A link is stable per role.** It does not change when the page reloads or the card
+  is clicked again (confirmed by the tenant, 2026-10-31). An earlier version of this
+  file claimed Turing re-mints the code on every open, inferred from a mismatch in
+  the database. That inference was **wrong**, and it was dangerous: it made a wrong
+  link look benign, and the overwrite guard then preserved it.
 
-Side effect worth knowing: every capture adds an entry to the tenant's referral
-dashboard, whose header reads *Referrals 0 · Job links 4*. Capturing N roles grows
-that list by up to N.
+#### Where a link really goes is checkable — so check it
+
+`GET https://work.turing.com/r/<code>` renders a page whose `<title>` is the job, so
+every link can be verified without a browser:
+
+```
+r/xako-8LrQK  -> "Project Lead - AI Training - Turing"                    matches
+r/9PkwepYCFE  -> "Strategic Project Lead – Software Engineering - Turing"  WRONG JOB
+```
+
+That second link was live in production on the Project Lead offer, pasted by hand.
+`utils/browserActor/referralVerify.js` resolves a link and judges it:
+
+- pass on identical normalized titles, or when the page appends only known marketing
+  tail words (`| Apply on Job` — Micro1 does this, and treating it as a mismatch
+  failed 5 correct links);
+- **never** pass on "one contains the other": `Project Lead - AI Training` and
+  `Strategic Project Lead - Software Engineering` share a prefix, which is exactly
+  how the wrong link got in.
+
+The capture path now verifies every link before writing and refuses anything that
+does not resolve to its role. `scripts/browser_actor_audit_links.mjs` runs the same
+check across stored links: `11 checked → 10 match, 1 mismatch`, and the mismatch was
+cleared and replaced with a verified one.
+
 
 
 

@@ -59,6 +59,12 @@ import {
   turingCardProbeExpr,
   turingOpenReferralExpr
 } from '../utils/browserActor/tasks/turingReferrals.js';
+import {
+  decodeHtmlEntities,
+  judgeReferralLink,
+  normalizeTitleForCompare,
+  verifyReferralLink
+} from '../utils/browserActor/referralVerify.js';
 import { sanitizeOfferPatch } from '../utils/offerPatch.js';
 import { summarizeCoverage, coverageHeadline } from '../utils/coverage.js';
 import { cliArgsFor, isBusinessFailure } from '../utils/browserActor/moreloginClient.js';
@@ -995,6 +1001,63 @@ console.log('\n-- coverage --');
   eq('each role gets its own link', perRole.updates.length, 2);
   ok('the two links are different',
     perRole.updates[0].referral_url !== perRole.updates[1].referral_url);
+
+  // --- referral link verification (a wrong link is worse than no link) ---
+  eq('entities are decoded before comparing', decodeHtmlEntities('Audio Editing &amp; Production'), 'Audio Editing & Production');
+  eq('dash variants normalise to one form',
+    normalizeTitleForCompare('Medical Expert – Dermatology'),
+    normalizeTitleForCompare('Medical Expert - Dermatology'));
+
+  const sameTitle = judgeReferralLink({ expectedTitle: 'Business Analyst - US', resolvedTitle: 'Business Analyst - US' });
+  eq('the same job is a match', sameTitle.verdict, 'match');
+
+  const withTail = judgeReferralLink({
+    expectedTitle: '2D Graphic Design & Image Editing Expert (GIMP)',
+    resolvedTitle: '2D Graphic Design & Image Editing Expert (GIMP) | Apply on Job'
+  });
+  eq('a marketing tail is still the same job', withTail.verdict, 'match');
+  eq('and the reason says why', withTail.reason, 'title_plus_marketing_tail');
+
+  // The real production pair: a live link on this offer pointed at a different job.
+  const wrongJob = judgeReferralLink({
+    expectedTitle: 'Project Lead - AI Training',
+    resolvedTitle: 'Strategic Project Lead – Software Engineering'
+  });
+  eq('a different job is a mismatch', wrongJob.verdict, 'mismatch');
+  ok('a prefix match is not good enough', wrongJob.reason === 'title_differs');
+
+  const noTitle = judgeReferralLink({ expectedTitle: 'Anything', resolvedTitle: null, status: 404 });
+  eq('an unreadable page is not a match', noTitle.verdict, 'unresolvable');
+  eq('and it reports the status', noTitle.reason, 'http_404');
+
+  const fakeFetch = (html, status = 200) => async () => ({
+    status,
+    url: 'https://work.turing.com/r/TEST',
+    text: async () => html
+  });
+  const verified = await verifyReferralLink({
+    url: 'https://work.turing.com/r/TEST',
+    expectedTitle: 'Project Lead - AI Training',
+    fetchImpl: fakeFetch('<html><head><title>Project Lead - AI Training - Turing</title></head></html>')
+  });
+  eq('a resolved link is verified', verified.verdict, 'match');
+  eq('the site suffix is stripped', verified.resolvedTitle, 'Project Lead - AI Training');
+
+  const caught = await verifyReferralLink({
+    url: 'https://work.turing.com/r/BAD',
+    expectedTitle: 'Project Lead - AI Training',
+    fetchImpl: fakeFetch('<html><head><title>Strategic Project Lead – Software Engineering - Turing</title></head></html>')
+  });
+  eq('a link to another job is caught before the write', caught.verdict, 'mismatch');
+  ok('and names the job it really points at', String(caught.resolvedTitle).includes('Strategic'));
+
+  const offline = await verifyReferralLink({
+    url: 'https://work.turing.com/r/OFF',
+    expectedTitle: 'Project Lead - AI Training',
+    fetchImpl: async () => { throw new Error('offline'); }
+  });
+  eq('an unreachable link is not written either', offline.verdict, 'unresolvable');
+  ok('and the reason is explicit', offline.reason.startsWith('fetch_failed'));
 }
 
 // ---------------------------------------------------------------------------
