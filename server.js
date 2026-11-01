@@ -91,6 +91,7 @@ import { createSocialPublishRouter } from "./routes/socialPublish.js";
 import { createWriterFlowRouter } from "./routes/writerFlow.js";
 import { createBrowserAccessRouter } from "./routes/browserAccess.js";
 import { createTenantBrowserProvider } from "./utils/tenantBrowserProvider.js";
+import { ACCESS_KEY_ENV, accessSecrets, fingerprintSecret } from "./utils/tenantAccess.js";
 
 // Define __dirname for ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -5115,12 +5116,21 @@ app.use('/', createWriterFlowRouter({
 // and profile, signs in on their own machine, and hands over a key — never a password. The
 // key is sealed with TENANT_SECRET_KEY before it is stored and is not returned by any
 // endpoint. The provider is created once here; it builds a MoreLogin client per tenant key.
+{
+  // The fingerprint makes "do the portal and the runner hold the same secret?" answerable
+  // without anyone revealing it: compare this line with `npm run secrets:check`.
+  const { current, previous } = accessSecrets();
+  console.error(current
+    ? `[browser-access] sealing key ${fingerprintSecret(current)}${previous ? ' · retiring key also accepted' : ''}`
+    : `[browser-access] ${ACCESS_KEY_ENV} is NOT set — tenants cannot connect their own browser yet`);
+}
 app.use('/', createBrowserAccessRouter({
   tenantSessionAuth,
   tenantSiteFromSession,
   supabase,
   provider: createTenantBrowserProvider(),
 }));
+
 
 // PATCH /tenant/blogger/offers/:id — the portal could create and delete offers
 // but not edit them, so a tenant had no way to attach the per-role referral link
