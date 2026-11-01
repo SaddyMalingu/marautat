@@ -21,6 +21,7 @@
  *
  * Flags: --headful (show the window), --keep-open (leave the profile running)
  */
+import 'dotenv/config';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createMoreloginClient, redact } from '../utils/browserActor/moreloginClient.js';

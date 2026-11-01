@@ -1134,9 +1134,11 @@ console.log('\n-- coverage --');
   eq('a real job body does not', isThinDescription('x'.repeat(400)), false);
 
   ok('the Turing extractor is registered', typeof contentExprFor('turing') === 'string');
-  // Deliberately absent: guessing an extractor for a page we have never run would
-  // produce confident-looking empty content.
-  eq('an unregistered marketplace has no extractor', contentExprFor('micro1'), null);
+  // Micro1 was deliberately absent until its adapter had actually been run (2026-11-02).
+  // Now that it has, the registry entry is the test — and a marketplace nobody has
+  // written an adapter for must still resolve to null rather than to silence.
+  ok('the Micro1 extractor is registered', typeof contentExprFor('micro1') === 'string');
+  eq('an unregistered marketplace has no extractor', contentExprFor('mercor'), null);
 
   const enrichOffers = [
     { id: 'o1', title: 'Role A', external_id: 'turing:role-a', description: 'Short summary.' },

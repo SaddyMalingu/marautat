@@ -1,0 +1,179 @@
+{
+  "identity": {
+    "tenant": "malingu-ventures",
+    "envIdMasked": "21***************80",
+    "runtime": "local",
+    "label": null,
+    "phoneId": null,
+    "source": "env_map"
+  },
+  "page": {
+    "ok": true,
+    "browser": "Chrome/152.0.7977.113",
+    "title": "Referral dashboard | micro1",
+    "url": "https://refer.micro1.ai/opportunities/",
+    "description": "Earn up to $3,000 for every successful referral",
+    "headings": [],
+    "text": "Dashboard Opportunities My referrals About Affiliate Program Experts Company Your referral link",
+    "links": [
+      {
+        "text": "",
+        "href": "https://refer.micro1.ai/"
+      },
+      {
+        "text": "Dashboard",
+        "href": "https://refer.micro1.ai/dashboard"
+      },
+      {
+        "text": "Opportunities",
+        "href": "https://refer.micro1.ai/opportunities"
+      },
+      {
+        "text": "My referrals",
+        "href": "https://refer.micro1.ai/my-referrals"
+      },
+      {
+        "text": "About",
+        "href": "https://www.micro1.ai/referral-program"
+      },
+      {
+        "text": "Affiliate Program",
+        "href": "https://www.micro1.ai/affiliate-program"
+      }
+    ],
+    "counts": {
+      "links": 6,
+      "forms": 0,
+      "buttons": 7,
+      "inputs": 1
+    },
+    "readyState": "complete",
+    "capturedAt": "2026-11-01T07:36:02.667Z"
+  },
+  "structure": {
+    "url": "https://refer.micro1.ai/opportunities/",
+    "title": "Referral dashboard | micro1",
+    "readyState": "complete",
+    "root": "main.container.mx-auto.px-4",
+    "textLength": 1966,
+    "textHead": "Opportunities Your referral link Posted Yesterday New High demand Enterprise Client Partner, U.S. Government micro1 1 Opening Required skills Client acquisition Outbound prospecting Enterprise parnerships +1 Pay: $250,000 - $450,000/year Refer and earn $1,500 Posted Yesterday New Music & Sound Annotation Expert micro1 10 Openings Required skills Analytical listening Music theory knowledge Audio annotation +2 Pay: $30 - $45/hour Refer and earn $500 Posted Yesterday New High demand Generalist micro1 50 Openings Required skills Generalist Chatgpt proficiency Problem solving +4 Pay: $30 - $49/hour Refer and earn $300 Posted Yesterday New High demand Vietnamese Bilingual Expert micro1 40 Openings Required skills English (b2+) Attention to detail Written communication +2 Pay: $30 - $65/hour Refer and earn $500 Posted Yesterday New High demand Indonesian Bilingual Expert micro1 40 Openings Required skills English b2+ Attention to detail Written communication +2 Pay: $30 - $65/hour Refer and earn $100 Posted Yesterday New Portuguese Bilingual Expert (Brazil) micro1 30 Openings Required skills Portuguese Pay: $30 - $60/hour Refer and earn $300 Posted Yesterday New Korean Bilingual Expert micro1 40 Openings Required skills Korean Pay: $30 - $65/hour Refer and earn $300 Posted Yesterday New French Bilingual Expert micro1 40 Openings Required skills French Pay: $30 - $60/hour Refer and earn $300 Posted Yesterday New High demand Japanese Bilingual Expert micro1 60 Openings Required skills Japanese Pay: $30 - $60/hour Refer and earn $300 Posted Yesterday New German Bilingual Expert micro1 20 Openings Required skills German Pay: $30 - $65/hour Refer and earn $300 Posted Yesterday New High demand British English Voice Expert micro1 30 Openings Pay: $40 - $65/hour Refer and earn $100 Posted Yesterday New High demand Hindi Bilingual Expert micro1 40 Openings Required skills Hindi Voice recording Audio recording Pay: $30 - $65/hour Refer and earn $300",
+    "counts": {
+      "links": 6,
+      "tables": 0,
+      "lists": 0,
+      "buttons": 36,
+      "forms": 0
+    },
+    "tables": [],
+    "repeaters": [
+      {
+        "parent": "div.flex.items-center.gap-2",
+        "childTag": "div",
+        "childClass": "relative.group.flex",
+        "count": 4,
+        "sample": ""
+      },
+      {
+        "parent": "svg",
+        "childTag": "path",
+        "childClass": "",
+        "count": 6,
+        "sample": ""
+      },
+      {
+        "parent": "svg",
+        "childTag": "path",
+        "childClass": "",
+        "count": 3,
+        "sample": ""
+      },
+      {
+        "parent": "g",
+        "childTag": "path",
+        "childClass": "",
+        "count": 3,
+        "sample": ""
+      },
+      {
+        "parent": "div.grid.grid-cols-1.lg:grid-cols-3",
+        "childTag": "div",
+        "childClass": "p-1.rounded-md.flex",
+        "count": 12,
+        "sample": "Posted Yesterday New High demand Enterprise Client Partner, U.S. Government micro1 1 Opening Required skills Client acquisition Outbound prospecting Enterprise parnerships +1 Pay: "
+      },
+      {
+        "parent": "div.rounded.p-3.flex-1",
+        "childTag": "div",
+        "childClass": "flex.justify-between.items-center",
+        "count": 5,
+        "sample": "Posted Yesterday New High demand"
+      },
+      {
+        "parent": "div.flex.flex-wrap.gap-1.5",
+        "childTag": "div",
+        "childClass": "text-[#55555E].border.border-[#D9D9E7]",
+        "count": 4,
+        "sample": "Client acquisition"
+      },
+      {
+        "parent": "g",
+        "childTag": "path",
+        "childClass": "",
+        "count": 3,
+        "sample": ""
+      },
+      {
+        "parent": "g",
+        "childTag": "path",
+        "childClass": "",
+        "count": 3,
+        "sample": ""
+      },
+      {
+        "parent": "div.rounded.p-3.flex-1",
+        "childTag": "div",
+        "childClass": "flex.justify-between.items-center",
+        "count": 5,
+        "sample": "Posted Yesterday New"
+      },
+      {
+        "parent": "div.flex.flex-wrap.gap-1.5",
+        "childTag": "div",
+        "childClass": "text-[#55555E].border.border-[#D9D9E7]",
+        "count": 4,
+        "sample": "Analytical listening"
+      },
+      {
+        "parent": "g",
+        "childTag": "path",
+        "childClass": "",
+        "count": 3,
+        "sample": ""
+      }
+    ],
+    "buttons": [
+      "Experts",
+      "Company",
+      "Your referral link",
+      "+1",
+      "Refer and earn $1,500",
+      "+2",
+      "Refer and earn $500",
+      "+4",
+      "Refer and earn $300",
+      "+2",
+      "Refer and earn $500",
+      "+2",
+      "Refer and earn $100",
+      "Refer and earn $300",
+      "Refer and earn $300",
+      "Refer and earn $300",
+      "Refer and earn $300",
+      "Refer and earn $300",
+      "Refer and earn $100",
+      "Refer and earn $300"
+    ],
+    "loginSignals": []
+  },
+  "cards": null
+}

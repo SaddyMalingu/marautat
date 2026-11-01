@@ -634,3 +634,71 @@ partial-vs-success, the one-active-run rule, the human-override rule, the funnel
 arithmetic, the store's payloads (against an in-memory table), the endpoints over real
 HTTP, and the not-yet-migrated deployment the production database is currently in.
 
+
+## Micro1 adapter (2026-11-02) — the second marketplace, and what it proved
+
+Turing's adapter assumed "no per-role URL, rebuild the listing between roles". Micro1
+disagrees on every one of those points, which is why it is a separate runner rather than a
+`--platform` branch.
+
+### What the live dashboard actually does
+
+```
+page     https://refer.micro1.ai/opportunities/   "Referral dashboard | micro1"
+grid     div.grid.grid-cols-1.lg:grid-cols-3      -> 12 cards
+card     div.p-1.rounded-md.flex.flex-col         (no anchors anywhere)
+           badges   "Posted Yesterday" / "New" / "High demand"
+           h2       the job title          <- the only stable handle
+           "micro1 1 Opening"
+           skills   chips + "+N"
+           pay      "Pay: $250,000 - $450,000/year"
+           button   "Refer and earn $1,500"
+click    does NOT navigate and opens NO dialog — it copies a share link:
+           https://jobs.micro1.ai/post/<jobUuid>?referralCode=<accountCode>&utm_...
+```
+
+So, in three rules the code now encodes:
+
+1. **Account code + per-role job id.** The same `referralCode` appears on all five links the
+   tenant already owned; the job id is what changes per role. `pickMicro1ReferralUrl`
+   therefore *refuses* a post URL with no `referralCode`: it opens the right job and pays
+   nobody, which looks identical to success in a list of URLs.
+2. **A real job page exists** (`jobs.micro1.ai/post/<uuid>`), so `destination_url` is the
+   clean job page and `referral_url` is the coded one. A reader who is not the referred
+   candidate never receives the tenant's code.
+3. **The job body is client-rendered** — 48 KB of HTML, 57 characters of text, no JSON-LD.
+   The description needs the browser, which is exactly what `CONTENT_EXTRACTORS.micro1` is.
+
+### Two bugs the live run found (both would have shipped wrong links)
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Two roles captured with **the same job id** | The share link field *persists*; a slow click meant the previous role's link was still on the page | Snapshot candidates **before** the click and accept only a link that is new, polled up to 5 s. No fallback to an existing link — another role's link is worse than none. |
+| "Generalist" resolved to **"Music & Sound Annotation Expert"** | The share popover renders *inside the grid*, so card **indices shifted** after a click | Close the popover between roles and find the card **by title**, never by index. A duplicate-job-id guard runs as a backstop. |
+
+Both were caught by `verifyReferralLink`, not by reading the capture file — which is the
+argument for verifying before writing rather than after.
+
+### Running it
+
+```bash
+node scripts/browser_actor_micro1.mjs --tenant <slug> --limit 12           # plan
+node scripts/browser_actor_micro1.mjs --tenant <slug> --limit 12 --apply   # import drafts
+  --no-descriptions     links only (much faster; bodies come from the job-page pass)
+  --run-id <uuid>       report progress into browser_actor_runs for the portal
+```
+
+Measured on the live dashboard: **12 cards, ~350 ms per link, ~2.2 s per body**. A verified
+sample run produced 4/4 links `match` with bodies of 5,391 and 3,168 characters.
+
+### Source attribution (why the funnel said "Unattributed")
+
+`migrations/2026-10-31_seed_micro1_turing_sources.sql` was **never applied**, so
+`opportunity_sources` held only mercor and respondent and all 96 offers had
+`source_id = NULL`. `scripts/backfill_offer_sources.mjs` fixes that as **data** (no DDL):
+it creates the missing source rows and attributes offers only on concrete evidence —
+the importer's own slug convention, or a referral link on the marketplace's own host.
+Result: 83 attributed (78 Turing, 5 Micro1), **13 left alone** because they are hand-made
+offers with no evidence. A guess there would have attributed somebody's own product to
+Micro1.
+

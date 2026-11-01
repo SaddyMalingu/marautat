@@ -13,6 +13,7 @@
  * Pure: no network, no database. The caller passes captures and offers.
  */
 import { TURING_DETAIL_CONTENT_EXPR } from './tasks/turingReferrals.js';
+import { MICRO1_DETAIL_CONTENT_EXPR } from './tasks/micro1.js';
 
 /** Below this, a description is a tile summary rather than a job. */
 export const MIN_FULL_DESCRIPTION_CHARS = 300;
@@ -23,14 +24,16 @@ export const MIN_DESCRIPTION_GAIN = 40;
 /**
  * Per-marketplace page extractors.
  *
- * `micro1` is deliberately absent rather than guessed: its referral dashboard is a
- * different page shape, and registering an extractor that has never been run would
- * produce confident-looking empty content. A missing extractor disables content
- * capture for that platform and is reported, not silently skipped.
+ * Adding a marketplace is one entry here. `micro1` was added on 2026-11-02 after its
+ * adapter was verified live: its job page is client-rendered (48 KB of HTML, 57
+ * characters of text, no JSON-LD), which is exactly why this is a *page* expression and
+ * not a fetch. Turing and Micro1 now go through the same plan/write/verify path.
  */
 export const CONTENT_EXTRACTORS = Object.freeze({
-  turing: TURING_DETAIL_CONTENT_EXPR
+  turing: TURING_DETAIL_CONTENT_EXPR,
+  micro1: MICRO1_DETAIL_CONTENT_EXPR
 });
+
 
 /** The page expression for a platform, or null when none is registered. */
 export function contentExprFor(platform) {
