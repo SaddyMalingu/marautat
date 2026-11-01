@@ -17,6 +17,8 @@
  * Exit codes: 0 = all passed, 1 = at least one failure.
  */
 import http from 'node:http';
+import fs from 'node:fs';
+import path from 'node:path';
 import express from 'express';
 import {
   ACCESS_KEY_ENV,
@@ -636,8 +638,29 @@ const localAccess = { browserAccess: { provider: 'morelogin', envId: '2116562908
   }
 }
 
+// ---------------------------------------------------------------------------
+// The guide lives in the portal, not in an operator's chat message
+// ---------------------------------------------------------------------------
+
+const root = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..');
+const dash = fs.readFileSync(path.join(root, 'admin/tenant_dashboard.html'), 'utf8');
+
+ok('the connect panel is mounted in the portal', dash.includes("access.id = 'wfAccess'"));
+ok('the five-step guide is rendered inside it', /How to connect \(5 minutes\)/.test(dash));
+ok('step 1 says to create a MoreLogin account', /Create a MoreLogin account/.test(dash));
+// The one promise this whole design rests on must be visible to the tenant, not just true.
+ok('step 2 promises we never see the password', /never sees your password/.test(dash));
+ok('step 3 says where the API key comes from', /account settings[\s\S]{0,60}API/.test(dash));
+ok('step 4 is Verify sessions', /Verify sessions/.test(dash));
+ok('step 5 is Capture now', /Capture now \(Micro1\)/.test(dash));
+ok('the cost of a capture is stated in the portal', /one<\/strong> MoreLogin profile start/i.test(dash));
+ok('and the reconnect remedy is stated', /sign in again inside MoreLogin/.test(dash));
+// A guide that cannot tell you where you are is documentation, not a checklist.
+ok('the guide marks the current step', /function wfAccessGuide/.test(dash) && /const current = !d\.connected/.test(dash));
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
+
 
 
 
