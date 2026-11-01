@@ -28,3 +28,6 @@ tmp/
 tmp_*.log
 tmp_*.json
 tmp_*.txt
+
+# Browser Actor inspection artifacts (screenshots + DOM dumps of a logged-in account)
+tmp_inspect/
