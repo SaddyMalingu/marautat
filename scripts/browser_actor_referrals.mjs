@@ -79,21 +79,52 @@ if (!fromFile && limit <= 0) {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function evaluateJson({ host, port, expression }) {
+// One CDP session for the whole run.
+//
+// Every evaluate used to open a socket and close it again — plus an HTTP call to
+// /json/version to find the target — and each role does five to eight evaluates.
+// That was pure overhead, repeated seventy times. A page session survives navigation
+// (it is bound to the target, not the document), so one session outlives the run.
+let sharedSession = null;
+
+async function ensureSession({ host, port }) {
+  if (sharedSession && !sharedSession.closed) return sharedSession;
   const target = await resolveDebugTarget({ host, port });
-  const session = await CdpSession.open({ wsUrl: target.pageWsUrl, timeoutMs: 10_000 });
+  if (!target.pageWsUrl) throw new Error('the profile exposed no page target');
+  sharedSession = await CdpSession.open({ wsUrl: target.pageWsUrl, timeoutMs: 10_000 });
+  return sharedSession;
+}
+
+async function closeSession() {
+  if (!sharedSession) return;
+  try { sharedSession.close(); } catch {}
+  sharedSession = null;
+}
+
+async function evaluateJson({ host, port, expression }) {
+  let session = await ensureSession({ host, port });
+  let result;
   try {
-    const result = await session.send('Runtime.evaluate', { expression, returnByValue: true }, { timeoutMs: 30_000 });
-    const raw = result?.result?.value;
-    return typeof raw === 'string' ? JSON.parse(raw) : raw;
-  } finally {
-    session.close();
+    result = await session.send('Runtime.evaluate', { expression, returnByValue: true }, { timeoutMs: 30_000 });
+  } catch (error) {
+    // A session can die with the page (a crash, a closed tab). Rebuild it once.
+    sharedSession = null;
+    session = await ensureSession({ host, port });
+    result = await session.send('Runtime.evaluate', { expression, returnByValue: true }, { timeoutMs: 30_000 });
   }
+  const raw = result?.result?.value;
+  return typeof raw === 'string' ? JSON.parse(raw) : raw;
 }
 
 async function countCards({ host, port }) {
   const value = await evaluateJson({ host, port, expression: TURING_LIST_COUNT_EXPR });
   return Number(value) || 0;
+}
+
+/** The URL the page is actually on, read from the page rather than remembered. */
+async function currentUrl({ host, port }) {
+  const value = await evaluateJson({ host, port, expression: 'String(location.href)' });
+  return typeof value === 'string' ? value : '';
 }
 
 /** Wait for the listing to finish rendering (skeletons are the tell). */
@@ -319,26 +350,47 @@ async function runCapture({ existing = [] } = {}) {
       return captures;
     }
 
+    const waitForCards = async (minCards = 1, maxMs = 12_000) => {
+      const startedAt = Date.now();
+      while (Date.now() - startedAt < maxMs) {
+        if ((await countCards({ host, port })) >= minCards) return true;
+        await sleep(300);
+      }
+      return false;
+    };
+
     // Rebuilding the listing is the expensive part of this loop, so it lives in one
     // place and is only used when the page is genuinely unknown. It pages only as far
     // as the role being captured — the old version paged to the end of the window on
     // every single role, which is why 42 roles took 40 minutes.
     const rebuild = async (upToIndex = windowEnd - 1) => {
-      await capturePage({ host, port, url: TURING_PLATFORM.listUrl, timeoutMs: 45_000 });
-      // Wait for CARDS, not for skeletons to disappear: a freshly navigated page is
-      // blank for a moment, and "no skeletons" is equally true of a blank page. That
-      // mistake turned every rebuild into a card_not_found cascade.
-      const startedAt = Date.now();
-      while (Date.now() - startedAt < 15_000) {
-        if ((await countCards({ host, port })) > 0) break;
-        await sleep(400);
-      }
-      await waitForSkeletons({ host, port });
-      // `upToIndex` is 0-based, so the card COUNT needed is index + 1. Passing the
-      // index straight through left the listing one card short and every following
-      // role failed against it.
       const wanted = Math.max(12, Math.min(upToIndex + 1, needed));
-      cards = await ensureCards({ host, port, needed: wanted });
+      // Prefer the browser's own back button. If the SPA restores the listing it
+      // already had, returning costs one navigation instead of a navigation plus
+      // several "Load more" clicks — and the card count is checked either way, so a
+      // shallow restore simply falls through to the full rebuild.
+      let restored = false;
+      try {
+        if (isListingPage(await currentUrl({ host, port })) === false) {
+          await evaluateJson({ host, port, expression: 'history.back(); "ok"' });
+        }
+        restored = await waitForCards(wanted, 6_000);
+      } catch {
+        restored = false;
+      }
+      if (!restored) {
+        console.error('  return: full rebuild (back did not restore the listing)');
+        await capturePage({ host, port, url: TURING_PLATFORM.listUrl, timeoutMs: 45_000 });
+        // Wait for CARDS, not for skeletons to disappear: a freshly navigated page is
+        // blank for a moment, and "no skeletons" is equally true of a blank page. That
+        // mistake turned every rebuild into a card_not_found cascade.
+        await waitForCards(1, 15_000);
+        await waitForSkeletons({ host, port });
+        cards = await ensureCards({ host, port, needed: wanted });
+      } else {
+        cards = await countCards({ host, port });
+        if (cards < wanted) cards = await ensureCards({ host, port, needed: wanted });
+      }
     };
 
     /**
@@ -366,10 +418,13 @@ async function runCapture({ existing = [] } = {}) {
       }
 
       try {
+        const roleStartedAt = Date.now();
         const { capture, leftListing, note } = await readRole(index);
         captures.push(capture || { index, title: null, externalId: null, referralUrl: null, reason: note || 'probe_failed' });
         const label = String(capture?.title || '(no title)').slice(0, 60);
-        console.error(`[${index}] ${capture?.referralUrl ? 'LINK' : capture?.reason || note || 'no link'} — ${label}`);
+        // The per-role duration is the number that decides whether a full run is
+        // worth starting, so it is logged rather than inferred from timestamps.
+        console.error(`[${index}] ${capture?.referralUrl ? 'LINK' : capture?.reason || note || 'no link'} — ${label} (${Date.now() - roleStartedAt}ms)`);
 
         consecutiveFailures = capture?.referralUrl ? 0 : consecutiveFailures + 1;
 
@@ -403,6 +458,7 @@ async function runCapture({ existing = [] } = {}) {
     }
     return captures;
   } finally {
+    await closeSession();
     if (flag('keep-open', null) === null) {
       try { await runtime.closeProfile(identity.envId); } catch {}
     }
