@@ -29,11 +29,13 @@ import {
   parseMicro1ReferralBonus,
   parseMicro1Openings,
   normalizeMicro1Item,
+  planMicro1Window,
   toMicro1OfferDraft,
   micro1OpenReferralExpr,
   MICRO1_LIST_EXPR,
   MICRO1_DETAIL_CONTENT_EXPR
 } from '../utils/browserActor/tasks/micro1.js';
+import { classifyProviderFailure, isQuotaExhaustedMessage } from '../utils/browserActor/errors.js';
 import { CONTENT_EXTRACTORS, contentExprFor } from '../utils/browserActor/enrichment.js';
 import { planCodeIntegrity } from '../utils/browserActor/referralVerify.js';
 import { planOfferImport } from '../utils/browserActor/offersImport.js';
@@ -209,7 +211,63 @@ ok('the runner imports through the shared planner', script.includes('planOfferIm
 ok('the runner cannot report a run it never claimed', /if \(!runIdFlag\) return/.test(script));
 ok('the runner refuses to start without a tenant', /usage: --tenant/.test(script));
 
+// ---------------------------------------------------------------------------
+// The daily start allowance — the constraint that shapes everything above
+// ---------------------------------------------------------------------------
+
+// Verbatim vendor wording, which is what an operator will actually see.
+ok('the daily startup limit message is recognised',
+  isQuotaExhaustedMessage('The daily startup limit is exceeded. Please upgrade the package to increase the daily limit.'));
+ok('and a paraphrased quota message too',
+  isQuotaExhaustedMessage('quota exceeded for today'));
+ok('a plain rate-limit message is not mistaken for an exhausted plan',
+  !isQuotaExhaustedMessage('rate limit: retrying in 2s'));
+ok('an unrelated failure is not a quota failure',
+  !isQuotaExhaustedMessage('Browser closed unexpectedly'));
+
+const quotaFailure = classifyProviderFailure(new Error('The daily startup limit is exceeded. Please upgrade the package.'));
+eq('a quota failure is typed as such', quotaFailure.code, 'provider_quota');
+ok('and it is not retryable — retrying is what spends the allowance', quotaFailure.retryable === false);
+ok('and it tells the operator what to do', /wait for the daily reset or upgrade/i.test(quotaFailure.actionable || ''));
+
+const plainFailure = classifyProviderFailure(new Error('socket hang up'));
+eq('anything else stays a provider error', plainFailure.code, 'provider_error');
+ok('and stays retryable', plainFailure.retryable === true);
+
+// The wording can arrive in stderr rather than the message: both are checked.
+ok('a quota message in details.stderr is still caught',
+  classifyProviderFailure({ message: 'exit 1', details: { stderr: 'daily startup limit is exceeded' } }).code === 'provider_quota');
+
+// ---------------------------------------------------------------------------
+// One start per day means the window must skip what is already imported
+// ---------------------------------------------------------------------------
+
+const listingRows = [
+  { index: 0, title: 'Enterprise Client Partner, U.S. Government', text: 'a' },
+  { index: 1, title: 'Music & Sound Annotation Expert', text: 'b' },
+  { index: 2, title: 'Generalist', text: 'c' }
+];
+const ownedOffers = [{ id: 'x', title: 'Music & Sound Annotation Expert', slug: 'malingu-ventures-micro1-music-sound-annotation-e' }];
+
+const allWindow = planMicro1Window(listingRows, { existingOffers: ownedOffers, tenantSlug: 'malingu-ventures', limit: 12 });
+eq('without the flag every card is read', allWindow.window.length, 3);
+eq('but the already-imported ones are still counted', allWindow.alreadyImported, 1);
+
+const missingWindow = planMicro1Window(listingRows, { existingOffers: ownedOffers, tenantSlug: 'malingu-ventures', limit: 12, onlyMissing: true });
+eq('with --only-missing the owned role is dropped', missingWindow.window.length, 2);
+eq('and the drop is by title, matching the importer', missingWindow.window.map((row) => row.title), ['Enterprise Client Partner, U.S. Government', 'Generalist']);
+eq('the limit still applies after filtering',
+  planMicro1Window(listingRows, { existingOffers: ownedOffers, tenantSlug: 'malingu-ventures', limit: 1, onlyMissing: true }).window.length, 1);
+// A tenant-scoped slug is also enough to recognise an owned role, even if the title drifted.
+eq('a tenant-scoped slug match counts as imported',
+  planMicro1Window([{ index: 0, title: 'Renamed Role' }], {
+    existingOffers: [{ title: 'Original', slug: 'malingu-ventures-micro1-renamed-role' }],
+    tenantSlug: 'malingu-ventures',
+    onlyMissing: true
+  }).window.length, 0);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
+
 
 

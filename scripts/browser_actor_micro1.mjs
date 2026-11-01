@@ -49,8 +49,10 @@ import {
   micro1JobUrl,
   micro1OpenReferralExpr,
   normalizeMicro1Item,
-  pickMicro1ReferralUrl
+  pickMicro1ReferralUrl,
+  planMicro1Window
 } from '../utils/browserActor/tasks/micro1.js';
+import { classifyProviderFailure } from '../utils/browserActor/errors.js';
 
 const argv = process.argv.slice(2);
 function flag(name, fallback = null) {
@@ -65,11 +67,15 @@ const skip = Number(flag('skip', 0)) || 0;
 const pace = Number(flag('pace', 900)) || 900;
 const apply = flag('apply', null) !== null;
 const withDescriptions = flag('no-descriptions', null) === null;
+// Skip roles this tenant already has. One start per day is expensive; spending it on
+// offers that already exist is worse than useless.
+const onlyMissing = flag('only-missing', null) !== null;
+
 const outPath = path.resolve(String(flag('out', 'tmp/micro1.json')));
 const runIdFlag = flag('run-id');
 
 if (!tenant) {
-  console.error('usage: --tenant <slug> [--limit 12] [--skip 0] [--apply] [--no-descriptions] [--out tmp/micro1.json]');
+  console.error('usage: --tenant <slug> [--limit 12] [--skip 0] [--apply] [--only-missing] [--no-descriptions] [--out tmp/micro1.json]');
   process.exit(1);
 }
 if (limit <= 0) {
@@ -172,17 +178,21 @@ async function loadTenantContext() {
  * which is double the work for the same result. Splitting them also means `--no-descriptions`
  * is a real speed dial rather than an untested branch.
  */
-async function runCapture() {
+async function runCapture({ existingOffers = [] } = {}) {
   const identity = resolveIdentity({
     tenantSlug: tenant,
     map: parseProfileMap(process.env.BROWSER_ACTOR_PROFILES || ''),
     defaultEnvId: process.env.BROWSER_ACTOR_DEFAULT_ENV_ID || ''
   });
   const runtime = createBrowserRuntime({ client: createMoreloginClient() });
-  // MoreLogin refuses a start while the previous session is still holding the profile
-  // (observed as code 19124, after a run was killed mid-flight and never released it).
-  // So the retry is deliberately *close, then start*: closing only happens after a failed
-  // start, which means a healthy session belonging to somebody else is never yanked.
+  // MoreLogin caps **starts per day**. Two consequences, both deliberate:
+  //
+  //   1. A start failure is classified before it is retried. If the plan's allowance is
+  //      spent, retrying is exactly what wastes it — so the run stops with the one
+  //      instruction that helps (wait for the reset, or upgrade), and says that nothing
+  //      was lost.
+  //   2. A start that *does* succeed must be worth it: `--only-missing` filters the
+  //      cards down to roles this tenant does not already have (see planMicro1Window).
   let started = null;
   for (let attempt = 1; attempt <= 2 && !started; attempt += 1) {
     try {
@@ -191,6 +201,16 @@ async function runCapture() {
         headless: flag('headful', null) === null
       });
     } catch (error) {
+      const failure = classifyProviderFailure(error);
+      if (!failure.retryable) {
+        console.error(`\nSTOPPED — ${failure.code}`);
+        console.error(String(error?.message || error));
+        console.error(`\n${failure.actionable}\n`);
+        const quota = new Error(failure.actionable);
+        quota.code = failure.code;
+        quota.quotaExhausted = true;
+        throw quota;
+      }
       if (attempt === 2) throw error;
       console.error(`profile start failed (${error?.message || error}) — releasing it and retrying`);
       try { await runtime.closeProfile(identity.envId); } catch {}
@@ -217,8 +237,18 @@ async function runCapture() {
 
     const page = await evaluateJson({ host, port, expression: MICRO1_LIST_EXPR });
     const items = (page?.items || []).map(normalizeMicro1Item).filter(Boolean);
-    const window = items.slice(skip, skip + limit);
-    console.error(`reading cards ${skip + 1}..${skip + window.length} of ${items.length}`);
+    // Which cards are worth clicking. With a daily start allowance, re-capturing roles
+    // the tenant already owns is the most expensive way to learn nothing.
+    const plan = planMicro1Window(items, {
+      existingOffers,
+      tenantSlug: tenant,
+      skip,
+      limit,
+      onlyMissing
+    });
+    const window = plan.window;
+    console.error(`listing: ${plan.considered} cards · ${plan.alreadyImported} already imported${onlyMissing ? ' (skipped)' : ''}`);
+    console.error(`reading cards ${skip + 1}..${skip + window.length}`);
     runState.total = window.length;
 
     // ---- Pass 1: the referral link for each card -------------------------------
@@ -481,7 +511,7 @@ async function main() {
   console.error(`tenant=${tenantRow.slug} offers=${offers.length} source_id=${sourceId || '(none)'}`);
   await startRunTracking(supabase, tenantRow);
 
-  const { captures, listing } = await runCapture();
+  const { captures, listing } = await runCapture({ existingOffers: offers });
   const withLink = captures.filter((capture) => capture.referralUrl);
   const withBody = captures.filter((capture) => capture.content);
   console.error(`captured: ${captures.length} roles · ${withLink.length} links · ${withBody.length} bodies`);

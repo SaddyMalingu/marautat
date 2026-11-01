@@ -31,10 +31,17 @@ export const BROWSER_ACTOR_CODES = Object.freeze({
   PROVIDER_UNAVAILABLE: 'provider_unavailable',
   PROVIDER_ERROR: 'provider_error',
   PROVIDER_TIMEOUT: 'provider_timeout',
+  /**
+   * The plan's daily startup allowance is spent (e.g. MoreLogin 19124, "The daily
+   * startup limit is exceeded"). Distinct from `provider_error` because the fix is
+   * different in kind: not a retry, not a lock to clear — wait for the reset or upgrade.
+   */
+  PROVIDER_QUOTA: 'provider_quota',
   CDP_ERROR: 'cdp_error',
   CDP_TIMEOUT: 'cdp_timeout',
   UNSUPPORTED_TRANSPORT: 'unsupported_transport'
 });
+
 
 // Every code maps to one HTTP status so a caller can branch on either.
 const HTTP_STATUS = Object.freeze({
@@ -50,6 +57,8 @@ const HTTP_STATUS = Object.freeze({
   provider_unavailable: 503,
   provider_error: 502,
   provider_timeout: 504,
+  // 429 is the honest status for "your plan's allowance for today is gone".
+  provider_quota: 429,
   cdp_error: 502,
   cdp_timeout: 504,
   unsupported_transport: 501
@@ -100,3 +109,46 @@ export function toPublicError(error) {
 export function httpStatusForCode(code) {
   return HTTP_STATUS[code] || 500;
 }
+
+/**
+ * Is this failure the plan's daily startup allowance running out?
+ *
+ * The wording is the vendor's, so it is matched rather than inferred from a code: the
+ * same 19124 has been observed for a genuine start failure too. Two conditions are
+ * required — a limit/quota word *and* an exceed/upgrade word — so a message like
+ * "rate limit: retrying" is not mistaken for an exhausted plan.
+ */
+export const QUOTA_LIMIT_WORDS = /(quota|limit|allowance)/i;
+export const QUOTA_EXCEEDED_WORDS = /(exceed|exhaust|reached|upgrade|insufficient|used up)/i;
+
+export function isQuotaExhaustedMessage(text) {
+  const value = String(text || '');
+  if (!value) return false;
+  if (/daily startup limit/i.test(value)) return true;
+  return QUOTA_LIMIT_WORDS.test(value) && QUOTA_EXCEEDED_WORDS.test(value);
+}
+
+/**
+ * Every provider failure an operator will actually see, mapped to what they should do.
+ * A quota error is not retryable today, and saying so is the whole point: retrying it is
+ * what wasted the allowance in the first place.
+ */
+export function classifyProviderFailure(error) {
+  const message = String(error?.message || error || '');
+  const details = [
+    message,
+    String(error?.details?.stderr || ''),
+    String(error?.details?.raw || ''),
+    String(error?.details?.body || '')
+  ].join(' ');
+
+  if (isQuotaExhaustedMessage(details)) {
+    return {
+      code: 'provider_quota',
+      retryable: false,
+      actionable: "The MoreLogin plan's daily startup limit is spent. Wait for the daily reset or upgrade the package, then re-run. Nothing is lost: captured roles are skipped on the next run."
+    };
+  }
+  return { code: 'provider_error', retryable: true, actionable: null };
+}
+

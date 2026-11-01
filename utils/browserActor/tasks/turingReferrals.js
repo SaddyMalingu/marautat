@@ -30,6 +30,7 @@ import { isReferralUrlForHost, slugifyTitle } from '../referrals.js';
 /** Referral links live on the same host as the listing (`work.turing.com`). */
 export const TURING_REFERRAL_HOST = 'turing.com';
 
+
 /**
  * Paced on purpose: expanding a card and opening a modal twice a second looks like
  * a scraper to a marketplace the tenant's own account depends on.

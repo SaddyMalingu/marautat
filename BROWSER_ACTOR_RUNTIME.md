@@ -682,14 +682,30 @@ argument for verifying before writing rather than after.
 ### Running it
 
 ```bash
-node scripts/browser_actor_micro1.mjs --tenant <slug> --limit 12           # plan
-node scripts/browser_actor_micro1.mjs --tenant <slug> --limit 12 --apply   # import drafts
+node scripts/browser_actor_micro1.mjs --tenant <slug> --limit 12            # plan
+node scripts/browser_actor_micro1.mjs --tenant <slug> --limit 12 --apply    # import drafts
+  --only-missing        skip roles this tenant already has (do this by default)
   --no-descriptions     links only (much faster; bodies come from the job-page pass)
   --run-id <uuid>       report progress into browser_actor_runs for the portal
 ```
 
+### The constraint that shapes the runner: one start is expensive
+
+MoreLogin allows a fixed number of profile **starts per day**, and exceeding it fails the
+start with *"The daily startup limit is exceeded"* — the same `19124` code as a genuine
+start failure, which is why the message is matched rather than the code
+(`classifyProviderFailure`). Two rules follow:
+
+- **A failed start is classified before it is retried.** A quota failure is not
+  retryable, so the run stops with the one instruction that helps rather than spending
+  more of the allowance discovering the same thing.
+- **A successful start must do all the work it can.** One navigation reads all 12 cards;
+  the bodies come from the same session; `--only-missing` skips roles the tenant already
+  owns; the report prints `alreadyImported` so a wasted start is visible.
+
 Measured on the live dashboard: **12 cards, ~350 ms per link, ~2.2 s per body**. A verified
 sample run produced 4/4 links `match` with bodies of 5,391 and 3,168 characters.
+
 
 ### Source attribution (why the funnel said "Unattributed")
 

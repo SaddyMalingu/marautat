@@ -31,8 +31,12 @@
  * functions, so a Micro1 redesign fails a test instead of writing a wrong link.
  */
 
+import { slugifyTitle } from '../referrals.js';
+import { offerSlugFor } from '../offersImport.js';
+
 /** Where referral links land. The listing is a different host on purpose. */
 export const MICRO1_JOB_HOST = 'jobs.micro1.ai';
+
 
 /** The tenant's referral dashboard. */
 export const MICRO1_PLATFORM = Object.freeze({
@@ -194,6 +198,43 @@ export function parseMicro1ReferralBonus(text) {
 export function parseMicro1Openings(text) {
   const match = String(text || '').match(/(\d+)\s+openings?/i);
   return match ? Number(match[1]) : null;
+}
+
+/**
+ * Which cards this run should actually click.
+ *
+ * Exists because of a hard external constraint: MoreLogin caps **starts per day**, and
+ * burning a start to re-capture twelve roles that are already imported is a waste the
+ * plan does not forgive. `onlyMissing` therefore skips cards whose offer already exists —
+ * matched the same way the importer matches (tenant-scoped slug, then title) so the two
+ * can never disagree about what "already imported" means.
+ *
+ * Pure: takes the listing rows and the tenant's existing offers.
+ */
+export function planMicro1Window(items = [], {
+  existingOffers = [],
+  tenantSlug = '',
+  sourceSlug = MICRO1_PLATFORM.source,
+  skip = 0,
+  limit = 12,
+  onlyMissing = false
+} = {}) {
+  const offers = (Array.isArray(existingOffers) ? existingOffers : []).filter(Boolean);
+  const takenSlugs = new Set(offers.map((offer) => String(offer.slug || '').toLowerCase()).filter(Boolean));
+  const takenTitles = new Set(offers.map((offer) => slugifyTitle(offer.title)).filter(Boolean));
+
+  const rows = (Array.isArray(items) ? items : []).filter(Boolean).map((item) => {
+    const slug = offerSlugFor({ tenantSlug, sourceSlug, title: item.title });
+    const alreadyImported = takenSlugs.has(slug) || takenTitles.has(slugifyTitle(item.title));
+    return { ...item, alreadyImported };
+  });
+
+  const pending = onlyMissing ? rows.filter((row) => !row.alreadyImported) : rows;
+  return {
+    considered: rows.length,
+    alreadyImported: rows.filter((row) => row.alreadyImported).length,
+    window: pending.slice(Math.max(0, skip), Math.max(0, skip) + Math.max(0, limit))
+  };
 }
 
 /**
