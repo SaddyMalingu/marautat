@@ -197,7 +197,43 @@ export const TURING_DETAIL_REFERRAL_EXPR = `(() => {
 })()`;
 
 
-/** The real per-role identifier, once a card has been opened. */
+/**
+ * Read the full job description from the role's own page.
+ *
+ * The card carries a one-line summary — around 70 characters — and that is all the
+ * first version captured, so every published offer said one sentence about a job that
+ * had a page of requirements behind it. The page we already open to reach the share
+ * dialog holds the whole body, so the content costs one extra read and no extra click.
+ *
+ * The container is identified by its prose class (`leading-relaxed`) plus a section
+ * heading, and the longest match wins: the listing and the nav also contain prose, and
+ * picking the shortest match picked a partial wrapper once already.
+ */
+export const TURING_DETAIL_CONTENT_EXPR = `(() => {
+  const clean = (v) => String(v == null ? '' : v).replace(/\\s+/g, ' ').trim();
+  let best = null;
+  let bestLen = 0;
+  for (const el of document.querySelectorAll('div, section, article')) {
+    const cls = typeof el.className === 'string' ? el.className : '';
+    if (!/leading-relaxed/.test(cls)) continue;
+    const text = String(el.innerText || '');
+    if (text.length < 300) continue;
+    if (!/about turing|job description|key responsibilities|required qualifications|role overview|about the role|responsibilities/i.test(text)) continue;
+    if (text.length > bestLen) { best = el; bestLen = text.length; }
+  }
+  if (!best) return JSON.stringify({ ok: false, reason: 'description_not_found' });
+  // Newlines are preserved: they are what make the sections readable on the offer page.
+  const content = String(best.innerText || '')
+    .replace(/\\r\\n?/g, '\\n')
+    .split('\\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join('\\n')
+    .slice(0, 8000);
+  const heading = document.querySelector('h1');
+  return JSON.stringify({ ok: true, title: clean(heading ? heading.innerText : document.title).slice(0, 200), content });
+})()`;
+
 export function jobIdFromUrl(url) {
   try {
     const parsed = new URL(String(url || ''));

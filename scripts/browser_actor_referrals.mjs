@@ -35,6 +35,7 @@ import {
   REFERRAL_MODAL_TIMEOUT_MS,
   REFERRAL_PACE_MS,
   TURING_CLOSE_MODAL_EXPR,
+  TURING_DETAIL_CONTENT_EXPR,
   TURING_DETAIL_REFERRAL_EXPR,
   TURING_MODAL_CANDIDATES_EXPR,
   TURING_REFERRAL_HOST,
@@ -63,6 +64,9 @@ const outPath = path.resolve(String(flag('out', 'tmp/referrals.json')));
 const fromFile = flag('from');
 const apply = flag('apply', null) !== null;
 const verifyLinks = flag('no-verify', null) === null;
+// --refresh ignores the progress file: used to back-fill descriptions on offers whose
+// referral link is already attached, where the normal resume would skip them.
+const refresh = flag('refresh', null) !== null;
 
 if (!tenant) {
   console.error('usage: --tenant <slug> [--limit 5] [--skip 0] [--out tmp/referrals.json] [--apply] [--from file]');
@@ -190,6 +194,7 @@ async function captureOne({ host, port, index }) {
   let clickedBy = opened?.by || null;
   let affordance = opened?.text || null;
   let note = null;
+  let content = null;
 
   // Opening a role takes you to a JOB DETAIL page (`?jobId=112467`), not a modal —
   // verified live. The referral control lives there, so the search continues on the
@@ -197,6 +202,14 @@ async function captureOne({ host, port, index }) {
   const jobId = jobIdFromUrl(pageUrl);
   if (jobId) {
     await sleep(1_200);
+    // Read the job body BEFORE opening the share dialog, which covers the page. This
+    // is the whole reason the published offer said one sentence: only the card summary
+    // was ever captured. A missing description must never cost us the referral link,
+    // so this read is best-effort and the link path is unchanged.
+    try {
+      const detailContent = await evaluateJson({ host, port, expression: TURING_DETAIL_CONTENT_EXPR });
+      if (detailContent?.ok && detailContent.content) content = detailContent.content;
+    } catch { /* keep going: the link matters more than the prose */ }
     const detail = await evaluateJson({ host, port, expression: TURING_DETAIL_REFERRAL_EXPR });
     if (detail?.url) pageUrl = detail.url;
     if (detail?.ok && detail.clicked) {
@@ -231,6 +244,7 @@ async function captureOne({ host, port, index }) {
     buttons: probe.buttons
   });
   if (!capture.referralUrl && note) capture.reason = note;
+  if (content) capture.content = content;
 
   await evaluateJson({ host, port, expression: TURING_CLOSE_MODAL_EXPR });
 
@@ -275,7 +289,7 @@ async function loadTenantContext() {
   }
   const { data: offers, error: offersError } = await supabase
     .from('opportunities')
-    .select('id, title, slug, external_id, referral_url, status')
+    .select('id, title, slug, external_id, referral_url, description, status')
     .eq('tenant_id', tenantRow.id);
   if (offersError) throw offersError;
   return { supabase, tenantRow, offers: offers || [] };
@@ -412,7 +426,7 @@ async function runCapture({ existing = [] } = {}) {
     let consecutiveFailures = 0;
 
     for (let index = skip; index < windowEnd; index += 1) {
-      if (doneIndexes.has(index)) {
+      if (!refresh && doneIndexes.has(index)) {
         console.error(`[${index}] already captured — skipping`);
         continue;
       }
@@ -499,6 +513,27 @@ async function applyBackfill({ supabase, plan }) {
   return { updated, failed };
 }
 
+/**
+ * Write the captured job bodies over the one-line summaries.
+ *
+ * Only ever grows: a capture only replaces a description that is meaningfully shorter,
+ * so re-running can never lose text that is already there.
+ */
+async function applyDescriptions({ supabase, updates }) {
+  const updated = [];
+  const failed = [];
+  for (const update of updates) {
+    const { data, error } = await supabase
+      .from('opportunities')
+      .update({ description: update.description, updated_at: new Date().toISOString() })
+      .eq('id', update.id)
+      .select('id, title');
+    if (error) { failed.push({ title: update.title, reason: error.message }); continue; }
+    updated.push({ title: update.title, chars: update.to });
+  }
+  return { updated, failed };
+}
+
 async function main() {
   const { supabase, tenantRow, offers } = await loadTenantContext();
   console.error(`tenant=${tenantRow.slug} offers=${offers.length}`);
@@ -550,6 +585,28 @@ async function main() {
     }
   }
 
+  // Job bodies: replace the card's one-line summary with the real description.
+  // Only ever grows — a capture replaces a description only when it is meaningfully
+  // longer, so a re-run cannot lose text that is already stored.
+  const byExternal = new Map();
+  for (const offer of offers) {
+    const key = String(offer.external_id || '').trim();
+    if (key) byExternal.set(key, offer);
+  }
+  const descriptionUpdates = [];
+  for (const capture of captures) {
+    const body = String(capture?.content || '').trim();
+    if (!body || !capture.externalId) continue;
+    const offer = byExternal.get(String(capture.externalId).trim());
+    if (!offer) continue;
+    const existing = String(offer.description || '').trim();
+    if (body.length <= existing.length + 40) continue;
+    descriptionUpdates.push({ id: offer.id, title: offer.title, from: existing.length, to: body.length, description: body });
+  }
+  if (descriptionUpdates.length) {
+    console.error(`${descriptionUpdates.length} description(s) can be replaced with the full job text`);
+  }
+
   const report = {
     tenant: tenantRow.slug,
     mode: fromFile ? 'from_file' : 'capture',
@@ -557,6 +614,10 @@ async function main() {
     captured: captures.length,
     withLink: captures.filter((row) => row && row.referralUrl).length,
     verified: verifyLinks ? { checked: verification.length, match: verification.filter((v) => v.verdict === 'match').length } : 'skipped',
+    descriptions: {
+      planned: descriptionUpdates.length,
+      samples: descriptionUpdates.slice(0, 5).map((u) => ({ title: u.title, from: u.from, to: u.to }))
+    },
     headline: referralCaptureHeadline(plan),
     plan,
     verification
@@ -569,7 +630,10 @@ async function main() {
 
   if (apply) {
     report.applied = await applyBackfill({ supabase, plan });
-  } else if (plan.updates.length) {
+    if (descriptionUpdates.length) {
+      report.descriptions.applied = await applyDescriptions({ supabase, updates: descriptionUpdates });
+    }
+  } else if (plan.updates.length || descriptionUpdates.length) {
     console.error('plan only — re-run with --apply to attach these links');
   }
 

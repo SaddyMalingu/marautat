@@ -105,5 +105,23 @@ ok('a rebuilt page is not flagged again — the migration converges',
 ok('an external link inside the article body does not trigger a rebuild',
   !usesUnmeteredLink('<article><p>See https://source.example/study</p><a href="https://source.example/x">source</a></article>'));
 
+// The offer page must keep the job's structure. Descriptions were a single <p>, so a
+// 2,000-character job rendered as one run-on paragraph and read as "no detail" — which
+// is exactly how a tenant reported it.
+{
+  const { renderOfferPage } = await import('../utils/aiJobsViewsOpp.js');
+  const demo = renderOfferPage({
+    id: 'x', title: 'Demo Role', slug: 'demo', offer_type: 'job', compensation_max: 100,
+    description: 'About Turing:\nTuring advances AI systems.\nRequired Qualifications\nFive years of experience.'
+  }, {});
+  ok('a multi-line description renders as separate lines', (demo.match(/<br>/g) || []).length >= 3);
+  ok('section headings are emphasised', demo.includes('<strong>About Turing:</strong>'));
+  ok('the description is escaped, not injected raw',
+    renderOfferPage({ id: 'y', title: 'T', slug: 't', offer_type: 'job', description: '<script>alert(1)</script>' }, {})
+      .includes('&lt;script&gt;'));
+  const summaryOnly = renderOfferPage({ id: 'z', title: 'T', slug: 't2', offer_type: 'job', description: 'One line only.' }, {});
+  ok('a one-line summary still renders', summaryOnly.includes('One line only.'));
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
