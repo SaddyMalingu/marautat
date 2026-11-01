@@ -67,6 +67,13 @@ import {
   planCodeIntegrity,
   verifyReferralLink
 } from '../utils/browserActor/referralVerify.js';
+import {
+  contentExprFor,
+  describeEnrichment,
+  findThinMarketplaceOffers,
+  isThinDescription,
+  planDescriptionUpdates
+} from '../utils/browserActor/enrichment.js';
 import { sanitizeOfferPatch } from '../utils/offerPatch.js';
 import { summarizeCoverage, coverageHeadline } from '../utils/coverage.js';
 import { cliArgsFor, isBusinessFailure } from '../utils/browserActor/moreloginClient.js';
@@ -1121,6 +1128,44 @@ console.log('\n-- coverage --');
     { id: 'b', title: 'Role B', referral_url: 'https://work.turing.com/r/SAME' }
   ]);
   ok('two roles sharing one code is flagged', shared.issues.some((i) => i.reason === 'shared_code'));
+
+  // --- Offer enrichment: the tile summary is not the job ---
+  eq('a tile summary counts as thin', isThinDescription('Analyze GitHub issues and evaluate LLM performance.'), true);
+  eq('a real job body does not', isThinDescription('x'.repeat(400)), false);
+
+  ok('the Turing extractor is registered', typeof contentExprFor('turing') === 'string');
+  // Deliberately absent: guessing an extractor for a page we have never run would
+  // produce confident-looking empty content.
+  eq('an unregistered marketplace has no extractor', contentExprFor('micro1'), null);
+
+  const enrichOffers = [
+    { id: 'o1', title: 'Role A', external_id: 'turing:role-a', description: 'Short summary.' },
+    { id: 'o2', title: 'Role B', external_id: 'turing:role-b', description: 'y'.repeat(500) },
+    { id: 'o3', title: 'Hand made', external_id: null, description: '' }
+  ];
+  const enrichCaptures = [
+    { externalId: 'turing:role-a', title: 'Role A', content: 'z'.repeat(900) },
+    // Only 20 characters longer than what is stored: below the gain threshold, so it is
+    // not worth a write. 600 would legitimately win, which is what the first version of
+    // this test got wrong.
+    { externalId: 'turing:role-b', title: 'Role B', content: 'w'.repeat(520) },
+    { externalId: 'turing:never-imported', title: 'Ghost', content: 'q'.repeat(900) }
+  ];
+  const enriched = planDescriptionUpdates({ captures: enrichCaptures, offers: enrichOffers });
+  eq('a thin description is upgraded', enriched.updates.length, 1);
+  eq('and it is the thin one', enriched.updates[0].id, 'o1');
+  ok('a fuller description is left alone',
+    enriched.skipped.some((row) => row.externalId === 'turing:role-b' && row.reason === 'already_at_least_as_full'));
+  ok('a capture with no offer is reported, not written',
+    enriched.skipped.some((row) => row.reason === 'no_offer_for_role'));
+
+  const thinList = findThinMarketplaceOffers(enrichOffers);
+  eq('only marketplace offers are reported as thin', thinList.length, 1);
+  eq('a hand-written offer is not called thin', thinList[0].externalId, 'turing:role-a');
+  const coverage = describeEnrichment(enrichOffers);
+  eq('coverage counts marketplace offers only', coverage.marketplace, 2);
+  eq('coverage counts the ones with full text', coverage.full, 1);
+  eq('coverage reports what is still thin', coverage.thin, 1);
 }
 
 // ---------------------------------------------------------------------------

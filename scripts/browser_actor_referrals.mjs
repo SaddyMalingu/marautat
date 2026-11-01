@@ -29,13 +29,13 @@ import { createMoreloginClient, redact } from '../utils/browserActor/moreloginCl
 import { createBrowserRuntime } from '../utils/browserActor/runtime.js';
 import { capturePage, resolveDebugTarget, CdpSession } from '../utils/browserActor/cdp.js';
 import { verifyReferralLink } from '../utils/browserActor/referralVerify.js';
+import { contentExprFor, describeEnrichment, planDescriptionUpdates } from '../utils/browserActor/enrichment.js';
 import { parseProfileMap, resolveIdentity, describeIdentity } from '../utils/browserActor/identity.js';
 import { TURING_PLATFORM, TURING_LIST_COUNT_EXPR, TURING_LOAD_MORE_EXPR } from '../utils/browserActor/tasks/turing.js';
 import {
   REFERRAL_MODAL_TIMEOUT_MS,
   REFERRAL_PACE_MS,
   TURING_CLOSE_MODAL_EXPR,
-  TURING_DETAIL_CONTENT_EXPR,
   TURING_DETAIL_REFERRAL_EXPR,
   TURING_MODAL_CANDIDATES_EXPR,
   TURING_REFERRAL_HOST,
@@ -207,8 +207,14 @@ async function captureOne({ host, port, index }) {
     // was ever captured. A missing description must never cost us the referral link,
     // so this read is best-effort and the link path is unchanged.
     try {
-      const detailContent = await evaluateJson({ host, port, expression: TURING_DETAIL_CONTENT_EXPR });
-      if (detailContent?.ok && detailContent.content) content = detailContent.content;
+      // The extractor comes from a per-marketplace registry, so a new marketplace adds
+      // one entry instead of editing this loop. An unregistered platform is reported
+      // rather than silently skipped.
+      const contentExpr = contentExprFor('turing');
+      if (contentExpr) {
+        const detailContent = await evaluateJson({ host, port, expression: contentExpr });
+        if (detailContent?.ok && detailContent.content) content = detailContent.content;
+      }
     } catch { /* keep going: the link matters more than the prose */ }
     const detail = await evaluateJson({ host, port, expression: TURING_DETAIL_REFERRAL_EXPR });
     if (detail?.url) pageUrl = detail.url;
@@ -586,25 +592,14 @@ async function main() {
   }
 
   // Job bodies: replace the card's one-line summary with the real description.
-  // Only ever grows — a capture replaces a description only when it is meaningfully
-  // longer, so a re-run cannot lose text that is already stored.
-  const byExternal = new Map();
-  for (const offer of offers) {
-    const key = String(offer.external_id || '').trim();
-    if (key) byExternal.set(key, offer);
-  }
-  const descriptionUpdates = [];
-  for (const capture of captures) {
-    const body = String(capture?.content || '').trim();
-    if (!body || !capture.externalId) continue;
-    const offer = byExternal.get(String(capture.externalId).trim());
-    if (!offer) continue;
-    const existing = String(offer.description || '').trim();
-    if (body.length <= existing.length + 40) continue;
-    descriptionUpdates.push({ id: offer.id, title: offer.title, from: existing.length, to: body.length, description: body });
-  }
+  // Planning is pure (enrichment.js) so the same rule serves every marketplace.
+  const { updates: descriptionUpdates, skipped: descriptionSkipped } = planDescriptionUpdates({ captures, offers });
   if (descriptionUpdates.length) {
     console.error(`${descriptionUpdates.length} description(s) can be replaced with the full job text`);
+  }
+  if (descriptionSkipped.length) {
+    const unmatched = descriptionSkipped.filter((row) => row.reason === 'no_offer_for_role').length;
+    if (unmatched) console.error(`${unmatched} captured role(s) have no offer yet — imported separately`);
   }
 
   const report = {
@@ -632,6 +627,22 @@ async function main() {
     report.applied = await applyBackfill({ supabase, plan });
     if (descriptionUpdates.length) {
       report.descriptions.applied = await applyDescriptions({ supabase, updates: descriptionUpdates });
+    }
+    // Re-read so the report describes what the database holds NOW, not what it held at
+    // the start of the run. A run that leaves offers on a tile summary says so.
+    try {
+      const { data: fresh } = await supabase
+        .from('opportunities')
+        .select('id, title, external_id, description')
+        .eq('tenant_id', tenantRow.id);
+      const coverage = describeEnrichment(fresh || []);
+      report.enrichment = coverage;
+      console.error(`descriptions: ${coverage.full}/${coverage.marketplace} marketplace offers have full text (median ${coverage.medianChars} chars), ${coverage.thin} still thin`);
+      for (const row of coverage.thinOffers.slice(0, 10)) {
+        console.error(`  thin: ${String(row.title).slice(0, 56)} — ${row.chars} chars`);
+      }
+    } catch (error) {
+      console.error(`could not verify descriptions: ${error?.message || error}`);
     }
   } else if (plan.updates.length || descriptionUpdates.length) {
     console.error('plan only — re-run with --apply to attach these links');
