@@ -1076,6 +1076,56 @@ function fakeOfferDb() {
     /<summary[^>]*>Advanced: run it from a terminal instead<\/summary>/.test(dash2));
 }
 
+// ---------------------------------------------------------------------------
+// Context: whose profile may a tenant's worker drive, and what happens when it can't
+// ---------------------------------------------------------------------------
+
+{
+  const created = createAgentToken({ label: 'ctx' });
+  const runs = [{ id: 'run-ctx', tenant_id: 'tenant-1', status: 'queued', kind: 'referrals', platform: 'micro1', detail: { limit: 5 } }];
+  const tokens = [{ id: 'tok-ctx', tenant_id: 'tenant-1', token_hash: created.tokenHash, token_prefix: created.tokenPrefix, revoked_at: null }];
+  const db = fakeAgentDb({ runs, tokens });
+  const server = await withAgentServer(db);
+  const before = process.env.BROWSER_ACTOR_PROFILES;
+  try {
+    // The operator's own tenant uses a *hosted* profile that is a local desktop profile on
+    // the very machine the worker runs on. The first version refused `source !== 'tenant'`
+    // and so refused the only tenant that had a worker — a 409 that read like a policy
+    // decision and was actually a bug.
+    process.env.BROWSER_ACTOR_PROFILES = JSON.stringify({ acme: '123456789' });
+    const hosted = await agentCall(server.base, 'GET', '/api/agent/runs/run-ctx/context', { token: created.token });
+    eq('a local hosted profile may be driven by the tenant worker', hosted.status, 200);
+    eq('and the context says whose profile it is', hosted.body?.identity?.source, 'hosted');
+    eq('and it carries the run limit', hosted.body?.run?.limit, 5);
+    ok('and never a MoreLogin key', !('apiKey' in (hosted.body?.identity || {})));
+
+    process.env.BROWSER_ACTOR_PROFILES = JSON.stringify({ acme: { envId: '123456789', runtime: 'cloud' } });
+    const cloud = await agentCall(server.base, 'GET', '/api/agent/runs/run-ctx/context', { token: created.token });
+    eq('a cloud profile is refused, because the portal should run it', cloud.status, 409);
+    ok('and says so in words the tenant can act on', /press Capture now again/i.test(cloud.body?.error || ''));
+  } finally {
+    if (before === undefined) delete process.env.BROWSER_ACTOR_PROFILES;
+    else process.env.BROWSER_ACTOR_PROFILES = before;
+    await server.close();
+  }
+}
+
+{
+  const capture = fs.readFileSync(path.join(root, 'scripts', 'browser_actor_micro1.mjs'), 'utf8');
+  const worker = fs.readFileSync(path.join(root, 'scripts', 'browser_actor_worker.mjs'), 'utf8');
+
+  // Observed in production: claim 200, context 409, then process.exit(3) — so the run stayed
+  // "running" for ever and the tenant's next Capture now was refused as already_active.
+  ok('a refused context throws instead of exiting, so the run can be closed',
+    !/process\.exit\(3\)/.test(capture) && /agent_context_refused/.test(capture));
+  ok('the capture owns the run id before it asks for context',
+    capture.indexOf('runState.runId = String(runIdFlag)') < capture.indexOf('await loadTenantContext()'));
+  ok('the worker closes a run its child abandoned',
+    /async function closeAbandonedRun/.test(worker) && /"status": 'failed'|status: 'failed'/.test(worker));
+  ok('and explains that the tenant should press Capture now again',
+    /press Capture now again after fixing the cause/.test(worker));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
 

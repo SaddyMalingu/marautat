@@ -197,14 +197,18 @@ async function loadTenantContext() {
   if (agentMode) {
     const res = await agentCall('GET', `/api/agent/runs/${encodeURIComponent(String(runIdFlag))}/context`);
     if (!res.ok) {
-      console.error(`the portal refused this run (${res.status}): ${res.data?.error || 'no message'}`);
-      process.exit(3);
+      // Thrown, not process.exit: the caller's catch closes the run as failed. Exiting here
+      // is what left a claimed run "running" for ever and blocked the tenant's next capture.
+      const error = new Error(`the portal refused this run (${res.status}): ${res.data?.error || 'no message'}`);
+      error.code = 'agent_context_refused';
+      throw error;
     }
     const ctx = res.data || {};
     if (ctx.tenant?.slug && ctx.tenant.slug !== tenant) {
       // The token decides the tenant. Disagreeing with it is a bug, not a request to honour.
-      console.error(`this token belongs to tenant "${ctx.tenant.slug}", not "${tenant}" — stopping`);
-      process.exit(3);
+      const error = new Error(`this token belongs to tenant "${ctx.tenant.slug}", not "${tenant}" — stopping`);
+      error.code = 'agent_tenant_mismatch';
+      throw error;
     }
     console.error(`agent mode: tenant=${ctx.tenant?.slug} known=${(ctx.known || []).length} profile=${maskEnvId(ctx.identity?.envId || '')}`);
     return {
@@ -552,6 +556,13 @@ async function reportAgentResult({ captures, listing }) {
 }
 
 async function main() {
+  // Claim the *reporting* before anything can fail: if the context is refused or the profile
+  // will not start, the catch below still owns a run id and can close it. Without this a
+  // claimed run stayed "running" for ever and the tenant could not queue another capture.
+  if (agentMode && runIdFlag) {
+    runState.agent = true;
+    runState.runId = String(runIdFlag);
+  }
   const { supabase, tenantRow, offers, sourceId, identity } = await loadTenantContext();
   console.error(`tenant=${tenantRow.slug} offers=${offers.length} source_id=${sourceId || '(none)'}`);
   await startRunTracking(supabase, tenantRow);

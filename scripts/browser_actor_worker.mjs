@@ -185,6 +185,28 @@ function runCapture({ tenantSlug, runId, limit }) {
   });
 }
 
+/**
+ * Close a run the child left behind.
+ *
+ * The child reports its own outcome. When it dies before it can — a refused context, a
+ * missing ml-cli, a hard crash — the run stays `running`, and because only one run per tenant
+ * may be active, the tenant's next "Capture now" is refused for no visible reason. So after a
+ * non-zero exit, close it ourselves; if the child already closed it, the run is no longer in
+ * the queued/running list and this does nothing.
+ */
+async function closeAbandonedRun(runId, code) {
+  const listed = await call('GET', '/api/agent/runs').catch(() => null);
+  const stillOpen = (listed?.data?.runs || []).some((row) => row.id === runId);
+  if (!stillOpen) return;
+  const closed = await call('POST', `/api/agent/runs/${encodeURIComponent(runId)}/finish`, {
+    status: 'failed',
+    message: `the capture stopped with code ${code} before it could report`
+  }).catch(() => null);
+  console.error(closed?.ok
+    ? `run ${runId} closed as failed — press Capture now again after fixing the cause above`
+    : `could not close run ${runId} (${closed?.status ?? 'no response'}); the portal will show it as stalled`);
+}
+
 async function tick(tenantSlug) {
   const listed = await call('GET', '/api/agent/runs');
   if (!listed.ok) {
@@ -204,7 +226,11 @@ async function tick(tenantSlug) {
   const limit = Number(claimed.data?.run?.detail?.limit) || 12;
   console.error(`claimed ${run.id} (limit ${limit}) — capturing`);
   const code = await runCapture({ tenantSlug, runId: run.id, limit });
-  console.error(`capture exited ${code}; the run row already records the outcome`);
+  if (code !== 0) {
+    await closeAbandonedRun(run.id, code);
+  } else {
+    console.error(`capture exited 0; the run row records the outcome`);
+  }
   return true;
 }
 

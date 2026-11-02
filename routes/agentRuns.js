@@ -237,14 +237,21 @@ export function createAgentRunsRouter({
       try {
         identity = await resolveRunnerIdentity({ supabase, tenantSlug: auth.tenantSlug });
       } catch (error) {
+        console.error(`[agent] context refused run=${run.id} tenant=${auth.tenantSlug}: ${error?.message || error}`);
         return fail(res, 409, error?.message || 'This tenant has no browser profile to run');
       }
-      if (identity.source !== 'tenant') {
-        return fail(res, 409, 'This run needs the profile on the operator\'s own machine, not yours — tell Alphadome and we will queue it there');
-      }
+      // Only a cloud profile is out of reach for a worker: the browser is not on any machine
+      // the tenant owns, so the portal has to start it. Everything else — the tenant's own
+      // profile, an operator-hosted one, or the single-profile default — is driven by
+      // `ml-cli` on whatever machine holds it, which is exactly what a worker is for.
+      //
+      // Refusing `hosted` outright (the first version did) broke the operator's own tenant:
+      // their profile IS a local desktop profile, and the worker runs on that same machine.
       if (identity.runtime !== 'local') {
+        console.error(`[agent] context refused run=${run.id} tenant=${auth.tenantSlug}: runtime=${identity.runtime}`);
         return fail(res, 409, 'That profile runs in the cloud, so the portal should run it — press Capture now again');
       }
+      console.error(`[agent] context run=${run.id} tenant=${auth.tenantSlug} source=${identity.source} profile=${identity.envId} → allowed`);
 
       const { data: offers, error: offersError } = await supabase
         .from('opportunities').select('title, slug, external_id').eq('tenant_id', auth.tenantId);
@@ -258,7 +265,9 @@ export function createAgentRunsRouter({
         ok: true,
         run: { id: run.id, status: run.status, platform, limit: Number(run.detail?.limit) || 12 },
         tenant: { slug: tenantRow.slug, name: tenantRow.name || null },
-        // envId identifies the profile; the key stays here.
+        // envId identifies the profile; the key stays here. `source` tells the worker whose
+        // profile this is, so its log says `source=hosted` instead of leaving the operator
+        // guessing which browser just moved.
         identity: { envId: identity.envId, runtime: identity.runtime, source: identity.source },
         sourceSlug: platform,
         sourceId: sourceRow?.id || null,
