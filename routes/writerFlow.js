@@ -33,6 +33,8 @@ import {
   canQueue,
   createRunStore,
   describeRun,
+  isActiveStatus,
+  isStalled,
   kindLabel
 } from '../utils/browserActor/runs.js';
 import { verifyReferralLink } from '../utils/browserActor/referralVerify.js';
@@ -404,19 +406,56 @@ export function createWriterFlowRouter({
       const gate = canQueue(runs, { kind, now: now() });
       if (!gate.ok) return res.status(409).json({ error: gate.message, run: gate.run || null });
 
+      // `canQueue` lets a run through once its heartbeat stops, because a dead worker must not
+      // mean "never capture again". The index does not know that: `status = 'running'` keeps
+      // the (tenant, kind) slot until the row is closed. So close the abandoned rows first —
+      // otherwise the insert raises 23505 and the tenant sees a 500 for a leftover row.
+      const abandoned = runs.filter((run) => (
+        String(run.kind || '').toLowerCase() === kind &&
+        isActiveStatus(run.status) &&
+        isStalled(run, now())
+      ));
+      for (const row of abandoned) {
+        await store.finish({
+          runId: row.id,
+          status: 'failed',
+          done: row.done_items,
+          ok: row.ok_items,
+          failed: row.failed_items,
+          total: row.total_items,
+          message: 'The runner stopped reporting, so this run was closed to let a new one start.',
+          detail: { abandoned: true, lastHeartbeatAt: row.heartbeat_at || null }
+        }).catch((error) => console.error(`[writer-flow] could not close abandoned run ${row.id}: ${error?.message || error}`));
+        console.error(`[writer-flow] tenant=${ctx.site.slug} closed abandoned run ${row.id}`);
+      }
+
       const detail = {
         limit: intParam(req.body?.limit, 50, 1, 300),
         skip: intParam(req.body?.skip, 0, 0, 5000),
         refresh: Boolean(req.body?.refresh)
       };
 
-      const run = await store.queue({
-        tenantId: ctx.site.id,
-        kind,
-        sourceSlug: req.body?.source ? String(req.body.source) : null,
-        requestedBy: 'tenant',
-        detail
-      });
+      let run = null;
+      try {
+        run = await store.queue({
+          tenantId: ctx.site.id,
+          kind,
+          sourceSlug: req.body?.source ? String(req.body.source) : null,
+          requestedBy: 'tenant',
+          detail
+        });
+      } catch (error) {
+        // A second tab (or a retry) queue the same instant the index fires. That is a
+        // conflict, and calling it a 500 taught the tenant to distrust the button.
+        if (String(error?.code || '') === '23505' || /uq_browser_actor_runs_active/.test(error?.message || '')) {
+          console.error(`[writer-flow] tenant=${ctx.site.slug} queue refused by the active-run index`);
+          return res.status(409).json({
+            error: `${kindLabel(kind)} is already waiting or running for this tenant — give it a moment, then try again.`,
+            reason: 'already_running'
+          });
+        }
+        throw error;
+      }
 
       // The worker command is in the response on purpose: the tenant has no browser, the
       // operator does. Handing over the exact line is more honest than a progress bar

@@ -603,6 +603,90 @@ ok('and the instruction names the file to apply',
 
 await new Promise((resolve) => degradedServer.close(resolve));
 
+// ---------------------------------------------------------------------------
+// A stuck run must not turn Capture now into a 500
+// ---------------------------------------------------------------------------
+
+function routerFor(db) {
+  const routerApp = express();
+  routerApp.use(express.json());
+  routerApp.use('/', createWriterFlowRouter({
+    tenantSessionAuth: (req, _res, next) => next(),
+    tenantSiteFromSession: async () => ({ site: { id: 't1', slug: 'malingu-ventures', name: 'Malingu Ventures' } }),
+    supabase: db,
+    verify: async () => ({ verdict: 'match', reason: 'title_match', resolvedTitle: 'x' })
+  }));
+  return routerApp;
+}
+
+async function withServer(db) {
+  const routerApp = routerFor(db);
+  const httpServer = http.createServer(routerApp);
+  await new Promise((resolve) => httpServer.listen(0, '127.0.0.1', resolve));
+  return {
+    base: `http://127.0.0.1:${httpServer.address().port}`,
+    close: () => new Promise((resolve) => httpServer.close(resolve))
+  };
+}
+
+{
+  // Observed in production: POST /tenant/blogger/runs → 500 "duplicate key value violates
+  // unique constraint uq_browser_actor_runs_active". `canQueue` ignores a run whose heartbeat
+  // stopped, but the partial index does not, so the insert hit a row nobody was watching.
+  const staleDb = fakeDb({
+    runs: [{
+      id: 'run-stuck',
+      tenant_id: 't1',
+      kind: 'referrals',
+      status: 'running',
+      started_at: new Date(Date.now() - 30 * 60_000).toISOString(),
+      heartbeat_at: new Date(Date.now() - 20 * 60_000).toISOString(),
+      done_items: 4, ok_items: 3, failed_items: 1, total_items: 12
+    }]
+  });
+  const server = await withServer(staleDb);
+  try {
+    const res = await fetch(server.base + '/tenant/blogger/runs', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'referrals' })
+    });
+    eq('an abandoned run does not block a new capture', res.status, 201);
+    const stuck = staleDb.tables.browser_actor_runs.find((row) => row.id === 'run-stuck');
+    eq('and the abandoned run is closed as failed', stuck?.status, 'failed');
+    ok('with a message that explains it', /stopped reporting/.test(stuck?.message || ''));
+    eq('and a fresh run is queued', staleDb.tables.browser_actor_runs.filter((row) => row.status === 'queued').length, 1);
+  } finally {
+    await server.close();
+  }
+}
+
+{
+  // Two tabs, or a retry, landing on the index at the same moment.
+  const conflictDb = fakeDb({ runs: [] });
+  const originalFrom = conflictDb.from;
+  conflictDb.from = (name) => {
+    const api = originalFrom(name);
+    if (name !== 'browser_actor_runs') return api;
+    return {
+      ...api,
+      insert: () => {
+        throw Object.assign(new Error('duplicate key value violates unique constraint "uq_browser_actor_runs_active"'), { code: '23505' });
+      }
+    };
+  };
+  const server = await withServer(conflictDb);
+  try {
+    const res = await fetch(server.base + '/tenant/blogger/runs', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'referrals' })
+    });
+    const body = await res.json();
+    eq('a duplicate-key race is a 409, not a 500', res.status, 409);
+    eq('and is reported as already running', body.reason, 'already_running');
+    ok('with a sentence, not a constraint name', /try again/i.test(body.error || '') && !/uq_browser_actor/.test(body.error || ''));
+  } finally {
+    await server.close();
+  }
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
 

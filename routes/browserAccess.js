@@ -39,7 +39,7 @@ import {
 import { summarizeSignedIn } from '../utils/browserActor/signedIn.js';
 import { parseProfileMap } from '../utils/browserActor/identity.js';
 import { redact } from '../utils/browserActor/moreloginClient.js';
-import { canQueue, createRunStore } from '../utils/browserActor/runs.js';
+import { canQueue, createRunStore, isActiveStatus, isStalled } from '../utils/browserActor/runs.js';
 import { createAgentTokenStore, describeAgentToken } from '../utils/browserActor/agentTokens.js';
 import {
   CAPTURE_DEFAULT_LIMIT,
@@ -349,13 +349,51 @@ export function createBrowserAccessRouter({
       const gate = canQueue(recent, { kind: 'referrals', now: now() });
       if (!gate.ok) return fail(res, 409, gate.message, { reason: 'already_running', run: gate.run || null });
 
-      const run = await runStore.queue({
-        tenantId: ctx.site.id,
-        kind: 'referrals',
-        sourceSlug: platform,
-        requestedBy: 'tenant:portal',
-        detail: { limit, platform, via: 'portal', runtime: access.runtime }
-      });
+      // `canQueue` ignores a run whose heartbeat stopped, because a dead worker should not
+      // mean "never again". The database index does not know that — `status = 'running'` still
+      // holds the (tenant, kind) slot — so an abandoned run must be closed *before* the insert.
+      // Skipping this returned a 500 on a duplicate key, which reads as a server fault when it
+      // is really a leftover row.
+      const abandoned = recent.filter((row) => (
+        String(row.kind || '').toLowerCase() === 'referrals' &&
+        isActiveStatus(row.status) &&
+        isStalled(row, now())
+      ));
+      for (const row of abandoned) {
+        await runStore.finish({
+          runId: row.id,
+          status: 'failed',
+          done: row.done_items,
+          ok: row.ok_items,
+          failed: row.failed_items,
+          total: row.total_items,
+          message: 'The worker stopped reporting, so this run was closed to let a new one start.',
+          detail: { abandoned: true, lastHeartbeatAt: row.heartbeat_at || null }
+        }).catch((error) => {
+          console.error(`[browser-access] could not close abandoned run ${row.id}: ${error?.message || error}`);
+        });
+        console.error(`[browser-access] tenant=${ctx.site.slug} closed abandoned run ${row.id}`);
+      }
+
+      let run = null;
+      try {
+        run = await runStore.queue({
+          tenantId: ctx.site.id,
+          kind: 'referrals',
+          sourceSlug: platform,
+          requestedBy: 'tenant:portal',
+          detail: { limit, platform, via: 'portal', runtime: access.runtime }
+        });
+      } catch (error) {
+        // 23505 = the partial unique index. Someone queued between our read and our insert
+        // (or a second tab did). That is a conflict to report, not a server error.
+        if (String(error?.code || '') === '23505' || /uq_browser_actor_runs_active/.test(error?.message || '')) {
+          return fail(res, 409, 'A capture is already waiting or running for this tenant — give it a moment, then try again', {
+            reason: 'already_running'
+          });
+        }
+        throw error;
+      }
       if (!run?.id) return fail(res, 503, 'Run tracking is not set up on this host');
 
       // Local profile: queue only. The tenant's worker claims it on the machine where the

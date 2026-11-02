@@ -1126,6 +1126,66 @@ function fakeOfferDb() {
     /press Capture now again after fixing the cause/.test(worker));
 }
 
+// ---------------------------------------------------------------------------
+// An abandoned run must not turn "Capture now" into a 500
+// ---------------------------------------------------------------------------
+
+{
+  // `canQueue` ignores a run whose heartbeat stopped; the partial unique index does not. So a
+  // dead 'running' row blocked the insert with 23505 and the tenant got a 500 — a server
+  // fault for a leftover row.
+  const db = fakeCaptureDb(localAccess);
+  db.runs.push({
+    id: 'run-stale',
+    tenant_id: 'site-1',
+    kind: 'referrals',
+    status: 'running',
+    started_at: new Date(Date.now() - 30 * 60_000).toISOString(),
+    heartbeat_at: new Date(Date.now() - 20 * 60_000).toISOString(),
+    done_items: 3,
+    ok_items: 2,
+    failed_items: 1,
+    total_items: 12
+  });
+  const server = await withCaptureServer({ db, spawnRun: () => { throw new Error('should not spawn'); } });
+  try {
+    const res = await call(server.base, 'POST', '/tenant/blogger/browser-access/capture', { platform: 'micro1' });
+    eq('an abandoned run does not block a new capture', res.status, 202);
+    eq('and the abandoned run is closed as failed first',
+      db.runs.find((row) => row.id === 'run-stale')?.status, 'failed');
+    ok('with a message that explains it',
+      /stopped reporting/.test(db.runs.find((row) => row.id === 'run-stale')?.message || ''));
+    eq('and a fresh run is queued', db.runs.filter((row) => row.status === 'queued').length, 1);
+  } finally {
+    await server.close();
+  }
+}
+
+{
+  // A second tab queueing at the same moment: the index fires, and that is a conflict to
+  // report, not a 500.
+  const db = fakeCaptureDb(localAccess);
+  const originalFrom = db.from.bind(db);
+  db.from = (table) => {
+    const api = originalFrom(table);
+    if (table !== 'browser_actor_runs') return api;
+    return {
+      ...api,
+      insert: () => {
+        throw Object.assign(new Error('duplicate key value violates unique constraint "uq_browser_actor_runs_active"'), { code: '23505' });
+      }
+    };
+  };
+  const server = await withCaptureServer({ db, spawnRun: () => { throw new Error('should not spawn'); } });
+  try {
+    const res = await call(server.base, 'POST', '/tenant/blogger/browser-access/capture', { platform: 'micro1' });
+    eq('a duplicate-key race is a 409, not a 500', res.status, 409);
+    ok('and says what to do', /try again/i.test(res.body?.error || ''));
+  } finally {
+    await server.close();
+  }
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
 
