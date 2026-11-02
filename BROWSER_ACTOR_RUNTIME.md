@@ -865,19 +865,33 @@ used, and both are honest about where the browser is:
 | `cloud` | the portal (spawns the runner) | progress immediately |
 | `local` | **the tenant's own machine** | `202 queuedForWorker`, then progress when their worker picks it up |
 
-The local path, end to end:
+The local path, end to end — and note that the tenant never leaves the portal except to paste one line:
 
 ```
 portal:  Capture now  → POST /browser-access/capture
-                       → 202 { run, queuedForWorker: true }     (no spawn; nothing to fake)
-tenant:  Worker tokens → POST /browser-access/worker-token
-                       → 201 { token }                          shown once, command printed
-tenant:  node scripts/browser_actor_worker.mjs --api https://… --token wkr_…
+                       → 202 { run, queuedForWorker: true, needsWorkerToken }   (no spawn; nothing to fake)
+         "Queued for your worker — it starts as soon as your computer picks it up."
+         (first time, no worker yet: "create a worker token below and start the worker there")
+
+portal:  Create worker token → POST /browser-access/worker-token
+                             → 201 { token, command, note: "not shown again" }
+         the panel prints the command under a Copy button and warns once
+
+tenant:  paste it into a terminal on the MoreLogin machine, leave it running:
+         node scripts/browser_actor_worker.mjs --api https://… --token wkr_…
 worker:  GET  /api/agent/runs              this tenant's queued/running rows
          POST /api/agent/runs/:id/claim    atomic: update … where status = 'queued'
          spawn scripts/browser_actor_micro1.mjs --run-id <id>   (the same path an operator uses)
          POST /api/agent/runs/:id/finish   counters → succeeded | partial | failed
+
+portal:  "Run captures on your computer. last seen 2/11/2026, 14:02"     (or "never connected")
+         Revoke wkr_ab12… (my computer)   ← one click, effective immediately
 ```
+
+The panel states three things a tenant needs and nothing else: whether a worker exists, whether it
+has ever checked in, and how to switch one off. "Last seen" is the field that separates "queued and
+waiting for my machine" from "queued and nobody is listening" — the difference between patience and
+a support ticket.
 
 Rules that make it safe rather than merely convenient:
 

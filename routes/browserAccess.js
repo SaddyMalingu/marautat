@@ -104,17 +104,35 @@ export function createBrowserAccessRouter({
         envMap: parseProfileMapSafe(env.BROWSER_ACTOR_PROFILES),
         defaultEnvId: env.BROWSER_ACTOR_DEFAULT_ENV_ID || ''
       });
+      // Workers ride along with the status so the panel needs one request, not two. A
+      // missing token table is not an error here: it means the migration is pending, and the
+      // tenant should see "not set up yet" rather than a broken panel.
+      let workers = [];
+      let workersReady = true;
+      try {
+        workers = (await tokenStore.list({ tenantId: ctx.site.id })).map(describeAgentToken);
+      } catch (error) {
+        workersReady = false;
+        console.error(`[browser-access] worker tokens unreadable for ${ctx.site.slug}: ${error?.message || error}`);
+      }
+      const active = workers.filter((worker) => !worker.revoked);
       res.json({
         ok: true,
         ...publicAccessStatus(ctx.site.metadata, { secretConfigured: canStore() }),
         // What a run would use right now, so the tenant can tell whether they are on their
         // own profile or the operator's hosted one.
-        runSource: resolved ? resolved.source : 'none'
+        runSource: resolved ? resolved.source : 'none',
+        workers,
+        workersReady,
+        activeWorkers: active.length,
+        // The question the panel actually has to answer: has a worker ever checked in?
+        workerLastSeenAt: active.map((worker) => worker.lastUsedAt).filter(Boolean).sort().pop() || null
       });
     } catch (error) {
       fail(res, error.status || 500, redact(error.message || 'Could not read browser access'));
     }
   });
+
 
   router.post('/tenant/blogger/browser-access/connect', tenantSessionAuth, async (req, res) => {
     try {
@@ -344,11 +362,21 @@ export function createBrowserAccessRouter({
       // browser actually is; pretending to start it here would leave a row running forever.
       if (!runsInCloud) {
         console.error(`[browser-access] tenant=${ctx.site.slug} queued run=${run.id} for the tenant's local worker`);
+        // Whether a worker even exists decides the message: "wait for your worker" is useless
+        // advice to a tenant who has never created one.
+        let hasWorker = false;
+        try {
+          hasWorker = (await tokenStore.list({ tenantId: ctx.site.id }))
+            .some((token) => !token.revoked_at);
+        } catch { /* treated as "unknown", which reads as "create one" */ }
         return res.status(202).json({
           ok: true,
           run: { id: run.id, status: 'queued', kind: 'referrals', platform, limit },
           queuedForWorker: true,
-          note: 'Queued for your worker — it runs on the computer where your MoreLogin profile lives. Keep the worker running, or start it with: node scripts/browser_actor_worker.mjs'
+          needsWorkerToken: !hasWorker,
+          note: hasWorker
+            ? 'Queued for your worker — it starts as soon as your computer picks it up.'
+            : 'Queued. Your profile runs on your own computer, so create a worker token below and start the worker there; it will pick this up.'
         });
       }
 

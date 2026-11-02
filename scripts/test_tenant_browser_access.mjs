@@ -498,6 +498,30 @@ ok('sealing with no key configured still refuses', noEnv);
 function fakeCaptureDb(metadata = {}) {
   const site = { id: 'site-1', slug: 'acme', metadata: { ...metadata } };
   const runs = [];
+  const tokens = [];
+  const makeTokens = () => {
+    const filters = [];
+    const chain = {
+      select: () => chain,
+      order: () => chain,
+      limit: () => chain,
+      eq: (col, val) => { filters.push([col, val]); return chain; },
+      is: (col, val) => { filters.push([col, val]); return chain; },
+      insert(row) {
+        const created = { id: `tok-${tokens.length + 1}`, created_at: new Date().toISOString(), revoked_at: null, ...row };
+        tokens.push(created);
+        return { select: () => ({ maybeSingle: async () => ({ data: created, error: null }) }) };
+      },
+      update(patch) {
+        const hit = tokens.filter((row) => filters.every(([col, val]) => row[col] === val));
+        hit.forEach((row) => Object.assign(row, patch));
+        return chain;
+      },
+      maybeSingle: async () => ({ data: tokens.filter((row) => filters.every(([col, val]) => row[col] === val))[0] || null, error: null }),
+      then: (resolve) => resolve({ data: tokens.filter((row) => filters.every(([col, val]) => row[col] === val)), error: null })
+    };
+    return chain;
+  };
   const makeRuns = () => {
     const api = {
       insert(row) {
@@ -535,8 +559,10 @@ function fakeCaptureDb(metadata = {}) {
   return {
     site,
     runs,
+    tokens,
     from(table) {
       if (table === 'browser_actor_runs') return makeRuns();
+      if (table === 'browser_actor_agent_tokens') return makeTokens();
       return {
         update(patch) {
           const chain = {
@@ -595,13 +621,33 @@ const localAccess = { browserAccess: { provider: 'morelogin', envId: '2116562908
     const res = await call(server.base, 'POST', '/tenant/blogger/browser-access/capture', { platform: 'micro1' });
     eq('a local profile queues instead of failing', res.status, 202);
     eq('and says it is waiting for the worker', res.body.queuedForWorker, true);
+    // No token exists yet, so the honest next step is "create one", not "wait".
+    eq('and tells a tenant with no worker to create one', res.body.needsWorkerToken, true);
     eq('nothing was spawned here', spawned.length, 0);
     eq('but a run row exists for the worker to claim', db.runs.length, 1);
     eq('and it is queued', db.runs[0].status, 'queued');
+
+    // Once a worker exists the message changes: waiting is now true advice.
+    const token = await call(server.base, 'POST', '/tenant/blogger/browser-access/worker-token', { label: 'pc' });
+    eq('a worker token can be created', token.status, 201);
+    ok('the token is shown once, prefixed', String(token.body.token || '').startsWith('wkr_'));
+    ok('and the command to run is printed', /browser_actor_worker\.mjs --api .* --token wkr_/.test(token.body.command || ''));
+    ok('the response says it will not be shown again', /not shown again/i.test(token.body.note || ''));
+    eq('the stored row is a hash, not the token', db.tokens[0].token_hash === token.body.token, false);
+
+    const status = await call(server.base, 'GET', '/tenant/blogger/browser-access');
+    eq('the panel can see the worker', status.body.activeWorkers, 1);
+    ok('but never a usable token', !JSON.stringify(status.body).includes(token.body.token));
+
+    const revisited = await call(server.base, 'POST', '/tenant/blogger/browser-access/capture', { platform: 'micro1' });
+    // Same local profile, second capture: the first run is still queued, so this is the
+    // one-at-a-time guard doing its job — not a worker problem.
+    eq('a second capture is refused while the first is queued', revisited.status, 409);
   } finally {
     await server.close();
   }
 }
+
 
 
 {
@@ -670,6 +716,14 @@ ok('the cost of a capture is stated in the portal', /one<\/strong> MoreLogin pro
 ok('and the reconnect remedy is stated', /sign in again inside MoreLogin/.test(dash));
 // A guide that cannot tell you where you are is documentation, not a checklist.
 ok('the guide marks the current step', /function wfAccessGuide/.test(dash) && /const current = !d\.connected/.test(dash));
+// The worker UI: without it, a tenant whose plan has no cloud browser has no way to run
+// anything, and "queuedForWorker" would be a dead end in the interface.
+ok('the panel offers a worker token', /data-wfact="worker-create"/.test(dash));
+ok('a created token shows a copyable command', /data-wfact="worker-copy"/.test(dash) && /not shown again/.test(dash));
+ok('an existing worker can be revoked', /data-wfact="worker-revoke"/.test(dash));
+ok('the panel says whether a worker has checked in', /last seen|never connected/.test(dash));
+ok('a queued-for-worker capture is not reported as started', /queuedForWorker/.test(dash) && /needsWorkerToken/.test(dash));
+
 
 // ---------------------------------------------------------------------------
 // Worker tokens and the agent API

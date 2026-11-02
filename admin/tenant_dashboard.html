@@ -1702,8 +1702,10 @@ function wfAccessHtml(d) {
     ${d.reauthRequired
       ? `<div style="color:#ef4444;font-size:.78rem;margin-top:6px">Sign in again inside your MoreLogin profile for ${esc((d.reauthPlatforms || []).join(', ') || 'a marketplace')}, then press Verify.</div>`
       : ''}
+    ${d.connected ? wfWorkerHtml(d) : ''}
     ${wfAccessGuide(d)}`;
 }
+
 
 
 async function wfLoadAccess() {
@@ -1786,6 +1788,94 @@ async function wfVerifyAccess(btn) {
   }
 }
 
+// The worker block: only useful when the profile is local (a cloud profile does not need it),
+// but shown whenever the tenant has one so they can revoke a machine they no longer trust.
+function wfWorkerHtml(d) {
+  const workers = Array.isArray(d.workers) ? d.workers : [];
+  const active = workers.filter((worker) => !worker.revoked);
+  const lastSeen = d.workerLastSeenAt ? new Date(d.workerLastSeenAt).toLocaleString('en-KE') : null;
+  const state = !d.workersReady
+    ? '<span class="text-muted">not set up yet on this server</span>'
+    : active.length
+      ? (lastSeen ? `<span style="color:#22c55e">last seen ${esc(lastSeen)}</span>` : '<span style="color:#f59e0b">never connected</span>')
+      : '<span class="text-muted">no worker yet</span>';
+
+  return `
+    <div class="mt-3" style="border-top:1px solid var(--border);padding-top:10px">
+      <div style="font-size:.84rem">
+        <strong>Run captures on your computer.</strong> ${state}
+        <div class="text-muted" style="font-size:.76rem">
+          Needed when your MoreLogin has no cloud browser: your profile can only be driven from
+          the machine it runs on. The worker runs there and picks up the runs you queue here.
+        </div>
+      </div>
+      <div class="d-flex gap-2 flex-wrap mt-2">
+        <button class="btn btn-outline-acc btn-sm" data-wfact="worker-create" ${d.workersReady ? '' : 'disabled'}>Create worker token</button>
+        ${active.map((worker) => `<button class="btn btn-outline-light btn-sm" data-wfact="worker-revoke" data-id="${esc(worker.id)}">
+          Revoke ${esc(worker.prefix || 'worker')}${worker.label ? ` (${esc(worker.label)})` : ''}
+        </button>`).join('')}
+      </div>
+      ${workers.filter((worker) => worker.revoked).length
+        ? `<div class="text-muted" style="font-size:.72rem;margin-top:6px">${workers.filter((worker) => worker.revoked).length} revoked</div>`
+        : ''}
+      ${wfWorkerCommandHtml()}
+    </div>`;
+}
+
+// The command is shown once, immediately after creation, and kept in memory for this render
+// only — it contains the token, so it must not be stored or re-fetchable.
+let wfWorkerCommand = null;
+
+function wfWorkerCommandHtml() {
+  if (!wfWorkerCommand) return '';
+  return `
+    <div class="mt-2" style="border:1px solid var(--border);border-radius:8px;padding:10px">
+      <div style="font-size:.78rem;color:#f59e0b;font-weight:600">Copy this now — it is not shown again.</div>
+      <pre style="font-size:.72rem;white-space:pre-wrap;word-break:break-all;margin:6px 0;color:var(--text-light)">${esc(wfWorkerCommand)}</pre>
+      <div class="d-flex gap-2 flex-wrap align-items-center">
+        <button class="btn btn-info btn-sm" data-wfact="worker-copy">Copy command</button>
+        <span class="text-muted" style="font-size:.72rem">Run it on the computer where your MoreLogin profile lives, and leave it running.</span>
+      </div>
+    </div>`;
+}
+
+async function wfCreateWorker(btn) {
+  if (btn) { btn.disabled = true; btn.textContent = 'Creating…'; }
+  try {
+    const r = await apiJson('/tenant/blogger/browser-access/worker-token', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label: 'my computer' })
+    });
+    if (!r.ok) { toast(r.data?.error || 'Could not create a worker token', 'err'); return; }
+    wfWorkerCommand = r.data?.command || null;
+    toast('Worker token created — copy the command now', 'ok');
+    await wfLoadAccess();
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Create worker token'; }
+  }
+}
+
+async function wfCopyWorkerCommand(btn) {
+  const text = wfWorkerCommand || '';
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+    toast('Command copied — paste it into a terminal on your computer', 'ok');
+  } catch {
+    // Clipboard permissions vary; showing the text selected is the honest fallback.
+    toast('Copy failed — select the command above and copy it manually', 'err');
+  }
+  if (btn) btn.textContent = 'Copied';
+}
+
+async function wfRevokeWorker(id, btn) {
+  if (!confirm('Revoke this worker? Runs queued after this will wait until you start a new worker.')) return;
+  if (btn) btn.disabled = true;
+  const r = await apiJson(`/tenant/blogger/browser-access/worker-token/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  if (!r.ok) toast(r.data?.error || 'Could not revoke that worker', 'err');
+  else { wfWorkerCommand = null; toast('Worker revoked', 'ok'); }
+  await wfLoadAccess();
+}
+
 async function wfCaptureNow(btn) {
   const label = btn ? btn.textContent : 'Capture';
   if (btn) { btn.disabled = true; btn.textContent = 'Starting…'; }
@@ -1794,6 +1884,14 @@ async function wfCaptureNow(btn) {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ platform: 'micro1', limit: 12 })
     });
     if (!r.ok) { toast(r.data?.error || 'Could not start the capture', 'err'); return; }
+    if (r.data?.queuedForWorker) {
+      // A local profile: nothing was started here, and saying "started" would be a lie the
+      // tenant would act on (they would wait for a run that needs their own machine).
+      toast(r.data?.note || 'Queued for your worker', r.data?.needsWorkerToken ? 'err' : 'ok');
+      await wfLoadAccess();
+      await wfLoadControl();
+      return;
+    }
     toast('Capture started — progress appears in Collection control', 'ok');
     // The run row exists now, so the control panel's poller picks it up (queued counts as
     // active) and the tenant can watch it without keeping this panel focused.
@@ -1823,6 +1921,9 @@ function wfWireAccess() {
     else if (act === 'connect-chosen') wfConnectChosen(btn);
     else if (act === 'verify') wfVerifyAccess(btn);
     else if (act === 'capture') wfCaptureNow(btn);
+    else if (act === 'worker-create') wfCreateWorker(btn);
+    else if (act === 'worker-copy') wfCopyWorkerCommand(btn);
+    else if (act === 'worker-revoke') wfRevokeWorker(btn.dataset.id, btn);
     else if (act === 'disconnect') wfDisconnectAccess(btn);
   });
 }
