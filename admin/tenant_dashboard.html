@@ -1790,6 +1790,10 @@ async function wfVerifyAccess(btn) {
 
 // The worker block: only useful when the profile is local (a cloud profile does not need it),
 // but shown whenever the tenant has one so they can revoke a machine they no longer trust.
+//
+// Written for someone who has never opened a terminal: three numbered steps, a download, and
+// a button that copies nothing secret. The token step stays separate because it is the only
+// thing they can lose.
 function wfWorkerHtml(d) {
   const workers = Array.isArray(d.workers) ? d.workers : [];
   const active = workers.filter((worker) => !worker.revoked);
@@ -1805,11 +1809,18 @@ function wfWorkerHtml(d) {
       <div style="font-size:.84rem">
         <strong>Run captures on your computer.</strong> ${state}
         <div class="text-muted" style="font-size:.76rem">
-          Needed when your MoreLogin has no cloud browser: your profile can only be driven from
-          the machine it runs on. The worker runs there and picks up the runs you queue here.
+          Only needed when your MoreLogin has no cloud browser: your profile can only be
+          driven from the machine it runs on. Nothing is installed system-wide — it is a
+          folder you can delete.
         </div>
       </div>
+      <ol class="text-muted" style="font-size:.76rem;margin:8px 0 0 16px;padding:0">
+        <li><strong>Download</strong> the worker and unzip it anywhere (Desktop is fine).</li>
+        <li><strong>Create a token</strong> below and copy it — it is shown once.</li>
+        <li>Open the folder and double-click <strong>Start Worker.cmd</strong>, then paste that token.</li>
+      </ol>
       <div class="d-flex gap-2 flex-wrap mt-2">
+        <a class="btn btn-info btn-sm" href="/tenant/blogger/browser-access/worker-bundle" data-wfact="worker-download">Download the worker</a>
         <button class="btn btn-outline-acc btn-sm" data-wfact="worker-create" ${d.workersReady ? '' : 'disabled'}>Create worker token</button>
         ${active.map((worker) => `<button class="btn btn-outline-light btn-sm" data-wfact="worker-revoke" data-id="${esc(worker.id)}">
           Revoke ${esc(worker.prefix || 'worker')}${worker.label ? ` (${esc(worker.label)})` : ''}
@@ -1819,6 +1830,10 @@ function wfWorkerHtml(d) {
         ? `<div class="text-muted" style="font-size:.72rem;margin-top:6px">${workers.filter((worker) => worker.revoked).length} revoked</div>`
         : ''}
       ${wfWorkerCommandHtml()}
+      <div class="text-muted" style="font-size:.72rem;margin-top:6px">
+        Prefer a terminal? On the MoreLogin machine:
+        <code style="font-size:.7rem">node scripts/browser_actor_worker.mjs --api ${esc(location.origin)} --token wkr_…</code>
+      </div>
     </div>`;
 }
 

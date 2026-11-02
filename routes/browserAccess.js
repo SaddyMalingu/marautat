@@ -466,6 +466,31 @@ export function createBrowserAccessRouter({
     }
   });
 
+  /**
+   * The worker as a zip: what a non-technical tenant actually needs.
+   *
+   * Built on demand from the repo's own source files, so the tenant always gets the code that
+   * is deployed (no stale artifact to forget about) and there is nothing tenant-specific
+   * inside it — the token is typed on their machine, never shipped.
+   */
+  router.get('/tenant/blogger/browser-access/worker-bundle', tenantSessionAuth, async (req, res) => {
+    try {
+      const ctx = await tenantSiteFromSession(req);
+      if (!ctx) return fail(res, 404, 'Tenant not found');
+      const { buildWorkerBundle } = await import('../utils/browserActor/workerBundle.js');
+      const base = `${req.protocol}://${req.get('host')}`;
+      const { zip, entries } = buildWorkerBundle({ apiBase: base });
+      console.error(`[browser-access] tenant=${ctx.site.slug} downloaded the worker (${entries.length} files, ${Math.round(zip.length / 1024)}kb)`);
+      res.setHeader('Content-Type', 'application/zip');
+      res.setHeader('Content-Disposition', 'attachment; filename="alphadome-worker.zip"');
+      res.setHeader('Content-Length', String(zip.length));
+      res.setHeader('Cache-Control', 'no-store');
+      res.end(zip);
+    } catch (error) {
+      fail(res, error.status || 500, redact(error.message || 'Could not build the worker bundle'));
+    }
+  });
+
   return router;
 }
 

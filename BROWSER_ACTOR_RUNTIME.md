@@ -893,6 +893,65 @@ has ever checked in, and how to switch one off. "Last seen" is the field that se
 waiting for my machine" from "queued and nobody is listening" — the difference between patience and
 a support ticket.
 
+#### What the tenant actually downloads
+
+`GET /tenant/blogger/browser-access/worker-bundle` streams a zip built **on demand from this repo's
+own source files** (`utils/browserActor/workerBundle.js`), so a pilot never runs a stale artifact.
+Thirty files, ~229 kb, and what is *not* in it is the point:
+
+| Not in the zip | Why it matters |
+|---|---|
+| `.env`, service-role key, JWT | A tenant laptop must never hold a key that can write for **every** tenant |
+| `TENANT_SECRET_KEY` | That key unseals *any* tenant's MoreLogin key; it cannot leave the server |
+| a worker token | Typed by the tenant on their machine, saved as `worker-token.txt`, never transmitted to us |
+| `node_modules`, any npm package | The browser layer is CDP + `ml-cli` directly, so there is nothing to install and no supply chain to audit |
+| anything tenant-specific | The same zip is served to everyone |
+
+The tenant's experience is three steps in the panel: *Download* → *Create a token* → double-click
+`Start Worker.cmd` and paste it. `Start Worker.cmd` checks for Node.js and, if it is missing, says so
+and gives the link rather than printing a stack trace. `worker-bundle/README.txt` is written for
+someone who has never opened a terminal.
+
+#### Agent mode: why the tenant machine never touches the database
+
+Handing out a bundle that required `SUPABASE_SERVICE_ROLE_KEY` would have been the largest security
+regression in this repo — one careless tenant screenshot and every tenant's data is writable. So the
+privileged half of the capture moved to the server, behind the worker token:
+
+```
+tenant machine                                    portal
+  GET  /api/agent/runs/:id/context     ───────►   resolves the tenant from the token, resolves the
+                                                  profile, returns envId + the roles they already own
+                                                  (never the MoreLogin key)
+  POST /api/agent/runs/:id/progress   ───────►    counters + heartbeat
+  spawns the same capture script,
+  drives the local profile, reads pages
+  POST /api/agent/runs/:id/result     ───────►   sanitises the payload, re-verifies every link,
+                                                  plans + inserts offers, closes the run
+```
+
+`scripts/browser_actor_micro1.mjs` runs both ways from one file: with Supabase for an operator, and
+with `--agent-api/--agent-token` for a tenant. `dotenv` and `@supabase/supabase-js` are imported
+lazily so the bundled copy needs neither.
+
+Rules that keep the new endpoints safe rather than merely convenient:
+
+- **The tenant comes from the token**, never from the body — same as the claim path.
+- **The context refuses anything but the tenant's own local profile.** A tenant worker cannot be
+  pointed at the operator's hosted browser, and a cloud profile is refused with "press Capture again".
+- **The result payload is untrusted input.** Titles and bodies are bounded, unknown fields dropped,
+  and a `javascript:`/`file:` URL is discarded rather than stored and rendered later.
+- **Every link is re-verified server-side** before it is attached, so a compromised worker cannot
+  inject a link that pays somebody else.
+- **A closed run cannot be written to** (409), so a retry cannot double-insert.
+- **No MoreLogin key in the context.** A stolen `wkr_` token therefore buys the ability to burn that
+  tenant's own daily starts — not control of their marketplace accounts.
+
+Verified mechanically: the extracted zip runs in a temp folder with an **empty environment** (no
+`SUPABASE_*`, no `TENANT_SECRET_KEY`, no `node_modules`) and stops with
+`the portal refused this run (404)` — proving it loads, starts, and reaches the portal without ever
+looking for a database.
+
 Rules that make it safe rather than merely convenient:
 
 - **The token is the tenant.** The tenant comes from the token row, never from the request,

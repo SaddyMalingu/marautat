@@ -26,19 +26,29 @@
  *   node scripts/browser_actor_micro1.mjs --tenant malingu-ventures --limit 12 --apply
  *   ... --no-descriptions      skip the job-page pass (links only, much faster)
  *   ... --run-id <uuid>        report progress into browser_actor_runs for the portal
+ *
+ * **Agent mode** — `--agent-api <portal> --agent-token wkr_…` — is how this same file runs on
+ * a *tenant's* machine, where there is no `.env` and must be no database credentials:
+ *
+ *   - the tenant, its profile and its existing offers are fetched from the portal with the
+ *     worker token (`GET /api/agent/runs/:id/context`);
+ *   - the captures are posted back (`POST /api/agent/runs/:id/result`) and the **server**
+ *     writes the offers.
+ *
+ * That is why `dotenv` and `@supabase/supabase-js` are imported lazily: the tenant bundle
+ * installs nothing, and a machine holding a `wkr_` token can never hold a service-role key.
  */
-import 'dotenv/config';
+// Operator convenience only. The tenant bundle has no node_modules, so this must not be a
+// hard import — a missing dotenv is not an error, it just means the shell supplies the env.
+try { await import('dotenv/config'); } catch { /* not installed */ }
 import fs from 'node:fs';
 import path from 'node:path';
-import { createClient } from '@supabase/supabase-js';
 import { createMoreloginClient, redact } from '../utils/browserActor/moreloginClient.js';
 import { createBrowserRuntime } from '../utils/browserActor/runtime.js';
 import { capturePage, resolveDebugTarget, CdpSession } from '../utils/browserActor/cdp.js';
 import { maskEnvId } from '../utils/browserActor/identity.js';
 import { resolveRunnerIdentity } from '../utils/tenantRunnerIdentity.js';
-import { verifyReferralLink } from '../utils/browserActor/referralVerify.js';
-import { planOfferImport } from '../utils/browserActor/offersImport.js';
-import { describeEnrichment } from '../utils/browserActor/enrichment.js';
+import { applyCaptures, readCoverage } from '../utils/browserActor/applyCaptures.js';
 import { createRunStore, deriveRunStatus } from '../utils/browserActor/runs.js';
 import {
   MICRO1_PLATFORM,
@@ -75,8 +85,18 @@ const onlyMissing = flag('only-missing', null) !== null;
 const outPath = path.resolve(String(flag('out', 'tmp/micro1.json')));
 const runIdFlag = flag('run-id');
 
+// Agent mode: running on the tenant's own machine with nothing but a worker token.
+const agentApi = String(flag('agent-api', process.env.ALPHADOME_API || '')).replace(/\/+$/, '');
+const agentToken = String(flag('agent-token', process.env.TENANT_WORKER_TOKEN || ''));
+const agentMode = Boolean(agentApi && agentToken);
+
 if (!tenant) {
   console.error('usage: --tenant <slug> [--limit 12] [--skip 0] [--apply] [--only-missing] [--no-descriptions] [--out tmp/micro1.json]');
+  console.error('   or: --agent-api <portal> --agent-token wkr_… --run-id <uuid>   (tenant worker; no database needed)');
+  process.exit(1);
+}
+if (agentMode && !runIdFlag) {
+  console.error('agent mode needs --run-id: the portal decides which tenant and which profile this run uses');
   process.exit(1);
 }
 if (limit <= 0) {
@@ -85,6 +105,25 @@ if (limit <= 0) {
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * The only way this process talks to the portal in agent mode.
+ *
+ * The token is the tenant's, so `tenant` from the URL/body is never trusted here: the server
+ * resolves the tenant from the token and refuses anything that is not theirs.
+ */
+async function agentCall(method, pathname, body) {
+  const res = await fetch(`${agentApi}${pathname}`, {
+    method,
+    headers: {
+      authorization: `Bearer ${agentToken}`,
+      ...(body ? { 'content-type': 'application/json' } : {})
+    },
+    body: body ? JSON.stringify(body) : undefined
+  });
+  const data = await res.json().catch(() => ({}));
+  return { status: res.status, ok: res.ok, data };
+}
 
 /** One CDP session for the whole run: a session survives navigation, a socket does not. */
 let sharedSession = null;
@@ -133,19 +172,51 @@ async function waitForListing({ host, port, maxMs = 30_000 }) {
 }
 
 
-function loadSupabase() {
+async function loadSupabase() {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || process.env.SB_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.SB_SERVICE_ROLE_KEY;
   if (!url || !key) {
     console.error('Missing Supabase credentials (SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY).');
+    console.error('On a tenant machine use agent mode instead: --agent-api <portal> --agent-token wkr_… --run-id <uuid>');
     process.exit(1);
   }
+  // Loaded here, not at the top: the tenant bundle has no node_modules and must not need one.
+  const { createClient } = await import('@supabase/supabase-js');
   return createClient(url, key);
 }
 
-/** The tenant, its offers, and the Micro1 source row. Nothing outside this may be touched. */
+/**
+ * Everything this run may touch.
+ *
+ * In agent mode that is what the **portal** says, over the worker token: the tenant, the
+ * profile to drive, and the titles this tenant already owns (so `--only-missing` works
+ * without a database). No key is returned — a local `ml-cli` profile is driven through the
+ * MoreLogin client already signed in on that machine.
+ */
 async function loadTenantContext() {
-  const supabase = loadSupabase();
+  if (agentMode) {
+    const res = await agentCall('GET', `/api/agent/runs/${encodeURIComponent(String(runIdFlag))}/context`);
+    if (!res.ok) {
+      console.error(`the portal refused this run (${res.status}): ${res.data?.error || 'no message'}`);
+      process.exit(3);
+    }
+    const ctx = res.data || {};
+    if (ctx.tenant?.slug && ctx.tenant.slug !== tenant) {
+      // The token decides the tenant. Disagreeing with it is a bug, not a request to honour.
+      console.error(`this token belongs to tenant "${ctx.tenant.slug}", not "${tenant}" — stopping`);
+      process.exit(3);
+    }
+    console.error(`agent mode: tenant=${ctx.tenant?.slug} known=${(ctx.known || []).length} profile=${maskEnvId(ctx.identity?.envId || '')}`);
+    return {
+      supabase: null,
+      tenantRow: { id: null, slug: ctx.tenant?.slug, name: ctx.tenant?.name || null },
+      offers: Array.isArray(ctx.known) ? ctx.known : [],
+      sourceId: null,
+      identity: ctx.identity || null
+    };
+  }
+
+  const supabase = await loadSupabase();
   const { data: tenantRow, error } = await supabase
     .from('site_tenants').select('id, slug, name').eq('slug', tenant).maybeSingle();
   if (error) throw error;
@@ -164,7 +235,7 @@ async function loadTenantContext() {
   const { data: sourceRow } = await supabase
     .from('opportunity_sources').select('id').eq('slug', MICRO1_PLATFORM.source).maybeSingle();
 
-  return { supabase, tenantRow, offers: offers || [], sourceId: sourceRow?.id || null };
+  return { supabase, tenantRow, offers: offers || [], sourceId: sourceRow?.id || null, identity: null };
 }
 
 /**
@@ -179,10 +250,13 @@ async function loadTenantContext() {
  * which is double the work for the same result. Splitting them also means `--no-descriptions`
  * is a real speed dial rather than an untested branch.
  */
-async function runCapture({ existingOffers = [] } = {}) {
+async function runCapture({ existingOffers = [], identity = null } = {}) {
   // Identity first: a tenant who connected their own MoreLogin runs on their own profile
   // and their own key, and a tenant with neither is refused rather than guessed.
-  const runnerIdentity = await resolveRunnerIdentity({ supabase: loadSupabase(), tenantSlug: tenant });
+  // In agent mode the portal already resolved it — including refusing anything that is not
+  // the tenant's own local profile — so this process never needs a database to know.
+  const runnerIdentity = identity ||
+    await resolveRunnerIdentity({ supabase: await loadSupabase(), tenantSlug: tenant });
   console.error(`identity: source=${runnerIdentity.source} runtime=${runnerIdentity.runtime} profile=${runnerIdentity.envId}`);
   const client = createMoreloginClient(runnerIdentity.apiKey ? { apiKey: runnerIdentity.apiKey } : {});
   const runtime = createBrowserRuntime({ client });
@@ -361,6 +435,12 @@ const runState = { store: null, runId: null, total: 0, done: 0, ok: 0, failed: 0
 
 async function startRunTracking(supabase, tenantRow) {
   if (!runIdFlag) return;
+  if (agentMode) {
+    // No database here: progress goes to the portal, which owns the row.
+    runState.agent = true;
+    runState.runId = String(runIdFlag);
+    return;
+  }
   try {
     runState.store = createRunStore({ table: () => supabase.from('browser_actor_runs') });
     const run = await runState.store.claim({ runId: String(runIdFlag) });
@@ -374,11 +454,21 @@ async function startRunTracking(supabase, tenantRow) {
 }
 
 async function beatRun({ force = false } = {}) {
-  if (!runState.store || !runState.runId) return;
+  if (!runState.runId) return;
+  if (!runState.store && !runState.agent) return;
   const nowMs = Date.now();
   if (!force && nowMs - runState.lastBeat < 2000) return;
   runState.lastBeat = nowMs;
   try {
+    if (runState.agent) {
+      await agentCall('POST', `/api/agent/runs/${encodeURIComponent(runState.runId)}/progress`, {
+        done: runState.done,
+        ok: runState.ok,
+        failed: runState.failed,
+        total: runState.total || undefined
+      });
+      return;
+    }
     await runState.store.progress({
       runId: runState.runId,
       done: runState.done,
@@ -392,7 +482,27 @@ async function beatRun({ force = false } = {}) {
 }
 
 async function finishRunTracking({ status, message, detail } = {}) {
-  if (!runState.store || !runState.runId) return;
+  if (!runState.runId) return;
+  if (runState.agent) {
+    // Tell the portal even on the crash path: a run left "running" for ever is the failure
+    // mode the tenant cannot diagnose. The server still derives the status from counters when
+    // no explicit one is given.
+    try {
+      await agentCall('POST', `/api/agent/runs/${encodeURIComponent(runState.runId)}/finish`, {
+        status,
+        done: runState.done,
+        ok: runState.ok,
+        failed: runState.failed,
+        total: runState.total || undefined,
+        message: message ? String(message).slice(0, 300) : null,
+        detail: detail || null
+      });
+    } catch (error) {
+      console.error(`run could not be closed: ${error?.message || error}`);
+    }
+    return;
+  }
+  if (!runState.store) return;
   try {
     await runState.store.finish({
       runId: runState.runId,
@@ -409,120 +519,65 @@ async function finishRunTracking({ status, message, detail } = {}) {
   }
 }
 
+
 /**
- * Write the captures as draft offers.
+ * Agent mode: hand the captures to the server, which writes them.
  *
- * Two rules carried over from Turing, because they are about the marketplace being
- * external rather than about Turing:
- *   - a link is only attached if it provably lands on its own role (`verifyReferralLink`)
- *   - an existing offer is never touched (`planOfferImport` skips by external_id, slug
- *     and title), which is what protects a link the tenant pasted by hand
+ * The machine that saw the page has no business holding a key that can write for any tenant,
+ * so it reports what it observed and stops there. The server re-checks every link before it
+ * is attached — holding a valid token makes a worker authentic, not trusted.
  */
-async function applyCaptures({ supabase, tenantRow, offers, sourceId, captures }) {
-  const verification = [];
-  for (const capture of captures) {
-    if (!capture.referralUrl) continue;
-    const check = await verifyReferralLink({ url: capture.referralUrl, expectedTitle: capture.title });
-    verification.push({
+async function reportAgentResult({ captures, listing }) {
+  const res = await agentCall('POST', `/api/agent/runs/${encodeURIComponent(String(runIdFlag))}/result`, {
+    listing: { cards: listing?.count || 0, waitedMs: listing?.waitedMs || null },
+    captures: captures.map((capture) => ({
       title: capture.title,
       jobId: capture.jobId,
-      referral_url: capture.referralUrl,
-      verdict: check.verdict,
-      reason: check.reason,
-      resolvedTitle: check.resolvedTitle || null
-    });
-    if (check.verdict !== 'match') {
-      capture.reason = `unverified_${check.verdict}`;
-      capture.referralUrl = null;
-    }
-  }
-
-  const items = captures
-    .filter((capture) => capture.title && capture.jobId)
-    .map((capture) => ({
-      title: capture.title,
       externalId: capture.externalId,
-      summary: capture.content || capture.summary || null,
-      rate: capture.rate || null,
-      url: capture.url || null
-    }));
-
-  const plan = planOfferImport({
-    items,
-    existingOffers: offers,
-    tenantSlug: tenantRow.slug,
-    tenantId: tenantRow.id,
-    sourceSlug: MICRO1_PLATFORM.source,
-    sourceId
+      url: capture.url,
+      referralUrl: capture.referralUrl,
+      content: capture.content,
+      rate: capture.rate,
+      summary: capture.summary,
+      reason: capture.reason,
+      descriptionChars: capture.descriptionChars
+    }))
   });
-
-  // The body and the verified link are attached after planning, so the planner stays the
-  // single place that decides *whether* a row is created.
-  const byJobId = new Map(captures.filter((c) => c.jobId).map((c) => [c.jobId, c]));
-  const rows = plan.create.map((row) => {
-    const jobId = String(row.external_id || '').replace(/^micro1:/, '');
-    const capture = byJobId.get(jobId) || null;
-    if (!capture) return row;
-    return {
-      ...row,
-      description: capture.content || row.description,
-      destination_url: capture.url || row.destination_url,
-      referral_url: capture.referralUrl || null
-    };
-  });
-
-  const withLinks = rows.filter((row) => row.referral_url).length;
-  const result = {
-    planned: rows.length,
-    skipped: plan.skipped,
-    withLinks,
-    withoutLinks: rows.length - withLinks,
-    verification,
-    inserted: 0,
-    error: null
-  };
-
-  if (!apply) return { ...result, rows };
-
-  if (rows.length) {
-    const { data, error } = await supabase.from('opportunities').insert(rows).select('id, title, slug, referral_url');
-    if (error) {
-      result.error = error.message;
-      return { ...result, rows };
-    }
-    result.inserted = Array.isArray(data) ? data.length : 0;
-    result.created = data || [];
+  if (!res.ok) {
+    const message = res.data?.error || 'the portal rejected the result';
+    console.error(`the portal rejected the result (${res.status}): ${message}`);
+    return { planned: 0, inserted: 0, withLinks: 0, skipped: [], verification: [], coverage: null, error: message };
   }
-  return { ...result, rows };
-}
-
-/** Coverage as the database holds it now â€” not as the loop hoped. */
-async function readCoverage(supabase, tenantId) {
-  const { data, error } = await supabase
-    .from('opportunities')
-    .select('id, title, external_id, description, deleted_at')
-    .eq('tenant_id', tenantId);
-  if (error) return null;
-  const live = (data || []).filter((row) => row.deleted_at == null);
-  return describeEnrichment(live);
+  return { ...(res.data?.applied || {}), coverage: res.data?.coverage || null };
 }
 
 async function main() {
-  const { supabase, tenantRow, offers, sourceId } = await loadTenantContext();
+  const { supabase, tenantRow, offers, sourceId, identity } = await loadTenantContext();
   console.error(`tenant=${tenantRow.slug} offers=${offers.length} source_id=${sourceId || '(none)'}`);
   await startRunTracking(supabase, tenantRow);
 
-  const { captures, listing } = await runCapture({ existingOffers: offers });
+  const { captures, listing } = await runCapture({ existingOffers: offers, identity });
   const withLink = captures.filter((capture) => capture.referralUrl);
   const withBody = captures.filter((capture) => capture.content);
   console.error(`captured: ${captures.length} roles Â· ${withLink.length} links Â· ${withBody.length} bodies`);
 
-  const applied = await applyCaptures({ supabase, tenantRow, offers, sourceId, captures });
+  // One caller writes offers, and it is never the tenant's machine.
+  const applied = agentMode
+    ? await reportAgentResult({ captures, listing })
+    : await applyCaptures({
+      supabase,
+      tenant: tenantRow,
+      offers,
+      sourceId,
+      sourceSlug: MICRO1_PLATFORM.source,
+      captures,
+      apply
+    });
   if (applied.error) console.error(`insert failed: ${applied.error}`);
   if (apply) console.error(`imported ${applied.inserted} draft offers (${applied.withLinks} with a verified link)`);
   else console.error(`plan only â€” ${applied.planned} new offers would be created; re-run with --apply`);
 
-  const coverage = await readCoverage(supabase, tenantRow.id);
+  const coverage = agentMode ? applied.coverage : await readCoverage(supabase, tenantRow.id);
   if (coverage) {
     console.error(`descriptions: ${coverage.full}/${coverage.marketplace} marketplace offers have full text (median ${coverage.medianChars} chars), ${coverage.thin} still thin`);
   }

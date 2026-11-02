@@ -84,7 +84,8 @@
     "abos:import:dry": "node scripts/abos/import_abos_to_supabase.cjs --dry-run",
     "abos:validate": "node scripts/abos/validate_abos_workbook.cjs",
     "tenants:validate": "node scripts/validate_site_tenants_phase1.cjs",
-    "tenants:validate:isolation": "RUN_ISOLATION_TEST=true node scripts/validate_site_tenants_phase1.cjs"
+    "tenants:validate:isolation": "RUN_ISOLATION_TEST=true node scripts/validate_site_tenants_phase1.cjs",
+    "worker:bundle": "node scripts/build_worker_bundle.mjs"
   },
   "keywords": [],
   "author": "",

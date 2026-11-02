@@ -15,15 +15,25 @@
  * Usage, on the tenant's machine, from a checkout of this repo:
  *   node scripts/browser_actor_worker.mjs --api https://alphadome.onrender.com --token wkr_…
  *
+ * Or, from the zip the portal hands out (what a non-technical tenant actually does):
+ *   "Start Worker.cmd"        (Windows)  /  ./start-worker.sh   (macOS, Linux)
+ *
  * Flags:
- *   --api <url>        portal base URL (default: $ALPHADOME_API)
+ *   --api <url>        portal base URL (default: $ALPHADOME_API, then --config, then worker-config.json)
  *   --token <token>    worker token from the portal (default: $TENANT_WORKER_TOKEN)
- *   --tenant <slug>    only required when the repo's .env has no BROWSER_ACTOR_DEFAULT_ENV_ID
+ *   --token-file <p>   read the token from a file instead of the command line, so it does not
+ *                      appear in a process list or a shell history
+ *   --config <p>       json file holding { "api": "https://…" } — no secrets in it
+ *   --tenant <slug>    only required when the repo's env has no BROWSER_ACTOR_DEFAULT_ENV_ID
  *   --once             claim at most one run, then exit (for a scheduled task)
  *   --interval <ms>    poll interval when idle (default 15000)
  */
-import 'dotenv/config';
+// Operator convenience only. The tenant bundle has no node_modules, so this must not be a
+// hard import: a missing dotenv just means the environment already has what it needs.
+try { await import('dotenv/config'); } catch { /* not installed */ }
+import fs from 'node:fs';
 import path from 'node:path';
+import readline from 'node:readline';
 import { spawn } from 'node:child_process';
 
 const argv = process.argv.slice(2);
@@ -33,13 +43,55 @@ function flag(name, fallback = null) {
   return argv.includes(`--${name}`) ? true : fallback;
 }
 
-const api = String(flag('api', process.env.ALPHADOME_API || '')).replace(/\/+$/, '');
-const token = String(flag('token', process.env.TENANT_WORKER_TOKEN || ''));
+/** Config is a convenience for the bundled worker: a file next to the script, no secrets. */
+function readConfig() {
+  const explicit = flag('config');
+  const candidates = [
+    typeof explicit === 'string' ? path.resolve(explicit) : null,
+    path.resolve('worker-config.json')
+  ].filter(Boolean);
+  for (const file of candidates) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+      if (parsed?.api) return parsed;
+    } catch { /* next candidate */ }
+  }
+  return {};
+}
+
+function readToken() {
+  const fromFlag = flag('token', process.env.TENANT_WORKER_TOKEN || '');
+  if (fromFlag && fromFlag !== true) return String(fromFlag).trim();
+  const file = flag('token-file');
+  if (typeof file === 'string') {
+    try {
+      const value = fs.readFileSync(path.resolve(file), 'utf8').trim();
+      if (value) return value;
+    } catch { /* fall through to the prompt */ }
+  }
+  return '';
+}
+
+/** Last resort for a tenant who double-clicked the script itself. */
+async function askForToken() {
+  if (!process.stdin.isTTY) return '';
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  const answer = await new Promise((resolve) => rl.question('Paste your worker token (wkr_…), then press Enter: ', resolve));
+  rl.close();
+  return String(answer || '').trim();
+}
+
+const config = readConfig();
+const api = String(flag('api', process.env.ALPHADOME_API || config.api || '')).replace(/\/+$/, '');
+let token = readToken();
+if (!token) token = await askForToken();
 const once = flag('once', null) !== null;
 const intervalMs = Number(flag('interval', 15_000)) || 15_000;
 
 if (!api || !token) {
-  console.error('usage: node scripts/browser_actor_worker.mjs --api https://<portal> --token wkr_…');
+  console.error('This worker needs the portal address and a worker token.');
+  console.error('Easiest: double-click "Start Worker.cmd" (Windows) or run ./start-worker.sh.');
+  console.error('Or: node scripts/browser_actor_worker.mjs --api https://<portal> --token wkr_…');
   process.exit(1);
 }
 
@@ -75,6 +127,11 @@ async function health() {
  * The child is the same capture script an operator uses, pointed at the run id the portal
  * assigned — so progress lands in the run row the tenant is watching, there is one capture
  * path, and this worker contains no browser logic of its own to drift.
+ *
+ * It runs in **agent mode**: the child gets the portal URL and the worker token, never a
+ * database key. It fetches what it needs from `/api/agent/runs/:id/context` and posts the
+ * captures back, so the machine doing the browsing holds no credential that could write to
+ * another tenant's data.
  */
 function runCapture({ tenantSlug, runId, limit }) {
   const args = [
@@ -83,10 +140,14 @@ function runCapture({ tenantSlug, runId, limit }) {
     '--limit', String(limit || 12),
     '--apply',
     '--only-missing',
-    '--run-id', String(runId)
+    '--run-id', String(runId),
+    '--agent-api', api
+    // The token goes through the environment, not argv: a command line is visible to every
+    // process on the machine (Task Manager, `ps`), and this one is a credential.
   ];
+  const childEnv = { ...process.env, TENANT_WORKER_TOKEN: token };
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, args, { stdio: 'inherit', env: process.env });
+    const child = spawn(process.execPath, args, { stdio: 'inherit', env: childEnv });
     child.on('exit', (code) => resolve(code ?? 1));
     child.on('error', (error) => {
       console.error(`could not start the capture: ${error.message}`);

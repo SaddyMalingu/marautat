@@ -46,6 +46,10 @@ import {
   describeAgentToken
 } from '../utils/browserActor/agentTokens.js';
 import { resolveRunnerIdentity } from '../utils/tenantRunnerIdentity.js';
+import { buildWorkerBundle } from '../utils/browserActor/workerBundle.js';
+import { buildZipStore, listZipEntries } from '../utils/zipStore.js';
+import { sanitizeAgentCaptures } from '../routes/agentRuns.js';
+import { applyCaptures } from '../utils/browserActor/applyCaptures.js';
 
 let pass = 0;
 let fail = 0;
@@ -837,6 +841,177 @@ const tokenRows = [
       body: { done: 12, ok: 10, failed: 2, total: 12 }
     });
     eq('finishing derives partial from the counters', finished.body.run.status, 'partial');
+  } finally {
+    await server.close();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The worker a tenant downloads: no secrets in it, and nothing to install
+// ---------------------------------------------------------------------------
+
+{
+  const bundle = buildWorkerBundle({ apiBase: 'https://portal.example' });
+  const entries = listZipEntries(bundle.zip);
+  const names = entries.map((entry) => entry.name);
+  const textOf = (name) => entries.find((entry) => entry.name === name)?.data.toString('utf8') || '';
+  const allText = entries.map((entry) => entry.data.toString('utf8')).join('\n');
+  const codeText = entries
+    .filter((entry) => entry.name.endsWith('.js') || entry.name.endsWith('.mjs'))
+    .map((entry) => entry.data.toString('utf8'))
+    .join('\n');
+
+  ok('the zip is a zip a tenant can open', entries.length > 10 && bundle.bytes > 10_000);
+  for (const required of ['Start Worker.cmd', 'README.txt', 'worker-config.json',
+    'scripts/browser_actor_worker.mjs', 'scripts/browser_actor_micro1.mjs',
+    'utils/browserActor/applyCaptures.js', 'utils/tenantAccess.js']) {
+    ok(`the zip contains ${required}`, names.includes(required));
+  }
+
+  // The whole point of the bundle: the machine that browses holds no credential.
+  ok('no JWT in the zip', !/eyJhbGciOi/.test(allText));
+  ok('no private key in the zip', !/BEGIN [A-Z ]*PRIVATE KEY/.test(allText));
+  ok('no worker token in the zip', !/wkr_[A-Za-z0-9_-]{8,}/.test(allText));
+  ok('no .env in the zip', !names.some((name) => /(^|\/)\.env/.test(name)));
+  ok('no service-role key assignment in the zip', !/SUPABASE_SERVICE_ROLE_KEY\s*=\s*\S/.test(allText));
+  eq('the config holds the portal address and nothing else',
+    Object.keys(JSON.parse(textOf('worker-config.json'))), ['api']);
+  // Zero install: a bundled module that imports a bare package name would need node_modules.
+  // `node:*` is a builtin, so it is excluded — and dotenv is only ever a dynamic import.
+  const bareImport = /^\s*import\s+[^(]*from\s+['"](?!\.|\/|node:)/m;
+  const bareSideEffect = /^\s*import\s+['"](?!\.|\/|node:)/m;
+  ok('the worker imports no npm package statically',
+    !bareImport.test(codeText) && !bareSideEffect.test(codeText));
+  ok('the capture script reaches Supabase only in operator mode',
+    /agentMode/.test(textOf('scripts/browser_actor_micro1.mjs')) &&
+    /await import\('@supabase\/supabase-js'\)/.test(textOf('scripts/browser_actor_micro1.mjs')));
+  ok('the worker passes the portal and the token to the capture in agent mode',
+    /--agent-api/.test(textOf('scripts/browser_actor_worker.mjs')) &&
+    /TENANT_WORKER_TOKEN: token/.test(textOf('scripts/browser_actor_worker.mjs')));
+  ok('the worker does not put the token on a command line',
+    !/--agent-token', token/.test(textOf('scripts/browser_actor_worker.mjs')));
+  ok('the readme tells the tenant it never sees a password',
+    /never sees or stores a marketplace password/i.test(textOf('README.txt')));
+  ok('the readme explains the revoke step', /Revoke/.test(textOf('README.txt')));
+
+  // A zip that can write outside its own folder is how "download the worker" becomes
+  // "overwrite something in Program Files".
+  let escaped = false;
+  try { buildZipStore([{ name: '../evil.txt', data: 'x' }]); } catch { escaped = true; }
+  ok('the zip writer refuses a path that escapes the folder', escaped);
+}
+
+// ---------------------------------------------------------------------------
+// What a worker is allowed to say, and where it is allowed to say it
+// ---------------------------------------------------------------------------
+
+{
+  const cleaned = sanitizeAgentCaptures([
+    {
+      title: 'Role A', jobId: 'abc', url: 'https://micro1.ai/x',
+      referralUrl: 'javascript:alert(1)', content: 'x'.repeat(30_000), junk: 'drop me'
+    },
+    { title: '', jobId: '' },
+    { title: 'Role B', jobId: 'def', referralUrl: 'https://micro1.ai/post/abc' }
+  ]);
+  eq('a capture without a title and job id is dropped', cleaned.length, 2);
+  eq('a javascript: link is refused', cleaned[0].referralUrl, null);
+  ok('unknown fields are dropped', !('junk' in cleaned[0]));
+  eq('a very long body is cut', cleaned[0].content.length, 20_000);
+  eq('a normal link survives', cleaned[1].referralUrl, 'https://micro1.ai/post/abc');
+  eq('more than 50 captures are cut', sanitizeAgentCaptures(new Array(80).fill({ title: 't', jobId: 'j' })).length, 50);
+  eq('a body that is not an array yields nothing', sanitizeAgentCaptures({ captures: [] }), []);
+}
+
+function fakeOfferDb() {
+  const rows = [];
+  return {
+    rows,
+    from(table) {
+      if (table !== 'opportunities') throw new Error(`unexpected table ${table}`);
+      return {
+        insert(list) {
+          rows.push(...list);
+          return {
+            select: async () => ({
+              data: list.map((row, i) => ({ id: `offer-${i}`, title: row.title, slug: row.slug, referral_url: row.referral_url })),
+              error: null
+            })
+          };
+        },
+        select() {
+          const query = { eq: () => query, then: (resolve) => resolve({ data: rows, error: null }) };
+          return query;
+        }
+      };
+    }
+  };
+}
+
+{
+  const db = fakeOfferDb();
+  const applied = await applyCaptures({
+    supabase: db,
+    tenant: { id: 'tenant-1', slug: 'acme' },
+    offers: [{ id: 'x', title: 'Existing Role', slug: 'acme-micro1-existing-role', external_id: 'micro1:aaa' }],
+    sourceId: null,
+    sourceSlug: 'micro1',
+    captures: [
+      { title: 'New Role', jobId: 'bbb', externalId: 'micro1:bbb', url: 'https://micro1.ai/post/bbb', referralUrl: 'https://micro1.ai/post/bbb', content: 'body text' },
+      { title: 'Existing Role', jobId: 'aaa', externalId: 'micro1:aaa', referralUrl: null }
+    ],
+    verify: async () => ({ verdict: 'match' })
+  });
+  eq('a role the tenant already has is skipped', applied.skipped.length, 1);
+  eq('only the new role is inserted', applied.inserted, 1);
+  eq('and it carries the verified link', db.rows[0].referral_url, 'https://micro1.ai/post/bbb');
+  eq('with the captured body, not the summary', db.rows[0].description, 'body text');
+  eq('and it is a draft, never published', db.rows[0].status, 'draft');
+  eq('and it belongs to that tenant', db.rows[0].tenant_id, 'tenant-1');
+
+  const mismatchDb = fakeOfferDb();
+  const wrong = await applyCaptures({
+    supabase: mismatchDb,
+    tenant: { id: 'tenant-1', slug: 'acme' },
+    offers: [],
+    sourceSlug: 'micro1',
+    captures: [{ title: 'Role C', jobId: 'ccc', externalId: 'micro1:ccc', referralUrl: 'https://micro1.ai/post/zzz' }],
+    verify: async () => ({ verdict: 'mismatch', resolvedTitle: 'A Different Role' })
+  });
+  eq('a link that lands on a different job is not attached', mismatchDb.rows[0].referral_url, null);
+  eq('and the verdict is recorded for the tenant to see', wrong.verification[0].verdict, 'mismatch');
+
+  let refusedNoTenant = false;
+  try {
+    await applyCaptures({ supabase: fakeOfferDb(), tenant: { slug: 'acme' }, sourceSlug: 'micro1', captures: [] });
+  } catch { refusedNoTenant = true; }
+  ok('writing without a tenant id is refused', refusedNoTenant);
+}
+
+{
+  // The result endpoint is where a tenant's machine can cause writes, so its guards matter
+  // more than its happy path: no token, wrong run, closed run, empty payload.
+  const runs = [
+    { id: 'run-open', tenant_id: 'tenant-1', status: 'running', kind: 'referrals', platform: 'micro1', detail: { limit: 12 } },
+    { id: 'run-done', tenant_id: 'tenant-1', status: 'partial', kind: 'referrals', platform: 'micro1', detail: { limit: 12 } }
+  ];
+  const created = createAgentToken({ label: 'pc' });
+  const tokens = [{ id: 'tok-1', tenant_id: 'tenant-1', token_hash: created.tokenHash, token_prefix: created.tokenPrefix, revoked_at: null }];
+  const db = fakeAgentDb({ runs, tokens });
+  const server = await withAgentServer(db);
+  try {
+    eq('the result endpoint needs a token',
+      (await agentCall(server.base, 'POST', '/api/agent/runs/run-open/result', { body: { captures: [] } })).status, 401);
+    eq('a result for an unknown run is refused',
+      (await agentCall(server.base, 'POST', '/api/agent/runs/run-nope/result', { token: created.token, body: { captures: [] } })).status, 404);
+    const closed = await agentCall(server.base, 'POST', '/api/agent/runs/run-done/result', {
+      token: created.token,
+      body: { captures: [{ title: 'Role', jobId: 'abc' }] }
+    });
+    eq('a result for an already-closed run is refused', closed.status, 409);
+    ok('and says why instead of pretending to write', /already partial/i.test(closed.body?.error || ''));
+    const empty = await agentCall(server.base, 'POST', '/api/agent/runs/run-open/result', { token: created.token, body: { captures: [] } });
+    eq('a result with nothing usable is refused', empty.status, 400);
   } finally {
     await server.close();
   }

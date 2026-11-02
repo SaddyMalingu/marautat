@@ -23,6 +23,53 @@
 import { Router } from 'express';
 import { createRunStore, deriveRunStatus, RUN_STATUSES } from '../utils/browserActor/runs.js';
 import { bearerTokenFromHeader, createAgentTokenStore } from '../utils/browserActor/agentTokens.js';
+import { applyCaptures, readCoverage } from '../utils/browserActor/applyCaptures.js';
+import { resolveRunnerIdentity } from '../utils/tenantRunnerIdentity.js';
+
+const MAX_CAPTURES_PER_RESULT = 50;
+const MAX_TEXT = 20_000;
+
+function clampText(value, max = 500) {
+  if (value == null) return null;
+  return String(value).slice(0, max);
+}
+
+function cleanUrl(value) {
+  const raw = clampText(value, 2048);
+  if (!raw) return null;
+  try {
+    const url = new URL(raw);
+    // A worker is untrusted input, so only real web links survive: `javascript:` and `file:`
+    // have no business in a URL that ends up in a tenant's offer page.
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * What a worker is allowed to say about a capture.
+ *
+ * Everything is coerced and bounded here rather than at the insert, because this body comes
+ * from a machine we do not control: unknown fields are dropped, absurd lengths are cut, and a
+ * non-web URL is discarded instead of being stored and rendered later.
+ */
+export function sanitizeAgentCaptures(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw.slice(0, MAX_CAPTURES_PER_RESULT).map((item) => ({
+    title: clampText(item?.title, 300),
+    jobId: clampText(item?.jobId, 64),
+    externalId: clampText(item?.externalId, 120),
+    url: cleanUrl(item?.url),
+    referralUrl: cleanUrl(item?.referralUrl),
+    content: clampText(item?.content, MAX_TEXT),
+    summary: clampText(item?.summary, 2000),
+    rate: clampText(item?.rate, 80),
+    reason: clampText(item?.reason, 120),
+    descriptionChars: Number.isFinite(Number(item?.descriptionChars)) ? Number(item.descriptionChars) : null
+  })).filter((item) => item.title && item.jobId);
+}
 
 export function createAgentRunsRouter({
   supabase,
@@ -161,6 +208,154 @@ export function createAgentRunsRouter({
       res.json({ ok: true, run: closed });
     } catch (error) {
       fail(res, 500, error.message || 'Could not close the run');
+    }
+  });
+
+  /**
+   * Everything the tenant's machine needs to run this job — and nothing more.
+   *
+   * Deliberately absent: the MoreLogin API key. A desktop profile is driven through the
+   * MoreLogin client already signed in on that machine, so the key never leaves the server —
+   * which means a stolen worker token cannot be turned into control of a marketplace account.
+   *
+   * The profile must be the **tenant's own and local**. Anything else is refused instead of
+   * silently driving an operator's browser from a stranger's laptop.
+   */
+  router.get('/api/agent/runs/:id/context', async (req, res) => {
+    const auth = await authenticate(req, res);
+    if (!auth) return;
+    try {
+      const run = await findRunForTenant(auth, req.params.id);
+      if (!run) return fail(res, 404, 'Run not found for this tenant');
+
+      const { data: tenantRow, error: tenantError } = await supabase
+        .from('site_tenants').select('id, slug, name').eq('id', auth.tenantId).maybeSingle();
+      if (tenantError) throw tenantError;
+      if (!tenantRow) return fail(res, 404, 'Tenant not found');
+
+      let identity;
+      try {
+        identity = await resolveRunnerIdentity({ supabase, tenantSlug: auth.tenantSlug });
+      } catch (error) {
+        return fail(res, 409, error?.message || 'This tenant has no browser profile to run');
+      }
+      if (identity.source !== 'tenant') {
+        return fail(res, 409, 'This run needs the profile on the operator\'s own machine, not yours — tell Alphadome and we will queue it there');
+      }
+      if (identity.runtime !== 'local') {
+        return fail(res, 409, 'That profile runs in the cloud, so the portal should run it — press Capture now again');
+      }
+
+      const { data: offers, error: offersError } = await supabase
+        .from('opportunities').select('title, slug, external_id').eq('tenant_id', auth.tenantId);
+      if (offersError) throw offersError;
+
+      const platform = String(run.platform || 'micro1');
+      const { data: sourceRow } = await supabase
+        .from('opportunity_sources').select('id, slug').eq('slug', platform).maybeSingle();
+
+      res.json({
+        ok: true,
+        run: { id: run.id, status: run.status, platform, limit: Number(run.detail?.limit) || 12 },
+        tenant: { slug: tenantRow.slug, name: tenantRow.name || null },
+        // envId identifies the profile; the key stays here.
+        identity: { envId: identity.envId, runtime: identity.runtime, source: identity.source },
+        sourceSlug: platform,
+        sourceId: sourceRow?.id || null,
+        // Titles/slugs only: enough to skip roles the tenant already has, and all of it their
+        // own data.
+        known: Array.isArray(offers) ? offers : []
+      });
+    } catch (error) {
+      fail(res, 500, error.message || 'Could not build the run context');
+    }
+  });
+
+  /**
+   * The captures come back here to be written.
+   *
+   * This is why the tenant's machine needs no database credential: it reports what it saw,
+   * and the server — which already holds the privilege — verifies each link and inserts the
+   * offers. A valid token proves *who* sent this, not that it is safe, so the payload is
+   * sanitised and every link is re-checked before it is attached.
+   */
+  router.post('/api/agent/runs/:id/result', async (req, res) => {
+    const auth = await authenticate(req, res);
+    if (!auth) return;
+    try {
+      const run = await findRunForTenant(auth, req.params.id);
+      if (!run) return fail(res, 404, 'Run not found for this tenant');
+      if (!['queued', 'running'].includes(String(run.status))) {
+        return fail(res, 409, `That run is already ${run.status} — nothing was written`);
+      }
+
+      const captures = sanitizeAgentCaptures(req.body?.captures);
+      if (!captures.length) return fail(res, 400, 'That result contained no usable captures');
+
+      const { data: tenantRow, error: tenantError } = await supabase
+        .from('site_tenants').select('id, slug, name').eq('id', auth.tenantId).maybeSingle();
+      if (tenantError) throw tenantError;
+      if (!tenantRow) return fail(res, 404, 'Tenant not found');
+
+      const platform = String(run.platform || 'micro1');
+      const { data: offers } = await supabase
+        .from('opportunities').select('id, title, slug, external_id, referral_url, description, status')
+        .eq('tenant_id', auth.tenantId);
+      const { data: sourceRow } = await supabase
+        .from('opportunity_sources').select('id').eq('slug', platform).maybeSingle();
+
+      const applied = await applyCaptures({
+        supabase,
+        tenant: tenantRow,
+        offers: Array.isArray(offers) ? offers : [],
+        sourceId: sourceRow?.id || null,
+        sourceSlug: platform,
+        captures,
+        apply: true
+      });
+      const coverage = await readCoverage(supabase, tenantRow.id);
+
+      const total = captures.length;
+      const links = captures.filter((capture) => capture.referralUrl).length;
+      const failed = Math.max(0, total - applied.inserted);
+      const closed = await runs.finish({
+        runId: run.id,
+        status: deriveRunStatus({ done: total, ok: applied.inserted, failed, total }),
+        done: total,
+        ok: applied.inserted,
+        failed,
+        total,
+        message: `${applied.inserted} imported of ${total} captured, ${applied.withLinks} with a verified link${applied.error ? ` (${applied.error})` : ''}`.slice(0, 300),
+        detail: {
+          captured: total,
+          links,
+          inserted: applied.inserted,
+          planned: applied.planned,
+          skipped: applied.skipped?.length || 0,
+          withoutLinks: applied.withoutLinks || 0,
+          listing: req.body?.listing && typeof req.body.listing === 'object' ? req.body.listing : null
+        }
+      }).catch((error) => {
+        console.error(`[agent] run ${run.id} could not be closed: ${error?.message || error}`);
+        return null;
+      });
+
+      res.json({
+        ok: true,
+        applied: {
+          planned: applied.planned,
+          inserted: applied.inserted,
+          skipped: applied.skipped,
+          withLinks: applied.withLinks,
+          withoutLinks: applied.withoutLinks,
+          verification: applied.verification,
+          error: applied.error
+        },
+        coverage,
+        run: closed
+      });
+    } catch (error) {
+      fail(res, 500, error.message || 'Could not apply the result');
     }
   });
 
