@@ -35,6 +35,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
 import { spawn } from 'node:child_process';
+import { extractAgentToken } from '../utils/browserActor/agentTokens.js';
 
 const argv = process.argv.slice(2);
 function flag(name, fallback = null) {
@@ -59,15 +60,39 @@ function readConfig() {
   return {};
 }
 
+/**
+ * Pull the token out of whatever was pasted.
+ *
+ * Lives in `utils/browserActor/agentTokens.js` next to the other token rules, so the parsing
+ * that repairs a pasted command line is testable without starting a worker.
+ */
+function extractToken(raw) {
+  return extractAgentToken(raw) || '';
+}
+
 function readToken() {
   const fromFlag = flag('token', process.env.TENANT_WORKER_TOKEN || '');
-  if (fromFlag && fromFlag !== true) return String(fromFlag).trim();
+  if (fromFlag && fromFlag !== true) {
+    const token = extractToken(fromFlag);
+    if (token) return token;
+    console.error('That --token value does not contain a wkr_ token.');
+  }
   const file = flag('token-file');
   if (typeof file === 'string') {
+    const resolved = path.resolve(file);
+    let value = '';
     try {
-      const value = fs.readFileSync(path.resolve(file), 'utf8').trim();
-      if (value) return value;
-    } catch { /* fall through to the prompt */ }
+      value = fs.readFileSync(resolved, 'utf8');
+    } catch { return ''; }
+    const token = extractToken(value);
+    if (!token) return '';
+    if (value.trim() !== token) {
+      // Repair the file in place: leaving the whole command line in there would repeat this
+      // confusion on every start.
+      try { fs.writeFileSync(resolved, `${token}\n`); } catch { /* read-only: not fatal */ }
+      console.error('note: worker-token.txt held more than the token — kept just the wkr_ part.');
+    }
+    return token;
   }
   return '';
 }
@@ -76,9 +101,13 @@ function readToken() {
 async function askForToken() {
   if (!process.stdin.isTTY) return '';
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  const answer = await new Promise((resolve) => rl.question('Paste your worker token (wkr_…), then press Enter: ', resolve));
+  const answer = await new Promise((resolve) => rl.question('Paste your worker token (it starts with wkr_), then press Enter: ', resolve));
   rl.close();
-  return String(answer || '').trim();
+  const token = extractToken(answer);
+  if (!token && String(answer || '').trim()) {
+    console.error('That did not look like a worker token — it should start with wkr_ and come from your portal.');
+  }
+  return token;
 }
 
 const config = readConfig();

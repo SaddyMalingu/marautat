@@ -9,6 +9,13 @@ echo "  ----------------"
 echo "  Leave this window open while you want captures to run."
 echo
 
+if [ ! -f scripts/browser_actor_worker.mjs ]; then
+  echo "  The rest of the worker is missing next to this file."
+  echo "  Unzip the whole alphadome-worker.zip first, then run start-worker.sh from the"
+  echo "  folder it creates - do not run it from inside the archive."
+  exit 1
+fi
+
 if ! command -v node >/dev/null 2>&1; then
   echo "  Node.js is not installed. Get the LTS version from https://nodejs.org and run this again."
   exit 1

@@ -9,6 +9,12 @@ echo   ----------------
 echo   This window must stay open while you want captures to run.
 echo.
 
+rem Running a .cmd straight from the zip window is the single most common mistake:
+rem Windows extracts ONLY that file to %TEMP%\..._alphadome-worker.zip.xxxx\, so the
+rem scripts folder is missing and node fails with MODULE_NOT_FOUND. Say that plainly
+rem instead of letting Node explain it in a stack trace.
+if not exist "scripts\browser_actor_worker.mjs" goto notextracted
+
 where node >nul 2>nul
 if errorlevel 1 (
   echo   Node.js is not installed yet, and this worker needs it.
@@ -21,10 +27,23 @@ if errorlevel 1 (
   exit /b 1
 )
 
+node -e "process.exit(Number(process.versions.node.split('.')[0])>=22?0:1)" >nul 2>nul
+if errorlevel 1 (
+  echo   This worker needs Node.js 22 or newer.
+  echo   You have:
+  node --version
+  echo.
+  echo   Install the LTS version from https://nodejs.org and run this file again.
+  echo.
+  pause
+  exit /b 1
+)
+
 if exist "worker-token.txt" goto run
 
-echo   Paste the worker token from your Alphadome portal, then press Enter.
+echo   Paste ONLY the worker token here, then press Enter.
 echo   It starts with wkr_ and is shown once, on the "Your own browser" panel.
+echo   Do not paste the whole node command - just the wkr_ part.
 echo.
 set /p TOKEN=  Token: 
 if "%TOKEN%"=="" (
@@ -36,7 +55,7 @@ if "%TOKEN%"=="" (
 echo %TOKEN%> "worker-token.txt"
 echo.
 echo   Saved in this folder as worker-token.txt. Keep this folder to yourself:
-echo   anyone with that file can use your LinkedIn/Micro1 browsing.
+echo   anyone with that file can use your MoreLogin browsing.
 echo.
 
 :run
@@ -44,3 +63,21 @@ node scripts\browser_actor_worker.mjs --token-file worker-token.txt --config wor
 echo.
 echo   The worker stopped. If that was not on purpose, run this file again.
 pause
+exit /b 0
+
+:notextracted
+echo   This file is running straight out of the zip, where the rest of the worker
+echo   is missing - so nothing can start from here.
+echo.
+echo   Fix it like this:
+echo.
+echo   1. Close this window.
+echo   2. Find the file you downloaded:  alphadome-worker.zip
+echo   3. Right-click it and choose  "Extract All..."  then  Extract.
+echo   4. Open the new folder that appears.
+echo   5. Double-click  "Start Worker.cmd"  in THAT folder.
+echo.
+echo   (Dragging the .cmd out on its own does not work either - the folder matters.)
+echo.
+pause
+exit /b 1

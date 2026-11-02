@@ -21,12 +21,25 @@ How to start it
   Windows:  double-click   "Start Worker.cmd"
   Mac/Linux: run           ./start-worker.sh
 
+  IMPORTANT — unzip it first.
+  Do not double-click the .cmd from inside the zip window. Windows then extracts
+  only that one file, the rest of the worker is missing, and Node fails with
+  "Cannot find module ... browser_actor_worker.mjs".
+  Right-click the zip -> "Extract All..." -> then open the folder it creates and
+  double-click "Start Worker.cmd" in there. The folder matters, not just the file.
+
   The first time it asks for your worker token. You get that from the
   Alphadome portal:  Your own browser  ->  Create worker token.
-  It is shown ONCE. Copy it, paste it into this window, press Enter.
+  It is shown ONCE. Copy the token only — the part starting with wkr_ — and
+  paste that. Do not paste the whole "node scripts/..." command; if you do, the
+  worker keeps just the wkr_ part and carries on, but the token is the only thing
+  it wants.
 
   It is saved as worker-token.txt in this folder so you only paste it once.
   Keep this folder to yourself — that file is the key to your worker.
+
+  Needs Node.js 22 or newer. The start file checks and tells you if it is missing
+  or too old.
 
 Leave the window open
   Captures only run while the worker window is open. Closing it is safe, it

@@ -1844,8 +1844,14 @@ function wfWorkerHtml(d) {
         : ''}
       ${wfWorkerCommandHtml()}
       <div class="text-muted" style="font-size:.72rem;margin-top:6px">
-        Prefer a terminal? On the MoreLogin machine:
-        <code style="font-size:.7rem">node scripts/browser_actor_worker.mjs --api ${esc(location.origin)} --token wkr_…</code>
+        <details>
+          <summary style="cursor:pointer">Advanced: run it from a terminal instead</summary>
+          <div style="margin-top:4px">
+            On the MoreLogin machine, from an unzipped copy of the worker:<br>
+            <code style="font-size:.7rem">node scripts/browser_actor_worker.mjs --api ${esc(location.origin)} --token wkr_…</code><br>
+            Paste the token after <code>--token</code>. The button above is the simpler route.
+          </div>
+        </details>
       </div>
     </div>`;
 }

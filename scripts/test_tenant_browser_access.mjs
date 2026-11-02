@@ -43,7 +43,8 @@ import {
   createAgentToken,
   bearerTokenFromHeader,
   tokenMatchesHash,
-  describeAgentToken
+  describeAgentToken,
+  extractAgentToken
 } from '../utils/browserActor/agentTokens.js';
 import { resolveRunnerIdentity } from '../utils/tenantRunnerIdentity.js';
 import { buildWorkerBundle } from '../utils/browserActor/workerBundle.js';
@@ -1029,6 +1030,50 @@ function fakeOfferDb() {
   } finally {
     await server.close();
   }
+}
+
+// ---------------------------------------------------------------------------
+// What the tenant pastes, and how they start it — both went wrong in production
+// ---------------------------------------------------------------------------
+
+{
+  // Observed in the wild: the whole command line pasted into the "Token:" prompt, and the
+  // whole line saved as the credential.
+  eq('a bare token is recognised',
+    extractAgentToken('wkr_abc123DEF456'), 'wkr_abc123DEF456');
+  eq('a pasted command line yields the token inside it',
+    extractAgentToken('node scripts/browser_actor_worker.mjs --api https://alphadome.onrender.com --token wkr_Vl_BoA6JoUNTvOql8MlTlNZ4wny'),
+    'wkr_Vl_BoA6JoUNTvOql8MlTlNZ4wny');
+  eq('surrounding quotes and spaces are ignored',
+    extractAgentToken('  "wkr_abc123"  '), 'wkr_abc123');
+  eq('a line with no token yields nothing', extractAgentToken('just some text'), null);
+  eq('empty input yields nothing', extractAgentToken(''), null);
+  eq('an unrelated command is not mistaken for a token',
+    extractAgentToken('node server.js --port 3000'), null);
+}
+
+{
+  const startCmd = fs.readFileSync(path.join(root, 'worker-bundle', 'Start Worker.cmd'), 'utf8');
+  const readme = fs.readFileSync(path.join(root, 'worker-bundle', 'README.txt'), 'utf8');
+  // Running the .cmd from inside the zip window leaves only that file in %TEMP%, and Node
+  // then dies with MODULE_NOT_FOUND — which is what the tenant actually saw.
+  ok('the start file refuses to run from inside the zip',
+    /if not exist "scripts\\browser_actor_worker\.mjs" goto notextracted/.test(startCmd) &&
+    /Extract All/.test(startCmd));
+  ok('and explains the extract step rather than printing a stack trace',
+    /Extract All\.\.\./.test(startCmd) && /pause/.test(startCmd));
+  ok('the start file checks for Node.js 22 or newer',
+    /versions\.node\.split\('\.'\)\[0\]\)>=22/.test(startCmd));
+  ok('the prompt asks for the token only, not the whole command',
+    /Paste ONLY the worker token/.test(startCmd) && /Do not paste the whole node command/.test(startCmd));
+  ok('the readme puts the unzip warning before the token step',
+    readme.indexOf('IMPORTANT') < readme.indexOf('worker-token.txt'));
+
+  const dash2 = fs.readFileSync(path.join(root, 'admin', 'tenant_dashboard.html'), 'utf8');
+  // The two ways to start a worker sat next to each other, so a tenant pasted the command
+  // into the token box. The terminal route is now folded away as advanced.
+  ok('the terminal command is tucked behind an "Advanced" disclosure',
+    /<summary[^>]*>Advanced: run it from a terminal instead<\/summary>/.test(dash2));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

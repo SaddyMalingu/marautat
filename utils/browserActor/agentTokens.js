@@ -51,6 +51,25 @@ export function bearerTokenFromHeader(header) {
   return match ? match[1] : null;
 }
 
+/**
+ * Find a worker token inside whatever the tenant pasted (2026-11-02)
+ *
+ * A real tenant pasted the entire command line from the portal into the "Token:" prompt:
+ *
+ *   node scripts/browser_actor_worker.mjs --api https://… --token wkr_abc…
+ *
+ * Refusing that is technically correct and practically useless — the token is in there, and
+ * the person is now stuck at a prompt with no idea what went wrong. So the token is extracted
+ * and the caller is told what happened. The alternative, saving the whole line as a credential,
+ * is what happened in production.
+ */
+export function extractAgentToken(text) {
+  const raw = String(text || '').replace(/["'`]/g, ' ').trim();
+  if (!raw) return null;
+  const match = raw.match(/wkr_[A-Za-z0-9_-]+/);
+  return match ? match[0] : null;
+}
+
 /** Constant-time comparison of a presented token against a stored hash. */
 export function tokenMatchesHash(token, hash) {
   const a = Buffer.from(hashAgentToken(token), 'utf8');
