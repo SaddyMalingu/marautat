@@ -1665,7 +1665,7 @@ function wfAccessGuide(d) {
         ${step(2, 'Open that profile and sign into <strong>Micro1</strong> and <strong>Turing</strong> inside it. This is your own login — Alphadome never sees your password.')}
         ${step(3, 'Come back here, paste your <strong>MoreLogin API key</strong> and press <strong>Connect</strong>. The key is in your MoreLogin account settings (look for “API” or “Developer”).')}
         ${step(4, 'Press <strong>Verify sessions</strong>. You should see <code>micro1</code> and <code>turing</code> as signed in.')}
-        ${step(5, 'Press <strong>Capture now (Micro1)</strong>. Progress appears in Collection control; when it finishes you have draft offers with your own referral links and the full job descriptions.')}
+        ${step(5, 'Press <strong>Capture now (Micro1)</strong>. Progress appears in Collection control; when it finishes you have draft offers with your own referral links and the full job descriptions. If your profile runs on your own computer, the run waits in the queue until <strong>your worker</strong> below picks it up.')}
       </ol>
       <p class="text-muted" style="font-size:.76rem;margin:8px 0 0">
         Each capture uses <strong>one</strong> MoreLogin profile start from your plan.
@@ -1689,20 +1689,24 @@ function wfAccessHtml(d) {
     <div class="d-flex gap-2 flex-wrap mt-2 align-items-end">
       ${d.connected
         ? `<button class="btn btn-info btn-sm" data-wfact="verify">Verify sessions</button>
-           ${d.runtime === 'cloud' ? '<button class="btn btn-outline-acc btn-sm" data-wfact="capture">Capture now (Micro1)</button>' : ''}
+           <button class="btn btn-outline-acc btn-sm" data-wfact="capture">Capture now (Micro1)</button>
            <button class="btn btn-outline-light btn-sm" data-wfact="disconnect">Disconnect</button>`
         : `<input class="form-control form-control-sm" id="wfAccessKey" type="password" autocomplete="off"
                  placeholder="MoreLogin API key" style="max-width:280px" ${d.canStore ? '' : 'disabled'}>
            <button class="btn btn-info btn-sm" data-wfact="connect" ${d.canStore ? '' : 'disabled'}>Connect</button>`}
     </div>
-    ${d.connected && d.runtime !== 'cloud'
-      ? '<div class="text-muted" style="font-size:.74rem;margin-top:6px">This profile runs on the operator machine, so the operator starts runs there.</div>'
+    ${d.connected
+      ? `<div class="text-muted" style="font-size:.74rem;margin-top:6px">
+           ${d.runtime === 'cloud'
+             ? 'Your profile runs in the cloud, so this page can start the capture for you.'
+             : 'Your profile runs on your own computer, so Capture now queues the run and your worker picks it up — see below.'}
+         </div>`
       : ''}
 
     ${d.reauthRequired
       ? `<div style="color:#ef4444;font-size:.78rem;margin-top:6px">Sign in again inside your MoreLogin profile for ${esc((d.reauthPlatforms || []).join(', ') || 'a marketplace')}, then press Verify.</div>`
       : ''}
-    ${d.connected ? wfWorkerHtml(d) : ''}
+    ${wfWorkerHtml(d)}
     ${wfAccessGuide(d)}`;
 }
 
@@ -1795,6 +1799,15 @@ async function wfVerifyAccess(btn) {
 // a button that copies nothing secret. The token step stays separate because it is the only
 // thing they can lose.
 function wfWorkerHtml(d) {
+  // A cloud profile does not need a worker. Saying so once is better than showing an install
+  // that would only duplicate work the portal can already do.
+  if (d.connected && d.runtime === 'cloud') {
+    return `
+      <div class="mt-3 text-muted" style="border-top:1px solid var(--border);padding-top:10px;font-size:.76rem">
+        No worker needed: your profile runs in the cloud, so Capture now runs it for you.
+      </div>`;
+  }
+
   const workers = Array.isArray(d.workers) ? d.workers : [];
   const active = workers.filter((worker) => !worker.revoked);
   const lastSeen = d.workerLastSeenAt ? new Date(d.workerLastSeenAt).toLocaleString('en-KE') : null;
@@ -1809,9 +1822,9 @@ function wfWorkerHtml(d) {
       <div style="font-size:.84rem">
         <strong>Run captures on your computer.</strong> ${state}
         <div class="text-muted" style="font-size:.76rem">
-          Only needed when your MoreLogin has no cloud browser: your profile can only be
-          driven from the machine it runs on. Nothing is installed system-wide — it is a
-          folder you can delete.
+          ${d.connected
+            ? 'Your MoreLogin profile lives on your own machine, and only that machine can drive it. Nothing is installed system-wide — it is a folder you can delete.'
+            : 'You will need this once your browser is connected: your MoreLogin profile lives on your own machine, and only that machine can drive it.'}
         </div>
       </div>
       <ol class="text-muted" style="font-size:.76rem;margin:8px 0 0 16px;padding:0">

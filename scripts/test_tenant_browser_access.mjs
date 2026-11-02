@@ -722,7 +722,21 @@ ok('and the reconnect remedy is stated', /sign in again inside MoreLogin/.test(d
 ok('the guide marks the current step', /function wfAccessGuide/.test(dash) && /const current = !d\.connected/.test(dash));
 // The worker UI: without it, a tenant whose plan has no cloud browser has no way to run
 // anything, and "queuedForWorker" would be a dead end in the interface.
-ok('the panel offers a worker token', /data-wfact="worker-create"/.test(dash));
+// A block a tenant cannot find is a block that does not exist. The first version only
+// rendered this when `d.connected`, so a tenant who had not connected yet — the exact person
+// who needs to know a worker is coming — saw nothing at all.
+ok('the worker block renders even before the browser is connected',
+  /<li>Open the folder and double-click <strong>Start Worker\.cmd<\/strong>/.test(dash) &&
+  !/\$\{d\.connected \? wfWorkerHtml\(d\) : ''\}/.test(dash));
+ok('the download button points at the bundle route',
+  /href="\/tenant\/blogger\/browser-access\/worker-bundle"/.test(dash));
+// A local profile has no cloud browser to start, so hiding Capture now left a tenant with no
+// way to queue anything at all.
+ok('a local profile still gets a Capture now button',
+  /data-wfact="capture"/.test(dash) && !/d\.runtime === 'cloud' \? '<button[^']*data-wfact="capture"/.test(dash));
+ok('and the panel says the run waits for the worker',
+  /queues the run and your worker picks it up/.test(dash));
+ok('a cloud profile is told no worker is needed', /No worker needed/.test(dash));
 ok('a created token shows a copyable command', /data-wfact="worker-copy"/.test(dash) && /not shown again/.test(dash));
 ok('an existing worker can be revoked', /data-wfact="worker-revoke"/.test(dash));
 ok('the panel says whether a worker has checked in', /last seen|never connected/.test(dash));
