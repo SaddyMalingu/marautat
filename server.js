@@ -90,6 +90,7 @@ import browserActorsRouter from "./routes/browserActors.js";
 import { createSocialPublishRouter } from "./routes/socialPublish.js";
 import { createWriterFlowRouter } from "./routes/writerFlow.js";
 import { createBrowserAccessRouter } from "./routes/browserAccess.js";
+import { createAgentRunsRouter } from "./routes/agentRuns.js";
 import { createTenantBrowserProvider } from "./utils/tenantBrowserProvider.js";
 import { ACCESS_KEY_ENV, accessSecrets, fingerprintSecret } from "./utils/tenantAccess.js";
 
@@ -5130,6 +5131,13 @@ app.use('/', createBrowserAccessRouter({
   supabase,
   provider: createTenantBrowserProvider(),
 }));
+
+// Agent endpoints for a tenant's own worker (2026-11-02). A desktop MoreLogin profile is
+// reachable only from the machine that started it, so when cloud browsing is unavailable the
+// tenant runs a worker there. These routes are authenticated by a per-tenant bearer token and
+// never take a tenant from the request body — see routes/agentRuns.js.
+app.use('/', createAgentRunsRouter({ supabase }));
+
 
 
 // PATCH /tenant/blogger/offers/:id — the portal could create and delete offers

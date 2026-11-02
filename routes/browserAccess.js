@@ -40,6 +40,7 @@ import { summarizeSignedIn } from '../utils/browserActor/signedIn.js';
 import { parseProfileMap } from '../utils/browserActor/identity.js';
 import { redact } from '../utils/browserActor/moreloginClient.js';
 import { canQueue, createRunStore } from '../utils/browserActor/runs.js';
+import { createAgentTokenStore, describeAgentToken } from '../utils/browserActor/agentTokens.js';
 import {
   CAPTURE_DEFAULT_LIMIT,
   CAPTURE_MAX_LIMIT,
@@ -72,6 +73,7 @@ export function createBrowserAccessRouter({
   const iso = () => new Date(now()).toISOString();
   const fail = (res, status, error, extra = {}) => res.status(status).json({ ok: false, error, ...extra });
   const runStore = createRunStore({ table: () => supabase.from('browser_actor_runs'), now });
+  const tokenStore = createAgentTokenStore({ table: () => supabase.from('browser_actor_agent_tokens'), now });
 
   async function saveMetadata(site, metadata) {
     const { data, error } = await supabase
@@ -305,12 +307,10 @@ export function createBrowserAccessRouter({
           reason: 'not_connected'
         });
       }
-      if (access.runtime !== 'cloud') {
-        // A local profile lives on the operator's machine; Render has no route to it.
-        return fail(res, 409, 'Your profile runs on the operator machine, so a run there has to be started by the operator', {
-          reason: 'local_runtime'
-        });
-      }
+      // A cloud profile can be started from here. A local one cannot — so the run is queued
+      // for the tenant's own worker instead of being refused. Same button, same row, and
+      // the portal's existing "waiting for a runner" state already describes it honestly.
+      const runsInCloud = access.runtime === 'cloud';
 
       const platform = String(req.body?.platform || 'micro1').toLowerCase();
       if (!SERVER_SIDE_PLATFORMS.includes(platform)) {
@@ -318,6 +318,7 @@ export function createBrowserAccessRouter({
           supported: SERVER_SIDE_PLATFORMS
         });
       }
+
 
       const requested = Number(req.body?.limit);
       const limit = Number.isFinite(requested)
@@ -335,9 +336,21 @@ export function createBrowserAccessRouter({
         kind: 'referrals',
         sourceSlug: platform,
         requestedBy: 'tenant:portal',
-        detail: { limit, platform, via: 'portal' }
+        detail: { limit, platform, via: 'portal', runtime: access.runtime }
       });
       if (!run?.id) return fail(res, 503, 'Run tracking is not set up on this host');
+
+      // Local profile: queue only. The tenant's worker claims it on the machine where the
+      // browser actually is; pretending to start it here would leave a row running forever.
+      if (!runsInCloud) {
+        console.error(`[browser-access] tenant=${ctx.site.slug} queued run=${run.id} for the tenant's local worker`);
+        return res.status(202).json({
+          ok: true,
+          run: { id: run.id, status: 'queued', kind: 'referrals', platform, limit },
+          queuedForWorker: true,
+          note: 'Queued for your worker — it runs on the computer where your MoreLogin profile lives. Keep the worker running, or start it with: node scripts/browser_actor_worker.mjs'
+        });
+      }
 
       let spawned = null;
       try {
@@ -366,8 +379,68 @@ export function createBrowserAccessRouter({
     }
   });
 
+  /**
+   * Worker tokens: the credential a tenant's own machine uses to claim its runs.
+   *
+   * Issued once and shown once. The list endpoint never returns a usable token — only a
+   * prefix, so a tenant can tell two workers apart ("wkr_9f2c…") the way a bank shows the
+   * last four digits of an account.
+   */
+  router.post('/tenant/blogger/browser-access/worker-token', tenantSessionAuth, async (req, res) => {
+    try {
+      const ctx = await tenantSiteFromSession(req);
+      if (!ctx) return fail(res, 404, 'Tenant not found');
+      const issued = await tokenStore.issue({ tenantId: ctx.site.id, label: req.body?.label });
+      console.error(`[browser-access] tenant=${ctx.site.slug} issued worker token ${issued.row?.token_prefix || ''}`);
+      res.status(201).json({
+        ok: true,
+        // Shown once. If it is lost, revoke and create another — that is the whole point of
+        // storing a hash.
+        token: issued.token,
+        worker: describeAgentToken(issued.row),
+        command: `node scripts/browser_actor_worker.mjs --api ${req.protocol}://${req.get('host')} --token ${issued.token}`,
+        note: 'Copy this now — it is not shown again. Run the command on the computer where your MoreLogin profile lives.'
+      });
+    } catch (error) {
+      fail(res, error.status || 500, redact(error.message || 'Could not create a worker token'));
+    }
+  });
+
+  router.get('/tenant/blogger/browser-access/worker-token', tenantSessionAuth, async (req, res) => {
+    try {
+      const ctx = await tenantSiteFromSession(req);
+      if (!ctx) return fail(res, 404, 'Tenant not found');
+      const rows = await tokenStore.list({ tenantId: ctx.site.id });
+      const workers = rows.map(describeAgentToken);
+      res.json({
+        ok: true,
+        workers,
+        active: workers.filter((worker) => !worker.revoked).length,
+        hint: workers.some((worker) => !worker.revoked)
+          ? 'Run the worker on the computer where your MoreLogin profile lives; it picks up queued runs.'
+          : 'Create a worker token, then run the printed command on your own computer. Nothing is exposed to us.'
+      });
+    } catch (error) {
+      fail(res, error.status || 500, redact(error.message || 'Could not read worker tokens'));
+    }
+  });
+
+  router.delete('/tenant/blogger/browser-access/worker-token/:id', tenantSessionAuth, async (req, res) => {
+    try {
+      const ctx = await tenantSiteFromSession(req);
+      if (!ctx) return fail(res, 404, 'Tenant not found');
+      const revoked = await tokenStore.revoke({ tenantId: ctx.site.id, id: req.params.id });
+      if (!revoked) return fail(res, 404, 'No active worker token with that id');
+      console.error(`[browser-access] tenant=${ctx.site.slug} revoked worker token ${revoked.token_prefix || ''}`);
+      res.json({ ok: true, worker: describeAgentToken(revoked), note: 'That worker is switched off immediately.' });
+    } catch (error) {
+      fail(res, error.status || 500, redact(error.message || 'Could not revoke that token'));
+    }
+  });
+
   return router;
 }
+
 
 
 

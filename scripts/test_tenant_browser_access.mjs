@@ -38,6 +38,13 @@ import {
 } from '../utils/tenantAccess.js';
 import { classifySignedIn, summarizeSignedIn, signedInProbeFor } from '../utils/browserActor/signedIn.js';
 import { createBrowserAccessRouter } from '../routes/browserAccess.js';
+import { createAgentRunsRouter } from '../routes/agentRuns.js';
+import {
+  createAgentToken,
+  bearerTokenFromHeader,
+  tokenMatchesHash,
+  describeAgentToken
+} from '../utils/browserActor/agentTokens.js';
 import { resolveRunnerIdentity } from '../utils/tenantRunnerIdentity.js';
 
 let pass = 0;
@@ -579,17 +586,23 @@ const localAccess = { browserAccess: { provider: 'morelogin', envId: '2116562908
 }
 
 {
-  // A local profile lives on the operator's machine; pretending otherwise would start nothing.
+  // A local profile cannot be started from Render — so the run is queued for the tenant's
+  // own worker instead of being refused. Same button, same row, honest status.
   const db = fakeCaptureDb(localAccess);
-  const server = await withCaptureServer({ db, spawnRun: () => { throw new Error('should not spawn'); } });
+  const spawned = [];
+  const server = await withCaptureServer({ db, spawnRun: (args) => { spawned.push(args); return { pid: 1 }; } });
   try {
     const res = await call(server.base, 'POST', '/tenant/blogger/browser-access/capture', { platform: 'micro1' });
-    eq('a local profile cannot be captured from the portal', res.status, 409);
-    eq('and says so plainly', res.body.reason, 'local_runtime');
+    eq('a local profile queues instead of failing', res.status, 202);
+    eq('and says it is waiting for the worker', res.body.queuedForWorker, true);
+    eq('nothing was spawned here', spawned.length, 0);
+    eq('but a run row exists for the worker to claim', db.runs.length, 1);
+    eq('and it is queued', db.runs[0].status, 'queued');
   } finally {
     await server.close();
   }
 }
+
 
 {
   const db = fakeCaptureDb(cloudAccess);
@@ -658,8 +671,126 @@ ok('and the reconnect remedy is stated', /sign in again inside MoreLogin/.test(d
 // A guide that cannot tell you where you are is documentation, not a checklist.
 ok('the guide marks the current step', /function wfAccessGuide/.test(dash) && /const current = !d\.connected/.test(dash));
 
+// ---------------------------------------------------------------------------
+// Worker tokens and the agent API
+// ---------------------------------------------------------------------------
+
+const issued = createAgentToken({ label: 'workshop pc' });
+ok('a token is prefixed so it is recognisable in a log', issued.token.startsWith('wkr_'));
+ok('the hash is not the token', issued.tokenHash !== issued.token && !issued.tokenHash.includes(issued.token));
+ok('the prefix is short and safe to display', issued.tokenPrefix.length <= 9);
+eq('two tokens differ', createAgentToken().token === createAgentToken().token, false);
+eq('a bearer header is parsed', bearerTokenFromHeader('Bearer wkr_abc'), 'wkr_abc');
+eq('a non-bearer header is refused', bearerTokenFromHeader('wkr_abc'), null);
+ok('the right token matches its hash', tokenMatchesHash(issued.token, issued.tokenHash));
+ok('a wrong token does not', !tokenMatchesHash(`${issued.token}x`, issued.tokenHash));
+eq('a row is described without its hash', describeAgentToken({ id: 't1', token_prefix: 'wkr_ab', token_hash: 'deadbeef' }).prefix, 'wkr_ab');
+ok('and the hash never appears in the description',
+  !JSON.stringify(describeAgentToken({ id: 't1', token_prefix: 'wkr_ab', token_hash: 'deadbeef' })).includes('deadbeef'));
+
+/** Just enough database for the agent routes: filters, update, and a thenable chain. */
+function fakeAgentDb({ runs = [], tokens = [], site = { id: 'tenant-1', slug: 'acme' } } = {}) {
+  const table = (name) => {
+    const state = { filters: [], patch: null, mode: 'select' };
+    const matches = (row) => state.filters.every(([col, kind, val]) => (
+      kind === 'is' ? (val === null ? row[col] == null : row[col] === val) : row[col] === val
+    ));
+    const rows = () => (name === 'browser_actor_runs' ? runs : name === 'site_tenants' ? [site] : tokens);
+    const apply = () => {
+      if (state.mode === 'update') {
+        const hit = rows().filter(matches);
+        hit.forEach((row) => Object.assign(row, state.patch));
+        return { data: hit, error: null };
+      }
+      return { data: rows().filter(matches), error: null };
+    };
+    const api = {
+      select: () => api,
+      order: () => api,
+      limit: () => api,
+      eq: (col, val) => { state.filters.push([col, 'eq', val]); return api; },
+      is: (col, val) => { state.filters.push([col, 'is', val]); return api; },
+      update: (patch) => { state.mode = 'update'; state.patch = patch; return api; },
+      maybeSingle: async () => {
+        const result = apply();
+        const list = Array.isArray(result.data) ? result.data : [result.data];
+        return { data: list[0] || null, error: null };
+      },
+      then: (resolve) => Promise.resolve().then(() => resolve(apply()))
+    };
+    return api;
+  };
+  return { runs, tokens, site, from: table };
+}
+
+async function withAgentServer(db) {
+  const app = express();
+  app.use(express.json());
+  app.use('/', createAgentRunsRouter({ supabase: db }));
+  const server = http.createServer(app);
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  return { base: `http://127.0.0.1:${server.address().port}`, close: () => new Promise((resolve) => server.close(resolve)) };
+}
+
+async function agentCall(base, method, path, { token, body } = {}) {
+  const res = await fetch(base + path, {
+    method,
+    headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
+    body: body === undefined ? undefined : JSON.stringify(body)
+  });
+  return { status: res.status, body: await res.json() };
+}
+
+const liveToken = createAgentToken({ label: 'pc' });
+const deadToken = createAgentToken({ label: 'old pc' });
+const tokenRows = [
+  { id: 'tok-1', tenant_id: 'tenant-1', token_hash: liveToken.tokenHash, token_prefix: liveToken.tokenPrefix, revoked_at: null },
+  { id: 'tok-2', tenant_id: 'tenant-1', token_hash: deadToken.tokenHash, token_prefix: deadToken.tokenPrefix, revoked_at: '2026-11-01T00:00:00.000Z' }
+];
+
+{
+  const db = fakeAgentDb({
+    tokens: tokenRows,
+    runs: [{ id: 'run-1', tenant_id: 'tenant-1', kind: 'referrals', status: 'queued', detail: { limit: 12 } }]
+  });
+  const server = await withAgentServer(db);
+  try {
+    eq('no token is refused', (await agentCall(server.base, 'GET', '/api/agent/health')).status, 401);
+    eq('a bad token is refused',
+      (await agentCall(server.base, 'GET', '/api/agent/health', { token: 'wkr_nope' })).status, 401);
+    // A revoked token must not work just because the row still exists.
+    eq('a revoked token is refused',
+      (await agentCall(server.base, 'GET', '/api/agent/health', { token: deadToken.token })).status, 401);
+
+    const health = await agentCall(server.base, 'GET', '/api/agent/health', { token: liveToken.token });
+    eq('a live token identifies the tenant', health.body.tenant, 'acme');
+
+    const listed = await agentCall(server.base, 'GET', '/api/agent/runs', { token: liveToken.token });
+    eq('the worker sees its queued run', listed.body.runs.length, 1);
+
+    const claimed = await agentCall(server.base, 'POST', '/api/agent/runs/run-1/claim', { token: liveToken.token });
+    eq('claiming works', claimed.status, 200);
+    eq('and puts the run in progress', claimed.body.run.status, 'running');
+    // Two workers racing: the loser gets a 409 rather than the same run twice.
+    eq('a second claim is refused',
+      (await agentCall(server.base, 'POST', '/api/agent/runs/run-1/claim', { token: liveToken.token })).status, 409);
+    // Another tenant's run is invisible through this token.
+    eq("another tenant's run cannot be claimed",
+      (await agentCall(server.base, 'POST', '/api/agent/runs/run-9/claim', { token: liveToken.token })).status, 409);
+
+    const finished = await agentCall(server.base, 'POST', '/api/agent/runs/run-1/finish', {
+      token: liveToken.token,
+      body: { done: 12, ok: 10, failed: 2, total: 12 }
+    });
+    eq('finishing derives partial from the counters', finished.body.run.status, 'partial');
+  } finally {
+    await server.close();
+  }
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
+
 
 
 

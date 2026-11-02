@@ -852,6 +852,50 @@ Two deliberate exceptions:
   is a file on disk.
 
 
+
+### When cloud browsing is not available: the tenant's own worker
+
+A desktop MoreLogin profile can only be driven from the machine that started it, and its
+debug port has no authentication — exposing it would hand anyone who finds the URL remote
+control of a logged-in marketplace account. So there are exactly two ways a profile gets
+used, and both are honest about where the browser is:
+
+| Profile runtime | Who runs the capture | What the tenant sees |
+|---|---|---|
+| `cloud` | the portal (spawns the runner) | progress immediately |
+| `local` | **the tenant's own machine** | `202 queuedForWorker`, then progress when their worker picks it up |
+
+The local path, end to end:
+
+```
+portal:  Capture now  → POST /browser-access/capture
+                       → 202 { run, queuedForWorker: true }     (no spawn; nothing to fake)
+tenant:  Worker tokens → POST /browser-access/worker-token
+                       → 201 { token }                          shown once, command printed
+tenant:  node scripts/browser_actor_worker.mjs --api https://… --token wkr_…
+worker:  GET  /api/agent/runs              this tenant's queued/running rows
+         POST /api/agent/runs/:id/claim    atomic: update … where status = 'queued'
+         spawn scripts/browser_actor_micro1.mjs --run-id <id>   (the same path an operator uses)
+         POST /api/agent/runs/:id/finish   counters → succeeded | partial | failed
+```
+
+Rules that make it safe rather than merely convenient:
+
+- **The token is the tenant.** The tenant comes from the token row, never from the request,
+  so a worker cannot claim another tenant's run however it shapes its body.
+- **Hash-only storage.** A database leak yields no working credential; a lost token is
+  revoked and reissued, not recovered.
+- **Revocation is immediate**, and revoked tokens are refused even though the row stays for
+  the audit trail.
+- **Claim is a compare-and-set**, so two workers on two machines race safely: one wins, the
+  other gets a 409.
+- **Nothing runs on the tenant's machine they did not ask for**: the worker acts only on rows
+  already queued in *their own* portal.
+
+The worker adds an install step, so it is the fallback — not the default. Cloud tenants get
+the button with no setup; a tenant whose plan has no cloud browser installs one command and
+gets the same button.
+
 ### Source attribution (why the funnel said "Unattributed")
 
 `migrations/2026-10-31_seed_micro1_turing_sources.sql` was **never applied**, so

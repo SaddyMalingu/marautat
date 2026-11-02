@@ -49,6 +49,7 @@
     "browser:collect": "node scripts/browser_actor_collect.mjs",
     "browser:import": "node scripts/browser_actor_import.mjs",
     "browser:micro1": "node scripts/browser_actor_micro1.mjs",
+    "browser:worker": "node scripts/browser_actor_worker.mjs",
     "offers:attribute": "node scripts/backfill_offer_sources.mjs",
     "test:session-persistence": "node scripts/test_tenant_session_persistence.mjs",
     "test:hub-discovery": "node scripts/test_hub_discovery.mjs",
