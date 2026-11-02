@@ -1216,6 +1216,41 @@ function fakeOfferDb() {
     /appears here\s+once you connect one/.test(dashSrc));
 }
 
+// ---------------------------------------------------------------------------
+// A tenant with no browser must be told, not left to discover it through a 409
+// ---------------------------------------------------------------------------
+
+{
+  const created = createAgentToken({ label: 'nomap' });
+  const runs = [{ id: 'run-nomap', tenant_id: 'tenant-1', status: 'queued', kind: 'referrals', platform: 'micro1', detail: {} }];
+  const tokens = [{ id: 'tok-nomap', tenant_id: 'tenant-1', token_hash: created.tokenHash, token_prefix: created.tokenPrefix, revoked_at: null }];
+  const db = fakeAgentDb({ runs, tokens });
+  const server = await withAgentServer(db);
+  const beforeProfiles = process.env.BROWSER_ACTOR_PROFILES;
+  const beforeDefault = process.env.BROWSER_ACTOR_DEFAULT_ENV_ID;
+  try {
+    // Production hit exactly this: no browserAccess on the tenant, no env map entry, no
+    // default — and the 409 said "No browser is mapped to tenant", which tells a tenant
+    // nothing they can act on.
+    delete process.env.BROWSER_ACTOR_PROFILES;
+    delete process.env.BROWSER_ACTOR_DEFAULT_ENV_ID;
+    const res = await agentCall(server.base, 'GET', '/api/agent/runs/run-nomap/context', { token: created.token });
+    eq('a run with no browser is refused', res.status, 409);
+    ok('and the message says what to do about it',
+      /connect (a|your) morelogin profile|map a hosted profile|add the tenant to BROWSER_ACTOR_PROFILES/i.test(res.body?.error || ''));
+  } finally {
+    if (beforeProfiles === undefined) delete process.env.BROWSER_ACTOR_PROFILES;
+    else process.env.BROWSER_ACTOR_PROFILES = beforeProfiles;
+    if (beforeDefault === undefined) delete process.env.BROWSER_ACTOR_DEFAULT_ENV_ID;
+    else process.env.BROWSER_ACTOR_DEFAULT_ENV_ID = beforeDefault;
+    await server.close();
+  }
+
+  const dashSrc = fs.readFileSync(path.join(root, 'admin', 'tenant_dashboard.html'), 'utf8');
+  ok('the panel warns when no browser is resolved for the tenant',
+    /d\.runSource === 'none'/.test(dashSrc) && /a capture queues and nothing can run it/.test(dashSrc));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
 

@@ -1699,6 +1699,13 @@ function wfAccessHtml(d) {
                  placeholder="MoreLogin API key" style="max-width:280px" ${d.canStore ? '' : 'disabled'}>
            <button class="btn btn-info btn-sm" data-wfact="connect" ${d.canStore ? '' : 'disabled'}>Connect</button>`}
     </div>
+    ${d.runSource === 'none'
+      ? `<div style="color:#f59e0b;font-size:.76rem;margin-top:6px">
+           No browser is set up for your tenant yet, so a capture queues and nothing can run it.
+           Connect yours below with your MoreLogin API key, or ask Alphadome to map the hosted
+           profile for you.
+         </div>`
+      : ''}
     ${d.connected
       ? `<div class="text-muted" style="font-size:.74rem;margin-top:6px">
            ${d.runtime === 'cloud'

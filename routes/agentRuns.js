@@ -237,8 +237,12 @@ export function createAgentRunsRouter({
       try {
         identity = await resolveRunnerIdentity({ supabase, tenantSlug: auth.tenantSlug });
       } catch (error) {
-        console.error(`[agent] context refused run=${run.id} tenant=${auth.tenantSlug}: ${error?.message || error}`);
-        return fail(res, 409, error?.message || 'This tenant has no browser profile to run');
+        // The resolver knows what to do about it; the worker does not, and neither does the
+        // tenant reading a 409 that says "no browser is mapped". Carry the fix through.
+        const fix = error?.details?.fix
+          || 'Connect your MoreLogin profile in the portal (Your own browser), or ask Alphadome to map a hosted profile for this tenant.';
+        console.error(`[agent] context refused run=${run.id} tenant=${auth.tenantSlug}: ${error?.message || error} — ${fix}`);
+        return fail(res, 409, `${error?.message || 'No browser is set up for this tenant yet'}. ${fix}`);
       }
       // Only a cloud profile is out of reach for a worker: the browser is not on any machine
       // the tenant owns, so the portal has to start it. Everything else — the tenant's own
