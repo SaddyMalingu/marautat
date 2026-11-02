@@ -52,6 +52,14 @@ ok('meta description is 120-320 chars', desc.length >= 120 && desc.length <= 320
 ok('meta description names what is sold', /WhatsApp/i.test(desc) && /M-Pesa/i.test(desc), desc.slice(0, 80));
 ok('canonical URL is absolute', /<link rel="canonical" href="https:\/\/alphadome\.onrender\.com\/"/.test(html));
 
+// Affiliate/media-property verification (Semrush via Impact.com) is checked by an
+// external crawler against the head of the live homepage. Losing the tag silently
+// un-verifies the property, so hold it here rather than trusting a later rewrite.
+const head = html.slice(0, html.indexOf('</head>'));
+ok('carries the Impact media-property verification meta tag in <head>',
+  /<meta name="impact-site-verification" value="[^"]+">/.test(head),
+  (head.match(/<meta name="impact-site-verification"[^>]*>/) || ['not in head'])[0]);
+
 for (const prop of ['og:type', 'og:title', 'og:description', 'og:image', 'og:url']) {
   ok('has ' + prop, new RegExp(`property="${prop}" content="[^"]+"`).test(html));
 
