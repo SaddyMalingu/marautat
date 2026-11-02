@@ -1509,9 +1509,13 @@ function wfControlHtml(d) {
       </div>
       <div class="d-flex gap-2 flex-wrap">
         <button class="btn btn-info btn-sm" data-wfact="verify" ${!counts.unchecked && !counts.wrong ? 'disabled title="Nothing unverified right now"' : ''}>${esc(verifyLabel)}</button>
-        <button class="btn btn-outline-acc btn-sm" data-wfact="queue" data-kind="referrals" data-refresh="0">Capture links</button>
-        <button class="btn btn-outline-acc btn-sm" data-wfact="queue" data-kind="referrals" data-refresh="1">Fill descriptions</button>
+        <button class="btn btn-outline-acc btn-sm" data-wfact="queue" data-kind="referrals" data-refresh="0" title="Reads Turing and attaches each role's referral link">Capture Turing links</button>
+        <button class="btn btn-outline-acc btn-sm" data-wfact="queue" data-kind="referrals" data-refresh="1" title="Opens each Turing role and stores the full description">Fill Turing descriptions</button>
       </div>
+    </div>
+    <div class="text-muted" style="font-size:.74rem;margin:-4px 0 6px">
+      Both queue a Turing run for a runner to pick up. Micro1 runs from
+      <strong>Your own browser</strong> below, because it drives your own profile.
     </div>
     ${wfActiveRunHtml(d)}
     ${wfFunnelHtml(d)}
@@ -1701,7 +1705,10 @@ function wfAccessHtml(d) {
              ? 'Your profile runs in the cloud, so this page can start the capture for you.'
              : 'Your profile runs on your own computer, so Capture now queues the run and your worker picks it up — see below.'}
          </div>`
-      : ''}
+      : `<div class="text-muted" style="font-size:.74rem;margin-top:6px">
+           Micro1 capture drives <strong>your own</strong> MoreLogin profile, so it appears here
+           once you connect one. Until then, Turing captures are in Collection control above.
+         </div>`}
 
     ${d.reauthRequired
       ? `<div style="color:#ef4444;font-size:.78rem;margin-top:6px">Sign in again inside your MoreLogin profile for ${esc((d.reauthPlatforms || []).join(', ') || 'a marketplace')}, then press Verify.</div>`

@@ -24,6 +24,35 @@
  * Pure functions carry the rules and are tested; the store is a thin map onto SQL.
  */
 
+/**
+ * Which platform a queued run belongs to (2026-11-02)
+ *
+ * The tenant worker used to run the Micro1 capture for **every** run it claimed, whatever the
+ * run was for. A Turing run queued from Collection control would have been captured against
+ * Micro1 — wrong marketplace, wrong links, and it would have looked like it worked.
+ *
+ * A run states its platform in `detail.platform` (the portal's capture route sets it). Older
+ * writer-flow rows do not, and there `kind: 'referrals'` is the Turing path.
+ */
+export function runPlatform(run) {
+  const explicit = String(run?.detail?.platform || run?.platform || '').toLowerCase().trim();
+  if (explicit) return explicit;
+  return String(run?.kind || '').toLowerCase() === 'referrals' ? 'turing' : '';
+}
+
+/**
+ * Platforms a tenant worker can drive today.
+ *
+ * Only Micro1 has an agent-mode capture (`--agent-api/--agent-token`). Turing's runner needs
+ * the repo and a database key, so it stays an operator job until it gains the same mode —
+ * refusing here is what stops a worker from silently capturing the wrong marketplace.
+ */
+export const WORKER_PLATFORMS = Object.freeze(['micro1']);
+
+export function canRunOnWorker(run) {
+  return WORKER_PLATFORMS.includes(runPlatform(run));
+}
+
 export const RUN_TABLE = 'browser_actor_runs';
 
 /** Kinds of work a tenant can see progress on. */

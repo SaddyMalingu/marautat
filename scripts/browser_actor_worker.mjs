@@ -36,6 +36,7 @@ import path from 'node:path';
 import readline from 'node:readline';
 import { spawn } from 'node:child_process';
 import { extractAgentToken } from '../utils/browserActor/agentTokens.js';
+import { runPlatform, canRunOnWorker } from '../utils/browserActor/runs.js';
 
 const argv = process.argv.slice(2);
 function flag(name, fallback = null) {
@@ -207,13 +208,36 @@ async function closeAbandonedRun(runId, code) {
     : `could not close run ${runId} (${closed?.status ?? 'no response'}); the portal will show it as stalled`);
 }
 
+/**
+ * Which capture script a queued run belongs to, and whether this machine can run it.
+ *
+ * The rule lives in `utils/browserActor/runs.js` so it is testable; see `runPlatform` and
+ * `canRunOnWorker`. Claiming a run this worker cannot drive would take it away from the
+ * operator's runner and then capture the wrong marketplace.
+ */
+function platformOf(run) {
+  return runPlatform(run);
+}
+
+function canRunHere(run) {
+  return canRunOnWorker(run);
+}
+
 async function tick(tenantSlug) {
   const listed = await call('GET', '/api/agent/runs');
   if (!listed.ok) {
     console.error(`listing runs failed (${listed.status}): ${listed.data?.error || ''}`);
     return false;
   }
-  const run = (listed.data.runs || []).find((row) => row.status === 'queued');
+  const queued = (listed.data.runs || []).filter((row) => row.status === 'queued');
+  // Leave runs this worker cannot drive alone, and say so once. Claiming one would take it
+  // away from the operator's runner and then capture the wrong marketplace.
+  const skipped = queued.filter((row) => !canRunHere(row));
+  if (skipped.length) {
+    const names = [...new Set(skipped.map((row) => platformOf(row) || row.kind || 'unknown'))].join(', ');
+    console.error(`skipping ${skipped.length} queued run(s) for ${names}: this worker only drives micro1 — the operator runs those`);
+  }
+  const run = queued.find(canRunHere);
   if (!run) return false;
 
   const claimed = await call('POST', `/api/agent/runs/${run.id}/claim`);

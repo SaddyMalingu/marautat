@@ -51,6 +51,7 @@ import { buildWorkerBundle } from '../utils/browserActor/workerBundle.js';
 import { buildZipStore, listZipEntries } from '../utils/zipStore.js';
 import { sanitizeAgentCaptures } from '../routes/agentRuns.js';
 import { applyCaptures } from '../utils/browserActor/applyCaptures.js';
+import { runPlatform, canRunOnWorker } from '../utils/browserActor/runs.js';
 
 let pass = 0;
 let fail = 0;
@@ -1184,6 +1185,35 @@ function fakeOfferDb() {
   } finally {
     await server.close();
   }
+}
+
+// ---------------------------------------------------------------------------
+// Which marketplace a run is for — and therefore who may run it
+// ---------------------------------------------------------------------------
+
+{
+  // The worker used to run the Micro1 capture for every run it claimed. A Turing run would
+  // have been captured against the wrong marketplace and looked like a success.
+  eq('a portal capture run says it is micro1', runPlatform({ kind: 'referrals', detail: { platform: 'micro1' } }), 'micro1');
+  eq('a writer-flow referrals run is a Turing run', runPlatform({ kind: 'referrals' }), 'turing');
+  eq('an explicit platform wins over the kind', runPlatform({ kind: 'referrals', platform: 'turing' }), 'turing');
+  eq('a collect run has no platform', runPlatform({ kind: 'collect' }), '');
+  ok('the worker may drive a micro1 run', canRunOnWorker({ kind: 'referrals', detail: { platform: 'micro1' } }));
+  ok('and must not claim a Turing run', !canRunOnWorker({ kind: 'referrals' }));
+  ok('nor one it cannot identify', !canRunOnWorker({ kind: 'collect' }));
+
+  const workerSrc = fs.readFileSync(path.join(root, 'scripts', 'browser_actor_worker.mjs'), 'utf8');
+  ok('the worker filters the queue before claiming', /queued\.find\(canRunHere\)/.test(workerSrc));
+  ok('and says which runs it is leaving alone', /only drives micro1/.test(workerSrc));
+
+  const dashSrc = fs.readFileSync(path.join(root, 'admin', 'tenant_dashboard.html'), 'utf8');
+  // "Capture links" was the Turing button all along, unnamed, so nobody could find it.
+  ok('the Turing capture buttons name the marketplace',
+    /Capture Turing links/.test(dashSrc) && /Fill Turing descriptions/.test(dashSrc));
+  ok('and say where Micro1 lives instead',
+    /Micro1 runs from\s*<strong>Your own browser<\/strong>/.test(dashSrc));
+  ok('an unconnected tenant is told why the Micro1 button is missing',
+    /appears here\s+once you connect one/.test(dashSrc));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
