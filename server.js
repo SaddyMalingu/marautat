@@ -4870,11 +4870,23 @@ app.get('/tenant/blogger', tenantSessionAuth, async (req, res) => {
         pageCounts[r.opportunity_id] = (pageCounts[r.opportunity_id] || 0) + 1;
       });
     }
+    // Which marketplace each offer belongs to, computed with the *same* rule the Collection
+    // funnel uses (`sourceOf`), so "Micro1" means one thing in the table and the funnel. The
+    // panel filters on this instead of re-deriving attribution in the browser, where it would
+    // drift the day the rule changes.
+    const { sourceOf } = await import('./utils/coverage.js');
     res.json({
       ok: true,
       site: { id: ctx.site.id, slug: ctx.site.slug, name: ctx.site.name },
       publicPath: `/ai-jobs/t/${ctx.site.slug}`,
-      offers: (offers || []).map(function (o) { return Object.assign({}, o, { page_count: pageCounts[o.id] || 0 }); }),
+      offers: (offers || []).map(function (o) {
+        const source = sourceOf(o);
+        return Object.assign({}, o, {
+          page_count: pageCounts[o.id] || 0,
+          source_slug: source.slug,
+          source_name: source.name
+        });
+      }),
       // How many offers exist, not how many were sent. The table used to say "100 of 100"
       // because the query was capped at 100 and the panel had no other number to print — so a
       // tenant with 108 offers was told they had 100, and the newest 8 were invisible.

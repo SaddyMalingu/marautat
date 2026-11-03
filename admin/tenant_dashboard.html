@@ -657,7 +657,7 @@ let wfTab = 'blogger';
 // live pages vs drafts, offers whose referral link is verified vs ones that earn
 // nothing, offers already written vs never touched. Filtering is client-side because
 // the whole list already arrived with /tenant/blogger — no new route, no round trip.
-const wfOfferState = { status: 'all', links: 'all', pages: 'all', sort: 'title', dir: 'asc' };
+const wfOfferState = { status: 'all', links: 'all', pages: 'all', source: 'all', sort: 'title', dir: 'asc' };
 
 /** 'none' | 'verified' | 'wrong' | 'unchecked' — what the referral link really is. */
 function wfOfferLinkState(o) {
@@ -691,6 +691,10 @@ function wfFilterOffers(offers) {
       if (s.status !== 'all' && status !== s.status) return false;
     }
     if (s.links !== 'all' && wfOfferLinkState(o) !== s.links) return false;
+    // Which marketplace this offer came from. `source_slug` is attached by the server using
+    // the same rule the Collection funnel uses, so the filter and the funnel can never
+    // disagree about what "Micro1" means.
+    if (s.source !== 'all' && String(o.source_slug || 'unsourced') !== s.source) return false;
     if (s.pages !== 'all') {
       const optimized = Number(o.page_count || 0) > 0;
       if (s.pages === 'optimized' && !optimized) return false;
@@ -746,6 +750,23 @@ function wfWireOfferFilters(offers) {
     el.value = wfOfferState[field];
     el.onchange = () => { wfOfferState[field] = el.value; wfRenderOffers(offers); };
   };
+  // Options are built from the offers, not a hard-coded list: a tenant on Mercor or Respondent
+  // gets their own marketplaces without a code change, and Unattributed sorts last because it
+  // is the bucket that needs work, not a marketplace.
+  const sourceSelect = document.getElementById('wfFilterSource');
+  if (sourceSelect) {
+    const seen = new Map();
+    offers.forEach((o) => {
+      const slug = String(o.source_slug || 'unsourced');
+      if (!seen.has(slug)) seen.set(slug, String(o.source_name || (slug === 'unsourced' ? 'Unattributed' : slug)));
+    });
+    const ordered = [...seen.entries()].sort((a, b) => (
+      (a[0] === 'unsourced' ? 1 : 0) - (b[0] === 'unsourced' ? 1 : 0) || a[1].localeCompare(b[1])
+    ));
+    sourceSelect.innerHTML = '<option value="all">All marketplaces</option>'
+      + ordered.map(([slug, name]) => `<option value="${esc(slug)}">${esc(name)}</option>`).join('');
+  }
+  bind('wfFilterSource', 'source');
   bind('wfFilterStatus', 'status');
   bind('wfFilterLinks', 'links');
   bind('wfFilterPages', 'pages');
@@ -1296,6 +1317,9 @@ function wfBloggerHtml(ctx) {
       <div class="panel-title px-3 pt-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
         <span>Your Offers</span>
         <span class="d-flex align-items-center gap-2 flex-wrap">
+          <select id="wfFilterSource" class="form-select form-select-sm" style="width:auto" title="Marketplace this offer came from">
+            <option value="all">All marketplaces</option>
+          </select>
           <select id="wfFilterStatus" class="form-select form-select-sm" style="width:auto" title="Published or draft">
             <option value="all">All statuses</option>
             <option value="published">Published</option>

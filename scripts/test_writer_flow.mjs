@@ -58,6 +58,7 @@ import {
   COLLECTION_PLATFORMS
 } from '../utils/writerFlow.js';
 import { sanitizeOfferPatch } from '../utils/offerPatch.js';
+import { sourceOf } from '../utils/coverage.js';
 
 let pass = 0;
 let fail = 0;
@@ -783,6 +784,26 @@ async function withServer(db) {
     /Reads Micro1 through <strong>your own browser<\/strong>/.test(dash)
     && /Turing is read by <strong>Alphadome/.test(dash));
   ok('the old shared "both queue a Turing run" row is gone', !/Both queue a Turing run/.test(dash));
+
+  // A marketplace filter on Your Offers. The rule that decides "which marketplace" must be the
+  // same one the Collection funnel uses, or the table and the funnel will disagree the first
+  // time an offer is attributed by evidence instead of by slug convention.
+  ok('Your Offers has a marketplace filter', /id="wfFilterSource"/.test(dash)
+    && /<option value="all">All marketplaces<\/option>/.test(dash));
+  ok('and filters on the slug the server attached, not a re-derived guess',
+    /String\(o\.source_slug \|\| 'unsourced'\) !== s\.source/.test(dash));
+  ok('the options are built from the offers themselves', /sourceSelect\.innerHTML = '<option value="all">All marketplaces/.test(dash));
+  ok('Unattributed sorts last, because it is a to-do, not a marketplace',
+    /\(a\[0\] === 'unsourced' \? 1 : 0\)/.test(dash));
+  const serverSrc = read('server.js');
+  ok('the server attaches that slug with the funnel\'s own rule', /sourceOf\(o\)/.test(serverSrc)
+    && /source_slug: source\.slug/.test(serverSrc));
+
+  // And the rule itself, on the three shapes that exist in the database today.
+  eq('a Micro1 capture is attributed by its slug', sourceOf({ slug: 'malingu-ventures-micro1-kicad-pcb-design-specialist' }).slug, 'micro1');
+  eq('a Turing capture likewise', sourceOf({ slug: 'malingu-ventures-turing-ai-quality-analyst-english' }).slug, 'turing');
+  eq('a hand-made offer with no evidence stays Unattributed', sourceOf({ slug: 'air-traffic-controller' }).slug, 'unsourced');
+  eq('and a joined source row wins over the slug', sourceOf({ slug: 'whatever', source: { slug: 'mercor', name: 'Mercor' } }).slug, 'mercor');
 
   // A delegated click handler must know every action its own markup renders. On 2026-11-03 the
   // Micro1 card's `data-wfact="capture"` button lived in the control panel while only the
