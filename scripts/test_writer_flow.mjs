@@ -50,7 +50,9 @@ import {
   linkQueue,
   buildPlatformFunnel,
   nextActions,
-  writerFlowView
+  writerFlowView,
+  runsByPlatform,
+  COLLECTION_PLATFORMS
 } from '../utils/writerFlow.js';
 import { sanitizeOfferPatch } from '../utils/offerPatch.js';
 
@@ -685,6 +687,64 @@ async function withServer(db) {
   } finally {
     await server.close();
   }
+}
+
+// ---------------------------------------------------------------------------
+// Micro1 and Turing are different jobs, so the panel must not blur them
+// ---------------------------------------------------------------------------
+//
+// Both used to be buttons in one row, which meant a tenant could not tell which button
+// needed their worker running, which one spent a MoreLogin start, or which one had failed.
+// These assertions hold the split: each marketplace gets its own bucket, its own current run
+// and its own history, and a legacy row with no `platform` still lands in Turing.
+
+{
+  const runs = [
+    // Newest first, the order the store returns.
+    { id: 'r3', kind: 'referrals', status: 'running', detail: { platform: 'micro1' }, started_at: ago(60_000), heartbeat_at: ago(10_000), created_at: ago(60_000), done_items: 3, total_items: 12 },
+    { id: 'r2', kind: 'referrals', status: 'succeeded', detail: { platform: 'micro1' }, created_at: ago(3_600_000), finished_at: ago(3_000_000), done_items: 12, total_items: 12 },
+    { id: 'r1', kind: 'referrals', status: 'failed', created_at: ago(7_200_000), finished_at: ago(7_000_000), done_items: 4, total_items: 12 }
+  ];
+  const grouped = runsByPlatform(runs, NOW);
+  eq('a micro1 run is grouped under micro1', grouped.micro1.last.id, 'r3');
+  eq('and the run in flight is reported as the current one', grouped.micro1.current.id, 'r3');
+  eq('a row with no platform stays Turing — the legacy writer-flow shape', grouped.turing.last.id, 'r1');
+  eq('so Turing shows its own last outcome', grouped.turing.last.status, 'failed');
+  eq('and Turing has nothing running', grouped.turing.active, false);
+  eq('a micro1 run never leaks into the Turing count', grouped.turing.total, 1);
+  eq('the two marketplaces the panel knows about', COLLECTION_PLATFORMS.map((p) => p.slug), ['turing', 'micro1']);
+
+  // A micro1 row whose heartbeat stopped is stalled, which is a different sentence from
+  // "running" and the reason the card cannot just print the status column.
+  const stalledRow = {
+    id: 'r9', kind: 'referrals', status: 'running', detail: { platform: 'micro1' },
+    started_at: ago(RUN_STALL_MS + 120_000), heartbeat_at: ago(RUN_STALL_MS + 60_000)
+  };
+  eq('a micro1 capture that stopped reporting is stalled, not running',
+    runsByPlatform([stalledRow], NOW).micro1.stalled, 1);
+
+  eq('an empty history says so per marketplace rather than inventing a run',
+    runsByPlatform([], NOW).micro1.last, null);
+
+  const view = writerFlowView({ offers: [], runs, now: NOW });
+  ok('the panel payload carries both marketplaces', Boolean(view.runs.byPlatform?.micro1 && view.runs.byPlatform?.turing));
+  eq('and the current micro1 counters reach the card', view.runs.byPlatform.micro1.current.done, 3);
+
+  // The panel is where the distinction has to be visible, so assert the markup, not just
+  // the payload: two cards, one button set each, and no shared "both" row left behind.
+  const dash = fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..', 'admin', 'tenant_dashboard.html'), 'utf8');
+  ok('Collection control renders one card per marketplace',
+    /function wfPlatformCardHtml/.test(dash)
+    && /wfPlatformCardHtml\(d, \{ slug: 'turing'/.test(dash)
+    && /wfPlatformCardHtml\(d, \{ slug: 'micro1'/.test(dash));
+  ok('the Micro1 card is the one that drives the tenant browser',
+    /data-wfact="capture"[^>]*>Capture Micro1 links/.test(dash));
+  ok('the Turing card keeps its two runners', /data-wfact="queue" data-kind="referrals" data-refresh="0"/.test(dash)
+    && /data-wfact="queue" data-kind="referrals" data-refresh="1"/.test(dash));
+  ok('each card says how it runs, because that is what differs',
+    /Reads Micro1 through <strong>your own browser<\/strong>/.test(dash)
+    && /A runner reads Turing for you/.test(dash));
+  ok('the old shared "both queue a Turing run" row is gone', !/Both queue a Turing run/.test(dash));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

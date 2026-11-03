@@ -1420,6 +1420,65 @@ function wfFunnelHtml(d) {
       </table>
     </div>`;
 }
+/**
+ * One card per marketplace, because they are not the same job.
+ *
+ * Turing is read by a runner; Micro1 needs the tenant's own browser and spends a MoreLogin
+ * start. In one button row a tenant could not tell which button did which, could not see that
+ * Turing had finished while Micro1 had failed, and had no way to know that the Micro1 button
+ * would do nothing until their worker was running. Every number here is scoped to its own
+ * marketplace — grouped from the same rows the runner writes, not a second query.
+ */
+function wfPlatformCardHtml(d, spec) {
+  const byPlatform = (d.runs && d.runs.byPlatform) || {};
+  const state = byPlatform[spec.slug] || null;
+  const funnel = (Array.isArray(d.platforms) ? d.platforms : []).find((p) => String(p.slug) === spec.slug) || null;
+  const current = state && state.current;
+  const last = state && state.last;
+  const browserDriven = spec.slug === 'micro1';
+
+  // Only Micro1 needs a browser, and only for this tenant's own profile. `wfAccessData` is
+  // the same payload the "Your own browser" panel renders, so the two cannot disagree; when
+  // it has not loaded yet we let the server refuse rather than guess.
+  const access = wfAccessData || null;
+  const browserReady = !browserDriven || !access || Boolean(access.connected || access.workerBrowser);
+
+  const statusLine = current
+    ? `${wfRunChip(current.status)} · ${current.done}/${current.total || '?'} · started ${wfAgo(current.startedAt || current.createdAt)}`
+    : last
+      ? `${wfRunChip(last.status)} · last ${wfAgo(last.finishedAt || last.createdAt)}${last.total ? ` · ${last.done}/${last.total}` : ''}`
+      : '<span class="text-muted">never run for this tenant</span>';
+
+  const counters = funnel
+    ? `${funnel.captured} captured · ${funnel.linked} linked · ${funnel.verified} verified${funnel.wrong ? ` · <span style="color:#ef4444">${funnel.wrong} wrong</span>` : ''}`
+    : 'nothing captured yet';
+
+  const buttons = browserDriven
+    ? `<button class="btn btn-outline-acc btn-sm" data-wfact="capture" ${browserReady ? '' : 'disabled title="Connect your browser below first"'}>Capture Micro1 links</button>`
+    : `<button class="btn btn-outline-acc btn-sm" data-wfact="queue" data-kind="referrals" data-refresh="0" title="Reads Turing and attaches each role's referral link">Capture links</button>
+       <button class="btn btn-outline-light btn-sm" data-wfact="queue" data-kind="referrals" data-refresh="1" title="Opens each Turing role and stores the full description">Fill descriptions</button>`;
+
+  const howItRuns = browserDriven
+    ? 'Reads Micro1 through <strong>your own browser</strong> — your worker has to be running, and each capture uses one MoreLogin start.'
+    : 'A runner reads Turing for you: links and full descriptions land here when it finishes.';
+
+  return `
+    <div class="col-12 col-lg-6">
+      <div style="border:1px solid rgba(148,163,184,.25);border-radius:10px;padding:10px 12px;height:100%">
+        <div class="d-flex justify-content-between align-items-center gap-2">
+          <strong style="font-size:.86rem"><i class="${esc(spec.icon)} me-1"></i>${esc(spec.name)}</strong>
+          <span style="font-size:.76rem">${statusLine}</span>
+        </div>
+        <div class="text-muted" style="font-size:.74rem;margin:4px 0 6px">${counters}</div>
+        <div class="d-flex gap-2 flex-wrap mb-1">${buttons}</div>
+        <div class="text-muted" style="font-size:.72rem">${howItRuns}</div>
+        ${!browserReady
+          ? '<div style="color:#f59e0b;font-size:.72rem;margin-top:4px">No browser of yours is connected yet, so this button would do nothing. Set it up under <strong>Your own browser</strong> below.</div>'
+          : ''}
+      </div>
+    </div>`;
+}
+
 function wfActiveRunHtml(d) {
   const runs = d.runs || {};
   const active = (runs.recent || []).find(r => ['running', 'queued'].indexOf(String(r.status)) >= 0);
@@ -1509,13 +1568,11 @@ function wfControlHtml(d) {
       </div>
       <div class="d-flex gap-2 flex-wrap">
         <button class="btn btn-info btn-sm" data-wfact="verify" ${!counts.unchecked && !counts.wrong ? 'disabled title="Nothing unverified right now"' : ''}>${esc(verifyLabel)}</button>
-        <button class="btn btn-outline-acc btn-sm" data-wfact="queue" data-kind="referrals" data-refresh="0" title="Reads Turing and attaches each role's referral link">Capture Turing links</button>
-        <button class="btn btn-outline-acc btn-sm" data-wfact="queue" data-kind="referrals" data-refresh="1" title="Opens each Turing role and stores the full description">Fill Turing descriptions</button>
       </div>
     </div>
-    <div class="text-muted" style="font-size:.74rem;margin:-4px 0 6px">
-      Both queue a Turing run for a runner to pick up. Micro1 runs from
-      <strong>Your own browser</strong> below, because it drives your own profile.
+    <div class="row g-2 mb-2">
+      ${wfPlatformCardHtml(d, { slug: 'turing', name: 'Turing', icon: 'fa-solid fa-bolt' })}
+      ${wfPlatformCardHtml(d, { slug: 'micro1', name: 'Micro1', icon: 'fa-solid fa-globe' })}
     </div>
     ${wfActiveRunHtml(d)}
     ${wfFunnelHtml(d)}

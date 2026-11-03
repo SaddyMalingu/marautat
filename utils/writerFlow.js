@@ -24,7 +24,7 @@
  * Pure: no network, no database. The route passes rows.
  */
 import { summarizeCoverage, coverageHeadline, sourceOf } from './coverage.js';
-import { summarizeRuns, isActiveStatus } from './browserActor/runs.js';
+import { summarizeRuns, isActiveStatus, isStalled, runPlatform } from './browserActor/runs.js';
 
 /** A link needs attention when it is absent, unproven, or provably wrong. */
 export const LINK_STATES = Object.freeze(['wrong', 'unchecked', 'missing', 'verified']);
@@ -238,6 +238,65 @@ export function nextActions({ coverage, platforms = [], runs, links } = {}) {
 }
 
 /**
+ * The two marketplaces a tenant collects from, and the one thing that differs.
+ *
+ * Turing is read by a *runner* — a server-side job that pages through the marketplace.
+ * Micro1 is read through the tenant's **own browser**, because the referral link is minted
+ * inside a signed-in session. They were one button row, and that was the problem: a tenant
+ * could not tell which button spent their MoreLogin start, which one needed their worker
+ * running, or which one had failed last night.
+ */
+export const COLLECTION_PLATFORMS = Object.freeze([
+  { slug: 'turing', name: 'Turing', drives: 'runner' },
+  { slug: 'micro1', name: 'Micro1', drives: 'browser' }
+]);
+
+/** One run, in the shape a card renders. Kept here so the card and the history agree. */
+export function runCard(run) {
+  if (!run) return null;
+  return {
+    id: run.id || null,
+    kind: run.kind || null,
+    status: String(run.status || ''),
+    done: Number(run.done_items) || 0,
+    total: Number(run.total_items) || 0,
+    ok: Number(run.ok_items) || 0,
+    failed: Number(run.failed_items) || 0,
+    message: run.message || null,
+    startedAt: run.started_at || null,
+    finishedAt: run.finished_at || null,
+    createdAt: run.created_at || null,
+    heartbeatAt: run.heartbeat_at || null
+  };
+}
+
+/**
+ * Per-marketplace run state.
+ *
+ * The rows are already in hand (newest first), so this is a grouping, not a query — and
+ * because it is pure, the rule that Micro1 and Turing never share a status is testable
+ * without a database. `runPlatform` is the same function the runner uses to decide what to
+ * capture, so the card cannot claim a run belongs somewhere the runner disagrees with.
+ */
+export function runsByPlatform(runs = [], now = Date.now()) {
+  const rows = (Array.isArray(runs) ? runs : []).filter(Boolean);
+  const byPlatform = {};
+  for (const spec of COLLECTION_PLATFORMS) {
+    const mine = rows.filter((run) => runPlatform(run) === spec.slug);
+    const current = mine.find((run) => isActiveStatus(run.status)) || null;
+    byPlatform[spec.slug] = {
+      total: mine.length,
+      // Rows arrive newest first, so `mine[0]` is the last thing that happened here.
+      last: runCard(mine[0] || null),
+      current: runCard(current),
+      active: Boolean(current),
+      stalled: mine.filter((run) => isActiveStatus(run.status) && isStalled(run, now)).length
+    };
+  }
+  return byPlatform;
+}
+
+/**
  * Everything the Writer's Flow control panel renders, in one payload.
  *
  * `identity` and `runsAvailable` are passed in rather than discovered here: whether
@@ -286,6 +345,9 @@ export function writerFlowView({
       headline: runsAvailable
         ? runSummary.headline
         : 'Run history is unavailable until the run-tracking migration is applied.',
+      // What the two marketplace cards render. Without this the panel could only say
+      // "a run is happening", never "Micro1 failed an hour ago and Turing never started".
+      byPlatform: runsByPlatform(runs, now),
       // Newest first, capped: the panel shows a history, not an audit log.
       recent: (Array.isArray(runs) ? runs : []).slice(0, 8).map((run) => ({
         id: run.id,

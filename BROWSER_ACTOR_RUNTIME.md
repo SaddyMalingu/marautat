@@ -1025,3 +1025,38 @@ person who can fix it, and the tenant cannot see either id in full.
 Several profiles and no obvious match? The worker prints them and stops, and the choice is
 kept in `worker-config.json` — a data file with no secret in it — so it is asked once.
 
+
+
+### One card per marketplace (2026-11-03)
+
+Collection control used to be one button row — `Verify links`, `Capture Turing links`,
+`Fill Turing descriptions` — with a line underneath explaining that Micro1 lived somewhere
+else. A tenant could not answer three questions that decide what to click:
+
+| Question | Why the row could not answer it |
+|---|---|
+| Which button needs my worker running? | Only Micro1 does, and that was in a note, not on the button |
+| Which one spends a MoreLogin start? | Only Micro1 spends one — it is their plan's daily limit |
+| Which one failed last night? | `runs.headline` named a single run, whichever was newest |
+
+So the panel renders one card per marketplace, each with its own buttons, its own
+last-or-current run and age, its own counters from the funnel, and one line saying where it
+runs:
+
+```
+Turing   [done] · last 2h ago · 78/78       Micro1  [running] · 3/12 · started 40s ago
+78 captured · 74 linked · 70 verified       12 captured · 12 linked · 12 verified
+[Capture links] [Fill descriptions]         [Capture Micro1 links]
+A runner reads Turing for you.              Reads Micro1 through your own browser — your
+                                            worker has to be running.
+```
+
+`runs.byPlatform` is a **grouping**, not a query: the writer-flow payload already loads the
+rows, and `runsByPlatform` buckets them with the same `runPlatform()` the runner uses to
+decide what to capture. That shared function is the whole point — a card cannot claim a run
+belongs to a marketplace the worker would disagree with. Legacy rows with no
+`detail.platform` and `kind: 'referrals'` stay Turing, which is what they were.
+
+The Micro1 card is disabled with an amber explanation when no browser is connected yet, so it
+cannot be a click that quietly does nothing — the same rule as everywhere else in this
+subsystem: name the cause before spending the tenant's attention.

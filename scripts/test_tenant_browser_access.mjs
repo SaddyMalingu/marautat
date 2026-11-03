@@ -1282,6 +1282,38 @@ function fakeOfferDb() {
     /Start <strong>your worker<\/strong> on the computer that has your MoreLogin profile/.test(dashSrc));
 }
 
+// ---------------------------------------------------------------------------
+// A migration has to run in the SQL editor, which means prose needs its `--`
+// ---------------------------------------------------------------------------
+//
+// Shipped 2026-11-02 and failed on apply: forty lines of explanation had been appended to the
+// pairing migration without comment markers, so the editor stopped at
+// `syntax error at or near "Pasting"` and the table was never created. A file that only the
+// database can validate is a file nobody validates — so this reads every migration the way
+// the editor would, and only accepts lines that are SQL or comments.
+{
+  const dir = path.join(root, 'migrations');
+  const offenders = [];
+  for (const name of fs.readdirSync(dir).filter((file) => file.endsWith('.sql'))) {
+    const text = fs.readFileSync(path.join(dir, name), 'utf8');
+    text.split('\n').forEach((line, index) => {
+      const code = line.replace(/--.*$/, '').trim();
+      if (!code) return;
+      if (/^(\/\*|\*|'|"|\(|\))/.test(code)) return;
+      // SQL keywords are written upper or lower case; a title-case word at the start of a
+      // line is prose that lost its `--`.
+      if (/^[A-Z][a-z]/.test(code)) offenders.push(`${name}:${index + 1} ${code.slice(0, 40)}`);
+    });
+  }
+  ok('every migration line is either SQL or a comment', offenders.length === 0);
+  if (offenders.length) console.error(`      ${offenders.slice(0, 5).join('\n      ')}`);
+
+  const pairing = fs.readFileSync(path.join(dir, '2026-11-02_browser_pairings.sql'), 'utf8');
+  ok('the pairing migration creates the table it is named for',
+    /CREATE TABLE IF NOT EXISTS public\.browser_actor_pairings/.test(pairing));
+  ok('and is hash-only, like the tokens', /code_hash\s+text NOT NULL UNIQUE/.test(pairing));
+}
+
 
 // An abandoned run must not turn "Capture now" into a 500
 // ---------------------------------------------------------------------------
@@ -1362,11 +1394,15 @@ function fakeOfferDb() {
   ok('and says which runs it is leaving alone', /only drives micro1/.test(workerSrc));
 
   const dashSrc = fs.readFileSync(path.join(root, 'admin', 'tenant_dashboard.html'), 'utf8');
-  // "Capture links" was the Turing button all along, unnamed, so nobody could find it.
-  ok('the Turing capture buttons name the marketplace',
-    /Capture Turing links/.test(dashSrc) && /Fill Turing descriptions/.test(dashSrc));
-  ok('and say where Micro1 lives instead',
-    /Micro1 runs from\s*<strong>Your own browser<\/strong>/.test(dashSrc));
+  // The two marketplaces moved into their own cards, because one button row could not say
+  // which button needed a worker or which one had failed. The buttons are still named for
+  // what they do, and each card says where its run happens.
+  ok('each marketplace card names its own capture button',
+    /Capture Micro1 links/.test(dashSrc) && /Capture links<\/button>/.test(dashSrc)
+    && /Fill descriptions<\/button>/.test(dashSrc));
+  ok('and a tenant can tell the two jobs apart by where they run',
+    /A runner reads Turing for you/.test(dashSrc)
+    && /your worker has to be running/.test(dashSrc));
   ok('an unconnected tenant is told why the Micro1 button is missing',
     /appears here\s+once you connect one/.test(dashSrc));
 }
