@@ -505,10 +505,11 @@ ok('sealing with no key configured still refuses', noEnv);
  * A database with both tables the capture route touches: the tenant row it reads metadata
  * from, and `browser_actor_runs`, where the queued row must be visible and closable.
  */
-function fakeCaptureDb(metadata = {}) {
+function fakeCaptureDb(metadata = {}, { insertError = null } = {}) {
   const site = { id: 'site-1', slug: 'acme', metadata: { ...metadata } };
   const runs = [];
   const tokens = [];
+  let pendingInsertError = insertError;
   const makeTokens = () => {
     const filters = [];
     const chain = {
@@ -535,6 +536,13 @@ function fakeCaptureDb(metadata = {}) {
   const makeRuns = () => {
     const api = {
       insert(row) {
+        // A real Postgres refusal (23514 kind_check / 23505 unique) surfaces as `error` from
+        // supabase-js, not as a throw; the store rethrows it, so the fake must too.
+        if (pendingInsertError) {
+          const error = pendingInsertError;
+          pendingInsertError = null;
+          return { select: () => ({ maybeSingle: async () => ({ data: null, error }) }) };
+        }
         const created = { id: `run-${runs.length + 1}`, created_at: new Date().toISOString(), ...row };
         runs.push(created);
         return { select: () => ({ maybeSingle: async () => ({ data: created, error: null }) }) };
@@ -608,6 +616,61 @@ async function withCaptureServer({ db, spawnRun }) {
 
 const cloudAccess = { browserAccess: { provider: 'morelogin', envId: '2116562908359495680', runtime: 'cloud', keySealed: sealed, connectedAt: '2026-11-02T10:00:00.000Z' } };
 const localAccess = { browserAccess: { provider: 'morelogin', envId: '2116562908359495680', runtime: 'local', keySealed: sealed, connectedAt: '2026-11-02T10:00:00.000Z' } };
+
+{
+  // The live failure on 2026-11-03, second act: `browser_actor_runs_kind_check` only allowed
+  // collect/import/referrals/verify, so queueing kind `micro1` was refused by Postgres with
+  // 23514 — and the route turned that into a 500 "Could not queue the capture". A missing
+  // migration is a deployment state, so it degrades to `collect` (never `referrals`, the slot
+  // Turing occupies) and says so, rather than failing the tenant's click.
+  const db = fakeCaptureDb(
+    { workerBrowser: { envId: '2116562908359495680', label: 'Malingu Ventures' } },
+    { insertError: { code: '23514', message: 'new row violates check constraint "browser_actor_runs_kind_check"' } }
+  );
+  const server = await withCaptureServer({ db, spawnRun: () => ({ pid: 1 }) });
+  try {
+    const res = await call(server.base, 'POST', '/tenant/blogger/browser-access/capture', { platform: 'micro1' });
+    eq('a missing micro1 kind falls back instead of 500ing', res.status, 202);
+    eq('and the run still queues', db.runs.length, 1);
+    eq('under an existing kind, not the Turing slot', db.runs[0]?.kind, 'collect');
+    eq('and the caller is told the trail is temporary', res.body.kindFallback, true);
+    ok('the marketplace is still recorded for the worker filter', db.runs[0]?.detail?.platform === 'micro1');
+  } finally {
+    await server.close();
+  }
+}
+
+{
+  // If even the fallback is refused (a live Turing `collect` run holds that slot too), the
+  // answer is a 503 that names the migration — not a 500 that blames the tenant.
+  const db = fakeCaptureDb(
+    { workerBrowser: { envId: '2116562908359495680' } },
+    { insertError: { code: '23514', message: 'browser_actor_runs_kind_check' } }
+  );
+  db.from = ((original) => (table) => {
+    const api = original(table);
+    if (table !== 'browser_actor_runs') return api;
+    const insert = api.insert;
+    let first = true;
+    api.insert = (row) => {
+      const result = insert(row);
+      if (first && row.kind === 'collect') {
+        first = false;
+        return { select: () => ({ maybeSingle: async () => ({ data: null, error: { code: '23505', message: 'uq_browser_actor_runs_active' } }) }) };
+      }
+      return result;
+    };
+    return api;
+  })(db.from);
+  const server = await withCaptureServer({ db, spawnRun: () => ({ pid: 1 }) });
+  try {
+    const res = await call(server.base, 'POST', '/tenant/blogger/browser-access/capture', { platform: 'micro1' });
+    eq('a blocked fallback slot is a conflict, not a crash', res.status, 409);
+    eq('and names the real reason', res.body.reason, 'already_running');
+  } finally {
+    await server.close();
+  }
+}
 
 {
   // The tenant did everything right — worker running, browser reported — and was still told

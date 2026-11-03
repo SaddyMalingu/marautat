@@ -41,7 +41,7 @@ import {
 import { summarizeSignedIn } from '../utils/browserActor/signedIn.js';
 import { parseProfileMap } from '../utils/browserActor/identity.js';
 import { redact } from '../utils/browserActor/moreloginClient.js';
-import { canQueue, createRunStore, isActiveStatus, isStalled, MICRO1_RUN_KIND } from '../utils/browserActor/runs.js';
+import { canQueue, createRunStore, isActiveStatus, isStalled, runPlatform, MICRO1_RUN_KIND } from '../utils/browserActor/runs.js';
 import { createAgentTokenStore, describeAgentToken } from '../utils/browserActor/agentTokens.js';
 import { PAIRING_TABLE } from '../utils/browserActor/pairing.js';
 import {
@@ -371,7 +371,10 @@ export function createBrowserAccessRouter({
       // Skipping this returned a 500 on a duplicate key, which reads as a server fault when it
       // is really a leftover row.
       const abandoned = recent.filter((row) => (
-        String(row.kind || '').toLowerCase() === MICRO1_RUN_KIND &&
+        // The `collect` half only appears while migrations/2026-11-03_micro1_run_kind.sql is
+        // pending; without it here, a stalled fallback run would block the tenant for ever
+        // with "already waiting" and no way to clear it.
+        (String(row.kind || '').toLowerCase() === MICRO1_RUN_KIND || runPlatform(row) === 'micro1') &&
         isActiveStatus(row.status) &&
         isStalled(row, now())
       ));
@@ -392,23 +395,54 @@ export function createBrowserAccessRouter({
       }
 
       let run = null;
+      let kindUsed = MICRO1_RUN_KIND;
+      let kindFallback = false;
+
+      const queueRun = (kind) => runStore.queue({
+        tenantId: ctx.site.id,
+        kind,
+        sourceSlug: platform,
+        requestedBy: 'tenant:portal',
+        detail: { limit, platform, via: 'portal', runtime: access?.runtime || 'local' }
+      });
+
+      // Two database errors mean different things, and both used to fall through to a 500:
+      //   23505 — the partial unique index: another capture of this kind is already live.
+      //   23514 — the CHECK constraint has not been widened to accept `micro1` yet, because
+      //           migrations/2026-11-03_micro1_run_kind.sql has not been applied.
+      // The second is a deployment state, not a tenant's mistake, so it degrades to `collect`
+      // (an existing kind — deliberately not `referrals`, which is the slot Turing occupies)
+      // and says so, instead of telling the tenant their capture failed.
       try {
-        run = await runStore.queue({
-          tenantId: ctx.site.id,
-          kind: MICRO1_RUN_KIND,
-          sourceSlug: platform,
-          requestedBy: 'tenant:portal',
-          detail: { limit, platform, via: 'portal', runtime: access?.runtime || 'local' }
-        });
+        run = await queueRun(kindUsed);
       } catch (error) {
-        // 23505 = the partial unique index. Someone queued between our read and our insert
-        // (or a second tab did). That is a conflict to report, not a server error.
-        if (String(error?.code || '') === '23505' || /uq_browser_actor_runs_active/.test(error?.message || '')) {
+        const code = String(error?.code || '');
+        const message = String(error?.message || '');
+        if (code === '23514' || /kind_check/i.test(message)) {
+          console.error(`[browser-access] tenant=${ctx.site.slug} kind "micro1" rejected by browser_actor_runs_kind_check — falling back to "collect"; apply migrations/2026-11-03_micro1_run_kind.sql`);
+          kindUsed = 'collect';
+          kindFallback = true;
+          try {
+            run = await queueRun(kindUsed);
+          } catch (retry) {
+            const retryCode = String(retry?.code || '');
+            if (retryCode === '23505' || /uq_browser_actor_runs_active/.test(String(retry?.message || ''))) {
+              return fail(res, 409, 'A capture is already waiting or running for this tenant — give it a moment, then try again', {
+                reason: 'already_running'
+              });
+            }
+            return fail(res, 503, 'Run tracking is not set up for Micro1 on this host yet — the portal needs migrations/2026-11-03_micro1_run_kind.sql applied', {
+              reason: 'migration_pending',
+              migration: 'migrations/2026-11-03_micro1_run_kind.sql'
+            });
+          }
+        } else if (code === '23505' || /uq_browser_actor_runs_active/.test(message)) {
           return fail(res, 409, 'A capture is already waiting or running for this tenant — give it a moment, then try again', {
             reason: 'already_running'
           });
+        } else {
+          throw error;
         }
-        throw error;
       }
       if (!run?.id) return fail(res, 503, 'Run tracking is not set up on this host');
 
@@ -425,8 +459,11 @@ export function createBrowserAccessRouter({
         } catch { /* treated as "unknown", which reads as "create one" */ }
         return res.status(202).json({
           ok: true,
-          run: { id: run.id, status: 'queued', kind: MICRO1_RUN_KIND, platform, limit },
+          run: { id: run.id, status: 'queued', kind: kindUsed, platform, limit },
           queuedForWorker: true,
+          // Says, without a support ticket, that the audit trail is temporarily using a
+          // different kind because one migration is outstanding.
+          kindFallback,
           needsWorkerToken: !hasWorker,
           note: hasWorker
             ? 'Queued for your worker — it starts as soon as your computer picks it up.'
@@ -450,7 +487,8 @@ export function createBrowserAccessRouter({
       console.error(`[browser-access] tenant=${ctx.site.slug} portal capture run=${run.id} pid=${spawned?.pid || '?'} limit=${limit}`);
       res.status(202).json({
         ok: true,
-        run: { id: run.id, status: 'queued', kind: MICRO1_RUN_KIND, platform, limit },
+        run: { id: run.id, status: 'queued', kind: kindUsed, platform, limit },
+        kindFallback,
         // The portal polls /tenant/blogger/writer-flow for this row; the tenant does not
         // need to keep the tab open, and a redeploy will not orphan their import silently
         // because the row records what happened.

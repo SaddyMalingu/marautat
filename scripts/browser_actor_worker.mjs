@@ -389,6 +389,9 @@ function canRunHere(run) {
   return canRunOnWorker(run);
 }
 
+/** Remembers the last set of runs this worker had to skip, so the warning prints once. */
+let lastSkipSignature = null;
+
 async function tick(tenantSlug) {
   const listed = await call('GET', '/api/agent/runs');
   if (!listed.ok) {
@@ -396,12 +399,17 @@ async function tick(tenantSlug) {
     return false;
   }
   const queued = (listed.data.runs || []).filter((row) => row.status === 'queued');
-  // Leave runs this worker cannot drive alone, and say so once. Claiming one would take it
-  // away from the operator's runner and then capture the wrong marketplace.
+  // Leave runs this worker cannot drive alone, and say so **once per change**. Observed live
+  // on 2026-11-03: a Turing run nobody had picked up made this print the same line every 15
+  // seconds, for hours, which buries the lines that matter in the window a tenant is watching.
   const skipped = queued.filter((row) => !canRunHere(row));
-  if (skipped.length) {
-    const names = [...new Set(skipped.map((row) => platformOf(row) || row.kind || 'unknown'))].join(', ');
-    console.error(`skipping ${skipped.length} queued run(s) for ${names}: this worker only drives micro1 — the operator runs those`);
+  const signature = skipped.map((row) => row.id).sort().join(',');
+  if (signature !== lastSkipSignature) {
+    lastSkipSignature = signature;
+    if (skipped.length) {
+      const names = [...new Set(skipped.map((row) => platformOf(row) || row.kind || 'unknown'))].join(', ');
+      console.error(`skipping ${skipped.length} queued run(s) for ${names}: this worker only drives micro1 — the operator runs those`);
+    }
   }
   const run = queued.find(canRunHere);
   if (!run) return false;
