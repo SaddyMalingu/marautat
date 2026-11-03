@@ -346,7 +346,7 @@ async function runCapture({ existingOffers = [], identity = null } = {}) {
         console.error(`listing page ${pages}: +${merged.added} cards (${collected.length} total)`);
         continue;
       }
-      if (!$advanced?.scrolled) break;
+      if (!advanced.scrolled) break;
       // Infinite scroll: give the grid time to append, then compare.
       await sleep(1_500);
       const next = await evaluateJson({ host, port, expression: MICRO1_LIST_EXPR });
@@ -633,6 +633,21 @@ async function main() {
   const coverage = agentMode ? applied.coverage : await readCoverage(supabase, tenantRow.id);
   if (coverage) {
     console.error(`descriptions: ${coverage.full}/${coverage.marketplace} marketplace offers have full text (median ${coverage.medianChars} chars), ${coverage.thin} still thin`);
+  }
+
+  // The portal no longer closes the run on `/result` (so a long capture can post in batches and
+  // an interrupted one keeps what it banked), so closing it is this script's job — once, here.
+  if (agentMode) {
+    await finishRunTracking({
+      status: deriveRunStatus({
+        done: captures.length,
+        ok: captures.length,
+        failed: 0,
+        total: captures.length
+      }),
+      message: `${applied.inserted || 0} imported of ${captures.length} captured, ${applied.withLinks || withLink.length} with a verified link`.slice(0, 300),
+      detail: { captured: captures.length, links: withLink.length, inserted: applied.inserted || 0 }
+    });
   }
 
   const report = {

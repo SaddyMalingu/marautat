@@ -863,13 +863,21 @@ ok('and the hash never appears in the description',
   !JSON.stringify(describeAgentToken({ id: 't1', token_prefix: 'wkr_ab', token_hash: 'deadbeef' })).includes('deadbeef'));
 
 /** Just enough database for the agent routes: filters, update, and a thenable chain. */
-function fakeAgentDb({ runs = [], tokens = [], site = { id: 'tenant-1', slug: 'acme' } } = {}) {
+function fakeAgentDb({ runs = [], tokens = [], offers = [], site = { id: 'tenant-1', slug: 'acme' } } = {}) {
   const table = (name) => {
     const state = { filters: [], patch: null, mode: 'select' };
     const matches = (row) => state.filters.every(([col, kind, val]) => (
       kind === 'is' ? (val === null ? row[col] == null : row[col] === val) : row[col] === val
     ));
-    const rows = () => (name === 'browser_actor_runs' ? runs : name === 'site_tenants' ? [site] : tokens);
+    const rows = () => {
+      if (name === 'browser_actor_runs') return runs;
+      if (name === 'site_tenants') return [site];
+      if (name === 'opportunities') return offers;
+      // An unknown table answers empty rather than with tokens: a stray token row would look
+      // like a matched `opportunity_sources` row and quietly attribute offers to nothing.
+      if (name === 'browser_actor_agent_tokens') return tokens;
+      return [];
+    };
     const apply = () => {
       if (state.mode === 'update') {
         const hit = rows().filter(matches);
@@ -885,6 +893,12 @@ function fakeAgentDb({ runs = [], tokens = [], site = { id: 'tenant-1', slug: 'a
       eq: (col, val) => { state.filters.push([col, 'eq', val]); return api; },
       is: (col, val) => { state.filters.push([col, 'is', val]); return api; },
       update: (patch) => { state.mode = 'update'; state.patch = patch; return api; },
+      insert: (row) => {
+        // Offers are the only rows this suite inserts through the agent routes.
+        const created = Array.isArray(row) ? row : [row];
+        created.forEach((entry) => offers.push({ id: `offer-${offers.length + 1}`, ...entry }));
+        return { select: () => ({ maybeSingle: async () => ({ data: created[0] || null, error: null }), then: (resolve) => Promise.resolve({ data: created, error: null }).then(resolve) }) };
+      },
       maybeSingle: async () => {
         const result = apply();
         const list = Array.isArray(result.data) ? result.data : [result.data];
@@ -1378,9 +1392,40 @@ function fakeOfferDb() {
     /Start <strong>your worker<\/strong> on the computer that has your MoreLogin profile/.test(dashSrc));
 }
 
-// ---------------------------------------------------------------------------
-// Turing on demand: a capture may *update* offers the tenant already has
-// ---------------------------------------------------------------------------
+{
+  // The run outlives a single post: a long capture arrives in batches, so /result reports
+  // progress and /finish closes the run. While /result closed it, an interrupted run lost every
+  // link it had already minted.
+  const created = createAgentToken({ label: 'batch' });
+  const tokenRows2 = [{ id: 'tok-b', tenant_id: 'tenant-1', token_hash: created.tokenHash, token_prefix: created.tokenPrefix, revoked_at: null }];
+  const openRun = { id: 'run-batch', tenant_id: 'tenant-1', status: 'running', kind: 'referrals', platform: 'turing', detail: { limit: 40 } };
+  const db = fakeAgentDb({
+    tokens: tokenRows2,
+    runs: [openRun],
+    site: { id: 'tenant-1', slug: 'acme' },
+    offers: [{ id: 'o1', title: 'Krita Expert', external_id: 'turing:krita-expert', referral_url: null, description: 'One line.' }]
+  });
+  const server = await withAgentServer(db);
+  try {
+    const first = await agentCall(server.base, 'POST', '/api/agent/runs/run-batch/result', {
+      token: created.token,
+      body: { captures: [{ title: 'Krita Expert', externalId: 'turing:krita-expert', referralUrl: 'https://www.turing.com/jobs/krita?ref=a', content: 'x'.repeat(900) }] }
+    });
+    eq('a batch is accepted while the run is still open', first.status, 200);
+    eq('and the run stays open, so another batch can follow', openRun.status, 'running');
+
+    const finished = await agentCall(server.base, 'POST', '/api/agent/runs/run-batch/finish', {
+      token: created.token,
+      body: { done: 1, ok: 1, failed: 0, total: 1 }
+    });
+    eq('finishing closes it', finished.status, 200);
+    eq('as succeeded when everything landed', finished.body?.run?.status, 'succeeded');
+  } finally {
+    await server.close();
+  }
+}
+
+
 //
 // Micro1 brings new roles, so its result is an insert. Turing brings a referral link and a job
 // body for roles that are already imported — inserting those would duplicate 78 offers. The
@@ -1471,6 +1516,34 @@ function fakeOfferDb() {
     /\/api\/agent\/runs\/\$\{encodeURIComponent\(runState\.runId\)\}\/result/.test(turingRunner));
   ok('while its supabase import stays lazy, so a bundle without node_modules still runs',
     /await import\('@supabase\/supabase-js'\)/.test(turingRunner));
+  // A four-minute run must not be all-or-nothing: it banks every twentieth link, and closes the
+  // run itself once at the end (the portal no longer closes it on /result).
+  ok('the Turing runner banks links in batches while it works',
+    /AGENT_BATCH = 20/.test(turingRunner) && /onBatch\(captures\)/.test(turingRunner));
+  ok('and closes the run itself, because /result no longer does',
+    /finishRunTracking\(\{[\s\S]{0,200}status: posted/.test(turingRunner));
+
+  const micro1Runner = fs.readFileSync(path.join(root, 'scripts', 'browser_actor_micro1.mjs'), 'utf8');
+  ok('the Micro1 runner closes its own run for the same reason',
+    /if \(agentMode\) \{[\s\S]{0,240}finishRunTracking\(\{/.test(micro1Runner));
+
+  // A typo took every Micro1 run down on 2026-11-03: `$advanced` where `advanced` was meant, and
+  // the run died after the listing had already been read. A `$name.` sequence outside a template
+  // placeholder is never intentional, so this is cheap to forbid across every script and module.
+  const { execFileSync } = await import('node:child_process');
+  const files = execFileSync('git', ['ls-files', '*.mjs', '*.js'], { cwd: root, encoding: 'utf8' })
+    .split('\n')
+    .filter((file) => (file.startsWith('scripts/') || file.startsWith('utils/') || file.startsWith('routes/')))
+    // Test files are excluded on purpose: this very comment names the typo it forbids.
+    .filter((file) => !/\/test_|^scripts\/test_/.test(file));
+  const dollarTypos = [];
+  for (const file of files) {
+    const text = fs.readFileSync(path.join(root, file), 'utf8');
+    if (/\$[A-Za-z_]\w*\./.test(text)) dollarTypos.push(file);
+  }
+  ok('no script or module has a $variable typo (the class of bug that killed every Micro1 run)',
+    dollarTypos.length === 0);
+  if (dollarTypos.length) console.error(`      ${dollarTypos.join(', ')}`);
 }
 
 

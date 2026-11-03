@@ -383,6 +383,18 @@ async function loadTenantContext() {
  */
 const runState = { store: null, runId: null, total: 0, done: 0, ok: 0, failed: 0, lastBeat: 0 };
 
+/**
+ * How many captured links to bank at a time in agent mode.
+ *
+ * A 120-role Turing run drives the browser for four minutes. Reporting once at the end made the
+ * whole thing all-or-nothing — the tenant's log on 2026-11-03 showed 65 links captured and
+ * nothing written, because the window was closed before the single post. Twenty is small enough
+ * that an interruption costs a minute of work, and large enough that the portal is not asked to
+ * verify links every few seconds.
+ */
+const AGENT_BATCH = 20;
+let lastBatchOk = 0;
+
 async function startRunTracking(supabase, tenantRow) {
   if (agentMode) {
     // The portal created and claimed this row; this machine only reports into it. A worker that
@@ -492,7 +504,7 @@ async function finishRunTracking({ status, message, detail } = {}) {
  *      rebuilt, and the loop continues. A 40-minute unattended job must not be
  *      all-or-nothing.
  */
-async function runCapture({ existing = [], supabase = null, identity = null } = {}) {
+async function runCapture({ existing = [], supabase = null, identity = null, onBatch = null } = {}) {
   // Identity first: a tenant who connected their own MoreLogin runs on their own profile
   // and their own key; a tenant with neither is refused rather than guessed. In agent mode the
   // portal has already resolved it and sends the envId only — the key never leaves the server.
@@ -656,6 +668,16 @@ async function runCapture({ existing = [], supabase = null, identity = null } = 
         const gotLink = Boolean(captures[captures.length - 1]?.referralUrl);
         if (gotLink) runState.ok += 1; else runState.failed += 1;
         await beatRun();
+        // Bank every twentieth link while the run is still going: the portal verifies and writes
+        // each batch, so a closed window costs a minute of browsing instead of the whole run.
+        if (onBatch && runState.ok > 0 && runState.ok % AGENT_BATCH === 0 && runState.ok !== lastBatchOk) {
+          lastBatchOk = runState.ok;
+          try {
+            await onBatch(captures);
+          } catch (error) {
+            console.error(`batch upload failed: ${error?.message || error} — continuing`);
+          }
+        }
       }
 
       if (consecutiveFailures >= 5) {
@@ -759,14 +781,11 @@ async function postAgentResult({ captures, offers }) {
   });
   if (!res.ok) {
     console.error(`the portal refused the result (${res.status}): ${res.data?.error || 'no message'}`);
-    await finishRunTracking({ status: 'failed', message: `result rejected: ${res.data?.error || res.status}` });
     return false;
   }
 
   const applied = res.data?.applied || {};
   const existing = applied.existing || {};
-  runState.done = payload.length;
-  runState.ok = payload.length;
   console.error(
     `portal applied: ${applied.inserted || 0} imported · ${existing.linksUpdated || 0} links attached · `
     + `${existing.descriptionsUpdated || 0} descriptions filled`
@@ -801,13 +820,27 @@ async function main() {
       console.error(`ignoring unreadable progress file: ${error?.message || error}`);
       prior = [];
     }
-    captures = await runCapture({ existing: prior, supabase, identity });
+    captures = await runCapture({
+      existing: prior,
+      supabase,
+      identity,
+      // Batches arrive at the portal while the run is still going; the final post below is the
+      // remainder, and `/finish` closes the run once.
+      onBatch: agentMode ? (so_far) => postAgentResult({ captures: so_far, offers }) : null
+    });
   }
 
   // Agent mode ends here: the portal verifies and writes. Everything below reads and writes the
   // database directly, which this machine must never do.
   if (agentMode) {
     const posted = await postAgentResult({ captures, offers });
+    await finishRunTracking({
+      status: posted ? (captures.length ? 'succeeded' : 'failed') : 'failed',
+      message: posted
+        ? `${captures.length} captured · ${runState.ok} with a link`
+        : 'the portal refused the capture',
+      detail: { captured: captures.length, links: runState.ok }
+    });
     process.exitCode = posted ? 0 : 1;
     return;
   }

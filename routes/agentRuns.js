@@ -98,7 +98,13 @@ export function sanitizeAgentCaptures(raw) {
     rate: clampText(item?.rate, 80),
     reason: clampText(item?.reason, 120),
     descriptionChars: Number.isFinite(Number(item?.descriptionChars)) ? Number(item.descriptionChars) : null
-  })).filter((item) => item.title && item.jobId);
+  })).filter((item) => (
+    // A capture is identified by its job id (Micro1) **or** its marketplace id (Turing:
+    // `turing:<slug>`). Requiring `jobId` silently dropped every Turing capture, and the route
+    // then answered "no usable captures" — which is exactly what the tenant saw on 2026-11-03:
+    // a run that captured 65 links and wrote nothing.
+    item.title && (item.jobId || item.externalId)
+  ));
 }
 
 export function createAgentRunsRouter({
@@ -441,28 +447,25 @@ export function createAgentRunsRouter({
       // or its body. Counting only inserts would report a perfect Turing run as a failure.
       const okCount = Math.min(total, applied.inserted + linksUpdated + descriptionsUpdated);
       const failed = Math.max(0, total - okCount);
-      const closed = await runs.finish({
+
+      /**
+       * Report progress, but do **not** close the run.
+       *
+       * A 120-role Turing run drives the browser for four minutes. While this endpoint closed
+       * the run, everything was all-or-nothing: a worker that was stopped, or a machine that
+       * slept, lost the whole capture even though sixty links had already been minted. Now the
+       * runner may post in batches — each call verifies and writes what it was given, skipping
+       * anything already written — and the run is closed by `/finish`, once, at the end.
+       */
+      const progress = await runs.progress({
         runId: run.id,
-        status: deriveRunStatus({ done: total, ok: okCount, failed, total }),
         done: total,
         ok: okCount,
         failed,
         total,
-        message: `${applied.inserted} imported, ${linksUpdated} links attached, ${descriptionsUpdated} descriptions filled of ${total} captured${applied.error ? ` (${applied.error})` : ''}`.slice(0, 300),
-        detail: {
-          captured: total,
-          links,
-          inserted: applied.inserted,
-          planned: applied.planned,
-          linksUpdated,
-          descriptionsUpdated,
-          linkConflicts: updated?.links?.conflicts?.length || 0,
-          skipped: applied.skipped?.length || 0,
-          withoutLinks: applied.withoutLinks || 0,
-          listing: req.body?.listing && typeof req.body.listing === 'object' ? req.body.listing : null
-        }
+        message: `${applied.inserted} imported, ${linksUpdated} links attached, ${descriptionsUpdated} descriptions filled of ${total} captured${applied.error ? ` (${applied.error})` : ''}`.slice(0, 300)
       }).catch((error) => {
-        console.error(`[agent] run ${run.id} could not be closed: ${error?.message || error}`);
+        console.error(`[agent] run ${run.id} could not record progress: ${error?.message || error}`);
         return null;
       });
 
@@ -489,7 +492,9 @@ export function createAgentRunsRouter({
             : null
         },
         coverage,
-        run: closed
+        // The run stays open on purpose: `/finish` closes it, so a capture can arrive in
+        // several batches and an interrupted run still keeps what it posted.
+        run: progress || run
       });
     } catch (error) {
       fail(res, 500, error.message || 'Could not apply the result');
