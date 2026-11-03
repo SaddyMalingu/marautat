@@ -31,3 +31,7 @@ tmp_*.txt
 
 # Browser Actor inspection artifacts (screenshots + DOM dumps of a logged-in account)
 tmp_inspect/
+
+# Written by the worker at startup when it records which local MoreLogin profile it uses.
+# No secret inside, but it describes one tenant's machine, so it does not belong in git.
+worker-config.json
