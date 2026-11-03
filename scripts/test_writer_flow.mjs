@@ -798,7 +798,7 @@ async function withServer(db) {
     && /data-wfact="queue" data-kind="referrals" data-refresh="1"/.test(dash));
   ok('each card says how it runs, because that is what differs',
     /Reads Micro1 through <strong>your own browser<\/strong>/.test(dash)
-    && /Turing is read by <strong>Alphadome/.test(dash));
+    && /one marketplace at a time/.test(dash));
   ok('the old shared "both queue a Turing run" row is gone', !/Both queue a Turing run/.test(dash));
 
   // A marketplace filter on Your Offers. The rule that decides "which marketplace" must be the

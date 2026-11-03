@@ -43,11 +43,12 @@ export function runPlatform(run) {
 /**
  * Platforms a tenant worker can drive today.
  *
- * Only Micro1 has an agent-mode capture (`--agent-api/--agent-token`). Turing's runner needs
- * the repo and a database key, so it stays an operator job until it gains the same mode —
- * refusing here is what stops a worker from silently capturing the wrong marketplace.
+ * Both of them, since 2026-11-03: the Turing runner gained the same agent mode Micro1 has
+ * (`--agent-api/--agent-token`, context from the portal, results posted back), so the worker is
+ * no longer limited to one marketplace. `canRunOnWorker` still decides *per platform*, which is
+ * what stops a worker claiming a run it cannot actually drive.
  */
-export const WORKER_PLATFORMS = Object.freeze(['micro1']);
+export const WORKER_PLATFORMS = Object.freeze(['micro1', 'turing']);
 
 export function canRunOnWorker(run) {
   return WORKER_PLATFORMS.includes(runPlatform(run));

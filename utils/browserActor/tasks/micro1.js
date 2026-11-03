@@ -211,6 +211,58 @@ export function parseMicro1Openings(text) {
  *
  * Pure: takes the listing rows and the tenant's existing offers.
  */
+/**
+ * Move the listing to its next page of cards (2026-11-03).
+ *
+ * The grid renders twelve cards; a run worth a MoreLogin start wants seventy. Three strategies,
+ * in order of how explicit they are, and every one reports what it did so the caller can tell
+ * "there is no next page" from "the click failed":
+ *
+ *   1. a real pager button (`Next`, `›`, `aria-label="next page"`);
+ *   2. a "load more" control, which appends instead of navigating;
+ *   3. the bottom of the document, for a grid that grows on scroll.
+ */
+export const MICRO1_ADVANCE_EXPR = `(() => {
+  const text = (el) => (el && el.textContent ? el.textContent : '').trim().toLowerCase();
+  const label = (el) => (el && el.getAttribute ? (el.getAttribute('aria-label') || '') : '').toLowerCase();
+  const isDisabled = (el) => Boolean(el && el.disabled) || (el && el.getAttribute && el.getAttribute('aria-disabled') === 'true');
+  const controls = Array.from(document.querySelectorAll('button, a, [role="button"]'));
+
+  const pager = controls.find((el) => !isDisabled(el) && (
+    /^(next|next page|›|»|→)$/.test(text(el)) || /next/.test(label(el))
+  ));
+  if (pager) { pager.click(); return { clicked: true, how: 'next' }; }
+
+  const more = controls.find((el) => !isDisabled(el) && /(load|show)\\s+more/.test(text(el)));
+  if (more) { more.click(); return { clicked: true, how: 'load_more' }; }
+
+  const before = document.querySelectorAll('div.grid > div').length;
+  window.scrollTo(0, document.body.scrollHeight);
+  return { clicked: false, scrolled: before > 0, before };
+})()`;
+
+/**
+ * Accumulate cards across pages without duplicates.
+ *
+ * A card carries no id until it is clicked — the share link is what reveals the job uuid — so the
+ * only stable key at listing time is the title. Two pages merge on the slugified title, and a card
+ * that appears on both is kept once: capturing it twice would spend two clicks on one role and
+ * attach the same link to two offers.
+ */
+export function mergeMicro1Pages(existing = [], fresh = []) {
+  const out = Array.isArray(existing) ? [...existing] : [];
+  const seen = new Set(out.map((item) => slugifyTitle(item?.title || '')).filter(Boolean));
+  let added = 0;
+  for (const item of Array.isArray(fresh) ? fresh : []) {
+    const key = slugifyTitle(item?.title || '');
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+    added += 1;
+  }
+  return { items: out, added };
+}
+
 export function planMicro1Window(items = [], {
   existingOffers = [],
   tenantSlug = '',

@@ -54,7 +54,7 @@ import { resolveRunnerIdentity } from '../utils/tenantRunnerIdentity.js';
 import { buildWorkerBundle } from '../utils/browserActor/workerBundle.js';
 import { buildZipStore, listZipEntries } from '../utils/zipStore.js';
 import { sanitizeAgentCaptures } from '../routes/agentRuns.js';
-import { applyCaptures } from '../utils/browserActor/applyCaptures.js';
+import { applyCaptures, applyCaptureUpdates } from '../utils/browserActor/applyCaptures.js';
 import { runPlatform, canRunOnWorker } from '../utils/browserActor/runs.js';
 
 let pass = 0;
@@ -777,8 +777,9 @@ const localAccess = { browserAccess: { provider: 'morelogin', envId: '2116562908
     eq('a run row is created', db.runs.length, 1);
     eq('the run starts queued so the portal can watch it', db.runs[0].status, 'queued');
     eq('the runner is started with the run id', spawned[0].runId, db.runs[0].id);
-    // A hard cap keeps a single portal-triggered run short.
-    eq('the limit is clamped rather than trusted', spawned[0].limit, 24);
+    // A hard cap keeps a single portal-triggered run short — but it has to be long enough to be
+    // worth a MoreLogin start, which is why it moved from 24 to 150.
+    eq('the limit is clamped rather than trusted', spawned[0].limit, 150);
     ok('the tenant is told a start was spent', /one morelogin profile start/i.test(res.body.note));
 
     const again = await call(server.base, 'POST', '/tenant/blogger/browser-access/capture', { platform: 'micro1' });
@@ -1378,8 +1379,101 @@ function fakeOfferDb() {
 }
 
 // ---------------------------------------------------------------------------
-// A migration has to run in the SQL editor, which means prose needs its `--`
+// Turing on demand: a capture may *update* offers the tenant already has
 // ---------------------------------------------------------------------------
+//
+// Micro1 brings new roles, so its result is an insert. Turing brings a referral link and a job
+// body for roles that are already imported — inserting those would duplicate 78 offers. The
+// server therefore has two write paths, and the update path holds the same line as everything
+// else here: a link is written only if it resolves to its own role, and only into an offer that
+// has no link yet.
+{
+  const OFFERS = [
+    { id: 'o1', title: 'Krita Expert', external_id: 'turing:krita-expert', referral_url: null, description: 'One line.' },
+    { id: 'o2', title: 'Already Linked Role', external_id: 'turing:already-linked-role', referral_url: 'https://www.turing.com/jobs/a?ref=first', description: 'One line.' },
+    { id: 'o3', title: 'Krita Expert (duplicate)', external_id: 'turing:krita-expert-duplicate', referral_url: null, description: 'One line.' }
+  ];
+  const CAPTURES = [
+    {
+      title: 'Krita Expert',
+      externalId: 'turing:krita-expert',
+      referralUrl: 'https://www.turing.com/jobs/krita?ref=abc',
+      content: 'x'.repeat(900)
+    },
+    {
+      title: 'Already Linked Role',
+      externalId: 'turing:already-linked-role',
+      referralUrl: 'https://www.turing.com/jobs/other?ref=zzz',
+      content: 'y'.repeat(900)
+    }
+  ];
+
+  const writes = [];
+  const fakeDb = {
+    from: () => ({
+      update: (patch) => ({
+        eq: (column, value) => {
+          const record = { id: value, patch };
+          const result = { data: [{ id: value }], error: null };
+          return {
+            is: () => ({ select: async () => { writes.push(record); return result; } }),
+            select: async () => { writes.push(record); return result; }
+          };
+        }
+      })
+    })
+  };
+
+  const applied = await applyCaptureUpdates({
+    supabase: fakeDb,
+    offers: OFFERS,
+    captures: CAPTURES,
+    verify: async () => ({ verdict: 'match', reason: 'title_plus_marketing_tail' })
+  });
+
+  eq('a link is attached to the offer that has none', applied.links.updated, 1);
+  eq('and the offer that already had one is untouched', writes.filter((row) => row.id === 'o2' && row.patch.referral_url).length, 0);
+  ok('the refusal says why, and names the conflict rather than hiding it',
+    [...(applied.links.skipped || []), ...(applied.links.conflicts || [])]
+      .some((row) => /already_linked|already_has_a_different_link/.test(row.reason)));
+  // Both roles brought a real body, and both summaries were one line: the body wins either way.
+  eq('the body replaces the one-line summary', applied.descriptions.updated, 2);
+  ok('and every written link was verified first',
+    applied.links.verification.every((row) => row.verdict === 'match'));
+
+  // A link that does not resolve to its own role is dropped before anything is written — the
+  // same rule the Micro1 path uses, because the consequence is identical.
+  const rejectedWrites = [];
+  const rejected = await applyCaptureUpdates({
+    supabase: {
+      from: () => ({
+        update: (patch) => ({
+          eq: () => ({
+            is: () => ({ select: async () => { rejectedWrites.push(patch); return { data: [], error: null }; } }),
+            select: async () => { rejectedWrites.push(patch); return { data: [], error: null }; }
+          })
+        })
+      })
+    },
+    offers: OFFERS,
+    captures: [CAPTURES[0]],
+    verify: async () => ({ verdict: 'mismatch', reason: 'different_role' })
+  });
+  eq('an unverified link is never written', rejected.links.updated, 0);
+  eq('and the link never reached the database', rejectedWrites.filter((patch) => patch.referral_url).length, 0);
+
+  // Agent mode is the reason any of this can happen on the tenant's machine.
+  const turingRunner = fs.readFileSync(path.join(root, 'scripts', 'browser_actor_referrals.mjs'), 'utf8');
+  ok('the Turing runner has agent mode', /--agent-api/.test(turingRunner) && /agent_context_refused/.test(turingRunner));
+  ok('it fetches identity and known offers from the portal, not from a local guess',
+    /\/api\/agent\/runs\/\$\{encodeURIComponent\(String\(runIdFlag\)\)\}\/context/.test(turingRunner));
+  ok('and it posts the result instead of writing to the database',
+    /\/api\/agent\/runs\/\$\{encodeURIComponent\(runState\.runId\)\}\/result/.test(turingRunner));
+  ok('while its supabase import stays lazy, so a bundle without node_modules still runs',
+    /await import\('@supabase\/supabase-js'\)/.test(turingRunner));
+}
+
+
 //
 // Shipped 2026-11-02 and failed on apply: forty lines of explanation had been appended to the
 // pairing migration without comment markers, so the editor stopped at
@@ -1483,10 +1577,16 @@ function fakeOfferDb() {
   eq('an explicit platform wins over the kind', runPlatform({ kind: 'referrals', platform: 'turing' }), 'turing');
   eq('a collect run has no platform', runPlatform({ kind: 'collect' }), '');
   ok('the worker may drive a micro1 run', canRunOnWorker({ kind: 'referrals', detail: { platform: 'micro1' } }));
-  ok('and must not claim a Turing run', !canRunOnWorker({ kind: 'referrals' }));
-  ok('nor one it cannot identify', !canRunOnWorker({ kind: 'collect' }));
+  // Since 2026-11-03 the Turing runner has agent mode too, so one worker drives both markets —
+  // one at a time, because each run is its own row and claims are exclusive.
+  ok('and a Turing run as well', canRunOnWorker({ kind: 'referrals' }));
+  ok('but not one it cannot identify', !canRunOnWorker({ kind: 'collect' }));
 
   const workerSrc = fs.readFileSync(path.join(root, 'scripts', 'browser_actor_worker.mjs'), 'utf8');
+  ok('and it picks the script by platform, never by a default',
+    /platform === 'turing'[\s\S]{0,80}browser_actor_referrals\.mjs/.test(workerSrc));
+  ok('the bundle carries the Turing runner it dispatches to',
+    buildWorkerBundle({ apiBase: 'https://portal.example' }).entries.some((entry) => entry.name === 'scripts/browser_actor_referrals.mjs'));
   ok('the worker filters the queue before claiming', /queued\.find\(canRunHere\)/.test(workerSrc));
   ok('and says which runs it is leaving alone', /drives Micro1 only/.test(workerSrc));
   ok('and that saying it once is enough', /lastSkipSignature/.test(workerSrc) && /lastIdleSignature/.test(workerSrc));
@@ -1501,9 +1601,9 @@ function fakeOfferDb() {
   ok('and a marketplace with a live run cannot be queued twice from the panel',
     /const busy = Boolean\(state && state\.active\)/.test(dashSrc)
     && /already running for this marketplace/.test(dashSrc));
-  ok('and a tenant can tell the two jobs apart by where they run',
-    /Turing is read by <strong>Alphadome/.test(dashSrc)
-    && /your worker has to be running/.test(dashSrc));
+  ok('and a tenant can tell the two jobs apart by what a run costs',
+    /your worker has to be running/.test(dashSrc)
+    && /one marketplace at a time/.test(dashSrc));
   ok('an unconnected tenant is told why the Micro1 button is missing',
     /appears here\s+once you connect one/.test(dashSrc));
 }

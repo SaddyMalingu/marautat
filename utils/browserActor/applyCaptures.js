@@ -19,6 +19,8 @@
  *     title), which is what protects a link the tenant pasted by hand
  */
 import { verifyReferralLink } from './referralVerify.js';
+import { planReferralBackfill } from './tasks/turingReferrals.js';
+import { planDescriptionUpdates } from './enrichment.js';
 import { planOfferImport } from './offersImport.js';
 import { describeEnrichment } from './enrichment.js';
 
@@ -117,6 +119,84 @@ export async function applyCaptures({
     result.created = data || [];
   }
   return { ...result, rows };
+}
+
+/**
+ * Attach what a worker read to offers that **already exist** (2026-11-03).
+ *
+ * `applyCaptures` creates draft offers, which is what a Micro1 capture needs: the roles it
+ * reads are new to the tenant. A Turing capture is the opposite case — the 78 offers are
+ * already imported, and the capture brings the two things they are missing: the per-role
+ * referral link and the full job body. Feeding those through the create path would insert
+ * duplicates; the honest operation is an update, guarded by the same rule as everywhere else:
+ * a link is written only if it provably resolves to the role it is attached to, and only into
+ * an offer that has no link yet.
+ *
+ * Pure planners do the deciding (`planReferralBackfill`, `planDescriptionUpdates`); this only
+ * performs what they planned.
+ *
+ * @returns {{links: object, descriptions: object}}
+ */
+export async function applyCaptureUpdates({ supabase, offers = [], captures = [], verify = verifyReferralLink, apply = true } = {}) {
+  const rows = Array.isArray(offers) ? offers : [];
+  const linkPlan = planReferralBackfill({ offers: rows, captures });
+  const verification = [];
+  const accepted = [];
+  for (const update of linkPlan.updates) {
+    const check = await verify({ url: update.referral_url, expectedTitle: update.title });
+    verification.push({
+      title: update.title,
+      referral_url: update.referral_url,
+      verdict: check.verdict,
+      reason: check.reason,
+      resolvedTitle: check.resolvedTitle || null
+    });
+    if (check.verdict === 'match') accepted.push(update);
+    else linkPlan.skipped.push({ title: update.title, reason: `unverified_${check.verdict}` });
+  }
+
+  const links = {
+    planned: accepted.length,
+    updated: 0,
+    skipped: linkPlan.skipped,
+    conflicts: linkPlan.conflicts,
+    verification
+  };
+
+  if (apply) {
+    for (const update of accepted) {
+      if (!update.id) { links.skipped.push({ title: update.title, reason: 'no_id' }); continue; }
+      const { data, error } = await supabase
+        .from('opportunities')
+        .update({ referral_url: update.referral_url, updated_at: new Date().toISOString() })
+        .eq('id', update.id)
+        // `.is('referral_url', null)` is the compare-and-set: a link someone attached while
+        // this run was driving the browser must not be overwritten by a slower capture.
+        .is('referral_url', null)
+        .select('id, title');
+      if (error) { links.skipped.push({ title: update.title, reason: error.message }); continue; }
+      links.updated += Array.isArray(data) ? data.length : 0;
+    }
+  }
+
+  // Descriptions are a second, independent win: a capture that failed to mint a link may still
+  // have read the body, and a body that is already long enough is skipped rather than rewritten.
+  const descriptionPlan = planDescriptionUpdates({ captures, offers: rows });
+  const descriptions = { planned: descriptionPlan.updates.length, updated: 0, skipped: descriptionPlan.skipped };
+  if (apply) {
+    for (const update of descriptionPlan.updates) {
+      if (!update.id) { descriptions.skipped.push({ title: update.title, reason: 'no_id' }); continue; }
+      const { data, error } = await supabase
+        .from('opportunities')
+        .update({ description: update.description, updated_at: new Date().toISOString() })
+        .eq('id', update.id)
+        .select('id, title');
+      if (error) { descriptions.skipped.push({ title: update.title, reason: error.message }); continue; }
+      descriptions.updated += Array.isArray(data) ? data.length : 0;
+    }
+  }
+
+  return { links, descriptions };
 }
 
 /** Coverage as the database holds it now — not as the loop hoped. */

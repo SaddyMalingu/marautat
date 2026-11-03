@@ -61,7 +61,9 @@ import {
   micro1OpenReferralExpr,
   normalizeMicro1Item,
   pickMicro1ReferralUrl,
-  planMicro1Window
+  planMicro1Window,
+  mergeMicro1Pages,
+  MICRO1_ADVANCE_EXPR
 } from '../utils/browserActor/tasks/micro1.js';
 import { classifyProviderFailure } from '../utils/browserActor/errors.js';
 
@@ -73,7 +75,11 @@ function flag(name, fallback = null) {
 }
 
 const tenant = flag('tenant');
-const limit = Number(flag('limit', 12)) || 0;
+// Twelve was a page of cards, not a decision: the grid shows twelve and the runner stopped
+// there, so a tenant who owns a MoreLogin start spent it on 12 roles. A page has to be worth
+// the start, so the default now spans several pages and the listing is paged to fill it.
+const limit = Number(flag('limit', 70)) || 0;
+const MAX_LIST_PAGES = 12;
 const skip = Number(flag('skip', 0)) || 0;
 const pace = Number(flag('pace', 900)) || 900;
 const apply = flag('apply', null) !== null;
@@ -316,9 +322,45 @@ async function runCapture({ existingOffers = [], identity = null } = {}) {
 
     const page = await evaluateJson({ host, port, expression: MICRO1_LIST_EXPR });
     const items = (page?.items || []).map(normalizeMicro1Item).filter(Boolean);
+
+    // One page of this grid is twelve cards, and a run is worth a MoreLogin start only if it
+    // brings back several pages' worth. So: read, advance, read again — until the limit is met or
+    // the listing stops growing. Whatever the listing actually offered is reported, because "12
+    // captured" and "70 captured" are different outcomes and the tenant should see which.
+    const wanted = skip + limit;
+    let collected = mergeMicro1Pages([], items).items;
+    let pages = 1;
+    for (let attempt = 0; attempt < MAX_LIST_PAGES && collected.length < wanted; attempt += 1) {
+      const advanced = await evaluateJson({ host, port, expression: MICRO1_ADVANCE_EXPR }).catch(() => null);
+      if (!advanced) break;
+      if (advanced.clicked) {
+        await sleep(1_200);
+        const next = await evaluateJson({ host, port, expression: MICRO1_LIST_EXPR });
+        const merged = mergeMicro1Pages(collected, (next?.items || []).map(normalizeMicro1Item).filter(Boolean));
+        if (!merged.added) {
+          console.error(`page ${pages + 1} added nothing new (${advanced.how}) — listing exhausted`);
+          break;
+        }
+        collected = merged.items;
+        pages += 1;
+        console.error(`listing page ${pages}: +${merged.added} cards (${collected.length} total)`);
+        continue;
+      }
+      if (!$advanced?.scrolled) break;
+      // Infinite scroll: give the grid time to append, then compare.
+      await sleep(1_500);
+      const next = await evaluateJson({ host, port, expression: MICRO1_LIST_EXPR });
+      const merged = mergeMicro1Pages(collected, (next?.items || []).map(normalizeMicro1Item).filter(Boolean));
+      if (!merged.added) break;
+      collected = merged.items;
+      pages += 1;
+      console.error(`listing scroll ${pages}: +${merged.added} cards (${collected.length} total)`);
+    }
+    console.error(`listing: ${collected.length} unique card(s) across ${pages} page(s)`);
+
     // Which cards are worth clicking. With a daily start allowance, re-capturing roles
     // the tenant already owns is the most expensive way to learn nothing.
-    const plan = planMicro1Window(items, {
+    const plan = planMicro1Window(collected, {
       existingOffers,
       tenantSlug: tenant,
       skip,

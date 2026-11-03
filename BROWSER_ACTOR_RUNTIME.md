@@ -1059,4 +1059,34 @@ belongs to a marketplace the worker would disagree with. Legacy rows with no
 
 The Micro1 card is disabled with an amber explanation when no browser is connected yet, so it
 cannot be a click that quietly does nothing — the same rule as everywhere else in this
+
+### Turing on the tenant worker, and a run worth starting (2026-11-03)
+
+Two limits, hit in the same week.
+
+**1. Turing could not run on the tenant's machine.** The runner needed a checkout of this repo and
+a database key, so a Turing run waited for an operator while the tenant watched a queue. It now
+has the same agent mode Micro1 has: `--agent-api/--agent-token`, context from
+`/api/agent/runs/:id/context` (the profile id and the offers the tenant already owns — never the
+MoreLogin key), progress posted to `/progress`, and the result posted to `/result`.
+`WORKER_PLATFORMS` is now `micro1` + `turing`, and the worker chooses the script **by the run's
+platform** — a Turing run executed by the Micro1 script would capture the wrong marketplace and
+still look like it worked.
+
+One thing had to be built for it. `applyCaptures` **inserts** offers, which is the Micro1 shape:
+its roles are new to the tenant. A Turing capture **updates** 78 roles that are already imported —
+inserting them would duplicate the catalogue. So `applyCaptureUpdates` was added. It plans with the
+same pure helpers the operator runner uses (`planReferralBackfill`, `planDescriptionUpdates`),
+verifies every link, and writes with `.is('referral_url', null)` so a slow capture cannot clobber a
+link someone attached in the meantime.
+
+**2. A run captured twelve roles.** The Micro1 grid renders twelve cards, and the runner read one
+page then stopped — so a scarce MoreLogin start bought twelve offers, which is exactly what the
+tenant reported ("micro1 run picked up 17 opportunities, I believe we can improve that"). It now
+pages: `MICRO1_ADVANCE_EXPR` tries an explicit next control, then a load-more control, then the
+document bottom, and reports which one it used; `mergeMicro1Pages` accumulates without duplicates,
+keyed on the title because a card carries no id until its share link is opened. The default limit
+is 70 and the cap is 150. When the listing offers fewer, the run says how many pages it read
+rather than implying that twelve was the request.
+
 subsystem: name the cause before spending the tenant's attention.

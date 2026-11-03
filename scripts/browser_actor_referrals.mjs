@@ -21,16 +21,18 @@
  *   - the write is guarded by `.is('referral_url', null)` too, so even a race with
  *     the tenant pasting a link by hand cannot clobber it
  */
-import 'dotenv/config';
+// The tenant bundle has no node_modules, so neither of these may be a hard import: in agent mode
+// this file runs on a customer's laptop with nothing installed but Node itself.
+try { await import('dotenv/config'); } catch { /* not installed: the env already has what it needs */ }
 import fs from 'node:fs';
 import path from 'node:path';
-import { createClient } from '@supabase/supabase-js';
 import { createMoreloginClient, redact } from '../utils/browserActor/moreloginClient.js';
 import { createBrowserRuntime } from '../utils/browserActor/runtime.js';
 import { capturePage, resolveDebugTarget, CdpSession } from '../utils/browserActor/cdp.js';
 import { verifyReferralLink } from '../utils/browserActor/referralVerify.js';
 import { contentExprFor, describeEnrichment, planDescriptionUpdates } from '../utils/browserActor/enrichment.js';
 import { maskEnvId } from '../utils/browserActor/identity.js';
+import { slugifyTitle } from '../utils/browserActor/referrals.js';
 import { resolveRunnerIdentity } from '../utils/tenantRunnerIdentity.js';
 import { createRunStore, deriveRunStatus } from '../utils/browserActor/runs.js';
 import { TURING_PLATFORM, TURING_LIST_COUNT_EXPR, TURING_LOAD_MORE_EXPR } from '../utils/browserActor/tasks/turing.js';
@@ -75,8 +77,22 @@ const refresh = flag('refresh', null) !== null;
 const runIdFlag = flag('run-id');
 const claimQueued = flag('claim', null) !== null;
 
-if (!tenant) {
+// Agent mode (2026-11-03): the same contract the Micro1 runner already uses. The worker runs on
+// the tenant's computer with a `wkr_` token and nothing else: it fetches the run's context from
+// the portal (profile id, known offers), drives the browser through `ml-cli`, then posts what it
+// saw. No database credentials on that machine, and the privileged write stays server-side where
+// every link is re-verified before it is attached.
+const agentApi = String(flag('agent-api', process.env.ALPHADOME_API || '')).replace(/\/+$/, '');
+const agentToken = String(flag('agent-token', process.env.TENANT_WORKER_TOKEN || ''));
+const agentMode = Boolean(agentApi && agentToken);
+
+if (!tenant && !agentMode) {
   console.error('usage: --tenant <slug> [--limit 5] [--skip 0] [--out tmp/referrals.json] [--apply] [--from file]');
+  console.error('   or: --agent-api <portal> --agent-token wkr_… --run-id <uuid>   (tenant worker; no database needed)');
+  process.exit(1);
+}
+if (agentMode && !runIdFlag) {
+  console.error('agent mode needs --run-id: the portal decides which run this worker is executing');
   process.exit(1);
 }
 if (platform !== 'turing') {
@@ -89,6 +105,20 @@ if (!fromFile && limit <= 0) {
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** One call to the portal in agent mode. Same shape as the Micro1 runner's. */
+async function agentCall(method, pathname, body) {
+  const res = await fetch(`${agentApi}${pathname}`, {
+    method,
+    headers: {
+      authorization: `Bearer ${agentToken}`,
+      ...(body ? { 'content-type': 'application/json' } : {})
+    },
+    body: body ? JSON.stringify(body) : undefined
+  });
+  const data = await res.json().catch(() => ({}));
+  return { status: res.status, ok: res.ok, data };
+}
 
 // One CDP session for the whole run.
 //
@@ -278,19 +308,51 @@ function isListingPage(url) {
   }
 }
 
-function loadSupabase() {
+async function loadSupabase() {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || process.env.SB_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.SB_SERVICE_ROLE_KEY;
   if (!url || !key) {
     console.error('Missing Supabase credentials (SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY).');
     process.exit(1);
   }
+  // Imported here, not at the top: the tenant worker runs this file with no node_modules.
+  const { createClient } = await import('@supabase/supabase-js');
   return createClient(url, key);
 }
 
 /** The tenant, and every offer it owns — the only rows this script may touch. */
 async function loadTenantContext() {
-  const supabase = loadSupabase();
+  if (agentMode) {
+    const res = await agentCall('GET', `/api/agent/runs/${encodeURIComponent(String(runIdFlag))}/context`);
+    if (!res.ok || !res.data?.ok) {
+      const error = new Error(`the portal refused this run (${res.status}): ${res.data?.error || 'no message'}`);
+      error.code = 'agent_context_refused';
+      throw error;
+    }
+    const ctx = res.data;
+    // Known offers come from the portal, never from a local guess: "what does this tenant
+    // already have" is the server's answer to give, and it is what stops the worker spending a
+    // MoreLogin start on roles that are already imported.
+    const offers = (ctx.known || []).map((row) => ({
+      id: row.id || null,
+      title: row.title || null,
+      slug: row.slug || null,
+      external_id: row.external_id || null,
+      referral_url: null,
+      description: null,
+      status: null
+    }));
+    console.error(`agent mode: tenant=${ctx.tenant?.slug || tenant} known=${offers.length} profile=${maskEnvId(ctx.identity?.envId || '')}`);
+    return {
+      supabase: null,
+      tenantRow: { id: null, slug: ctx.tenant?.slug || tenant, name: ctx.tenant?.name || null },
+      offers,
+      identity: ctx.identity || null,
+      limit: Number(ctx.run?.limit) || limit
+    };
+  }
+
+  const supabase = await loadSupabase();
   const { data: tenantRow, error } = await supabase
     .from('site_tenants').select('id, slug, name').eq('slug', tenant).maybeSingle();
   if (error) throw error;
@@ -322,6 +384,13 @@ async function loadTenantContext() {
 const runState = { store: null, runId: null, total: 0, done: 0, ok: 0, failed: 0, lastBeat: 0 };
 
 async function startRunTracking(supabase, tenantRow) {
+  if (agentMode) {
+    // The portal created and claimed this row; this machine only reports into it. A worker that
+    // opened its own run would be a second source of truth for the same job.
+    runState.runId = String(runIdFlag);
+    runState.total = limit;
+    return;
+  }
   if (!runIdFlag && !claimQueued) return;
   try {
     runState.store = createRunStore({ table: () => supabase.from('browser_actor_runs') });
@@ -342,6 +411,23 @@ async function startRunTracking(supabase, tenantRow) {
 }
 
 async function beatRun({ force = false } = {}) {
+  // Agent mode has no run store: the heartbeat is an HTTP call, because the portal owns the row.
+  if (agentMode && runState.runId) {
+    const nowMs = Date.now();
+    if (!force && nowMs - runState.lastBeat < 2000) return;
+    runState.lastBeat = nowMs;
+    try {
+      await agentCall('POST', `/api/agent/runs/${encodeURIComponent(runState.runId)}/progress`, {
+        done: runState.done,
+        ok: runState.ok,
+        failed: runState.failed,
+        total: runState.total || undefined
+      });
+    } catch (error) {
+      console.error(`run heartbeat failed: ${error?.message || error}`);
+    }
+    return;
+  }
   if (!runState.store || !runState.runId) return;
   const nowMs = Date.now();
   if (!force && nowMs - runState.lastBeat < 2000) return;
@@ -360,6 +446,22 @@ async function beatRun({ force = false } = {}) {
 }
 
 async function finishRunTracking({ status, message, detail } = {}) {
+  if (agentMode && runState.runId) {
+    try {
+      await agentCall('POST', `/api/agent/runs/${encodeURIComponent(runState.runId)}/finish`, {
+        status: status || deriveRunStatus({ done: runState.done, ok: runState.ok, failed: runState.failed, total: runState.total }),
+        done: runState.done,
+        ok: runState.ok,
+        failed: runState.failed,
+        total: runState.total || undefined,
+        message,
+        detail
+      });
+    } catch (error) {
+      console.error(`run could not be closed: ${error?.message || error}`);
+    }
+    return;
+  }
   if (!runState.store || !runState.runId) return;
   try {
     await runState.store.finish({
@@ -390,10 +492,11 @@ async function finishRunTracking({ status, message, detail } = {}) {
  *      rebuilt, and the loop continues. A 40-minute unattended job must not be
  *      all-or-nothing.
  */
-async function runCapture({ existing = [], supabase = null } = {}) {
+async function runCapture({ existing = [], supabase = null, identity = null } = {}) {
   // Identity first: a tenant who connected their own MoreLogin runs on their own profile
-  // and their own key; a tenant with neither is refused rather than guessed.
-  const runnerIdentity = await resolveRunnerIdentity({ supabase, tenantSlug: tenant });
+  // and their own key; a tenant with neither is refused rather than guessed. In agent mode the
+  // portal has already resolved it and sends the envId only — the key never leaves the server.
+  const runnerIdentity = identity || await resolveRunnerIdentity({ supabase, tenantSlug: tenant });
   console.error(`identity: source=${runnerIdentity.source} runtime=${runnerIdentity.runtime}`);
   const runtime = createBrowserRuntime({
     client: createMoreloginClient(runnerIdentity.apiKey ? { apiKey: runnerIdentity.apiKey } : {})
@@ -628,8 +731,55 @@ async function applyDescriptions({ supabase, updates }) {
   return { updated, failed };
 }
 
+/**
+ * Post what was captured and let the portal write it (agent mode).
+ *
+ * The worker sends what it *saw*: a title, the referral link it minted, and the job body. It
+ * does not decide whether the link lands on its own role, whether the offer already has a link,
+ * or whether the row exists — the server re-verifies every link and performs the only writes,
+ * because that machine holds a token that can describe work, not a key that can author it.
+ */
+async function postAgentResult({ captures, offers }) {
+  const externalByTitle = new Map();
+  for (const offer of offers) {
+    const key = slugifyTitle(offer.title || '');
+    if (key && offer.external_id && !externalByTitle.has(key)) externalByTitle.set(key, offer.external_id);
+  }
+  const payload = captures.map((capture) => ({
+    ...capture,
+    // The server matches a capture to an offer by external id first, title second. Sending the
+    // id the portal already knows removes the guesswork — and the description path needs it.
+    externalId: capture.externalId || externalByTitle.get(slugifyTitle(capture.title || '')) || null
+  }));
+
+  console.error(`posting ${payload.length} capture(s) to the portal`);
+  const res = await agentCall('POST', `/api/agent/runs/${encodeURIComponent(runState.runId)}/result`, {
+    captures: payload,
+    listing: { limit, cards: payload.length }
+  });
+  if (!res.ok) {
+    console.error(`the portal refused the result (${res.status}): ${res.data?.error || 'no message'}`);
+    await finishRunTracking({ status: 'failed', message: `result rejected: ${res.data?.error || res.status}` });
+    return false;
+  }
+
+  const applied = res.data?.applied || {};
+  const existing = applied.existing || {};
+  runState.done = payload.length;
+  runState.ok = payload.length;
+  console.error(
+    `portal applied: ${applied.inserted || 0} imported · ${existing.linksUpdated || 0} links attached · `
+    + `${existing.descriptionsUpdated || 0} descriptions filled`
+  );
+  if (Array.isArray(existing.linkSkipped) && existing.linkSkipped.length) {
+    const reasons = [...new Set(existing.linkSkipped.map((row) => row.reason))].join(', ');
+    console.error(`${existing.linkSkipped.length} link(s) not attached (${reasons})`);
+  }
+  return true;
+}
+
 async function main() {
-  const { supabase, tenantRow, offers } = await loadTenantContext();
+  const { supabase, tenantRow, offers, identity = null } = await loadTenantContext();
   console.error(`tenant=${tenantRow.slug} offers=${offers.length}`);
   await startRunTracking(supabase, tenantRow);
 
@@ -651,7 +801,15 @@ async function main() {
       console.error(`ignoring unreadable progress file: ${error?.message || error}`);
       prior = [];
     }
-    captures = await runCapture({ existing: prior, supabase });
+    captures = await runCapture({ existing: prior, supabase, identity });
+  }
+
+  // Agent mode ends here: the portal verifies and writes. Everything below reads and writes the
+  // database directly, which this machine must never do.
+  if (agentMode) {
+    const posted = await postAgentResult({ captures, offers });
+    process.exitCode = posted ? 0 : 1;
+    return;
   }
 
   const plan = planReferralBackfill({ offers, captures, host: TURING_REFERRAL_HOST });

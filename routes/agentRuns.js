@@ -23,7 +23,7 @@
 import { Router } from 'express';
 import { createRunStore, deriveRunStatus, RUN_STATUSES } from '../utils/browserActor/runs.js';
 import { bearerTokenFromHeader, createAgentTokenStore } from '../utils/browserActor/agentTokens.js';
-import { applyCaptures, readCoverage } from '../utils/browserActor/applyCaptures.js';
+import { applyCaptures, applyCaptureUpdates, readCoverage } from '../utils/browserActor/applyCaptures.js';
 import { isValidEnvId } from '../utils/browserActor/identity.js';
 import { publicWorkerBrowser, readAccess, writeWorkerBrowser } from '../utils/tenantAccess.js';
 import { resolveRunnerIdentity } from '../utils/tenantRunnerIdentity.js';
@@ -418,24 +418,45 @@ export function createAgentRunsRouter({
         captures,
         apply: true
       });
+      // The other half of a capture: offers that already exist. Micro1 brings new roles, so
+      // `applyCaptures` inserts them; Turing brings a link and a body for 78 roles the tenant
+      // already has, and inserting those would duplicate them. Both paths verify every link
+      // server-side before writing — the worker is the machine that cannot be trusted to judge
+      // whether a link lands on its own role.
+      const updated = await applyCaptureUpdates({
+        supabase,
+        offers: Array.isArray(offers) ? offers : [],
+        captures
+      }).catch((error) => {
+        console.error(`[agent] run ${run.id} could not apply offer updates: ${error?.message || error}`);
+        return null;
+      });
       const coverage = await readCoverage(supabase, tenantRow.id);
 
       const total = captures.length;
       const links = captures.filter((capture) => capture.referralUrl).length;
-      const failed = Math.max(0, total - applied.inserted);
+      const linksUpdated = updated?.links?.updated || 0;
+      const descriptionsUpdated = updated?.descriptions?.updated || 0;
+      // "ok" covers both shapes of work: an offer created, or an existing one given its link
+      // or its body. Counting only inserts would report a perfect Turing run as a failure.
+      const okCount = Math.min(total, applied.inserted + linksUpdated + descriptionsUpdated);
+      const failed = Math.max(0, total - okCount);
       const closed = await runs.finish({
         runId: run.id,
-        status: deriveRunStatus({ done: total, ok: applied.inserted, failed, total }),
+        status: deriveRunStatus({ done: total, ok: okCount, failed, total }),
         done: total,
-        ok: applied.inserted,
+        ok: okCount,
         failed,
         total,
-        message: `${applied.inserted} imported of ${total} captured, ${applied.withLinks} with a verified link${applied.error ? ` (${applied.error})` : ''}`.slice(0, 300),
+        message: `${applied.inserted} imported, ${linksUpdated} links attached, ${descriptionsUpdated} descriptions filled of ${total} captured${applied.error ? ` (${applied.error})` : ''}`.slice(0, 300),
         detail: {
           captured: total,
           links,
           inserted: applied.inserted,
           planned: applied.planned,
+          linksUpdated,
+          descriptionsUpdated,
+          linkConflicts: updated?.links?.conflicts?.length || 0,
           skipped: applied.skipped?.length || 0,
           withoutLinks: applied.withoutLinks || 0,
           listing: req.body?.listing && typeof req.body.listing === 'object' ? req.body.listing : null
@@ -454,7 +475,18 @@ export function createAgentRunsRouter({
           withLinks: applied.withLinks,
           withoutLinks: applied.withoutLinks,
           verification: applied.verification,
-          error: applied.error
+          error: applied.error,
+          // What happened to offers that already existed (the Turing shape).
+          existing: updated
+            ? {
+                linksUpdated,
+                linksPlanned: updated.links?.planned || 0,
+                linkSkipped: updated.links?.skipped || [],
+                linkConflicts: updated.links?.conflicts || [],
+                descriptionsUpdated,
+                descriptionsSkipped: updated.descriptions?.skipped || []
+              }
+            : null
         },
         coverage,
         run: closed

@@ -24,9 +24,16 @@ import { canQueue, createRunStore, RUN_TABLE } from '../utils/browserActor/runs.
 /** Platforms the server can capture on its own today. One, and honestly so. */
 export const SERVER_SIDE_PLATFORMS = Object.freeze(['micro1']);
 
-/** Bounds: twelve cards is one page of Micro1, and a hard cap keeps a run short. */
-export const CAPTURE_DEFAULT_LIMIT = 12;
-export const CAPTURE_MAX_LIMIT = 24;
+/**
+ * Bounds for a capture.
+ *
+ * Twelve was one page of the Micro1 grid, and the cap of 24 was written believing a run could
+ * only read one page. The runner now pages the listing (`MICRO1_ADVANCE_EXPR`), and a MoreLogin
+ * start is scarce enough that a run has to be worth it: seventy roles is a page of work, three to
+ * five minutes, and still short enough to finish while someone is watching.
+ */
+export const CAPTURE_DEFAULT_LIMIT = 70;
+export const CAPTURE_MAX_LIMIT = 150;
 
 /**
  * Spawn the existing, tested runner as a child process.

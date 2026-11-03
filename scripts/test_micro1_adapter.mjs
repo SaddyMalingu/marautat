@@ -33,6 +33,8 @@ import {
   toMicro1OfferDraft,
   micro1OpenReferralExpr,
   MICRO1_LIST_EXPR,
+  MICRO1_ADVANCE_EXPR,
+  mergeMicro1Pages,
   MICRO1_DETAIL_CONTENT_EXPR
 } from '../utils/browserActor/tasks/micro1.js';
 import { classifyProviderFailure, isQuotaExhaustedMessage } from '../utils/browserActor/errors.js';
@@ -265,6 +267,44 @@ eq('a tenant-scoped slug match counts as imported',
     tenantSlug: 'malingu-ventures',
     onlyMissing: true
   }).window.length, 0);
+
+// ---------------------------------------------------------------------------
+// A run has to be worth a MoreLogin start: paginate the listing, not one page of it
+// ---------------------------------------------------------------------------
+//
+// The grid renders twelve cards. A run that stops there spends a scarce profile start on twelve
+// roles, which is what happened live on 3 Nov ("micro1 run picked up 17 opportunities"). So the
+// runner advances through pages and accumulates, and the accumulation has to be exact: two cards
+// that are the same role must not become two clicks and one link attached twice.
+{
+  const page1 = [
+    { title: 'Krita Expert' },
+    { title: 'Engineer – SysML v2' },
+    { title: '' }
+  ];
+  const page2 = [
+    { title: 'Krita Expert' },            // same role, next page: must not duplicate
+    { title: 'Engineer - SysML v2' },      // same role, different dash: slug collides on purpose
+    { title: 'LTspice Specialist' }
+  ];
+  const merged = mergeMicro1Pages(page1, page2);
+  eq('a second page adds only what is new', merged.added, 1);
+  eq('and the accumulator keeps both pages', merged.items.length, 4);
+  eq('a card with no title is not counted as data',
+    mergeMicro1Pages([], [{ title: '' }, { title: '   ' }]).items.length, 0);
+
+  ok('the pager tries an explicit next-page control first',
+    /next\|next page/.test(MICRO1_ADVANCE_EXPR) && /how: 'next'/.test(MICRO1_ADVANCE_EXPR));
+  ok('then a load-more control, which appends instead of navigating',
+    /load\|show/.test(MICRO1_ADVANCE_EXPR) && /how: 'load_more'/.test(MICRO1_ADVANCE_EXPR));
+  ok('and reports that it scrolled rather than pretending to have clicked',
+    /scrolled:/.test(MICRO1_ADVANCE_EXPR) && /clicked: false/.test(MICRO1_ADVANCE_EXPR));
+
+  const runner = fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..', 'scripts', 'browser_actor_micro1.mjs'), 'utf8');
+  ok('the runner pages until the limit is met or the listing stops growing',
+    /MAX_LIST_PAGES/.test(runner) && /mergeMicro1Pages\(/.test(runner));
+  ok('and its default limit is a run worth starting, not one page', /flag\('limit', 70\)/.test(runner));
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

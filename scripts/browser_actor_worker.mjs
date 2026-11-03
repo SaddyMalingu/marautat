@@ -329,11 +329,17 @@ async function reportProfile(profile) {
  * captures back, so the machine doing the browsing holds no credential that could write to
  * another tenant's data.
  */
-function runCapture({ tenantSlug, runId, limit }) {
+function runCapture({ tenantSlug, runId, limit, platform = 'micro1' }) {
+  // One worker, two marketplaces: the script is chosen by the run's platform, never by a default
+  // — a Turing run executed by the Micro1 script would capture the wrong marketplace and look
+  // like it worked. `canRunOnWorker` has already refused anything this build cannot drive.
+  const script = platform === 'turing'
+    ? path.join('scripts', 'browser_actor_referrals.mjs')
+    : path.join('scripts', 'browser_actor_micro1.mjs');
   const args = [
-    path.join('scripts', 'browser_actor_micro1.mjs'),
+    script,
     '--tenant', tenantSlug,
-    '--limit', String(limit || 12),
+    '--limit', String(limit || 70),
     '--apply',
     '--only-missing',
     '--run-id', String(runId),
@@ -434,8 +440,9 @@ async function tick(tenantSlug) {
   }
 
   const limit = Number(claimed.data?.run?.detail?.limit) || 12;
-  console.error(`claimed ${run.id} (limit ${limit}) — capturing`);
-  const code = await runCapture({ tenantSlug, runId: run.id, limit });
+  const platform = platformOf(claimed.data?.run) || platformOf(run) || 'micro1';
+  console.error(`claimed ${run.id} (${platform}, limit ${limit}) — capturing`);
+  const code = await runCapture({ tenantSlug, runId: run.id, limit, platform });
   if (code !== 0) {
     await closeAbandonedRun(run.id, code);
   } else {

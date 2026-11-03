@@ -38,7 +38,8 @@ export const REQUIRED_ENTRIES = Object.freeze([
   'utils/browserActor/moreloginClient.js',
   'utils/browserActor/runtime.js',
   'utils/browserActor/cdp.js',
-  'utils/browserActor/applyCaptures.js'
+  'utils/browserActor/applyCaptures.js',
+  'scripts/browser_actor_referrals.mjs'
 ]);
 
 /** Every module under a directory, sorted so two builds are identical. */
@@ -93,6 +94,9 @@ export function buildWorkerBundle({ apiBase, pairCode = null, repoRoot = REPO_RO
 
   entries.push({ name: 'scripts/browser_actor_worker.mjs', data: read(path.join('scripts', 'browser_actor_worker.mjs')) });
   entries.push({ name: 'scripts/browser_actor_micro1.mjs', data: read(path.join('scripts', 'browser_actor_micro1.mjs')) });
+  // Turing runs on the same worker since 2026-11-03 (agent mode), so the bundle carries the
+  // runner the worker dispatches to — a zip without it would queue Turing and fail on claim.
+  entries.push({ name: 'scripts/browser_actor_referrals.mjs', data: read(path.join('scripts', 'browser_actor_referrals.mjs')) });
   for (const file of listModuleFiles(path.join(repoRoot, 'utils', 'browserActor'))) {
     entries.push({ name: path.relative(repoRoot, file).split(path.sep).join('/'), data: fs.readFileSync(file) });
   }

@@ -1508,7 +1508,7 @@ function wfPlatformCardHtml(d, spec) {
 
   const howItRuns = browserDriven
     ? 'Reads Micro1 through <strong>your own browser</strong> — your worker has to be running, and each capture uses one MoreLogin start.'
-    : 'Turing is read by <strong>Alphadome\'s runner</strong>, on our side: queue it and it starts when we pick it up, even with your computer off.';
+    : 'Reads Turing through <strong>your own browser</strong> too: same worker, same profile, one marketplace at a time so neither account is ever driven twice at once.';
 
   return `
     <div class="col-12 col-lg-6">
@@ -1560,10 +1560,11 @@ function wfActiveRunHtml(d) {
  */
 function wfQueuedHint(run) {
   const platform = String(run.platform || (String(run.kind) === 'micro1' ? 'micro1' : 'turing')).toLowerCase();
-  if (platform === 'micro1') {
-    return 'Queued for your worker — it claims this within about 15 seconds while its window is open. Leave the worker running.';
-  }
-  return "Queued for Alphadome's Turing runner — Turing is read on our side, so this starts when we pick it up. Nothing to do on your computer, and it clears itself after 30 minutes if nobody does.";
+  // Both marketplaces now run on the tenant's worker, one at a time. The hint says which
+  // condition is actually outstanding, because "waiting for a runner" was ambiguous for months.
+  return platform === 'micro1'
+    ? 'Queued for your worker — it claims this within about 15 seconds while its window is open. Leave the worker running.'
+    : 'Queued for your worker — it starts as soon as the previous capture finishes, so the two never drive the same profile at once. It clears itself after 30 minutes if the worker stays closed.';
 }
 
 function wfActionsHtml(d) {
@@ -2070,7 +2071,7 @@ async function wfCaptureNow(btn) {
   if (btn) { btn.disabled = true; btn.textContent = 'Starting…'; }
   try {
     const r = await apiJson('/tenant/blogger/browser-access/capture', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ platform: 'micro1', limit: 12 })
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ platform: 'micro1', limit: 70 })
     });
     if (!r.ok) { toast(r.data?.error || 'Could not start the capture', 'err'); return; }
     if (r.data?.queuedForWorker) {
