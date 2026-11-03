@@ -27,6 +27,7 @@ import {
   ACCESS_KEY_ENV,
   accessSecrets,
   clearAccess,
+  clearWorkerBrowser,
   fingerprintSecret,
   openSecretFromEnv,
   publicAccessStatus,
@@ -41,6 +42,7 @@ import { parseProfileMap } from '../utils/browserActor/identity.js';
 import { redact } from '../utils/browserActor/moreloginClient.js';
 import { canQueue, createRunStore, isActiveStatus, isStalled } from '../utils/browserActor/runs.js';
 import { createAgentTokenStore, describeAgentToken } from '../utils/browserActor/agentTokens.js';
+import { PAIRING_TABLE } from '../utils/browserActor/pairing.js';
 import {
   CAPTURE_DEFAULT_LIMIT,
   CAPTURE_MAX_LIMIT,
@@ -102,7 +104,10 @@ export function createBrowserAccessRouter({
         tenantSlug: ctx.site.slug,
         metadata: ctx.site.metadata,
         envMap: parseProfileMapSafe(env.BROWSER_ACTOR_PROFILES),
-        defaultEnvId: env.BROWSER_ACTOR_DEFAULT_ENV_ID || ''
+        defaultEnvId: env.BROWSER_ACTOR_DEFAULT_ENV_ID || '',
+        // A profile reported by the tenant's own worker counts here too, otherwise this panel
+        // would say "no browser is set up" on a machine that is about to run a capture.
+        workerRuns: true
       });
       // Workers ride along with the status so the panel needs one request, not two. A
       // missing token table is not an error here: it means the migration is pending, and the
@@ -293,13 +298,16 @@ export function createBrowserAccessRouter({
     try {
       const ctx = await tenantSiteFromSession(req);
       if (!ctx) return fail(res, 404, 'Tenant not found');
-      const metadata = clearAccess(ctx.site.metadata);
+      // Both halves go: a stale profile id left behind after Disconnect would keep resolving
+      // runs to a browser the tenant believes they removed. The worker re-reports it on its
+      // next start, so nothing is lost when it should not be.
+      const metadata = clearWorkerBrowser(clearAccess(ctx.site.metadata));
       await saveMetadata(ctx.site, metadata);
       console.error(`[browser-access] tenant=${ctx.site.slug} disconnected`);
       res.json({
         ok: true,
         ...publicAccessStatus(metadata, { secretConfigured: canStore() }),
-        note: 'The stored key was deleted. Your MoreLogin account and profile are untouched.'
+        note: 'The stored key was deleted, and the profile your worker reported is forgotten too. Your MoreLogin account and profile are untouched.'
       });
     } catch (error) {
       fail(res, error.status || 500, redact(error.message || 'Could not disconnect'));
@@ -516,9 +524,26 @@ export function createBrowserAccessRouter({
       const ctx = await tenantSiteFromSession(req);
       if (!ctx) return fail(res, 404, 'Tenant not found');
       const { buildWorkerBundle } = await import('../utils/browserActor/workerBundle.js');
+      const { createPairingStore } = await import('../utils/browserActor/pairing.js');
       const base = `${req.protocol}://${req.get('host')}`;
-      const { zip, entries } = buildWorkerBundle({ apiBase: base });
-      console.error(`[browser-access] tenant=${ctx.site.slug} downloaded the worker (${entries.length} files, ${Math.round(zip.length / 1024)}kb)`);
+
+      // The code inside the download is what saves the tenant from copying a credential
+      // between two apps. If the pairing table is missing (migration not applied), fall back
+      // to a download without a code rather than failing the whole setup — the worker still
+      // accepts a pasted token.
+      let pairCode = null;
+      try {
+        const issued = await createPairingStore({ table: () => supabase.from(PAIRING_TABLE), now }).issue({
+          tenantId: ctx.site.id,
+          label: 'download'
+        });
+        pairCode = issued.code;
+      } catch (error) {
+        console.error(`[browser-access] no pairing code for ${ctx.site.slug}: ${error?.message || error}`);
+      }
+
+      const { zip, entries } = buildWorkerBundle({ apiBase: base, pairCode });
+      console.error(`[browser-access] tenant=${ctx.site.slug} downloaded the worker (${entries.length} files, ${Math.round(zip.length / 1024)}kb${pairCode ? ', paired' : ', no pairing table'})`);
       res.setHeader('Content-Type', 'application/zip');
       res.setHeader('Content-Disposition', 'attachment; filename="alphadome-worker.zip"');
       res.setHeader('Content-Length', String(zip.length));

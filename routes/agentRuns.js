@@ -24,10 +24,40 @@ import { Router } from 'express';
 import { createRunStore, deriveRunStatus, RUN_STATUSES } from '../utils/browserActor/runs.js';
 import { bearerTokenFromHeader, createAgentTokenStore } from '../utils/browserActor/agentTokens.js';
 import { applyCaptures, readCoverage } from '../utils/browserActor/applyCaptures.js';
+import { isValidEnvId } from '../utils/browserActor/identity.js';
+import { publicWorkerBrowser, readAccess, writeWorkerBrowser } from '../utils/tenantAccess.js';
 import { resolveRunnerIdentity } from '../utils/tenantRunnerIdentity.js';
+import { createPairingStore, extractPairingCode, pairingState, PAIRING_TABLE } from '../utils/browserActor/pairing.js';
 
 const MAX_CAPTURES_PER_RESULT = 50;
 const MAX_TEXT = 20_000;
+
+/**
+ * A pairing attempt budget per address.
+ *
+ * The codes are long random strings, so guessing is not realistic — but an endpoint that mints
+ * credentials should still have a ceiling, and a download passed around an office should stop
+ * after one use rather than after a thousand tries. In memory on purpose: a restart clearing
+ * a 10-minute budget is not a security problem.
+ */
+const PAIR_ATTEMPT_LIMIT = 10;
+const PAIR_ATTEMPT_WINDOW_MS = 10 * 60_000;
+const pairAttempts = new Map();
+
+export function allowPairAttempt(ip, nowMs = Date.now()) {
+  const key = String(ip || 'unknown');
+  const entry = pairAttempts.get(key);
+  if (!entry || entry.resetAt <= nowMs) {
+    pairAttempts.set(key, { count: 1, resetAt: nowMs + PAIR_ATTEMPT_WINDOW_MS });
+    return true;
+  }
+  entry.count += 1;
+  return entry.count <= PAIR_ATTEMPT_LIMIT;
+}
+
+export function resetPairAttempts() {
+  pairAttempts.clear();
+}
 
 function clampText(value, max = 500) {
   if (value == null) return null;
@@ -75,11 +105,13 @@ export function createAgentRunsRouter({
   supabase,
   tokenTable = 'browser_actor_agent_tokens',
   runTable = 'browser_actor_runs',
+  pairingTable = PAIRING_TABLE,
   now = () => Date.now()
 } = {}) {
   const router = Router();
   const tokens = createAgentTokenStore({ table: () => supabase.from(tokenTable), now });
   const runs = createRunStore({ table: () => supabase.from(runTable), now });
+  const pairings = createPairingStore({ table: () => supabase.from(pairingTable), now });
 
   const fail = (res, status, error, extra = {}) => res.status(status).json({ ok: false, error, ...extra });
 
@@ -113,6 +145,63 @@ export function createAgentRunsRouter({
     const auth = await authenticate(req, res);
     if (!auth) return;
     res.json({ ok: true, tenant: auth.tenantSlug, serverTime: new Date(now()).toISOString() });
+  });
+
+  /**
+   * "The browser on this computer is P-4." — the worker reporting what it found (2026-11-03).
+   *
+   * Why this endpoint exists at all: the first version of BYO access asked the tenant to
+   * paste a MoreLogin API key so the server could learn an envId. But when the worker already
+   * runs next to MoreLogin, `ml-cli env list` answers that question on that machine, with no
+   * key and no choice to make — so the tenant should never see an envId, and this is the
+   * call that removes both steps. The worker keeps no secret it did not already have: the
+   * token it authenticates with is the same one it uses for runs.
+   *
+   * What is stored is deliberately not `browserAccess`: nothing was sealed and no key
+   * arrived, so it must not look like a connection the tenant made with a credential. It is
+   * only ever used to resolve a run **on that machine** (`workerRuns`), never server-side.
+   */
+  router.post('/api/agent/browser', async (req, res) => {
+    const auth = await authenticate(req, res);
+    if (!auth) return;
+    try {
+      const envId = String(req.body?.envId ?? '').trim();
+      if (!isValidEnvId(envId)) {
+        return fail(res, 400, 'That does not look like a MoreLogin profile id — expected digits only', {
+          hint: 'The worker reads it from your own MoreLogin window, so this usually means the wrong value was passed with --env-id.'
+        });
+      }
+
+      const { data: site, error } = await supabase
+        .from('site_tenants').select('id, slug, metadata').eq('id', auth.tenantId).maybeSingle();
+      if (error) throw error;
+      if (!site) return fail(res, 404, 'Tenant not found');
+
+      const metadata = writeWorkerBrowser(site.metadata, {
+        envId,
+        label: clampText(req.body?.label, 120),
+        machine: clampText(req.body?.machine, 120),
+        reportedAt: new Date(now()).toISOString()
+      });
+      const { error: writeError } = await supabase
+        .from('site_tenants').update({ metadata }).eq('id', auth.tenantId);
+      if (writeError) throw writeError;
+
+      const keyed = readAccess(metadata);
+      console.error(`[agent] worker browser reported tenant=${auth.tenantSlug} profile=${envId}${req.body?.label ? ` label=${clampText(req.body.label, 60)}` : ''}`);
+      res.json({
+        ok: true,
+        workerBrowser: publicWorkerBrowser(metadata),
+        // Which profile a run will actually use, said out loud: a tenant who connected a key
+        // would otherwise wonder why their new report changed nothing.
+        uses: keyed?.keySealed ? 'tenant' : 'worker',
+        note: keyed?.keySealed
+          ? 'Saved, but the MoreLogin key you connected in the site portal takes priority — press Disconnect there if this computer should be used instead.'
+          : 'Saved. Captures from this computer use this profile; nothing else to set up.'
+      });
+    } catch (error) {
+      fail(res, 500, error.message || 'Could not record the browser');
+    }
   });
 
   router.get('/api/agent/runs', async (req, res) => {
@@ -235,7 +324,10 @@ export function createAgentRunsRouter({
 
       let identity;
       try {
-        identity = await resolveRunnerIdentity({ supabase, tenantSlug: auth.tenantSlug });
+        // `workerRuns: true` is what lets a machine that already reported its own profile
+        // (`POST /api/agent/browser`) start a run without the tenant mapping anything: the
+        // envId came from MoreLogin on that computer, so only that computer can use it.
+        identity = await resolveRunnerIdentity({ supabase, tenantSlug: auth.tenantSlug, workerRuns: true });
       } catch (error) {
         // The resolver knows what to do about it; the worker does not, and neither does the
         // tenant reading a 409 that says "no browser is mapped". Carry the fix through.
@@ -369,6 +461,62 @@ export function createAgentRunsRouter({
       });
     } catch (error) {
       fail(res, 500, error.message || 'Could not apply the result');
+    }
+  });
+
+  /**
+   * Trade a setup code for a worker token — the one endpoint a fresh install calls.
+   *
+   * Unauthenticated by necessity: the code *is* the credential, and it was shipped inside the
+   * download the tenant just opened. Three things make that safe rather than hopeful:
+   * the code is single-use (claimed atomically), it expires in 30 minutes, and only a hash of
+   * it is stored. Attempts are rate-limited per IP so a stolen download is not a guessing game.
+   */
+  router.post('/api/agent/pair', async (req, res) => {
+    const ip = String(req.ip || req.socket?.remoteAddress || 'unknown');
+    if (!allowPairAttempt(ip, now())) {
+      return fail(res, 429, 'Too many setup attempts from this connection. Wait a few minutes, then download the worker again.');
+    }
+
+    const code = extractPairingCode(req.body?.code);
+    if (!code) {
+      return fail(res, 400, 'That does not look like a setup code — they start with pair_ and come inside the worker download.');
+    }
+
+    try {
+      const row = await pairings.find(code);
+      const state = pairingState(row, now());
+      if (!state.ok) {
+        console.error(`[agent] pairing refused (${state.reason}) from ${ip}`);
+        return fail(res, state.reason === 'not_found' ? 404 : 409, state.message);
+      }
+
+      const issued = await tokens.issue({ tenantId: row.tenant_id, label: 'paired worker' });
+      // Claim *after* the token exists so the row can point at it; if the claim loses the race,
+      // the token we just made is revoked instead of becoming an orphan credential.
+      const claimed = await pairings.claim(code, { tokenId: issued.row?.id || null });
+      if (!claimed) {
+        if (issued.row?.id) await tokens.revoke({ tenantId: row.tenant_id, id: issued.row.id }).catch(() => {});
+        return fail(res, 409, 'That setup code was used a moment ago. Download the worker again for a fresh one.');
+      }
+
+      const { data: site } = await supabase
+        .from('site_tenants').select('id, slug, name').eq('id', row.tenant_id).maybeSingle();
+      if (!site) {
+        await tokens.revoke({ tenantId: row.tenant_id, id: issued.row.id }).catch(() => {});
+        return fail(res, 404, 'That setup code belongs to a tenant that no longer exists.');
+      }
+
+      console.error(`[agent] pairing accepted from ${ip} → tenant=${site.slug} token=${issued.row?.token_prefix || ''}`);
+      res.status(201).json({
+        ok: true,
+        token: issued.token,
+        api: `${req.protocol}://${req.get('host')}`,
+        tenant: site.slug,
+        note: 'Saved. This code has now been used and will not work again.'
+      });
+    } catch (error) {
+      fail(res, 500, error.message || 'Could not complete setup');
     }
   });
 

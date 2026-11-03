@@ -980,3 +980,48 @@ Result: 83 attributed (78 Turing, 5 Micro1), **13 left alone** because they are 
 offers with no evidence. A guess there would have attributed somebody's own product to
 Micro1.
 
+
+### Zero-config browser on the tenant's machine (2026-11-03)
+
+The first BYO design asked the tenant to paste a MoreLogin **API key** so the server could
+learn an envId. Production answered: `claim 200 → context 409 "No browser is mapped to tenant
+malingu-ventures" → finish 200`. The tenant had a working worker on the machine that holds the
+profile; the server simply had no idea which browser it was, because the only path to telling
+it was a key the tenant had to go and find.
+
+Two questions were being asked in the wrong place:
+
+| The question | Where it was asked | Where it belongs |
+|---|---|---|
+| Which MoreLogin account? | the server, with a pasted key | nowhere — the worker is already signed in locally |
+| Which profile? | the portal, as an id to pick | the machine: `ml-cli env list` needs no key |
+
+So the worker now answers both, once, at startup:
+
+```
+browser: "P-4" 21********80 (only one profile) — the portal will use it
+```
+
+`POST /api/agent/browser` `{ envId, label, machine }` (worker token, not a session) stores
+`site_tenants.metadata.workerBrowser`. Three deliberate properties:
+
+- **No credential is involved.** Nothing is sealed, nothing is opened, and the worker holds
+  the same `wkr_` token it already had. It is stored apart from `browserAccess` precisely so
+  it can never be mistaken for a connection the tenant made with a key.
+- **It only resolves runs on that machine.** `resolveRunnerIdentity({ workerRuns: true })` —
+  which only the worker's `/context` call passes — consults it **last**, after `tenant`,
+  `hosted` and `default`. Server-side verify and portal capture deliberately ignore it: a
+  desktop profile is not reachable from Render, and pretending otherwise is how you get a run
+  that claims to be capturing and is not. Adding a fallback in the empty case also means no
+  existing tenant's resolution changed, so no pilot had to be re-tested.
+- **It is masked to the tenant** (`publicWorkerBrowser`), like every other id in this
+  subsystem, and `Disconnect` clears it along with the key.
+
+One trade-off, stated rather than hidden: if an operator has mapped a **different** profile
+for that tenant in `BROWSER_ACTOR_PROFILES`, hosted wins and the run will fail on that
+machine. It is logged (`[runner-identity] … hosted wins`) because the operator is the only
+person who can fix it, and the tenant cannot see either id in full.
+
+Several profiles and no obvious match? The worker prints them and stops, and the choice is
+kept in `worker-config.json` — a data file with no secret in it — so it is asked once.
+

@@ -22,15 +22,22 @@
  */
 import { BrowserActorError } from './browserActor/errors.js';
 import { parseProfileMap } from './browserActor/identity.js';
-import { openSecretFromEnv, readAccess, secretsConfigured, ACCESS_KEY_ENV, ACCESS_KEY_PREVIOUS_ENV } from './tenantAccess.js';
+import {
+  openSecretFromEnv,
+  readAccess,
+  readWorkerBrowser,
+  secretsConfigured,
+  ACCESS_KEY_ENV,
+  ACCESS_KEY_PREVIOUS_ENV
+} from './tenantAccess.js';
 
-export const RUNNER_IDENTITY_SOURCES = Object.freeze(['tenant', 'hosted', 'default']);
+export const RUNNER_IDENTITY_SOURCES = Object.freeze(['tenant', 'hosted', 'default', 'worker']);
 
 /**
- * @param {{supabase: object, tenantSlug: string, env?: object}} input
+ * @param {{supabase: object, tenantSlug: string, env?: object, workerRuns?: boolean}} input
  * @returns {Promise<{envId: string, runtime: 'local'|'cloud', apiKey: string|null, label: string|null, source: string}>}
  */
-export async function resolveRunnerIdentity({ supabase, tenantSlug, env = process.env } = {}) {
+export async function resolveRunnerIdentity({ supabase, tenantSlug, env = process.env, workerRuns = false } = {}) {
   const slug = String(tenantSlug || '').trim().toLowerCase();
   if (!slug) throw new BrowserActorError('invalid_request', 'tenant is required');
 
@@ -95,10 +102,32 @@ export async function resolveRunnerIdentity({ supabase, tenantSlug, env = proces
     return { envId: fallback, runtime: 'local', apiKey: null, label: 'default', source: 'default' };
   }
 
+  /**
+   * Last resort, and only for a run on the tenant's **own machine** (2026-11-03).
+   *
+   * `workerBrowser` is what the tenant's worker saw when it asked MoreLogin on its own
+   * computer which profiles exist. It resolves nothing on the server — a desktop profile is
+   * not reachable from here — so `workerRuns: false` (verify, portal capture) deliberately
+   * ignores it and still refuses, which is the honest answer for those callers.
+   *
+   * It is consulted last so that adding it cannot change how an already-onboarded tenant
+   * resolves. A disagreement is logged rather than silently overridden.
+   */
+  const reported = workerRuns ? readWorkerBrowser(metadata) : null;
+  if (reported) {
+    const hosted = parseProfileMap(env.BROWSER_ACTOR_PROFILES || '')[slug];
+    if (hosted?.envId && String(hosted.envId) !== reported.envId) {
+      console.error(`[runner-identity] tenant=${slug} worker reported profile ${reported.envId} but BROWSER_ACTOR_PROFILES maps ${hosted.envId}; hosted wins`);
+    }
+    return { envId: reported.envId, runtime: 'local', apiKey: null, label: reported.label, source: 'worker' };
+  }
+
   throw new BrowserActorError('profile_unmapped', `No browser is mapped to tenant "${slug}"`, {
     details: {
       tenant: slug,
-      fix: 'Connect a MoreLogin profile from the tenant portal, or add the tenant to BROWSER_ACTOR_PROFILES'
+      // Three ways out, cheapest first. The middle one is the one a tenant can do alone,
+      // without a key and without an operator: start the worker, it reports the profile.
+      fix: 'Start the worker on the computer that has your MoreLogin profile (it reports the profile automatically), or connect your MoreLogin key in the portal under "Your own browser", or ask Alphadome to add the tenant to BROWSER_ACTOR_PROFILES'
     }
   });
 }

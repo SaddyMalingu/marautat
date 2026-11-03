@@ -23,6 +23,11 @@
  *   --token <token>    worker token from the portal (default: $TENANT_WORKER_TOKEN)
  *   --token-file <p>   read the token from a file instead of the command line, so it does not
  *                      appear in a process list or a shell history
+ *   --pair-file <p>    redeem a setup code from the download instead of pasting a token; the
+ *                      code is exchanged once for a real token, then deleted
+ *   --install          after pairing, register the worker to start at sign-in and run hidden
+ *                      (Windows). Nothing to keep open afterwards.
+ *   --quiet            log to worker.log instead of the console (used by the auto-start entry)
  *   --config <p>       json file holding { "api": "https://…" } — no secrets in it
  *   --tenant <slug>    only required when the repo's env has no BROWSER_ACTOR_DEFAULT_ENV_ID
  *   --once             claim at most one run, then exit (for a scheduled task)
@@ -32,11 +37,16 @@
 // hard import: a missing dotenv just means the environment already has what it needs.
 try { await import('dotenv/config'); } catch { /* not installed */ }
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
 import { spawn } from 'node:child_process';
 import { extractAgentToken } from '../utils/browserActor/agentTokens.js';
 import { runPlatform, canRunOnWorker } from '../utils/browserActor/runs.js';
+import { extractPairingCode } from '../utils/browserActor/pairing.js';
+import { maskEnvId } from '../utils/browserActor/identity.js';
+import { createMoreloginClient } from '../utils/browserActor/moreloginClient.js';
+import { createBrowserRuntime } from '../utils/browserActor/runtime.js';
 
 const argv = process.argv.slice(2);
 function flag(name, fallback = null) {
@@ -111,9 +121,61 @@ async function askForToken() {
   return token;
 }
 
+/**
+ * Redeem the setup code that came inside the download (2026-11-02).
+ *
+ * This is the convenience: no credential to copy between two applications. The code is
+ * single-use and expires in 30 minutes, and the token it buys is saved locally so the next
+ * start needs nothing at all. The file is deleted afterwards so the folder does not keep a
+ * spent key lying around.
+ */
+async function redeemPairingCode() {
+  const file = flag('pair-file');
+  if (typeof file !== 'string') return '';
+  const resolved = path.resolve(file);
+  let raw = '';
+  try {
+    raw = fs.readFileSync(resolved, 'utf8');
+  } catch {
+    return '';
+  }
+  const code = extractPairingCode(raw);
+  if (!code) return '';
+  if (!api) {
+    console.error('The setup code needs the portal address — worker-config.json looks empty.');
+    return '';
+  }
+
+  console.error('setting up with the code in this download…');
+  const res = await fetch(`${api}/api/agent/pair`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ code })
+  }).catch((error) => ({ ok: false, status: 0, json: async () => ({ error: error.message }) }));
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data?.token) {
+    console.error(`setup failed (${res.status || 'no response'}): ${data?.error || 'no message'}`);
+    console.error('Download the worker again from the portal to get a fresh code.');
+    return '';
+  }
+
+  // Keep the token, drop the spent code: the code is worthless now, the token is the thing
+  // this machine will use from here on.
+  try {
+    fs.writeFileSync(path.resolve('worker-token.txt'), `${data.token}\n`);
+    fs.rmSync(resolved, { force: true });
+  } catch (error) {
+    console.error(`could not save worker-token.txt (${error.message}) — the token is only in memory`);
+  }
+  console.error(`paired with ${data.tenant || 'your tenant'}. This machine is now set up.`);
+  return data.token;
+}
+
 const config = readConfig();
 const api = String(flag('api', process.env.ALPHADOME_API || config.api || '')).replace(/\/+$/, '');
+const quiet = flag('quiet', null) !== null;
 let token = readToken();
+if (!token) token = await redeemPairingCode();
 if (!token) token = await askForToken();
 const once = flag('once', null) !== null;
 const intervalMs = Number(flag('interval', 15_000)) || 15_000;
@@ -149,6 +211,110 @@ async function health() {
   }
   console.error(`worker online for tenant=${res.data.tenant} → ${api}`);
   return res.data.tenant;
+}
+
+/**
+ * Remember what we learned, so the tenant decides once and never again.
+ *
+ * `worker-config.json` comes from the download and holds the portal URL. Adding the profile
+ * id keeps the file free of anything secret while removing a MoreLogin call on every start.
+ */
+function rememberConfig(patch) {
+  const file = path.resolve('worker-config.json');
+  try {
+    let current = {};
+    try { current = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { /* first write */ }
+    fs.writeFileSync(file, `${JSON.stringify({ ...current, ...patch }, null, 2)}\n`);
+  } catch (error) {
+    console.error(`note: could not save worker-config.json (${error.message}) — pass --env-id next time`);
+  }
+}
+
+/**
+ * Which browser is on this computer? (2026-11-03)
+ *
+ * This is the step that made setup feel like homework: paste a MoreLogin API key, then choose
+ * a profile id from a list. Both questions are answerable by the machine the worker is
+ * already running on — `ml-cli env list` needs no key — so it answers them itself and the
+ * tenant never sees an id.
+ *
+ * Order, cheapest first:
+ *   1. `--env-id` / `ML_ENV_ID` — someone who knows what they want should not wait for a probe.
+ *   2. what a previous start remembered in `worker-config.json`;
+ *   3. MoreLogin's own list: one profile needs no decision, several matching the tenant name
+ *      is still unambiguous, and anything else is printed for the tenant to pick once.
+ */
+async function discoverProfile(tenantSlug) {
+  const explicit = flag('env-id', process.env.ML_ENV_ID || config.envId || null);
+  if (explicit && explicit !== true) {
+    return { envId: String(explicit).trim(), envName: null, why: 'configured' };
+  }
+
+  let items = [];
+  try {
+    const runtime = createBrowserRuntime({ client: createMoreloginClient({}) });
+    const listed = await runtime.listProfiles({ pageNo: 1, pageSize: 50 });
+    items = (listed.items || []).filter((item) => item.envId);
+  } catch (error) {
+    // No MoreLogin, or ml-cli is not installed. Say the real reason once: it is more useful
+    // than the 409 this would otherwise turn into after a claim.
+    console.error(`could not read the MoreLogin profiles on this computer: ${error?.message || error}`);
+    if (error?.details?.install) console.error(`  install it from ${error.details.install}, or pass --env-id <profileId>`);
+    return null;
+  }
+
+  if (!items.length) {
+    console.error('MoreLogin is running but has no browser profiles on this computer — create one and sign into Micro1 inside it.');
+    return null;
+  }
+  if (items.length === 1) {
+    return { envId: String(items[0].envId), envName: items[0].envName, why: 'only one profile' };
+  }
+
+  // Several profiles: prefer one that names the tenant, because that is how a recruiter with
+  // two clients will have labelled it.
+  const tokens = String(tenantSlug || '').toLowerCase().split(/[^a-z0-9]+/).filter((part) => part.length > 2);
+  const named = items.filter((item) => {
+    const haystack = `${item.envName || ''} ${item.groupName || ''}`.toLowerCase();
+    return tokens.some((token) => haystack.includes(token));
+  });
+  if (named.length === 1) {
+    return { envId: String(named[0].envId), envName: named[0].envName, why: 'named after the tenant' };
+  }
+
+  console.error(`MoreLogin has ${items.length} profiles on this computer, so I cannot tell which is yours:`);
+  for (const item of items) {
+    console.error(`  · ${item.envName || '(no name)'} — ${maskEnvId(item.envId)}${item.running ? ' (running)' : ''}`);
+  }
+  console.error('Run once with the one you use: node scripts/browser_actor_worker.mjs --env-id <profileId>');
+  console.error('It is remembered in worker-config.json afterwards, so this is a one-time choice.');
+  return null;
+}
+
+/**
+ * Tell the portal which browser this computer uses.
+ *
+ * Without this the server has no idea, a capture queues, and the run dies on a 409 that the
+ * tenant cannot see. One call at startup replaces the whole "connect your profile" ritual
+ * for a tenant whose browser lives on their own desk: no key to find, no id to type.
+ */
+async function reportProfile(profile) {
+  const res = await call('POST', '/api/agent/browser', {
+    envId: profile.envId,
+    label: profile.envName || null,
+    machine: os.hostname()
+  });
+  if (!res.ok) {
+    // Older portal, or the route is missing: the worker must still run, because hosted and
+    // keyed profiles resolve server-side without this call.
+    console.error(`could not report this computer's browser (${res.status}): ${res.data?.error || 'no message'}`);
+    if (res.status === 404) console.error('  the portal is probably older than this worker — download the worker again from the portal');
+    return false;
+  }
+  const label = profile.envName ? `"${profile.envName}" ` : '';
+  console.error(`browser: ${label}${maskEnvId(profile.envId)} (${profile.why}) — the portal will use it`);
+  if (res.data?.uses && res.data.uses !== 'worker') console.error(`note: ${res.data.note}`);
+  return true;
 }
 
 /**
@@ -260,6 +426,17 @@ async function tick(tenantSlug) {
 
 const tenantSlug = await health();
 if (!tenantSlug) process.exit(2);
+
+// Which browser is on this computer? The portal cannot answer that — the machine can, and it
+// already has MoreLogin open. Reporting it here is what removes the last setup step, and it
+// is why a tenant with a local profile no longer needs to find an API key at all.
+const localProfile = await discoverProfile(tenantSlug);
+if (localProfile) {
+  await reportProfile(localProfile);
+  rememberConfig({ envId: localProfile.envId, envLabel: localProfile.envName || null });
+} else {
+  console.error('continuing — captures still work if the portal already has a profile mapped for you');
+}
 
 console.error(once ? 'checking for one run…' : `polling every ${Math.round(intervalMs / 1000)}s`);
 for (;;) {

@@ -47,6 +47,22 @@ export const ACCESS_KEY_PREVIOUS_ENV = 'TENANT_SECRET_KEY_PREVIOUS';
 /** Field inside site_tenants.metadata. */
 export const ACCESS_FIELD = 'browserAccess';
 
+/**
+ * A browser the tenant's own worker found on their own computer (2026-11-03).
+ *
+ * This exists because the first design asked a recruiter to do two things they should not
+ * have to do: find a MoreLogin API key, and know which profile id to pick. When the worker
+ * is already running next to MoreLogin, the machine can answer both questions itself —
+ * `ml-cli env list` needs no key — so the worker tells us the envId and the tenant never
+ * sees one.
+ *
+ * It is stored separately from `browserAccess` on purpose: there is **no key** here and
+ * nothing was sealed, so it must never be mistaken for a connection the tenant made with a
+ * credential. It is also only ever used for runs on *that* machine (see
+ * `resolveRunnerIdentity({ workerRuns: true })`) — the server cannot reach a desktop profile.
+ */
+export const WORKER_BROWSER_FIELD = 'workerBrowser';
+
 const SEAL_VERSION = 'v1';
 const PROVIDER = 'morelogin';
 
@@ -171,6 +187,58 @@ export function clearAccess(metadata) {
 }
 
 /**
+ * The profile a tenant's worker reported from its own machine — or null.
+ *
+ * Validated like any other envId: a worker is authenticated but still untrusted input, and a
+ * malformed id here would be discovered at `env start`, after the run had been claimed.
+ */
+export function readWorkerBrowser(metadata) {
+  const raw = metadata && typeof metadata === 'object' ? metadata[WORKER_BROWSER_FIELD] : null;
+  if (!raw || typeof raw !== 'object') return null;
+  const envId = String(raw.envId || '').trim();
+  if (!isValidEnvId(envId)) return null;
+  return {
+    envId,
+    // A label is what the tenant recognises in their own MoreLogin window ("P-4"), so it is
+    // kept — it is not a credential and the tenant typed it themselves.
+    label: raw.label ? String(raw.label).slice(0, 120) : null,
+    machine: raw.machine ? String(raw.machine).slice(0, 120) : null,
+    reportedAt: raw.reportedAt || null
+  };
+}
+
+export function writeWorkerBrowser(metadata, { envId, label = null, machine = null, reportedAt = null } = {}) {
+  const value = String(envId || '').trim();
+  if (!isValidEnvId(value)) throw new Error('writeWorkerBrowser needs a decimal MoreLogin envId');
+  const base = metadata && typeof metadata === 'object' ? { ...metadata } : {};
+  base[WORKER_BROWSER_FIELD] = {
+    envId: value,
+    label: label ? String(label).slice(0, 120) : null,
+    machine: machine ? String(machine).slice(0, 120) : null,
+    reportedAt: reportedAt || new Date().toISOString()
+  };
+  return base;
+}
+
+export function clearWorkerBrowser(metadata) {
+  const base = metadata && typeof metadata === 'object' ? { ...metadata } : {};
+  delete base[WORKER_BROWSER_FIELD];
+  return base;
+}
+
+/** What the portal may show about a worker-detected profile. Masked, like everything else. */
+export function publicWorkerBrowser(metadata) {
+  const found = readWorkerBrowser(metadata);
+  if (!found) return null;
+  return {
+    envIdMasked: maskEnvId(found.envId),
+    label: found.label,
+    machine: found.machine,
+    reportedAt: found.reportedAt
+  };
+}
+
+/**
  * What the tenant is allowed to see.
  *
  * Deliberately excludes `keySealed` and `keyFingerprint`: a fingerprint is harmless in a
@@ -179,6 +247,9 @@ export function clearAccess(metadata) {
  */
 export function publicAccessStatus(metadata, { secretConfigured: canStore = true } = {}) {
   const access = readAccess(metadata);
+  // Either way the panel needs this, and either way it is masked: it answers "which browser
+  // will a run on your computer use" without handing back an id the vendor API accepts.
+  const workerBrowser = publicWorkerBrowser(metadata);
   if (!access) {
     return {
       connected: false,
@@ -193,9 +264,14 @@ export function publicAccessStatus(metadata, { secretConfigured: canStore = true
       reauthRequired: false,
       reauthPlatforms: [],
       lastCheckedAt: null,
-      hint: canStore
-        ? 'Connect your own MoreLogin profile: sign into Micro1/Turing there first, then paste your MoreLogin API key here.'
-        : `Connecting your own browser is unavailable on this server until ${ACCESS_KEY_ENV} is set.`
+      workerBrowser,
+      hint: workerBrowser
+        // The convenience case: the worker found the profile by itself, so there is nothing
+        // for the tenant to paste. Say so instead of asking for a key they do not need.
+        ? `Your worker reported the browser on this computer (${workerBrowser.label || workerBrowser.envIdMasked}). Captures run there — no key to paste.`
+        : canStore
+          ? 'Connect your own MoreLogin profile: sign into Micro1/Turing there first, then paste your MoreLogin API key here.'
+          : `Connecting your own browser is unavailable on this server until ${ACCESS_KEY_ENV} is set.`
     };
   }
 
@@ -214,6 +290,7 @@ export function publicAccessStatus(metadata, { secretConfigured: canStore = true
     reauthRequired: access.reauthRequired,
     reauthPlatforms: access.reauthPlatforms,
     lastCheckedAt: access.lastCheckedAt,
+    workerBrowser,
     hint: access.reauthRequired
       ? 'One of your marketplace sessions has expired. Open your MoreLogin profile, sign in again, then press Verify.'
       : access.verifiedAt
@@ -222,6 +299,7 @@ export function publicAccessStatus(metadata, { secretConfigured: canStore = true
   };
 }
 
+
 /**
  * Which profile and key a run should use for this tenant.
  *
@@ -229,8 +307,14 @@ export function publicAccessStatus(metadata, { secretConfigured: canStore = true
  * own MoreLogin is never silently run through the operator's hosted profile. The hosted
  * env map stays as the fallback because that is how the first tenant was onboarded, and a
  * tenant with neither is refused (never guessed).
+ *
+ * `workerRuns` adds one last resort: the profile the tenant's own worker found on its own
+ * machine (`workerBrowser`). It sits **below** hosted and default on purpose — filling the
+ * empty case cannot change how any existing tenant resolves, which is the only way to add a
+ * fallback without re-testing every pilot. When a worker reports a profile that disagrees
+ * with a hosted mapping, `source: 'hosted'` wins and the caller logs the conflict.
  */
-export function resolveAccessIdentity({ tenantSlug, metadata, envMap = {}, defaultEnvId = '' } = {}) {
+export function resolveAccessIdentity({ tenantSlug, metadata, envMap = {}, defaultEnvId = '', workerRuns = false } = {}) {
   const access = readAccess(metadata);
   if (access && access.keySealed) {
     return {
@@ -249,6 +333,10 @@ export function resolveAccessIdentity({ tenantSlug, metadata, envMap = {}, defau
   const fallback = String(defaultEnvId || '').trim();
   if (fallback) {
     return { source: 'default', envId: fallback, runtime: 'local', sealedKey: null, label: 'default' };
+  }
+  const reported = workerRuns ? readWorkerBrowser(metadata) : null;
+  if (reported) {
+    return { source: 'worker', envId: reported.envId, runtime: 'local', sealedKey: null, label: reported.label };
   }
   return null;
 }

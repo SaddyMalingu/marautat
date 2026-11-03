@@ -25,16 +25,20 @@ import {
   ACCESS_KEY_PREVIOUS_ENV,
   accessSecrets,
   clearAccess,
+  clearWorkerBrowser,
   fingerprintSecret,
   openSecret,
   openSecretFromEnv,
   publicAccessStatus,
+  publicWorkerBrowser,
   readAccess,
+  readWorkerBrowser,
   resolveAccessIdentity,
   sealSecret,
   sealSecretWithEnv,
   secretsConfigured,
-  writeAccess
+  writeAccess,
+  writeWorkerBrowser
 } from '../utils/tenantAccess.js';
 import { classifySignedIn, summarizeSignedIn, signedInProbeFor } from '../utils/browserActor/signedIn.js';
 import { createBrowserAccessRouter } from '../routes/browserAccess.js';
@@ -1126,8 +1130,159 @@ function fakeOfferDb() {
   ok('and explains that the tenant should press Capture now again',
     /press Capture now again after fixing the cause/.test(worker));
 }
+// ---------------------------------------------------------------------------
+// Zero-config: the worker asks MoreLogin on its own computer, then tells the portal
+// ---------------------------------------------------------------------------
+//
+// The production failure this fixes: claim 200, context 409 "No browser is mapped", run
+// closed. The tenant had a working worker on the machine with the profile — the *server*
+// simply had no idea, because learning it required pasting a MoreLogin API key. These tests
+// hold the replacement to the two things that matter: the machine's own answer is enough to
+// run, and nothing about it looks like a credential.
+
+{
+  const ENV = '2116562908359495680';
+  const other = { keepMe: true, voice: { id: 'warm' } };
+
+  const written = writeWorkerBrowser(other, { envId: ENV, label: 'P-4', machine: 'workshop-pc', reportedAt: '2026-11-03T05:20:00.000Z' });
+  const read = readWorkerBrowser(written);
+  eq('a reported profile is remembered', read.envId, ENV);
+  eq('with the name the tenant knows it by', read.label, 'P-4');
+  eq('and the machine it came from', read.machine, 'workshop-pc');
+  ok('without disturbing the rest of metadata', written.keepMe === true && written.voice?.id === 'warm');
+
+  // A worker is authenticated, not trusted: a bad id would only be found at `env start`,
+  // after the run had been claimed and the tenant had been told it was running.
+  let threw = null;
+  try { writeWorkerBrowser({}, { envId: 'P-4' }); } catch (error) { threw = error; }
+  ok('a profile id that is not decimal is refused at the door', Boolean(threw));
+  eq('and a junk id reads as no profile at all', readWorkerBrowser({ workerBrowser: { envId: 'P-4' } }), null);
+
+  const cleared = clearWorkerBrowser(written);
+  eq('disconnecting forgets the reported profile', readWorkerBrowser(cleared), null);
+  ok('and leaves the other metadata alone', cleared.voice?.id === 'warm');
+
+  const publicShape = publicWorkerBrowser(written);
+  ok('the tenant sees a masked id', publicShape.envIdMasked !== ENV && publicShape.envIdMasked.endsWith('80'));
+  ok('the tenant never sees the full id', !JSON.stringify(publicShape).includes(ENV));
+  eq('an unconnected tenant is told no key is needed',
+    publicAccessStatus(written).hint.includes('no key to paste'), true);
+  ok('and the status carries the reported profile', publicAccessStatus(written).workerBrowser?.label === 'P-4');
+
+  // Resolution order: the reported profile fills the empty case only.
+  eq('a reported profile resolves nothing for the server',
+    resolveAccessIdentity({ tenantSlug: 'acme', metadata: written }), null);
+  eq('but it is what a worker run uses',
+    resolveAccessIdentity({ tenantSlug: 'acme', metadata: written, workerRuns: true })?.source, 'worker');
+  eq('a hosted mapping still wins over the reported profile',
+    resolveAccessIdentity({ tenantSlug: 'acme', metadata: written, envMap: { acme: { envId: '999' } }, workerRuns: true })?.source,
+    'hosted');
+  const keyed = writeAccess(written, { envId: '123456789', keySealed: sealSecret('ml-key', 'secret'), runtime: 'local' });
+  eq("a tenant's own key still wins over the reported profile",
+    resolveAccessIdentity({ tenantSlug: 'acme', metadata: keyed, workerRuns: true })?.source, 'tenant');
+
+  // The same rule at the resolver the runners actually call.
+  let unmappedCode = null;
+  try {
+    await resolveRunnerIdentity({ supabase: tenantDb(written), tenantSlug: 'acme', env: {} });
+  } catch (error) { unmappedCode = error?.code || error?.message; }
+  eq('verify and portal capture still refuse a profile that lives on a laptop', unmappedCode, 'profile_unmapped');
+  eq('the tenant worker resolves it',
+    (await resolveRunnerIdentity({ supabase: tenantDb(written), tenantSlug: 'acme', env: {}, workerRuns: true }))?.source,
+    'worker');
+  const hostedEnv = { BROWSER_ACTOR_PROFILES: JSON.stringify({ acme: '5551234' }) };
+  eq('and an operator mapping is not overridden by it',
+    (await resolveRunnerIdentity({ supabase: tenantDb(written), tenantSlug: 'acme', env: hostedEnv, workerRuns: true }))?.source,
+    'hosted');
+  const unmapped = await resolveRunnerIdentity({ supabase: tenantDb({}), tenantSlug: 'acme', env: {}, workerRuns: true })
+    .catch((error) => error);
+  ok('with nothing anywhere, the message names the cheapest fix first',
+    /start the worker/i.test(unmapped?.details?.fix || ''));
+}
+
+
 
 // ---------------------------------------------------------------------------
+// The endpoint the worker calls once at startup. Without it, production looked like a bug:
+// a queued run that could never be claimed into a capture.
+{
+  const created = createAgentToken({ label: 'zero-config' });
+  const siteRow = { id: 'tenant-1', slug: 'acme', metadata: {} };
+  const db = fakeAgentDb({
+    site: siteRow,
+    runs: [{ id: 'run-zb', tenant_id: 'tenant-1', status: 'queued', kind: 'referrals', platform: 'micro1', detail: { limit: 7 } }],
+    tokens: [{ id: 'tok-zb', tenant_id: 'tenant-1', token_hash: created.tokenHash, token_prefix: created.tokenPrefix, revoked_at: null }]
+  });
+  const server = await withAgentServer(db);
+  const savedProfiles = process.env.BROWSER_ACTOR_PROFILES;
+  const savedDefault = process.env.BROWSER_ACTOR_DEFAULT_ENV_ID;
+  try {
+    delete process.env.BROWSER_ACTOR_PROFILES;
+    delete process.env.BROWSER_ACTOR_DEFAULT_ENV_ID;
+
+    eq('the report needs a token',
+      (await agentCall(server.base, 'POST', '/api/agent/browser', { body: { envId: '2116562908359495680' } })).status, 401);
+    eq('and refuses an id that is not a profile',
+      (await agentCall(server.base, 'POST', '/api/agent/browser', { token: created.token, body: { envId: 'P-4' } })).status, 400);
+
+    const blind = await agentCall(server.base, 'GET', '/api/agent/runs/run-zb/context', { token: created.token });
+    eq('before the report, a worker has no browser to run — the production 409', blind.status, 409);
+
+    const reported = await agentCall(server.base, 'POST', '/api/agent/browser', {
+      token: created.token,
+      body: { envId: '2116562908359495680', label: 'P-4', machine: 'workshop-pc' }
+    });
+    eq('the worker can report the browser on its computer', reported.status, 200);
+    eq('and is told a run will use it', reported.body?.uses, 'worker');
+    ok('the response does not echo the full profile id', !JSON.stringify(reported.body || {}).includes('2116562908359495680'));
+    eq('what is stored is not a keyed connection', readAccess(siteRow.metadata), null);
+    eq('but the profile is there', readWorkerBrowser(siteRow.metadata)?.label, 'P-4');
+
+    const context = await agentCall(server.base, 'GET', '/api/agent/runs/run-zb/context', { token: created.token });
+    eq('the same run now has a browser to drive', context.status, 200);
+    eq('resolved from the machine that reported it', context.body?.identity?.source, 'worker');
+    eq('with the id MoreLogin gave the worker', context.body?.identity?.envId, '2116562908359495680');
+    ok('and the tenant machine still holds no MoreLogin key', !('apiKey' in (context.body?.identity || {})));
+
+    // Reconnecting with a key must beat it, and the worker must be told that plainly.
+    siteRow.metadata = writeAccess(siteRow.metadata, {
+      envId: '123456789',
+      keySealed: sealSecretWithEnv('ml-key', { [ACCESS_KEY_ENV]: 'k' }),
+      runtime: 'local'
+    });
+    const again = await agentCall(server.base, 'POST', '/api/agent/browser', { token: created.token, body: { envId: '2116562908359495680' } });
+    eq('a keyed connection outranks a reported one, and says so', again.body?.uses, 'tenant');
+    ok('with the way out spelled out', /priority/i.test(again.body?.note || ''));
+  } finally {
+    if (savedProfiles === undefined) delete process.env.BROWSER_ACTOR_PROFILES;
+    else process.env.BROWSER_ACTOR_PROFILES = savedProfiles;
+    if (savedDefault === undefined) delete process.env.BROWSER_ACTOR_DEFAULT_ENV_ID;
+    else process.env.BROWSER_ACTOR_DEFAULT_ENV_ID = savedDefault;
+    await server.close();
+  }
+}
+
+{
+  const workerSrc = fs.readFileSync(path.join(root, 'scripts', 'browser_actor_worker.mjs'), 'utf8');
+  const dashSrc = fs.readFileSync(path.join(root, 'admin', 'tenant_dashboard.html'), 'utf8');
+
+  // The whole point: no key to find, no id to type.
+  ok('the worker reads the profiles MoreLogin already has', /listProfiles\(\{ pageNo: 1, pageSize: 50 \}\)/.test(workerSrc));
+  ok('and reports the one it found', /'\/api\/agent\/browser'/.test(workerSrc));
+  ok('a one-off choice is remembered in worker-config.json', /rememberConfig\(\{ envId/.test(workerSrc));
+  ok('several profiles are listed for the tenant to pick once', /--env-id <profileId>/.test(workerSrc));
+  ok('a machine with no ml-cli says so instead of failing at the claim', /could not read the MoreLogin profiles on this computer/.test(workerSrc));
+  ok('an older portal does not stop the worker', /older than this worker/.test(workerSrc));
+
+  ok('the panel calls a detected browser connected, not "not connected"',
+    /browser found on your computer/.test(dashSrc));
+  ok('and shows it instead of the amber no-browser warning',
+    /Using the browser your worker found on this computer/.test(dashSrc));
+  ok('the amber warning now points at the worker before the key',
+    /Start <strong>your worker<\/strong> on the computer that has your MoreLogin profile/.test(dashSrc));
+}
+
+
 // An abandoned run must not turn "Capture now" into a 500
 // ---------------------------------------------------------------------------
 

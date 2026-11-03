@@ -17,6 +17,24 @@ What you need (once)
   3. Node.js. If you do not have it, the start file will tell you and give
      you the link: https://nodejs.org  (choose LTS, click Next through it).
 
+Which browser it uses — you do not have to tell it
+  The worker asks MoreLogin on THIS computer which profiles exist and reports
+  the one it finds. So there is no API key to hunt for and no profile id to
+  type: start it once and the portal knows.
+
+    browser: "P-4" 21********80 (only one profile) — the portal will use it
+
+  If you have more than one profile it prints them and stops, because guessing
+  which client is which would be worse than asking. Tell it once:
+
+    node scripts/browser_actor_worker.mjs --env-id <theIdItPrinted>
+
+  The choice is saved in worker-config.json, so it is a one-time thing.
+
+  Note: a MoreLogin key you pasted in the portal ("Connect") takes priority over
+  what the worker found. If you want this computer to be used instead, press
+  Disconnect in the portal first — the worker reports it again on next start.
+
 How to start it
   Windows:  double-click   "Start Worker.cmd"
   Mac/Linux: run           ./start-worker.sh

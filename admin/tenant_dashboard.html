@@ -1648,7 +1648,13 @@ function wfWireControl() {
 let wfAccessData = null;
 
 function wfAccessChip(d) {
-  if (!d.connected) return '<span class="text-muted">not connected</span>';
+  if (!d.connected) {
+    // A worker that reported the browser on this computer needs no key, so "not connected"
+    // would be wrong and would send the tenant looking for one.
+    return d.workerBrowser
+      ? '<span style="color:#22c55e;font-weight:600">browser found on your computer</span>'
+      : '<span class="text-muted">not connected</span>';
+  }
   if (d.reauthRequired) return '<span style="color:#ef4444;font-weight:600">reconnect needed</span>';
   if (d.verifiedAt) return '<span style="color:#22c55e;font-weight:600">connected</span>';
   return '<span style="color:#f59e0b;font-weight:600">connected · unverified</span>';
@@ -1667,7 +1673,7 @@ function wfAccessGuide(d) {
       <ol style="font-size:.8rem;margin:8px 0 0 18px;padding:0;line-height:1.55">
         ${step(1, 'Create a MoreLogin account (free tier is fine) and <strong>one</strong> browser profile.')}
         ${step(2, 'Open that profile and sign into <strong>Micro1</strong> and <strong>Turing</strong> inside it. This is your own login — Alphadome never sees your password.')}
-        ${step(3, 'Come back here, paste your <strong>MoreLogin API key</strong> and press <strong>Connect</strong>. The key is in your MoreLogin account settings (look for “API” or “Developer”).')}
+        ${step(3, 'Come back here, paste your <strong>MoreLogin API key</strong> and press <strong>Connect</strong>. The key is in your MoreLogin account settings (look for “API” or “Developer”). <em>If your profile runs on your own computer, skip this: the worker below finds the profile itself and reports it — no key.</em>')}
         ${step(4, 'Press <strong>Verify sessions</strong>. You should see <code>micro1</code> and <code>turing</code> as signed in.')}
         ${step(5, 'Press <strong>Capture now (Micro1)</strong>. Progress appears in Collection control; when it finishes you have draft offers with your own referral links and the full job descriptions. If your profile runs on your own computer, the run waits in the queue until <strong>your worker</strong> below picks it up.')}
       </ol>
@@ -1699,20 +1705,29 @@ function wfAccessHtml(d) {
                  placeholder="MoreLogin API key" style="max-width:280px" ${d.canStore ? '' : 'disabled'}>
            <button class="btn btn-info btn-sm" data-wfact="connect" ${d.canStore ? '' : 'disabled'}>Connect</button>`}
     </div>
-    ${d.runSource === 'none'
-      ? `<div style="color:#f59e0b;font-size:.76rem;margin-top:6px">
-           No browser is set up for your tenant yet, so a capture queues and nothing can run it.
-           Connect yours below with your MoreLogin API key, or ask Alphadome to map the hosted
-           profile for you.
+    ${d.workerBrowser
+      ? `<div style="color:#22c55e;font-size:.76rem;margin-top:6px">
+           Using the browser your worker found on this computer${d.workerBrowser.label ? `: <strong>${esc(d.workerBrowser.label)}</strong>` : ''}
+           (${esc(d.workerBrowser.envIdMasked || '—')}${d.workerBrowser.machine ? ` · ${esc(d.workerBrowser.machine)}` : ''}${d.workerBrowser.reportedAt ? ` · last seen ${new Date(d.workerBrowser.reportedAt).toLocaleString('en-KE')}` : ''}).
+           Nothing to paste. A MoreLogin key is only needed for profiles that live in the cloud.
          </div>`
-      : ''}
+      : d.runSource === 'none'
+        ? `<div style="color:#f59e0b;font-size:.76rem;margin-top:6px">
+             No browser is set up for your tenant yet, so a capture queues and nothing can run it.
+             Start <strong>your worker</strong> on the computer that has your MoreLogin profile — it
+             finds the browser and tells us, so there is no key and no id to enter. You can also
+             connect a key here, or ask Alphadome to map the hosted profile.
+           </div>`
+        : ''}
     ${d.connected
       ? `<div class="text-muted" style="font-size:.74rem;margin-top:6px">
            ${d.runtime === 'cloud'
              ? 'Your profile runs in the cloud, so this page can start the capture for you.'
              : 'Your profile runs on your own computer, so Capture now queues the run and your worker picks it up — see below.'}
          </div>`
-      : `<div class="text-muted" style="font-size:.74rem;margin-top:6px">
+      : d.workerBrowser
+        ? ''
+        : `<div class="text-muted" style="font-size:.74rem;margin-top:6px">
            Micro1 capture drives <strong>your own</strong> MoreLogin profile, so it appears here
            once you connect one. Until then, Turing captures are in Collection control above.
          </div>`}

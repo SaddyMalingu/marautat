@@ -53,10 +53,10 @@ function listModuleFiles(dir) {
 }
 
 /**
- * @param {{apiBase: string, repoRoot?: string, mtime?: Date}} input
+ * @param {{apiBase: string, pairCode?: string|null, repoRoot?: string, mtime?: Date}} input
  * @returns {{zip: Buffer, entries: {name: string, data: Buffer}[], bytes: number}}
  */
-export function buildWorkerBundle({ apiBase, repoRoot = REPO_ROOT, mtime = new Date(0) } = {}) {
+export function buildWorkerBundle({ apiBase, pairCode = null, repoRoot = REPO_ROOT, mtime = new Date(0) } = {}) {
   const api = String(apiBase || '').replace(/\/+$/, '');
   if (!/^https?:\/\/[^\s]+$/i.test(api)) throw new Error('buildWorkerBundle needs the portal base URL');
 
@@ -83,6 +83,13 @@ export function buildWorkerBundle({ apiBase, repoRoot = REPO_ROOT, mtime = new D
     // The portal URL only. Never a token: that is typed on the machine, once.
     data: JSON.stringify({ api }, null, 2)
   });
+
+  // The pairing code is what removes the copy-paste. It is single-use and short-lived, so a
+  // download that gets forwarded stops working after the first run — see
+  // migrations/2026-11-02_browser_pairings.sql.
+  if (pairCode) {
+    entries.push({ name: 'pair-code.txt', data: `${String(pairCode).trim()}\n` });
+  }
 
   entries.push({ name: 'scripts/browser_actor_worker.mjs', data: read(path.join('scripts', 'browser_actor_worker.mjs')) });
   entries.push({ name: 'scripts/browser_actor_micro1.mjs', data: read(path.join('scripts', 'browser_actor_micro1.mjs')) });
