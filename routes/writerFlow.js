@@ -38,7 +38,8 @@ import {
   kindLabel
 } from '../utils/browserActor/runs.js';
 import { verifyReferralLink } from '../utils/browserActor/referralVerify.js';
-import { parseProfileMap, resolveIdentity, describeIdentity } from '../utils/browserActor/identity.js';
+import { parseProfileMap, maskEnvId } from '../utils/browserActor/identity.js';
+import { resolveAccessIdentity } from '../utils/tenantAccess.js';
 
 /** One click should finish inside a request, not hold a browser open. */
 const VERIFY_DEFAULT = 40;
@@ -53,26 +54,51 @@ function intParam(value, fallback, min, max) {
 }
 
 /**
- * Whether this tenant has a leased browser profile — never the profile id itself.
+ * Which browser this tenant's captures will use, in words a tenant can read.
  *
- * Read from the server's environment, which may or may not hold the registry: "no
- * registry here" and "no profile for this tenant" are different problems with
- * different fixes, so they are reported separately rather than as one silent false.
+ * Three sources, in the order the runners themselves resolve:
+ *
+ *   1. **their own** profile — connected with a key, or reported by their worker from their
+ *      own computer (`metadata.workerBrowser`);
+ *   2. the operator's `BROWSER_ACTOR_PROFILES` map;
+ *   3. the single-profile default.
+ *
+ * Only the last two used to be checked here, which is why a tenant with a working, worker-
+ * connected browser was told "No browser identity registry is configured on this server" —
+ * a sentence about our environment shown to someone who does not have an environment.
+ * The full profile id never leaves the server: masked, as everywhere else in this subsystem.
  */
-export function describeIdentityFor(tenantSlug, env = process.env) {
-  const raw = String(env.BROWSER_ACTOR_PROFILES || '').trim();
-  if (!raw) {
-    return { configured: false, mapped: false, label: 'No browser identity registry is configured on this server.' };
-  }
+export function describeIdentityFor(tenantSlug, env = process.env, metadata = null) {
+  let envMap = {};
   try {
-    const map = parseProfileMap(raw);
-    const identity = resolveIdentity({ tenantSlug, map, defaultEnvId: env.BROWSER_ACTOR_DEFAULT_ENV_ID || '' });
-    return { configured: true, mapped: Boolean(identity?.envId), label: describeIdentity(identity).envIdMasked };
+    envMap = parseProfileMap(env.BROWSER_ACTOR_PROFILES || '');
   } catch {
-    // resolveIdentity fails closed for an unmapped tenant, so a throw here means "this
-    // tenant has no profile yet", not "the registry is broken".
-    return { configured: true, mapped: false, label: 'No browser profile is mapped to this tenant yet.' };
+    // A malformed map is the operator's problem to see in the logs, not a reason to tell the
+    // tenant their browser is missing.
+    envMap = {};
   }
+  const own = resolveAccessIdentity({
+    tenantSlug,
+    metadata,
+    envMap,
+    defaultEnvId: env.BROWSER_ACTOR_DEFAULT_ENV_ID || '',
+    // A worker-reported profile is exactly the case this line has to be able to describe.
+    workerRuns: true
+  });
+  if (!own) {
+    return { configured: false, mapped: false, source: 'none', label: 'No browser is set up for this tenant yet.' };
+  }
+
+  const masked = maskEnvId(own.envId);
+  const name = own.label ? `${own.label} ` : '';
+  const label = own.source === 'worker'
+    ? `${name}(${masked}) — on your computer`
+    : own.source === 'tenant'
+      ? `${name}(${masked}) — connected with your key`
+      : own.source === 'hosted'
+        ? `${masked} — hosted by Alphadome`
+        : `${masked} — shared demo profile`;
+  return { configured: true, mapped: true, source: own.source, envIdMasked: masked, label };
 }
 
 export function createWriterFlowRouter({
@@ -165,7 +191,7 @@ export function createWriterFlowRouter({
         offers,
         runs,
         runsAvailable: available,
-        identity: describeIdentityFor(ctx.site.slug),
+        identity: describeIdentityFor(ctx.site.slug, process.env, ctx.site.metadata),
         now: now(),
         linkLimit: intParam(req.query.linkLimit, 25, 1, 100)
       });

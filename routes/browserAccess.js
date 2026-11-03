@@ -40,7 +40,7 @@ import {
 import { summarizeSignedIn } from '../utils/browserActor/signedIn.js';
 import { parseProfileMap } from '../utils/browserActor/identity.js';
 import { redact } from '../utils/browserActor/moreloginClient.js';
-import { canQueue, createRunStore, isActiveStatus, isStalled } from '../utils/browserActor/runs.js';
+import { canQueue, createRunStore, isActiveStatus, isStalled, MICRO1_RUN_KIND } from '../utils/browserActor/runs.js';
 import { createAgentTokenStore, describeAgentToken } from '../utils/browserActor/agentTokens.js';
 import { PAIRING_TABLE } from '../utils/browserActor/pairing.js';
 import {
@@ -351,10 +351,11 @@ export function createBrowserAccessRouter({
         ? Math.min(Math.max(Math.trunc(requested), 1), CAPTURE_MAX_LIMIT)
         : CAPTURE_DEFAULT_LIMIT;
 
-      // One run per tenant, using the same index the runners rely on: two captures on one
-      // profile would interleave clicks on the same listing.
+      // One run per tenant **per marketplace**: the row's kind is what the partial unique
+      // index scopes, so a Turing run waiting for an operator can no longer block the
+      // Micro1 capture the tenant is able to run themselves (2026-11-03 — it did, live).
       const recent = await runStore.list({ tenantId: ctx.site.id, limit: 20 }).catch(() => []);
-      const gate = canQueue(recent, { kind: 'referrals', now: now() });
+      const gate = canQueue(recent, { kind: MICRO1_RUN_KIND, now: now() });
       if (!gate.ok) return fail(res, 409, gate.message, { reason: 'already_running', run: gate.run || null });
 
       // `canQueue` ignores a run whose heartbeat stopped, because a dead worker should not
@@ -363,7 +364,7 @@ export function createBrowserAccessRouter({
       // Skipping this returned a 500 on a duplicate key, which reads as a server fault when it
       // is really a leftover row.
       const abandoned = recent.filter((row) => (
-        String(row.kind || '').toLowerCase() === 'referrals' &&
+        String(row.kind || '').toLowerCase() === MICRO1_RUN_KIND &&
         isActiveStatus(row.status) &&
         isStalled(row, now())
       ));
@@ -387,7 +388,7 @@ export function createBrowserAccessRouter({
       try {
         run = await runStore.queue({
           tenantId: ctx.site.id,
-          kind: 'referrals',
+          kind: MICRO1_RUN_KIND,
           sourceSlug: platform,
           requestedBy: 'tenant:portal',
           detail: { limit, platform, via: 'portal', runtime: access.runtime }
@@ -417,7 +418,7 @@ export function createBrowserAccessRouter({
         } catch { /* treated as "unknown", which reads as "create one" */ }
         return res.status(202).json({
           ok: true,
-          run: { id: run.id, status: 'queued', kind: 'referrals', platform, limit },
+          run: { id: run.id, status: 'queued', kind: MICRO1_RUN_KIND, platform, limit },
           queuedForWorker: true,
           needsWorkerToken: !hasWorker,
           note: hasWorker
@@ -442,7 +443,7 @@ export function createBrowserAccessRouter({
       console.error(`[browser-access] tenant=${ctx.site.slug} portal capture run=${run.id} pid=${spawned?.pid || '?'} limit=${limit}`);
       res.status(202).json({
         ok: true,
-        run: { id: run.id, status: 'queued', kind: 'referrals', platform, limit },
+        run: { id: run.id, status: 'queued', kind: MICRO1_RUN_KIND, platform, limit },
         // The portal polls /tenant/blogger/writer-flow for this row; the tenant does not
         // need to keep the tab open, and a redeploy will not orphan their import silently
         // because the row records what happened.

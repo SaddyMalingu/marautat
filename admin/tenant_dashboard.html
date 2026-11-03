@@ -1460,7 +1460,7 @@ function wfPlatformCardHtml(d, spec) {
 
   const howItRuns = browserDriven
     ? 'Reads Micro1 through <strong>your own browser</strong> — your worker has to be running, and each capture uses one MoreLogin start.'
-    : 'A runner reads Turing for you: links and full descriptions land here when it finishes.';
+    : 'Turing is read by <strong>Alphadome\'s runner</strong>, on our side: queue it and it starts when we pick it up, even with your computer off.';
 
   return `
     <div class="col-12 col-lg-6">
@@ -1498,8 +1498,24 @@ function wfActiveRunHtml(d) {
         <div class="progress-bar" style="width:${pct}%;background:${stalled ? '#ef4444' : '#38bdf8'}"></div>
       </div>
       ${stalled ? '<div style="color:#ef4444;font-size:.78rem;margin-top:4px">This run stopped reporting. Re-running resumes from the last captured role.</div>' : ''}
-      ${String(active.status) === 'queued' ? '<div class="text-muted" style="font-size:.78rem;margin-top:4px">Waiting for a runner — no browser is attached to this tenant yet.</div>' : ''}
+      ${String(active.status) === 'queued' ? `<div class="text-muted" style="font-size:.78rem;margin-top:4px">${esc(wfQueuedHint(active))}</div>` : ''}
     </div>`;
+}
+
+/**
+ * Who is supposed to pick this queued run up?
+ *
+ * "Waiting for a runner" was the same sentence for two completely different situations: a
+ * Micro1 capture their own worker claims within 15 seconds, and a Turing run that only
+ * Alphadome's operator can start. A tenant cannot act on the second one, so saying it plainly
+ * is the only useful thing this line can do.
+ */
+function wfQueuedHint(run) {
+  const platform = String(run.platform || (String(run.kind) === 'micro1' ? 'micro1' : 'turing')).toLowerCase();
+  if (platform === 'micro1') {
+    return 'Queued for your worker — it claims this within about 15 seconds while its window is open. Leave the worker running.';
+  }
+  return "Queued for Alphadome's Turing runner — Turing is read on our side, so this starts when we pick it up. Nothing to do on your computer.";
 }
 
 function wfActionsHtml(d) {

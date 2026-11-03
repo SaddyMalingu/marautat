@@ -39,7 +39,9 @@ import {
   buildQueueRow,
   buildProgressPatch,
   buildFinishPatch,
-  createRunStore
+  createRunStore,
+  kindLabel,
+  QUEUEABLE_KINDS
 } from '../utils/browserActor/runs.js';
 import {
   linkStateOf,
@@ -726,6 +728,20 @@ async function withServer(db) {
   eq('an empty history says so per marketplace rather than inventing a run',
     runsByPlatform([], NOW).micro1.last, null);
 
+  // The live bug this closes: a Turing run waiting for the operator held the `referrals` slot,
+  // so the tenant's own Micro1 capture was refused as "already waiting" — for a marketplace
+  // nothing was running in. Separate kinds, separate slots.
+  const waitingTuring = [{ id: 'r-t', kind: 'referrals', status: 'queued', created_at: ago(600_000), total_items: 120 }];
+  eq('a queued Turing run does not block a Micro1 capture', canQueue(waitingTuring, { kind: 'micro1', now: NOW }).ok, true);
+  eq('but it does block a second Turing run',
+    canQueue(waitingTuring, { kind: 'referrals', now: NOW }).reason, 'already_active');
+  const waitingMicro1 = [{ id: 'r-m', kind: 'micro1', status: 'queued', created_at: ago(30_000), detail: { platform: 'micro1' } }];
+  eq('and a queued Micro1 capture does not block Turing', canQueue(waitingMicro1, { kind: 'referrals', now: NOW }).ok, true);
+  eq('while a second Micro1 capture waits its turn',
+    canQueue(waitingMicro1, { kind: 'micro1', now: NOW }).reason, 'already_active');
+  ok('micro1 is a known run kind with a label of its own', kindLabel('micro1') === 'Capture Micro1 links');
+  ok('and it is not tenant-queueable through the writer-flow route', !QUEUEABLE_KINDS.includes('micro1'));
+
   const view = writerFlowView({ offers: [], runs, now: NOW });
   ok('the panel payload carries both marketplaces', Boolean(view.runs.byPlatform?.micro1 && view.runs.byPlatform?.turing));
   eq('and the current micro1 counters reach the card', view.runs.byPlatform.micro1.current.done, 3);
@@ -743,7 +759,7 @@ async function withServer(db) {
     && /data-wfact="queue" data-kind="referrals" data-refresh="1"/.test(dash));
   ok('each card says how it runs, because that is what differs',
     /Reads Micro1 through <strong>your own browser<\/strong>/.test(dash)
-    && /A runner reads Turing for you/.test(dash));
+    && /Turing is read by <strong>Alphadome/.test(dash));
   ok('the old shared "both queue a Turing run" row is gone', !/Both queue a Turing run/.test(dash));
 }
 

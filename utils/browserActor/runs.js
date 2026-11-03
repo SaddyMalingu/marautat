@@ -55,8 +55,19 @@ export function canRunOnWorker(run) {
 
 export const RUN_TABLE = 'browser_actor_runs';
 
-/** Kinds of work a tenant can see progress on. */
-export const RUN_KINDS = Object.freeze(['collect', 'import', 'referrals', 'verify']);
+/**
+ * Kinds of work a tenant can see progress on.
+ *
+ * `micro1` is a separate kind from `referrals` on purpose (2026-11-03). Both used to be
+ * `referrals`, which meant the tenant's browser capture and the Turing capture shared one
+ * slot in `browser_actor_runs` — and the partial unique index on (tenant_id, kind) then made
+ * a queued Turing run (waiting for an operator) silently block the Micro1 capture the tenant
+ * could actually run. A marketplace whose run cannot run the other's job is its own kind.
+ */
+export const RUN_KINDS = Object.freeze(['collect', 'import', 'referrals', 'verify', 'micro1']);
+
+/** The kind a tenant's own browser capture uses. Not queueable through the writer-flow route. */
+export const MICRO1_RUN_KIND = 'micro1';
 
 export const RUN_STATUSES = Object.freeze([
   'queued', 'running', 'succeeded', 'partial', 'failed', 'cancelled'
@@ -75,11 +86,25 @@ export const RUN_KIND_LABELS = Object.freeze({
   collect: 'Scan marketplace roles',
   import: 'Import roles as offers',
   referrals: 'Capture referral links',
-  verify: 'Verify referral links'
+  verify: 'Verify referral links',
+  micro1: 'Capture Micro1 links'
 });
 
 /** Kinds the portal may queue for a runner. Verification runs inside the request. */
 export const QUEUEABLE_KINDS = Object.freeze(['collect', 'import', 'referrals']);
+
+/**
+ * Kinds that occupy a (tenant, kind) slot and are worth waiting for.
+ *
+ * Declared after `QUEUEABLE_KINDS` on purpose: spreading it before its `const` is initialised
+ * throws at import time (`Cannot access 'QUEUEABLE_KINDS' before initialization`) and takes the
+ * whole server down, not just the feature.
+ *
+ * `verify` is deliberately absent: it runs inside the request that asks for it, so a queued
+ * verify row would be a promise nobody keeps. `micro1` is present because the tenant's own
+ * worker claims it.
+ */
+export const RUNNABLE_KINDS = Object.freeze([...QUEUEABLE_KINDS, MICRO1_RUN_KIND]);
 
 export function isActiveStatus(status) {
   return ACTIVE_STATUSES.includes(String(status || '').toLowerCase());
@@ -177,11 +202,17 @@ export function describeRun(run, now = Date.now()) {
   return `${label} finished${total ? ` · ${done}/${total}` : ''}${run.message ? ` · ${run.message}` : ''}`;
 }
 
-/** May this tenant queue one more run of this kind? */
+/**
+ * May this tenant queue one more run of this kind?
+ *
+ * Validated against `RUNNABLE_KINDS`: this function answers "is the slot free", and who may
+ * fill it (the portal's writer-flow route, or the browser-access route) stays the caller's
+ * policy — which is what keeps `micro1` out of reach of a route that has no runner for it.
+ */
 export function canQueue(runs = [], { kind, now = Date.now() } = {}) {
   const wanted = String(kind || '').toLowerCase();
-  if (!QUEUEABLE_KINDS.includes(wanted)) {
-    return { ok: false, reason: 'unknown_kind', message: `"${kind}" is not a queueable run kind` };
+  if (!RUNNABLE_KINDS.includes(wanted)) {
+    return { ok: false, reason: 'unknown_kind', message: `"${kind}" is not a run kind that waits for a runner` };
   }
   const blocking = (Array.isArray(runs) ? runs : []).find(
     (run) => run && String(run.kind || '').toLowerCase() === wanted && isActiveStatus(run.status) && !isStalled(run, now)

@@ -636,6 +636,11 @@ const localAccess = { browserAccess: { provider: 'morelogin', envId: '2116562908
     eq('nothing was spawned here', spawned.length, 0);
     eq('but a run row exists for the worker to claim', db.runs.length, 1);
     eq('and it is queued', db.runs[0].status, 'queued');
+    // Own kind, own slot. Sharing `referrals` with the Turing queue is what let a queued
+    // Turing run (waiting for an operator) block the Micro1 capture a tenant could actually
+    // run — observed live on 2026-11-03, and the unique index scopes on kind.
+    eq('and it is its own kind, so a waiting Turing run cannot block it', db.runs[0].kind, 'micro1');
+    eq('and it still records the marketplace for the worker filter', db.runs[0].detail.platform, 'micro1');
 
     // Once a worker exists the message changes: waiting is now true advice.
     const token = await call(server.base, 'POST', '/tenant/blogger/browser-access/worker-token', { label: 'pc' });
@@ -1326,7 +1331,9 @@ function fakeOfferDb() {
   db.runs.push({
     id: 'run-stale',
     tenant_id: 'site-1',
-    kind: 'referrals',
+    // A leftover *Micro1* capture: this is the slot the portal capture uses, so it is the one
+    // that has to be cleared before a fresh capture can queue.
+    kind: 'micro1',
     status: 'running',
     started_at: new Date(Date.now() - 30 * 60_000).toISOString(),
     heartbeat_at: new Date(Date.now() - 20 * 60_000).toISOString(),
@@ -1401,7 +1408,7 @@ function fakeOfferDb() {
     /Capture Micro1 links/.test(dashSrc) && /Capture links<\/button>/.test(dashSrc)
     && /Fill descriptions<\/button>/.test(dashSrc));
   ok('and a tenant can tell the two jobs apart by where they run',
-    /A runner reads Turing for you/.test(dashSrc)
+    /Turing is read by <strong>Alphadome/.test(dashSrc)
     && /your worker has to be running/.test(dashSrc));
   ok('an unconnected tenant is told why the Micro1 button is missing',
     /appears here\s+once you connect one/.test(dashSrc));
