@@ -297,6 +297,23 @@ export function runsByPlatform(runs = [], now = Date.now()) {
 }
 
 /**
+ * Merge run windows without duplicates, newest first.
+ *
+ * The panel reads two windows on purpose: the newest rows of any kind (for "Last run: …") and
+ * the newest capture rows (for the marketplace cards). `verify` runs are written on every
+ * "Verify links" click, so a tenant who checks links repeatedly can push a real capture out of
+ * the newest-N window — which on 3 Nov made the Micro1 card say "never run" minutes after
+ * twelve roles had been imported on their own machine.
+ */
+export function mergeRunWindows(...lists) {
+  const seen = new Set();
+  return lists
+    .flat()
+    .filter((row) => row && row.id && !seen.has(row.id) && seen.add(row.id))
+    .sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+}
+
+/**
  * Everything the Writer's Flow control panel renders, in one payload.
  *
  * `identity` and `runsAvailable` are passed in rather than discovered here: whether

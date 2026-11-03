@@ -54,6 +54,7 @@ import {
   nextActions,
   writerFlowView,
   runsByPlatform,
+  mergeRunWindows,
   COLLECTION_PLATFORMS
 } from '../utils/writerFlow.js';
 import { sanitizeOfferPatch } from '../utils/offerPatch.js';
@@ -168,7 +169,11 @@ function fakeTable(seed = []) {
 
   const builder = (mode, payload) => {
     const filters = [];
-    const matches = (row) => filters.every(([col, val]) => row[col] === val);
+    // A filter is either an equality or a set membership (`in`), because the panel now asks
+    // for capture kinds only — verification runs would otherwise bury them.
+    const matches = (row) => filters.every(([col, val]) => (
+      Array.isArray(val) ? val.includes(row[col]) : row[col] === val
+    ));
     const apply = () => {
       if (mode === 'insert') {
         const created = { id: `run-${state.rows.length + 1}`, created_at: new Date(NOW).toISOString(), ...payload };
@@ -187,6 +192,7 @@ function fakeTable(seed = []) {
       order: () => api,
       limit: () => api,
       eq: (col, val) => { filters.push([col, val]); return api; },
+      in: (col, values) => { filters.push([col, Array.isArray(values) ? values : [values]]); return api; },
       // `maybeSingle` resolves to one row or null — never to an array. Returning an array
       // here is what makes an empty match look like a successful one, which in the real
       // client would turn a cross-tenant cancel into a silent no-op that reports 200.
@@ -403,6 +409,7 @@ function fakeDb({ offers = [], runs = [] } = {}) {
       const filters = [];
       const match = (row) => filters.every(([col, kind, val]) => {
         if (kind === 'eq') return row[col] === val;
+        if (kind === 'in') return Array.isArray(val) ? val.includes(row[col]) : false;
         if (kind === 'is') return val === null ? row[col] === null || row[col] === undefined : row[col] === val;
         if (kind === 'notnull') return row[col] !== null && row[col] !== undefined;
         return true;
@@ -425,6 +432,8 @@ function fakeDb({ offers = [], runs = [] } = {}) {
         order: () => api,
         limit: () => api,
         eq: (col, val) => { filters.push([col, 'eq', val]); return api; },
+        // The panel now asks for capture kinds only, so the fake must understand `in`.
+        in: (col, values) => { filters.push([col, 'in', Array.isArray(values) ? values : [values]]); return api; },
         is: (col, val) => { filters.push([col, 'is', val]); return api; },
         not: (col, _op, val) => { filters.push([col, 'notnull', val]); return api; },
         maybeSingle: () => {
@@ -741,6 +750,19 @@ async function withServer(db) {
     canQueue(waitingMicro1, { kind: 'micro1', now: NOW }).reason, 'already_active');
   ok('micro1 is a known run kind with a label of its own', kindLabel('micro1') === 'Capture Micro1 links');
   ok('and it is not tenant-queueable through the writer-flow route', !QUEUEABLE_KINDS.includes('micro1'));
+
+  // The panel reads two windows: newest-of-any-kind, and newest capture runs. Without the
+  // second, a tenant who checks links a few times pushes their capture out of view and the
+  // card says "never run" minutes after a successful capture — live, 3 Nov.
+  const verifyNoise = Array.from({ length: 20 }, (_, i) => ({
+    id: `v-${i}`, kind: 'verify', status: 'succeeded', created_at: new Date(NOW - i * 1000).toISOString()
+  }));
+  const buriedCapture = { id: 'cap-1', kind: 'collect', status: 'succeeded', detail: { platform: 'micro1' }, created_at: ago(10 * 60_000) };
+  const merged = mergeRunWindows(verifyNoise, [buriedCapture]);
+  eq('the merge keeps the capture that the newest-20 window lost', merged.some((r) => r.id === 'cap-1'), true);
+  eq('and does not duplicate a row present in both windows',
+    mergeRunWindows([buriedCapture], [buriedCapture]).length, 1);
+  eq('so the Micro1 card can name its last run', runsByPlatform(merged, NOW).micro1.last.id, 'cap-1');
 
   const view = writerFlowView({ offers: [], runs, now: NOW });
   ok('the panel payload carries both marketplaces', Boolean(view.runs.byPlatform?.micro1 && view.runs.byPlatform?.turing));

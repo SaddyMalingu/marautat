@@ -4849,9 +4849,9 @@ app.get('/tenant/blogger', tenantSessionAuth, async (req, res) => {
   try {
     const ctx = await tenantSiteFromSession(req);
     if (!ctx) return res.status(404).json({ error: 'Tenant not found' });
-    const { data: offers } = await supabase
-      .from('opportunities').select('*, category:opportunity_categories(name)')
-      .eq('tenant_id', ctx.site.id).order('created_at', { ascending: false }).limit(100);
+    const { data: offers, count: offersTotal } = await supabase
+      .from('opportunities').select('*, category:opportunity_categories(name)', { count: 'exact' })
+      .eq('tenant_id', ctx.site.id).order('created_at', { ascending: false }).limit(500);
     const { data: cats } = await supabase
       .from('opportunity_categories').select('id, name').eq('is_active', true).order('display_order');
     // How many pages each offer already has. Generation used to end in a toast,
@@ -4875,6 +4875,10 @@ app.get('/tenant/blogger', tenantSessionAuth, async (req, res) => {
       site: { id: ctx.site.id, slug: ctx.site.slug, name: ctx.site.name },
       publicPath: `/ai-jobs/t/${ctx.site.slug}`,
       offers: (offers || []).map(function (o) { return Object.assign({}, o, { page_count: pageCounts[o.id] || 0 }); }),
+      // How many offers exist, not how many were sent. The table used to say "100 of 100"
+      // because the query was capped at 100 and the panel had no other number to print — so a
+      // tenant with 108 offers was told they had 100, and the newest 8 were invisible.
+      offersTotal: typeof offersTotal === 'number' ? offersTotal : (offers || []).length,
       categories: cats || [],
       // The voice every page will be written in, plus the alternatives, so the
       // portal can show it and let the tenant change it. Before this, the tone

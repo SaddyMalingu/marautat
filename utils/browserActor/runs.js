@@ -375,12 +375,19 @@ export function createRunStore({ table, now = () => Date.now() } = {}) {
       return data || null;
     },
 
-    async list({ tenantId, limit = 20 }) {
-      const { data, error } = await table()
+    async list({ tenantId, limit = 20, kinds = null } = {}) {
+      let query = table()
         .select('*')
         .eq('tenant_id', tenantId)
         .order('created_at', { ascending: false })
         .limit(limit);
+      // `verify` runs are created on every "Verify links" click, inside the request. A tenant
+      // who checks links a dozen times pushes their capture runs out of any fixed window, so
+      // the Collection control cards said "never run" for a marketplace that had just
+      // captured twelve roles. Callers that render per-marketplace state ask for capture kinds
+      // explicitly instead of hoping the window is big enough.
+      if (Array.isArray(kinds) && kinds.length) query = query.in('kind', kinds);
+      const { data, error } = await query;
       if (error) throw error;
       return Array.isArray(data) ? data : [];
     }

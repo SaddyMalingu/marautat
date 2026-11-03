@@ -145,9 +145,20 @@ export function createWriterFlowRouter({
     throw lastError;
   }
 
-  async function loadRuns(tenantId, limit = 20) {
+  async function loadRuns(tenantId, limit = 100) {
     try {
-      return { runs: await store.list({ tenantId, limit }), available: true };
+      // Two reads, because they answer two different questions:
+      //   * the newest rows of any kind — what "Last run: …" means;
+      //   * the newest *capture* rows — what each marketplace card must be able to show.
+      // One window cannot serve both: verification runs are written on every click and would
+      // eventually push a real capture out of view (it did, 3 Nov: Micro1 read "never run"
+      // while twelve roles had just been imported).
+      const [recent, captures] = await Promise.all([
+        store.list({ tenantId, limit }),
+        store.list({ tenantId, limit: 40, kinds: ['micro1', 'collect', 'referrals'] })
+      ]);
+      const { mergeRunWindows } = await import('../utils/writerFlow.js');
+      return { runs: mergeRunWindows(recent, captures), available: true };
     } catch (error) {
       // A missing table is a deployment state, not a crash: report it as unavailable so
       // the portal can say "run history unavailable" instead of "no runs yet".

@@ -715,6 +715,7 @@ function wfFilterOffers(offers) {
   });
 }
 
+let wfOffersTotal = 0;
 function wfRenderOffers(offers) {
   const body = document.getElementById('wfOfferBody');
   if (!body) return;
@@ -723,7 +724,19 @@ function wfRenderOffers(offers) {
     ? wfOfferRows(rows)
     : '<tr><td colspan="7" class="text-muted text-center p-3">No offers match this filter.</td></tr>';
   const count = document.getElementById('wfOfferCount');
-  if (count) count.textContent = `${rows.length} of ${offers.length}`;
+  if (count) {
+    // "100 of 100" was a lie of omission: the query was capped and the panel had no other
+    // number, so a tenant with 108 offers read it as "I have 100". Print what exists, and say
+    // when the table is only showing the newest page of it.
+    const total = Math.max(Number(wfOffersTotal) || 0, offers.length);
+    const capped = offers.length < total;
+    count.textContent = capped
+      ? `${rows.length} of ${total} · newest ${offers.length} loaded`
+      : `${rows.length} of ${total}`;
+    count.title = capped
+      ? 'Older offers are saved and still live — the table loads the newest 500.'
+      : '';
+  }
 }
 
 function wfWireOfferFilters(offers) {
@@ -2168,6 +2181,8 @@ async function renderWritersFlow() {
   wfWireOutreach();
   // Offers: filters + sortable headers, wired once the table exists in the DOM.
   if (document.getElementById('wfOfferBody')) wfWireOfferFilters(ctx.offers || []);
+  // The server now says how many offers exist, not just how many it sent.
+  wfOffersTotal = Number(ctx.offersTotal) || (ctx.offers || []).length;
 
   // Voice controls. Saving writes site_tenants.metadata.voice, so the choice
   // survives deploys and applies to every later run for this tenant.
