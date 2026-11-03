@@ -34,6 +34,7 @@ import {
   createRunStore,
   describeRun,
   isActiveStatus,
+  isExpiredQueue,
   isStalled,
   kindLabel
 } from '../utils/browserActor/runs.js';
@@ -447,23 +448,30 @@ export function createWriterFlowRouter({
       // mean "never capture again". The index does not know that: `status = 'running'` keeps
       // the (tenant, kind) slot until the row is closed. So close the abandoned rows first —
       // otherwise the insert raises 23505 and the tenant sees a 500 for a leftover row.
+      // A queued row that no runner ever claimed is the same problem one step earlier, and it
+      // is the common one for Turing: only Alphadome's runner can claim those.
       const abandoned = runs.filter((run) => (
         String(run.kind || '').toLowerCase() === kind &&
         isActiveStatus(run.status) &&
-        isStalled(run, now())
+        (isStalled(run, now()) || isExpiredQueue(run, now()))
       ));
       for (const row of abandoned) {
+        const expired = isExpiredQueue(row, now());
         await store.finish({
           runId: row.id,
-          status: 'failed',
+          // A worker that died is a failure; a request nobody ever claimed is a cancellation.
+          // Collapsing them would tell a tenant their capture failed when nothing ever ran.
+          status: expired ? 'cancelled' : 'failed',
           done: row.done_items,
           ok: row.ok_items,
           failed: row.failed_items,
           total: row.total_items,
-          message: 'The runner stopped reporting, so this run was closed to let a new one start.',
-          detail: { abandoned: true, lastHeartbeatAt: row.heartbeat_at || null }
-        }).catch((error) => console.error(`[writer-flow] could not close abandoned run ${row.id}: ${error?.message || error}`));
-        console.error(`[writer-flow] tenant=${ctx.site.slug} closed abandoned run ${row.id}`);
+          message: expired
+            ? 'No runner picked this up within 30 minutes, so it was cleared to let you start another.'
+            : 'The runner stopped reporting, so this run was closed to let a new one start.',
+          detail: expired ? { expired: true, createdAt: row.created_at || null } : { abandoned: true, lastHeartbeatAt: row.heartbeat_at || null }
+        }).catch((error) => console.error(`[writer-flow] could not close run ${row.id}: ${error?.message || error}`));
+        console.error(`[writer-flow] tenant=${ctx.site.slug} closed ${expired ? 'expired' : 'abandoned'} run ${row.id}`);
       }
 
       const detail = {

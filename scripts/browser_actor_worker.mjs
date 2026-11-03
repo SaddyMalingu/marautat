@@ -391,6 +391,8 @@ function canRunHere(run) {
 
 /** Remembers the last set of runs this worker had to skip, so the warning prints once. */
 let lastSkipSignature = null;
+/** And whether it has already said "nothing for me right now". */
+let lastIdleSignature = null;
 
 async function tick(tenantSlug) {
   const listed = await call('GET', '/api/agent/runs');
@@ -408,11 +410,21 @@ async function tick(tenantSlug) {
     lastSkipSignature = signature;
     if (skipped.length) {
       const names = [...new Set(skipped.map((row) => platformOf(row) || row.kind || 'unknown'))].join(', ');
-      console.error(`skipping ${skipped.length} queued run(s) for ${names}: this worker only drives micro1 — the operator runs those`);
+      console.error(`${skipped.length} queued run(s) for ${names} are waiting for Alphadome's runner, not for this computer — this worker drives Micro1 only.`);
     }
   }
   const run = queued.find(canRunHere);
-  if (!run) return false;
+  if (!run) {
+    // Nothing here for this machine. Say so once, so the window a tenant is watching does not
+    // fill with a line per poll — and name the situation rather than the rule, because "the
+    // operator runs those" reads like a bug from their side of the screen.
+    if (signature && signature !== lastIdleSignature) {
+      lastIdleSignature = signature;
+      console.error('nothing queued for this computer — Turing runs wait for Alphadome\'s runner. Leaving the window open.');
+    }
+    return false;
+  }
+  lastIdleSignature = null;
 
   const claimed = await call('POST', `/api/agent/runs/${run.id}/claim`);
   if (!claimed.ok) {

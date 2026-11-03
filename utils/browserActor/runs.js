@@ -203,6 +203,25 @@ export function describeRun(run, now = Date.now()) {
 }
 
 /**
+ * A queued run nobody claimed is an abandoned request, not a promise.
+ *
+ * Turing runs can only be started by Alphadome's runner, and Micro1 runs need the tenant's
+ * worker to be open. When either is not there, the row sat `queued` for ever and held the
+ * (tenant, kind) slot — so "I've finished with Micro1, now let me collect Turing" turned into
+ * "cancel that first, or get refused". Thirty minutes is long enough for a worker to open its
+ * window and short enough that switching never needs a support answer.
+ */
+export const QUEUE_EXPIRY_MS = 30 * 60_000;
+
+/** True when a queued row has waited longer than any runner should need. */
+export function isExpiredQueue(run, now = Date.now()) {
+  if (!run) return false;
+  if (String(run.status || '').toLowerCase() !== 'queued') return false;
+  const at = new Date(run.created_at || 0).getTime();
+  return Number.isFinite(at) && at > 0 && now - at > QUEUE_EXPIRY_MS;
+}
+
+/**
  * May this tenant queue one more run of this kind?
  *
  * Validated against `RUNNABLE_KINDS`: this function answers "is the slot free", and who may
@@ -215,7 +234,13 @@ export function canQueue(runs = [], { kind, now = Date.now() } = {}) {
     return { ok: false, reason: 'unknown_kind', message: `"${kind}" is not a run kind that waits for a runner` };
   }
   const blocking = (Array.isArray(runs) ? runs : []).find(
-    (run) => run && String(run.kind || '').toLowerCase() === wanted && isActiveStatus(run.status) && !isStalled(run, now)
+    (run) => run
+      && String(run.kind || '').toLowerCase() === wanted
+      && isActiveStatus(run.status)
+      && !isStalled(run, now)
+      // An abandoned request must not refuse a new one: switching marketplace should never
+      // need a cancel first.
+      && !isExpiredQueue(run, now)
   );
   if (blocking) {
     return {

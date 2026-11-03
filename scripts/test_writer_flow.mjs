@@ -30,6 +30,7 @@ import { createWriterFlowRouter } from '../routes/writerFlow.js';
 import {
   RUN_STALL_MS,
   isActiveStatus,
+  isExpiredQueue,
   isStalled,
   runProgress,
   deriveRunStatus,
@@ -737,6 +738,21 @@ async function withServer(db) {
 
   eq('an empty history says so per marketplace rather than inventing a run',
     runsByPlatform([], NOW).micro1.last, null);
+
+  // Switching marketplace must never need a cancel first. A run nobody claimed holds the
+  // (tenant, kind) slot in the database for ever, so it expires instead — long enough for a
+  // worker window to open, short enough that the next click works.
+  const staleQueue = (mins) => [{
+    id: 'q1', kind: 'referrals', status: 'queued', created_at: new Date(NOW - mins * 60_000).toISOString()
+  }];
+  eq('a queued run older than 30 minutes has expired', isExpiredQueue(staleQueue(31)[0], NOW), true);
+  eq('a fresh queued run has not', isExpiredQueue(staleQueue(5)[0], NOW), false);
+  eq('a running run is never "expired queue" (it has a heartbeat to judge by)',
+    isExpiredQueue({ status: 'running', created_at: new Date(NOW - 90 * 60_000).toISOString() }, NOW), false);
+  eq('so an expired request does not refuse a new one',
+    canQueue(staleQueue(31), { kind: 'referrals', now: NOW }).ok, true);
+  eq('while a live request still does',
+    canQueue(staleQueue(5), { kind: 'referrals', now: NOW }).reason, 'already_active');
 
   // The live bug this closes: a Turing run waiting for the operator held the `referrals` slot,
   // so the tenant's own Micro1 capture was refused as "already waiting" — for a marketplace

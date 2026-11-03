@@ -41,7 +41,7 @@ import {
 import { summarizeSignedIn } from '../utils/browserActor/signedIn.js';
 import { parseProfileMap } from '../utils/browserActor/identity.js';
 import { redact } from '../utils/browserActor/moreloginClient.js';
-import { canQueue, createRunStore, isActiveStatus, isStalled, runPlatform, MICRO1_RUN_KIND } from '../utils/browserActor/runs.js';
+import { canQueue, createRunStore, isActiveStatus, isExpiredQueue, isStalled, runPlatform, MICRO1_RUN_KIND } from '../utils/browserActor/runs.js';
 import { createAgentTokenStore, describeAgentToken } from '../utils/browserActor/agentTokens.js';
 import { PAIRING_TABLE } from '../utils/browserActor/pairing.js';
 import {
@@ -376,22 +376,28 @@ export function createBrowserAccessRouter({
         // with "already waiting" and no way to clear it.
         (String(row.kind || '').toLowerCase() === MICRO1_RUN_KIND || runPlatform(row) === 'micro1') &&
         isActiveStatus(row.status) &&
-        isStalled(row, now())
+        (isStalled(row, now()) || isExpiredQueue(row, now()))
       ));
       for (const row of abandoned) {
+        const expired = isExpiredQueue(row, now());
         await runStore.finish({
           runId: row.id,
-          status: 'failed',
+          // A worker that died is a failure; a request nobody claimed is a cancellation.
+          status: expired ? 'cancelled' : 'failed',
           done: row.done_items,
           ok: row.ok_items,
           failed: row.failed_items,
           total: row.total_items,
-          message: 'The worker stopped reporting, so this run was closed to let a new one start.',
-          detail: { abandoned: true, lastHeartbeatAt: row.heartbeat_at || null }
+          // "No runner picked this up" is a different fact from "the worker stopped", and the
+          // tenant reads both: one means their machine was closed, the other means nobody came.
+          message: expired
+            ? 'No worker picked this up within 30 minutes, so it was cleared to let you start another.'
+            : 'The worker stopped reporting, so this run was closed to let a new one start.',
+          detail: expired ? { expired: true } : { abandoned: true, lastHeartbeatAt: row.heartbeat_at || null }
         }).catch((error) => {
-          console.error(`[browser-access] could not close abandoned run ${row.id}: ${error?.message || error}`);
+          console.error(`[browser-access] could not close run ${row.id}: ${error?.message || error}`);
         });
-        console.error(`[browser-access] tenant=${ctx.site.slug} closed abandoned run ${row.id}`);
+        console.error(`[browser-access] tenant=${ctx.site.slug} closed ${expired ? 'expired' : 'abandoned'} run ${row.id}`);
       }
 
       let run = null;

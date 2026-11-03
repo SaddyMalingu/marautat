@@ -1495,10 +1495,16 @@ function wfPlatformCardHtml(d, spec) {
     ? `${funnel.captured} captured · ${funnel.linked} linked · ${funnel.verified} verified${funnel.wrong ? ` · <span style="color:#ef4444">${funnel.wrong} wrong</span>` : ''}`
     : 'nothing captured yet';
 
+  // A marketplace with a live run cannot queue another (the database holds one slot per kind),
+  // so the button says that instead of letting the tenant press it and get a 409 — switching
+  // should be one decision, not a decision plus an error.
+  const busy = Boolean(state && state.active);
+  const busyTitle = 'A capture is already running for this marketplace — wait for it or press Cancel';
+
   const buttons = browserDriven
-    ? `<button class="btn btn-outline-acc btn-sm" data-wfact="capture" ${browserReady ? '' : 'disabled title="Connect your browser below first"'}>Capture Micro1 links</button>`
-    : `<button class="btn btn-outline-acc btn-sm" data-wfact="queue" data-kind="referrals" data-refresh="0" title="Reads Turing and attaches each role's referral link">Capture links</button>
-       <button class="btn btn-outline-light btn-sm" data-wfact="queue" data-kind="referrals" data-refresh="1" title="Opens each Turing role and stores the full description">Fill descriptions</button>`;
+    ? `<button class="btn btn-outline-acc btn-sm" data-wfact="capture" ${busy ? `disabled title="${esc(busyTitle)}"` : browserReady ? '' : 'disabled title="Connect your browser below first"'}>Capture Micro1 links</button>`
+    : `<button class="btn btn-outline-acc btn-sm" data-wfact="queue" data-kind="referrals" data-refresh="0" ${busy ? `disabled title="${esc(busyTitle)}"` : ''} title="Reads Turing and attaches each role's referral link">Capture links</button>
+       <button class="btn btn-outline-light btn-sm" data-wfact="queue" data-kind="referrals" data-refresh="1" ${busy ? 'disabled' : ''} title="Opens each Turing role and stores the full description">Fill descriptions</button>`;
 
   const howItRuns = browserDriven
     ? 'Reads Micro1 through <strong>your own browser</strong> — your worker has to be running, and each capture uses one MoreLogin start.'
@@ -1557,7 +1563,7 @@ function wfQueuedHint(run) {
   if (platform === 'micro1') {
     return 'Queued for your worker — it claims this within about 15 seconds while its window is open. Leave the worker running.';
   }
-  return "Queued for Alphadome's Turing runner — Turing is read on our side, so this starts when we pick it up. Nothing to do on your computer.";
+  return "Queued for Alphadome's Turing runner — Turing is read on our side, so this starts when we pick it up. Nothing to do on your computer, and it clears itself after 30 minutes if nobody does.";
 }
 
 function wfActionsHtml(d) {

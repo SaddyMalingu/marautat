@@ -1488,7 +1488,8 @@ function fakeOfferDb() {
 
   const workerSrc = fs.readFileSync(path.join(root, 'scripts', 'browser_actor_worker.mjs'), 'utf8');
   ok('the worker filters the queue before claiming', /queued\.find\(canRunHere\)/.test(workerSrc));
-  ok('and says which runs it is leaving alone', /only drives micro1/.test(workerSrc));
+  ok('and says which runs it is leaving alone', /drives Micro1 only/.test(workerSrc));
+  ok('and that saying it once is enough', /lastSkipSignature/.test(workerSrc) && /lastIdleSignature/.test(workerSrc));
 
   const dashSrc = fs.readFileSync(path.join(root, 'admin', 'tenant_dashboard.html'), 'utf8');
   // The two marketplaces moved into their own cards, because one button row could not say
@@ -1497,6 +1498,9 @@ function fakeOfferDb() {
   ok('each marketplace card names its own capture button',
     /Capture Micro1 links/.test(dashSrc) && /Capture links<\/button>/.test(dashSrc)
     && /Fill descriptions<\/button>/.test(dashSrc));
+  ok('and a marketplace with a live run cannot be queued twice from the panel',
+    /const busy = Boolean\(state && state\.active\)/.test(dashSrc)
+    && /already running for this marketplace/.test(dashSrc));
   ok('and a tenant can tell the two jobs apart by where they run',
     /Turing is read by <strong>Alphadome/.test(dashSrc)
     && /your worker has to be running/.test(dashSrc));
