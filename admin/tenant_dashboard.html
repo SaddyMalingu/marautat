@@ -508,7 +508,11 @@ async function restoreSessionFromCookie() {
 async function api(url, opts = {}) {
   const headers = { ...(opts.headers || {}) };
   if (S.token) headers['x-tenant-session'] = S.token;
-  const r = await fetch(url, { ...opts, headers });
+  // Never let the browser answer from cache: `GET /tenant/blogger/browser-access` returned 304
+  // (Express ETag) on 2026-11-03 and the panel then read a body from *before* the worker had
+  // reported its browser — so a connected tenant saw "nothing connected" and a disabled button.
+  // State that decides whether a control works is not cacheable.
+  const r = await fetch(url, { cache: 'no-store', ...opts, headers });
   if (r.status === 401 && url.startsWith('/tenant/')) { clearSession(); showLogin('Session expired. Please sign in again.'); }
   return r;
 }
@@ -1437,11 +1441,12 @@ function wfPlatformCardHtml(d, spec) {
   const last = state && state.last;
   const browserDriven = spec.slug === 'micro1';
 
-  // Only Micro1 needs a browser, and only for this tenant's own profile. `wfAccessData` is
-  // the same payload the "Your own browser" panel renders, so the two cannot disagree; when
-  // it has not loaded yet we let the server refuse rather than guess.
-  const access = wfAccessData || null;
-  const browserReady = !browserDriven || !access || Boolean(access.connected || access.workerBrowser);
+  // Only Micro1 needs a browser, and only for this tenant's own profile. The gate reads the
+  // *same* payload that renders the identity line above, never a second request: on
+  // 2026-11-03 the browser-access fetch came back as a cached 304 body from before the worker
+  // reported, so a connected tenant was shown a disabled button for no visible reason.
+  const mapped = d.identity ? d.identity.mapped !== false : true;
+  const browserReady = !browserDriven || mapped;
 
   const statusLine = current
     ? `${wfRunChip(current.status)} · ${current.done}/${current.total || '?'} · started ${wfAgo(current.startedAt || current.createdAt)}`
@@ -1711,6 +1716,11 @@ function wfWireControl() {
     else if (act === 'cancel') wfCancelRun(btn.dataset.run, btn);
     else if (act === 'resolve') wfResolveLink(btn.dataset.id, btn.dataset.act, btn);
     else if (act === 'filter') wfApplyLinkFilter(btn.dataset.filter);
+    // The Micro1 card's button lives in this panel but the action was only wired in the access
+    // panel, so the click did nothing at all — no request, no toast, no error. A delegated
+    // handler must know every `data-wfact` its own markup renders; `test:writer-flow` now
+    // asserts that, because silence is indistinguishable from a bug to the person clicking.
+    else if (act === 'capture') wfCaptureNow(btn);
   });
 }
 

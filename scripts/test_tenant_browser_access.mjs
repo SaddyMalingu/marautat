@@ -610,6 +610,33 @@ const cloudAccess = { browserAccess: { provider: 'morelogin', envId: '2116562908
 const localAccess = { browserAccess: { provider: 'morelogin', envId: '2116562908359495680', runtime: 'local', keySealed: sealed, connectedAt: '2026-11-02T10:00:00.000Z' } };
 
 {
+  // The tenant did everything right — worker running, browser reported — and was still told
+  // "Connect your own browser first", because this route demanded a *keyed* connection. A key
+  // is only needed when the server itself starts the browser; a queued run for the tenant's
+  // worker needs nothing but the profile id it already reported.
+  const db = fakeCaptureDb({
+    workerBrowser: {
+      envId: '2116562908359495680',
+      label: 'Malingu Ventures',
+      machine: 'DESKTOP-A2JE7DO',
+      reportedAt: '2026-11-03T09:39:34.000Z'
+    }
+  });
+  const spawned = [];
+  const server = await withCaptureServer({ db, spawnRun: (args) => { spawned.push(args); return { pid: 1 }; } });
+  try {
+    const res = await call(server.base, 'POST', '/tenant/blogger/browser-access/capture', { platform: 'micro1' });
+    eq('a worker-reported browser is enough to queue a capture', res.status, 202);
+    eq('and it is queued for that machine', res.body.queuedForWorker, true);
+    eq('as a micro1 run', db.runs[0]?.kind, 'micro1');
+    eq('with the local runtime recorded', db.runs[0]?.detail?.runtime, 'local');
+    eq('and nothing was started on this host', spawned.length, 0);
+  } finally {
+    await server.close();
+  }
+}
+
+{
   const db = fakeCaptureDb({});
   const server = await withCaptureServer({ db, spawnRun: () => { throw new Error('should not spawn'); } });
   try {

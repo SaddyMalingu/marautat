@@ -761,6 +761,23 @@ async function withServer(db) {
     /Reads Micro1 through <strong>your own browser<\/strong>/.test(dash)
     && /Turing is read by <strong>Alphadome/.test(dash));
   ok('the old shared "both queue a Turing run" row is gone', !/Both queue a Turing run/.test(dash));
+
+  // A delegated click handler must know every action its own markup renders. On 2026-11-03 the
+  // Micro1 card's `data-wfact="capture"` button lived in the control panel while only the
+  // access panel handled `capture`, so the click sent no request, showed no error, and the
+  // tenant reasonably concluded the feature was broken. Silence is the bug.
+  //
+  // Two actions are handled without a `=== '<action>'` comparison and are listed on purpose:
+  //   worker-download — an <a href> that downloads the bundle; the browser does the work.
+  //   leads           — the else branch of the campaigns handler (anything that is not "run"
+  //                     shows that campaign's leads).
+  const structurAllyHandled = new Set(['worker-download', 'leads']);
+  const actions = [...new Set([...dash.matchAll(/data-wfact="([a-z][a-z-]*)"/g)].map((m) => m[1]))];
+  const unhandled = actions.filter((act) => !structurAllyHandled.has(act) && !dash.includes(`=== '${act}'`));
+  ok('every button action the panel renders is handled somewhere', unhandled.length === 0);
+  if (unhandled.length) console.error(`      unhandled: ${unhandled.join(', ')}`);
+  ok('and the Micro1 card specifically reaches the capture handler',
+    /else if \(act === 'capture'\) wfCaptureNow\(btn\)/.test(dash));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -32,6 +32,7 @@ import {
   openSecretFromEnv,
   publicAccessStatus,
   readAccess,
+  readWorkerBrowser,
   resolveAccessIdentity,
   sealSecretWithEnv,
   secretsConfigured,
@@ -328,7 +329,13 @@ export function createBrowserAccessRouter({
       if (!ctx) return fail(res, 404, 'Tenant not found');
 
       const access = readAccess(ctx.site.metadata);
-      if (!access) {
+      // A profile the tenant's own worker reported was enough to run a capture from that
+      // machine — but this route demanded a *keyed* connection, so a tenant who had done
+      // everything right (worker running, browser reported) was told "Connect your own browser
+      // first". The credential is only needed when *we* start the browser; a queued run for
+      // their worker needs nothing but the profile id it already told us.
+      const reported = readWorkerBrowser(ctx.site.metadata);
+      if (!access && !reported) {
         return fail(res, 409, 'Connect your own browser first — the portal can only capture on a profile you own', {
           reason: 'not_connected'
         });
@@ -336,7 +343,7 @@ export function createBrowserAccessRouter({
       // A cloud profile can be started from here. A local one cannot — so the run is queued
       // for the tenant's own worker instead of being refused. Same button, same row, and
       // the portal's existing "waiting for a runner" state already describes it honestly.
-      const runsInCloud = access.runtime === 'cloud';
+      const runsInCloud = Boolean(access && access.runtime === 'cloud');
 
       const platform = String(req.body?.platform || 'micro1').toLowerCase();
       if (!SERVER_SIDE_PLATFORMS.includes(platform)) {
@@ -391,7 +398,7 @@ export function createBrowserAccessRouter({
           kind: MICRO1_RUN_KIND,
           sourceSlug: platform,
           requestedBy: 'tenant:portal',
-          detail: { limit, platform, via: 'portal', runtime: access.runtime }
+          detail: { limit, platform, via: 'portal', runtime: access?.runtime || 'local' }
         });
       } catch (error) {
         // 23505 = the partial unique index. Someone queued between our read and our insert
