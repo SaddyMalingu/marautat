@@ -863,16 +863,21 @@ ok('and the hash never appears in the description',
   !JSON.stringify(describeAgentToken({ id: 't1', token_prefix: 'wkr_ab', token_hash: 'deadbeef' })).includes('deadbeef'));
 
 /** Just enough database for the agent routes: filters, update, and a thenable chain. */
-function fakeAgentDb({ runs = [], tokens = [], offers = [], site = { id: 'tenant-1', slug: 'acme' } } = {}) {
+function fakeAgentDb({ runs = [], tokens = [], offers = [], signals = [], site = { id: 'tenant-1', slug: 'acme' } } = {}) {
   const table = (name) => {
     const state = { filters: [], patch: null, mode: 'select' };
-    const matches = (row) => state.filters.every(([col, kind, val]) => (
-      kind === 'is' ? (val === null ? row[col] == null : row[col] === val) : row[col] === val
-    ));
+    const matches = (row) => state.filters.every(([col, kind, val]) => {
+      if (kind === 'is') return val === null ? row[col] == null : row[col] === val;
+      if (kind === 'in') return (Array.isArray(val) ? val : []).includes(row[col]);
+      if (kind === 'gte') return Number(row[col]) >= Number(val);
+      if (kind === 'neq') return row[col] !== val;
+      return row[col] === val;
+    });
     const rows = () => {
       if (name === 'browser_actor_runs') return runs;
       if (name === 'site_tenants') return [site];
       if (name === 'opportunities') return offers;
+      if (name === 'social_signals') return signals;
       // An unknown table answers empty rather than with tokens: a stray token row would look
       // like a matched `opportunity_sources` row and quietly attribute offers to nothing.
       if (name === 'browser_actor_agent_tokens') return tokens;
@@ -892,10 +897,25 @@ function fakeAgentDb({ runs = [], tokens = [], offers = [], site = { id: 'tenant
       limit: () => api,
       eq: (col, val) => { state.filters.push([col, 'eq', val]); return api; },
       is: (col, val) => { state.filters.push([col, 'is', val]); return api; },
+      in: (col, val) => { state.filters.push([col, 'in', val]); return api; },
+      gte: (col, val) => { state.filters.push([col, 'gte', val]); return api; },
+      neq: (col, val) => { state.filters.push([col, 'neq', val]); return api; },
       update: (patch) => { state.mode = 'update'; state.patch = patch; return api; },
       insert: (row) => {
-        // Offers are the only rows this suite inserts through the agent routes.
         const created = Array.isArray(row) ? row : [row];
+        if (name === 'social_signals') {
+          // The unique constraint on (tenant_id, post_url) is the real one in Postgres; without
+          // it here the duplicate path could not be tested at all.
+          const clash = created.find((entry) => signals.some((existing) => (
+            existing.tenant_id === entry.tenant_id && existing.post_url === entry.post_url
+          )));
+          if (clash) {
+            return { select: () => ({ maybeSingle: async () => ({ data: null, error: { code: '23505', message: 'duplicate key value violates unique constraint' } }), then: (resolve) => Promise.resolve({ data: null, error: { code: '23505' } }).then(resolve) }) };
+          }
+          created.forEach((entry) => signals.push({ id: `signal-${signals.length + 1}`, status: 'new', ...entry }));
+          return { select: () => ({ maybeSingle: async () => ({ data: created[0] || null, error: null }), then: (resolve) => Promise.resolve({ data: created, error: null }).then(resolve) }) };
+        }
+        // Offers are the only other rows this suite inserts through the agent routes.
         created.forEach((entry) => offers.push({ id: `offer-${offers.length + 1}`, ...entry }));
         return { select: () => ({ maybeSingle: async () => ({ data: created[0] || null, error: null }), then: (resolve) => Promise.resolve({ data: created, error: null }).then(resolve) }) };
       },
@@ -908,7 +928,7 @@ function fakeAgentDb({ runs = [], tokens = [], offers = [], site = { id: 'tenant
     };
     return api;
   };
-  return { runs, tokens, site, from: table };
+  return { runs, tokens, site, signals, from: table };
 }
 
 async function withAgentServer(db) {
@@ -1785,7 +1805,13 @@ function fakeOfferDb() {
 
   const workerSrc = fs.readFileSync(path.join(root, 'scripts', 'browser_actor_worker.mjs'), 'utf8');
   ok('and it picks the script by platform, never by a default',
-    /platform === 'turing'[\s\S]{0,80}browser_actor_referrals\.mjs/.test(workerSrc));
+    /SCRIPT_BY_PLATFORM = Object\.freeze\(\{[\s\S]{0,220}micro1:[\s\S]{0,140}turing:[\s\S]{0,140}linkedin:/.test(workerSrc)
+    && /const script = scriptForPlatform\(platform\)/.test(workerSrc));
+  ok('and refuses a platform it has no runner for instead of defaulting to Micro1',
+    /if \(!script\)[\s\S]{0,320}return Promise\.resolve\(1\)/.test(workerSrc));
+  ok('a listen run is dispatched to the listener',
+    /linkedin: path\.join\('scripts', 'browser_actor_linkedin_listen\.mjs'\)/.test(workerSrc));
+  ok('and is bounded by searches rather than by roles', /'--queries'/.test(workerSrc) && /'--per-query'/.test(workerSrc));
   ok('the bundle carries the Turing runner it dispatches to',
     buildWorkerBundle({ apiBase: 'https://portal.example' }).entries.some((entry) => entry.name === 'scripts/browser_actor_referrals.mjs'));
   ok('the worker filters the queue before claiming', /queued\.find\(canRunHere\)/.test(workerSrc));
@@ -1842,6 +1868,21 @@ function fakeOfferDb() {
   const dashSrc = fs.readFileSync(path.join(root, 'admin', 'tenant_dashboard.html'), 'utf8');
   ok('the panel warns when no browser is resolved for the tenant',
     /d\.runSource === 'none'/.test(dashSrc) && /a capture queues and nothing can run it/.test(dashSrc));
+
+  // Listening (2026-11-04): the card has to be able to say three different things — never run,
+  // not set up, and nothing matched — because only one of those is about the market.
+  ok('the panel renders a listening block inside collection control',
+    /function wfListeningHtml/.test(dashSrc) && /\$\{wfListeningHtml\(d\)\}/.test(dashSrc));
+  ok('with a button that queues a listen run, not a capture',
+    /data-wfact="queue" data-kind="listen"/.test(dashSrc));
+  ok('and it distinguishes "not set up" from "nothing matched"',
+    /Not set up yet/.test(dashSrc) && /No post has matched one of your intents yet/.test(dashSrc));
+  ok('the card shows the score with its evidence, and never claims to have sent anything',
+    /showing the \$\{items\.length\} strongest/i.test(dashSrc)
+    && /Nobody was messaged by this system/.test(dashSrc));
+  ok('the listening actions are wired, so a click is never silent',
+    /act === 'signal-copy'/.test(dashSrc) && /act === 'signal-status'/.test(dashSrc)
+    && /async function wfSetSignalStatus/.test(dashSrc));
 }
 
 // The frozen Turing run, reproduced and fixed (2026-11-04).
@@ -1898,6 +1939,106 @@ function fakeOfferDb() {
   const agentAt = serverSource.indexOf("app.use('/api/agent', express.json({ limit: '12mb' }))");
   const globalAt = serverSource.indexOf('app.use(express.json({');
   ok('server.js mounts the bigger parser before the global one', agentAt > 0 && globalAt > agentAt);
+}
+
+// ---------------------------------------------------------------------------
+// Listening: the worker sends posts, the portal decides what they mean
+// ---------------------------------------------------------------------------
+
+{
+  const created = createAgentToken({ label: 'listen' });
+  const runs = [{ id: 'run-listen', tenant_id: 'tenant-1', kind: 'listen', status: 'queued', detail: { limit: 3, platform: 'linkedin' } }];
+  const tokens = [{ id: 'tok-listen', tenant_id: 'tenant-1', token_hash: created.tokenHash, token_prefix: created.tokenPrefix, revoked_at: null }];
+  const db = fakeAgentDb({ runs, tokens, signals: [] });
+  const server = await withAgentServer(db);
+  const beforeProfiles = process.env.BROWSER_ACTOR_PROFILES;
+  try {
+    // A context needs a browser for this tenant; the operator's own hosted profile is enough.
+    process.env.BROWSER_ACTOR_PROFILES = JSON.stringify({ acme: '123456789' });
+    const context = await agentCall(server.base, 'GET', '/api/agent/runs/run-listen/context', { token: created.token });
+    eq('a listen run is told which searches to run', Array.isArray(context.body?.queries) ? context.body.queries.length : 0, 6);
+    ok('and every search names an intent from the taxonomy',
+      (context.body?.queries || []).every((row) => row.phrase && row.intentId));
+    eq('a listener is not sent the tenant’s 132 offers', (context.body?.known || []).length, 0);
+    eq('and the platform is linkedin, so the worker dispatches the listener', context.body?.sourceSlug, 'linkedin');
+
+    const posts = [
+      // A real inquiry: trigger phrase, budget, timeline, Nairobi, a phone number, a buyer title.
+      {
+        postUrl: 'https://www.linkedin.com/feed/update/urn:li:activity:7001/',
+        postText: 'Our operations manager is looking for a car for the fleet — budget KES 2.8M, need it this month. WhatsApp 0712 345 678.',
+        authorName: 'Jane Wanjiru',
+        authorHandle: 'jane-w'
+      },
+      // The same words, but a job advert: the exclusion phrase is the whole point.
+      {
+        postUrl: 'https://www.linkedin.com/feed/update/urn:li:activity:7002/',
+        postText: 'Job vacancy: driver wanted. Need a vehicle licence, urgent. Dealer ad follows.',
+        authorName: 'Fleet Recruiters'
+      },
+      // Nothing we sell.
+      {
+        postUrl: 'https://www.linkedin.com/feed/update/urn:li:activity:7003/',
+        postText: 'Lovely sunset over Nairobi today, grateful for this city.',
+        authorName: 'Sunset Photos'
+      }
+    ];
+    // A worker that tries to rank its own find: the score must come from the taxonomy, not from here.
+    const scored = await agentCall(server.base, 'POST', '/api/agent/runs/run-listen/signals', {
+      token: created.token,
+      body: { posts: posts.map((post) => ({ ...post, intentScore: 100, score: 100 })) }
+    });
+    eq('the portal accepts the batch', scored.status, 200);
+    eq('one post was worth storing', scored.body?.stored, 1);
+    eq('the job advert was excluded, not stored', scored.body?.dropped?.excluded, 1);
+    eq('and the sunset was off-topic', scored.body?.dropped?.notRelevant, 1);
+    eq('exactly one signal exists for the tenant', db.signals.length, 1);
+    const stored = db.signals[0];
+    eq('the stored score is computed here', stored.intent_score === 100, false);
+    ok('the score is high enough to act on', Number(stored.intent_score) >= 65);
+    eq('the intent is the one the phrases belong to', stored.intent_id, 'vehicle_purchase');
+    ok('the evidence is kept with the score',
+      Array.isArray(stored.trigger_hits) && stored.trigger_hits.includes('looking for a car'));
+    eq('the phone number is normalised for WhatsApp', stored.contact_phone, '+254712345678');
+    ok('and a first line is drafted for a human to send', /saw your post about/i.test(stored.draft_first_line || ''));
+    eq('the run stays open for the next batch', (scored.body?.run?.status || 'queued') !== 'succeeded', true);
+
+    // Running the same search twice must not double the digest.
+    const again = await agentCall(server.base, 'POST', '/api/agent/runs/run-listen/signals', {
+      token: created.token,
+      body: { posts: [posts[0]] }
+    });
+    eq('a repeat of the same post is not stored twice', again.body?.stored, 0);
+    eq('and is reported as already known', again.body?.duplicates, 1);
+    eq('the table still holds one row', db.signals.length, 1);
+
+    // A hostile body: a javascript: permalink, a stub of text, and the same post twice.
+    const hostile = await agentCall(server.base, 'POST', '/api/agent/runs/run-listen/signals', {
+      token: created.token,
+      body: {
+        posts: [
+          { postUrl: 'javascript:alert(1)', postText: 'looking for a car and a van, budget KES 900000, urgent' },
+          { postUrl: 'https://www.linkedin.com/feed/update/urn:li:activity:7004/', postText: 'short' },
+          { postUrl: 'https://www.linkedin.com/feed/update/urn:li:activity:7005/', postText: 'We need a vehicle for our logistics team this week, budget KES 1.2M. Call me on 0722 111 222.' },
+          { postUrl: 'https://www.linkedin.com/feed/update/urn:li:activity:7005/', postText: 'We need a vehicle for our logistics team this week, budget KES 1.2M. Call me on 0722 111 222.' }
+        ]
+      }
+    });
+    eq('a non-web permalink is dropped', hostile.body?.stored, 1);
+    eq('and the duplicate inside the batch is not counted twice', db.signals.length, 2);
+
+    // A closed run can never be written to, or a retry would double-insert.
+    runs[0].status = 'succeeded';
+    const closed = await agentCall(server.base, 'POST', '/api/agent/runs/run-listen/signals', {
+      token: created.token,
+      body: { posts: [posts[2]] }
+    });
+    eq('a finished run refuses new signals', closed.status, 409);
+  } finally {
+    if (beforeProfiles === undefined) delete process.env.BROWSER_ACTOR_PROFILES;
+    else process.env.BROWSER_ACTOR_PROFILES = beforeProfiles;
+    await server.close();
+  }
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

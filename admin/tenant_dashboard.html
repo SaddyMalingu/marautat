@@ -1617,6 +1617,93 @@ function wfLinkQueueHtml(d) {
     </div>`;
 }
 
+/**
+ * Social listening: who said they need something, and the first line to send.
+ *
+ * Two rules borrowed from the rest of this panel. The count comes from the data (never from the
+ * size of the list), and a state we did not observe is said out loud — "not set up yet" is a
+ * different sentence from "nobody is talking about this", and only one of them is our fault.
+ */
+function wfListeningHtml(d) {
+  const listening = d.listening || {};
+  const items = Array.isArray(listening.items) ? listening.items : [];
+  const summary = listening.summary || {};
+  const runState = ((d.runs && d.runs.byPlatform) || {}).linkedin || null;
+  const active = runState && runState.active;
+  const last = runState && runState.last;
+
+  const startButton = `<button class="btn btn-outline-acc btn-sm" data-wfact="queue" data-kind="listen" data-refresh="0"
+      ${active ? 'disabled title="A listening run is already going — wait for it"' : ''}
+      title="Reads the searches your taxonomy defines on your own LinkedIn, and scores what people wrote">Start listening</button>`;
+
+  if (listening.available === false) {
+    return `<div class="mt-3">
+      <div class="text-muted" style="font-size:.74rem;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Listening</div>
+      <div style="color:#f59e0b;font-size:.8rem">Not set up yet — apply <code>${esc(listening.needsMigration || 'the social signals migration')}</code>. Nothing has been read, so this is not an empty week.</div>
+    </div>`;
+  }
+
+  const statusLine = active
+    ? `${wfRunChip(active.status)} · ${active.done}/${active.total || '?'} searches · started ${wfAgo(active.startedAt || active.createdAt)}`
+    : last
+      ? `${wfRunChip(last.status)} · last ${wfAgo(last.finishedAt || last.createdAt)}${last.total ? ` · ${last.done}/${last.total} searches` : ''}`
+      : '<span class="text-muted">never run for this tenant</span>';
+
+  const countsLine = summary.total
+    ? `${esc(String(summary.new || 0))} new · ${esc(String(summary.drafted || 0))} drafted · ${esc(String(summary.sent || 0))} sent · ${esc(String(summary.ignored || 0))} ignored`
+    : 'nothing scored yet';
+
+  if (!items.length) {
+    return `<div class="mt-3">
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div class="text-muted" style="font-size:.74rem;text-transform:uppercase;letter-spacing:1px">Listening</div>
+        <span style="font-size:.76rem">${statusLine}</span>
+      </div>
+      <div class="text-muted" style="font-size:.78rem;margin:4px 0 6px">No post has matched one of your intents yet. ${esc(countsLine)}.</div>
+      <div class="d-flex gap-2 flex-wrap">${startButton}</div>
+      <div class="text-muted" style="font-size:.72rem;margin-top:4px">Reads public posts in your own signed-in LinkedIn — a handful of searches, at a human pace, and nothing is ever sent from here.</div>
+    </div>`;
+  }
+
+  const rows = items.slice(0, 6).map((item) => {
+    const scoreColour = Number(item.score) >= 70 ? '#22c55e' : Number(item.score) >= 50 ? '#f59e0b' : '#94a3b8';
+    const channel = item.recommendedChannel === 'whatsapp' ? 'WhatsApp' : item.recommendedChannel === 'email' ? 'email' : 'message';
+    const draft = item.draftFirstLine || '';
+    return `<div style="border:1px solid rgba(148,163,184,.2);border-radius:8px;padding:8px 10px;margin-bottom:6px">
+      <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
+        <div style="font-size:.82rem;min-width:0">
+          <strong>${esc(item.authorName || item.authorHandle || 'someone')}</strong>
+          <span class="text-muted"> · ${esc(item.intentName || item.intentId)}</span>
+          <div class="text-muted" style="font-size:.76rem;margin-top:2px">${esc(item.postText || '')}</div>
+        </div>
+        <div style="text-align:right;white-space:nowrap">
+          <span style="color:${scoreColour};font-weight:700;font-size:.82rem">${esc(String(item.score))}</span>
+          <span class="text-muted" style="font-size:.7rem">/${esc(item.confidence || '')}</span>
+          <div class="text-muted" style="font-size:.68rem">via ${esc(channel)}</div>
+        </div>
+      </div>
+      ${draft ? `<div class="text-muted" style="font-size:.74rem;margin-top:6px;border-left:2px solid rgba(148,163,184,.35);padding-left:8px">${esc(draft)}</div>` : ''}
+      <div class="d-flex gap-2 flex-wrap mt-1">
+        <button class="btn btn-outline-light btn-sm" data-wfact="signal-copy" data-id="${esc(item.id)}" title="Copies the first line, so you paste it into your own message">Copy first line</button>
+        ${item.postUrl ? `<a class="btn btn-outline-light btn-sm" href="${esc(item.postUrl)}" target="_blank" rel="noopener noreferrer">Open post</a>` : ''}
+        <button class="btn btn-outline-acc btn-sm" data-wfact="signal-status" data-id="${esc(item.id)}" data-status="sent">I sent it</button>
+        <button class="btn btn-outline-light btn-sm" data-wfact="signal-status" data-id="${esc(item.id)}" data-status="ignored">Not relevant</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  return `<div class="mt-3">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <div class="text-muted" style="font-size:.74rem;text-transform:uppercase;letter-spacing:1px">Listening</div>
+      <span style="font-size:.76rem">${statusLine}</span>
+    </div>
+    <div class="text-muted" style="font-size:.78rem;margin:4px 0 6px">${esc(countsLine)} · showing the ${items.length} strongest, best first</div>
+    <div class="d-flex gap-2 flex-wrap mb-2">${startButton}</div>
+    ${rows}
+    <div class="text-muted" style="font-size:.72rem">Nobody was messaged by this system. The draft is a starting line — you send it, from your own account, in your own name.</div>
+  </div>`;
+}
+
 function wfControlHtml(d) {
   const runs = d.runs || {};
   const identity = d.identity || {};
@@ -1641,6 +1728,7 @@ function wfControlHtml(d) {
     </div>
     ${wfActiveRunHtml(d)}
     ${wfFunnelHtml(d)}
+    ${wfListeningHtml(d)}
     <div class="mt-3"><div class="text-muted" style="font-size:.74rem;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Next</div>${wfActionsHtml(d)}</div>
     <div class="mt-3"><div class="text-muted" style="font-size:.74rem;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Links that need you</div>${wfLinkQueueHtml(d)}</div>`;
 }
@@ -1696,7 +1784,13 @@ async function wfQueueRun(kind, refresh, btn) {
     const r = await apiJson('/tenant/blogger/runs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kind: kind || 'referrals', refresh: Boolean(refresh), limit: 120 })
+      body: JSON.stringify({
+        kind: kind || 'referrals',
+        refresh: Boolean(refresh),
+        // A listen run counts searches, not roles: three intents' worth is a useful week, and a
+        // "120" left over from the capture default would show a progress bar that never fills.
+        limit: (kind || 'referrals') === 'listen' ? 3 : 120
+      })
     });
     if (!r.ok) { toast(r.data?.error || 'Could not queue the run', 'err'); return; }
     toast(r.data?.message || 'Run queued', 'ok');
@@ -1718,6 +1812,45 @@ async function wfCancelRun(runId, btn) {
   else toast('Run cancelled', 'ok');
   await wfLoadControl();
 }
+
+/**
+ * Copy the drafted first line.
+ *
+ * A clipboard that silently fails is worse than no button, so if the API is unavailable the
+ * tenant is told to select the text instead of being left to paste whatever was there before.
+ */
+async function wfCopySignalDraft(signalId, btn) {
+  const signal = ((wfControlData?.listening?.items) || []).find((row) => String(row.id) === String(signalId));
+  const draft = signal && signal.draftFirstLine;
+  if (!draft) { toast('That signal has no draft yet — press Start listening to refresh it', 'err'); return; }
+  try {
+    await navigator.clipboard.writeText(draft);
+    toast('First line copied — paste it into your own message', 'ok');
+  } catch {
+    toast('Could not reach the clipboard. Select the text above and copy it manually.', 'err');
+  }
+  if (btn) btn.disabled = false;
+}
+
+/** The tenant's own record: "I sent it" or "not relevant". Nothing is sent from here. */
+async function wfSetSignalStatus(signalId, status, btn) {
+  if (!signalId || !status) return;
+  const label = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  try {
+    const r = await apiJson(`/tenant/blogger/signals/${encodeURIComponent(signalId)}/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status })
+    });
+    if (!r.ok) { toast(r.data?.error || 'Could not record that', 'err'); return; }
+    toast(status === 'sent' ? 'Marked as sent — nice work' : 'Marked as not relevant', 'ok');
+    await wfLoadControl();
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = label; }
+  }
+}
+
 
 async function wfResolveLink(id, action, btn) {
   if (!id || !action) return;
@@ -1765,6 +1898,9 @@ function wfWireControl() {
     // handler must know every `data-wfact` its own markup renders; `test:writer-flow` now
     // asserts that, because silence is indistinguishable from a bug to the person clicking.
     else if (act === 'capture') wfCaptureNow(btn);
+    // The listening card: start a run, copy a draft, or record what the tenant did about a signal.
+    else if (act === 'signal-copy') wfCopySignalDraft(btn.dataset.id, btn);
+    else if (act === 'signal-status') wfSetSignalStatus(btn.dataset.id, btn.dataset.status, btn);
   });
 }
 

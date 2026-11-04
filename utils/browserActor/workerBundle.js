@@ -39,7 +39,11 @@ export const REQUIRED_ENTRIES = Object.freeze([
   'utils/browserActor/runtime.js',
   'utils/browserActor/cdp.js',
   'utils/browserActor/applyCaptures.js',
-  'scripts/browser_actor_referrals.mjs'
+  'scripts/browser_actor_referrals.mjs',
+  // The listener rides the same worker since 2026-11-04: it needs the same profile, the same
+  // token and the same context call, and a zip without it would claim a listen run and fail.
+  'scripts/browser_actor_linkedin_listen.mjs',
+  'utils/browserActor/tasks/linkedinListen.js'
 ]);
 
 /** Every module under a directory, sorted so two builds are identical. */
@@ -97,6 +101,10 @@ export function buildWorkerBundle({ apiBase, pairCode = null, repoRoot = REPO_RO
   // Turing runs on the same worker since 2026-11-03 (agent mode), so the bundle carries the
   // runner the worker dispatches to — a zip without it would queue Turing and fail on claim.
   entries.push({ name: 'scripts/browser_actor_referrals.mjs', data: read(path.join('scripts', 'browser_actor_referrals.mjs')) });
+  // And the listener since 2026-11-04. It imports `utils/socialIntent.js` for nothing at runtime —
+  // scoring is server-side — but the adapter's DOM expressions live in `tasks/`, which is copied
+  // with the rest of `utils/browserActor` below.
+  entries.push({ name: 'scripts/browser_actor_linkedin_listen.mjs', data: read(path.join('scripts', 'browser_actor_linkedin_listen.mjs')) });
   for (const file of listModuleFiles(path.join(repoRoot, 'utils', 'browserActor'))) {
     entries.push({ name: path.relative(repoRoot, file).split(path.sep).join('/'), data: fs.readFileSync(file) });
   }

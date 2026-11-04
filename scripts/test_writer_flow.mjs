@@ -400,10 +400,13 @@ ok('a crashed runner closes its run as failed', /status: 'failed'/.test(cliSourc
  * Supabase-shaped fake: filters, insert, update, and `maybeSingle` that resolves to one
  * row or null. Enough for the router's real queries, and no database in sight.
  */
-function fakeDb({ offers = [], runs = [] } = {}) {
+function fakeDb({ offers = [], runs = [], signals = [] } = {}) {
   const tables = {
     opportunities: offers.map((row) => ({ ...row })),
-    browser_actor_runs: runs.map((row) => ({ ...row }))
+    browser_actor_runs: runs.map((row) => ({ ...row })),
+    // Listening lives in its own table since 2026-11-04. The panel reads it on every load, so a
+    // fake that does not know it makes the whole panel endpoint look broken.
+    social_signals: signals.map((row) => ({ ...row }))
   };
   const from = (name) => {
     const rows = tables[name] || (tables[name] = []);
@@ -412,6 +415,8 @@ function fakeDb({ offers = [], runs = [] } = {}) {
       const match = (row) => filters.every(([col, kind, val]) => {
         if (kind === 'eq') return row[col] === val;
         if (kind === 'in') return Array.isArray(val) ? val.includes(row[col]) : false;
+        if (kind === 'gte') return Number(row[col]) >= Number(val);
+        if (kind === 'neq') return row[col] !== val;
         if (kind === 'is') return val === null ? row[col] === null || row[col] === undefined : row[col] === val;
         if (kind === 'notnull') return row[col] !== null && row[col] !== undefined;
         return true;
@@ -436,6 +441,9 @@ function fakeDb({ offers = [], runs = [] } = {}) {
         eq: (col, val) => { filters.push([col, 'eq', val]); return api; },
         // The panel now asks for capture kinds only, so the fake must understand `in`.
         in: (col, values) => { filters.push([col, 'in', Array.isArray(values) ? values : [values]]); return api; },
+        // And since 2026-11-04 it reads the listening digest, which filters by score and status.
+        gte: (col, val) => { filters.push([col, 'gte', val]); return api; },
+        neq: (col, val) => { filters.push([col, 'neq', val]); return api; },
         is: (col, val) => { filters.push([col, 'is', val]); return api; },
         not: (col, _op, val) => { filters.push([col, 'notnull', val]); return api; },
         maybeSingle: () => {
@@ -491,6 +499,8 @@ const post = async (url, payload) => {
 
 const viewRes = await get('/tenant/blogger/writer-flow');
 eq('the panel endpoint answers', viewRes.status, 200);
+ok('and it reports the listening state, even before anything is captured',
+  viewRes.body.listening && viewRes.body.listening.available === true && Array.isArray(viewRes.body.listening.items));
 eq("and it is scoped to the session's tenant", viewRes.body.tenant.slug, 'malingu-ventures');
 eq('it reports the funnel', viewRes.body.platforms[0].captured, 4);
 eq('it reports the unverified links', viewRes.body.links.counts.unchecked, 2);

@@ -21,13 +21,21 @@
  *   - a revoked token is refused even though the row still exists.
  */
 import { Router } from 'express';
-import { createRunStore, deriveRunStatus, RUN_STATUSES } from '../utils/browserActor/runs.js';
+import { createRunStore, deriveRunStatus, RUN_STATUSES, runPlatform } from '../utils/browserActor/runs.js';
 import { bearerTokenFromHeader, createAgentTokenStore } from '../utils/browserActor/agentTokens.js';
 import { applyCaptures, applyCaptureUpdates, readCoverage } from '../utils/browserActor/applyCaptures.js';
 import { isValidEnvId } from '../utils/browserActor/identity.js';
 import { publicWorkerBrowser, readAccess, writeWorkerBrowser } from '../utils/tenantAccess.js';
 import { resolveRunnerIdentity } from '../utils/tenantRunnerIdentity.js';
 import { createPairingStore, extractPairingCode, pairingState, PAIRING_TABLE } from '../utils/browserActor/pairing.js';
+import { planSearchQueries } from '../utils/socialIntent.js';
+import {
+  buildSignalRows,
+  createSocialSignalStore,
+  loadTaxonomy,
+  sanitizeListeningPosts,
+  SOCIAL_SIGNALS_TABLE
+} from '../utils/socialSignals.js';
 
 const MAX_CAPTURES_PER_RESULT = 50;
 const MAX_TEXT = 20_000;
@@ -112,12 +120,14 @@ export function createAgentRunsRouter({
   tokenTable = 'browser_actor_agent_tokens',
   runTable = 'browser_actor_runs',
   pairingTable = PAIRING_TABLE,
+  socialTable = SOCIAL_SIGNALS_TABLE,
   now = () => Date.now()
 } = {}) {
   const router = Router();
   const tokens = createAgentTokenStore({ table: () => supabase.from(tokenTable), now });
   const runs = createRunStore({ table: () => supabase.from(runTable), now });
   const pairings = createPairingStore({ table: () => supabase.from(pairingTable), now });
+  const signals = createSocialSignalStore({ table: () => supabase.from(socialTable) });
 
   const fail = (res, status, error, extra = {}) => res.status(status).json({ ok: false, error, ...extra });
 
@@ -359,9 +369,23 @@ export function createAgentRunsRouter({
         .from('opportunities').select('title, slug, external_id').eq('tenant_id', auth.tenantId);
       if (offersError) throw offersError;
 
-      const platform = String(run.platform || 'micro1');
+      // `runPlatform` first: the platform is written into `detail.platform` by the queue route,
+      // and reading only a top-level `platform` column made a listen run resolve as `micro1` —
+      // which sent it the marketplace adapter and no searches at all.
+      const platform = runPlatform(run) || String(run.platform || 'micro1');
       const { data: sourceRow } = await supabase
         .from('opportunity_sources').select('id, slug').eq('slug', platform).maybeSingle();
+
+      // A listening run is told *what to read*, not what the tenant already owns: the taxonomy is
+      // the server's, so a bundled copy on a customer's laptop cannot drift from the intents the
+      // portal will score against. Two phrases per intent, three intents by default.
+      const isListen = platform === 'linkedin' || String(run.kind) === 'listen';
+      const queries = isListen
+        ? planSearchQueries(loadTaxonomy(), {
+            intents: Math.max(1, Math.min(4, Number(run.detail?.limit) || 3)),
+            perIntent: 2
+          })
+        : null;
 
       res.json({
         ok: true,
@@ -374,8 +398,10 @@ export function createAgentRunsRouter({
         sourceSlug: platform,
         sourceId: sourceRow?.id || null,
         // Titles/slugs only: enough to skip roles the tenant already has, and all of it their
-        // own data.
-        known: Array.isArray(offers) ? offers : []
+        // own data. A listener needs none of it — sending 132 offers to a browser that only
+        // reads posts would be a payload for nothing.
+        known: isListen ? [] : (Array.isArray(offers) ? offers : []),
+        ...(queries ? { queries } : {})
       });
     } catch (error) {
       fail(res, 500, error.message || 'Could not build the run context');
@@ -383,7 +409,83 @@ export function createAgentRunsRouter({
   });
 
   /**
-   * The captures come back here to be written.
+   * What a listening run found, to be scored and stored here.
+   *
+   * The same doctrine as `/result`: the machine sends what it *saw*, the server decides what it
+   * *means*. A worker could send any score it liked, so it sends none — it sends post text and a
+   * permalink, and the server scores against the taxonomy it owns. Two consequences worth stating:
+   * a stolen worker token cannot inject a "hot lead", and a crawl that reads 300 posts produces
+   * only the handful that match an intent.
+   *
+   * Like `/result`, this leaves the run open so a long listen can post in batches and `/finish`
+   * closes it once.
+   */
+  router.post('/api/agent/runs/:id/signals', async (req, res) => {
+    const auth = await authenticate(req, res);
+    if (!auth) return;
+    try {
+      const run = await findRunForTenant(auth, req.params.id);
+      if (!run) return fail(res, 404, 'Run not found for this tenant');
+      if (!['queued', 'running'].includes(String(run.status))) {
+        return fail(res, 409, `That run is already ${run.status} — nothing was written`);
+      }
+
+      const posts = sanitizeListeningPosts(req.body?.posts);
+      if (!posts.length) return fail(res, 400, 'That result contained no usable posts');
+
+      const taxonomy = loadTaxonomy();
+      if (!taxonomy.intents.length) {
+        return fail(res, 503, 'The intent taxonomy is not available on the server, so nothing could be scored', {
+          hint: 'data/aboss_social_intent_taxonomy.json is missing or unreadable — the posts themselves are fine.'
+        });
+      }
+
+      const plan = buildSignalRows({
+        posts,
+        taxonomy,
+        tenantId: auth.tenantId,
+        platform: runPlatform(run) || 'linkedin',
+        runId: run.id
+      });
+      const written = plan.rows.length
+        ? await signals.insertMany({ tenantId: auth.tenantId, rows: plan.rows })
+        : { inserted: 0, duplicates: 0, failed: 0 };
+
+      const progress = await runs.progress({
+        runId: run.id,
+        done: posts.length,
+        // "ok" is what the portal accepted or already had. A post that matched no intent was not
+        // a failure — it is the normal case, and counting it as one would paint every good run amber.
+        ok: written.inserted + written.duplicates,
+        failed: 0,
+        total: posts.length,
+        message: `${written.inserted} new signal(s), ${written.duplicates} already known, `
+          + `${plan.excluded} excluded, ${plan.notRelevant} off-topic of ${posts.length} read`.slice(0, 300)
+      }).catch((error) => {
+        console.error(`[agent] run ${run.id} could not record signal progress: ${error?.message || error}`);
+        return null;
+      });
+
+      if (plan.rows.length) {
+        console.error(`[agent] run ${run.id} stored ${written.inserted} signal(s) `
+          + `(${written.duplicates} duplicates, ${plan.excluded} excluded, ${plan.notRelevant} off-topic)`);
+      }
+
+      res.json({
+        ok: true,
+        stored: written.inserted,
+        duplicates: written.duplicates,
+        failed: written.failed,
+        dropped: { excluded: plan.excluded, notRelevant: plan.notRelevant },
+        // The run stays open: `/finish` closes it after the last batch.
+        run: progress || run
+      });
+    } catch (error) {
+      fail(res, 500, error.message || 'Could not record the signals');
+    }
+  });
+
+  /**
    *
    * This is why the tenant's machine needs no database credential: it reports what it saw,
    * and the server — which already holds the privilege — verifies each link and inserts the
@@ -408,7 +510,8 @@ export function createAgentRunsRouter({
       if (tenantError) throw tenantError;
       if (!tenantRow) return fail(res, 404, 'Tenant not found');
 
-      const platform = String(run.platform || 'micro1');
+      // Same resolution as `/context`: `detail.platform` is where the queue route records it.
+      const platform = runPlatform(run) || String(run.platform || 'micro1');
       const { data: offers } = await supabase
         .from('opportunities').select('id, title, slug, external_id, referral_url, description, status')
         .eq('tenant_id', auth.tenantId);

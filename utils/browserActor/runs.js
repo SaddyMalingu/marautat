@@ -43,12 +43,12 @@ export function runPlatform(run) {
 /**
  * Platforms a tenant worker can drive today.
  *
- * Both of them, since 2026-11-03: the Turing runner gained the same agent mode Micro1 has
- * (`--agent-api/--agent-token`, context from the portal, results posted back), so the worker is
- * no longer limited to one marketplace. `canRunOnWorker` still decides *per platform*, which is
- * what stops a worker claiming a run it cannot actually drive.
+ * Both marketplaces since 2026-11-03 (the Turing runner gained the same agent mode Micro1 has),
+ * and LinkedIn since 2026-11-04 for reading only: the listener opens the tenant's own signed-in
+ * profile and reads public posts. `canRunOnWorker` still decides *per platform*, which is what
+ * stops a worker claiming a run it cannot actually drive.
  */
-export const WORKER_PLATFORMS = Object.freeze(['micro1', 'turing']);
+export const WORKER_PLATFORMS = Object.freeze(['micro1', 'turing', 'linkedin']);
 
 export function canRunOnWorker(run) {
   return WORKER_PLATFORMS.includes(runPlatform(run));
@@ -65,10 +65,21 @@ export const RUN_TABLE = 'browser_actor_runs';
  * a queued Turing run (waiting for an operator) silently block the Micro1 capture the tenant
  * could actually run. A marketplace whose run cannot run the other's job is its own kind.
  */
-export const RUN_KINDS = Object.freeze(['collect', 'import', 'referrals', 'verify', 'micro1']);
+export const RUN_KINDS = Object.freeze(['collect', 'import', 'referrals', 'verify', 'micro1', 'listen']);
 
 /** The kind a tenant's own browser capture uses. Not queueable through the writer-flow route. */
 export const MICRO1_RUN_KIND = 'micro1';
+
+/**
+ * Listening is its own kind (2026-11-04).
+ *
+ * It shares the worker and the profile with the captures, which is exactly why it must not share
+ * their slot: a queued listen run would otherwise hold `(tenant, referrals)` and block the Turing
+ * capture the tenant is waiting for. It also writes nothing to `opportunities`, so the two jobs
+ * have nothing in common except the browser.
+ */
+export const LISTEN_RUN_KIND = 'listen';
+export const LISTEN_PLATFORM = 'linkedin';
 
 export const RUN_STATUSES = Object.freeze([
   'queued', 'running', 'succeeded', 'partial', 'failed', 'cancelled'
@@ -88,11 +99,17 @@ export const RUN_KIND_LABELS = Object.freeze({
   import: 'Import roles as offers',
   referrals: 'Capture referral links',
   verify: 'Verify referral links',
-  micro1: 'Capture Micro1 links'
+  micro1: 'Capture Micro1 links',
+  listen: 'Listen for buying intent'
 });
 
-/** Kinds the portal may queue for a runner. Verification runs inside the request. */
-export const QUEUEABLE_KINDS = Object.freeze(['collect', 'import', 'referrals']);
+/**
+ * Kinds the portal may queue for a runner. Verification runs inside the request.
+ *
+ * Declared before `RUNNABLE_KINDS` reads it — spreading an uninitialised `const` throws at
+ * import time and takes the whole server down, not just the feature.
+ */
+export const QUEUEABLE_KINDS = Object.freeze(['collect', 'import', 'referrals', 'listen']);
 
 /**
  * Kinds that occupy a (tenant, kind) slot and are worth waiting for.

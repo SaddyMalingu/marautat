@@ -100,3 +100,14 @@ Where the token lives
   In this folder, as worker-token.txt. It is a credential, so: do not email it,
   do not put it in a shared drive, and do not copy this folder to another
   person's computer. Revoking it in the portal switches it off for good.
+
+Listening (LinkedIn)
+  This same window also handles "Start listening" from your portal. It opens a
+  few LinkedIn searches in your own profile, reads public posts, and sends the
+  text back so the portal can score it. Nothing is sent to anyone from here and
+  no message is ever posted: you get a short daily list with a first line you can
+  copy, and you decide who to write to.
+  It needs the same MoreLogin profile to be signed in to LinkedIn. If LinkedIn is
+  signed out you will see "signed out in this profile" and the run stops instead
+  of reporting an empty day.
+

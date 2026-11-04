@@ -329,24 +329,55 @@ async function reportProfile(profile) {
  * captures back, so the machine doing the browsing holds no credential that could write to
  * another tenant's data.
  */
+/**
+ * Which capture script a queued run belongs to.
+ *
+ * One worker, three jobs: the script is chosen by the run's platform, never by a default — a
+ * Turing run executed by the Micro1 script would capture the wrong marketplace and look like it
+ * worked. `canRunOnWorker` has already refused anything this build cannot drive.
+ *
+ * LinkedIn joined the map on 2026-11-04 and is the only read-only entry: the listener writes no
+ * offers, it reads posts so the portal can score them.
+ */
+const SCRIPT_BY_PLATFORM = Object.freeze({
+  micro1: path.join('scripts', 'browser_actor_micro1.mjs'),
+  turing: path.join('scripts', 'browser_actor_referrals.mjs'),
+  linkedin: path.join('scripts', 'browser_actor_linkedin_listen.mjs')
+});
+
+function scriptForPlatform(platform) {
+  return SCRIPT_BY_PLATFORM[String(platform || '').toLowerCase()] || null;
+}
+
 function runCapture({ tenantSlug, runId, limit, platform = 'micro1' }) {
-  // One worker, two marketplaces: the script is chosen by the run's platform, never by a default
-  // — a Turing run executed by the Micro1 script would capture the wrong marketplace and look
-  // like it worked. `canRunOnWorker` has already refused anything this build cannot drive.
-  const script = platform === 'turing'
-    ? path.join('scripts', 'browser_actor_referrals.mjs')
-    : path.join('scripts', 'browser_actor_micro1.mjs');
-  const args = [
-    script,
-    '--tenant', tenantSlug,
-    '--limit', String(limit || 70),
-    '--apply',
-    '--only-missing',
-    '--run-id', String(runId),
-    '--agent-api', api
-    // The token goes through the environment, not argv: a command line is visible to every
-    // process on the machine (Task Manager, `ps`), and this one is a credential.
-  ];
+  const script = scriptForPlatform(platform);
+  if (!script) {
+    // Refused rather than defaulted: running the wrong adapter is worse than running none.
+    console.error(`this worker has no runner for "${platform}" — skipping the run so its slot is freed`);
+    return Promise.resolve(1);
+  }
+  const args = platform === 'linkedin'
+    // Reading is cheap per page and expensive per query, so the listener is bounded by queries
+    // plus a cap on posts, not by "roles".
+    ? [
+        script,
+        '--tenant', tenantSlug,
+        '--queries', String(Math.min(6, Math.max(1, Number(limit) || 3))),
+        '--per-query', '10',
+        '--run-id', String(runId),
+        '--agent-api', api
+      ]
+    : [
+        script,
+        '--tenant', tenantSlug,
+        '--limit', String(limit || 70),
+        '--apply',
+        '--only-missing',
+        '--run-id', String(runId),
+        '--agent-api', api
+        // The token goes through the environment, not argv: a command line is visible to every
+        // process on the machine (Task Manager, `ps`), and this one is a credential.
+      ];
   const childEnv = { ...process.env, TENANT_WORKER_TOKEN: token };
   return new Promise((resolve) => {
     const child = spawn(process.execPath, args, { stdio: 'inherit', env: childEnv });

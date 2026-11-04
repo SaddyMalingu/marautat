@@ -41,6 +41,7 @@ import {
 import { verifyReferralLink } from '../utils/browserActor/referralVerify.js';
 import { parseProfileMap, maskEnvId } from '../utils/browserActor/identity.js';
 import { resolveAccessIdentity } from '../utils/tenantAccess.js';
+import { createSocialSignalStore, publicSignal, SIGNAL_STATUSES } from '../utils/socialSignals.js';
 
 /** One click should finish inside a request, not hold a browser open. */
 const VERIFY_DEFAULT = 40;
@@ -146,6 +147,29 @@ export function createWriterFlowRouter({
     throw lastError;
   }
 
+  /**
+   * A missing table is a deployment state, not an empty week.
+   *
+   * Same rule as `loadRuns`: the panel must be able to say "listening is not set up yet" instead
+   * of rendering zero signals, because "zero" is a claim about the market and "missing table" is
+   * a claim about us.
+   */
+  async function loadSignals(tenantId, limit = 12) {
+    const store = createSocialSignalStore({ table: () => supabase.from('social_signals') });
+    try {
+      const [rows, summary] = await Promise.all([
+        store.recent({ tenantId, limit, minScore: 40 }),
+        store.summary({ tenantId })
+      ]);
+      return { available: true, items: rows.map(publicSignal).filter(Boolean), summary };
+    } catch (error) {
+      if (/relation|does not exist|schema cache|column/i.test(String(error?.message || error))) {
+        return { available: false, items: [], summary: null, needsMigration: 'migrations/2026-11-04_social_signals.sql' };
+      }
+      throw error;
+    }
+  }
+
   async function loadRuns(tenantId, limit = 100) {
     try {
       // Two reads, because they answer two different questions:
@@ -193,9 +217,10 @@ export function createWriterFlowRouter({
       const ctx = await tenantSiteFromSession(req);
       if (!ctx) return res.status(404).json({ error: 'Tenant not found' });
 
-      const [{ offers, degraded }, { runs, available }] = await Promise.all([
+      const [{ offers, degraded }, { runs, available }, listening] = await Promise.all([
         loadOffers(ctx.site.id),
-        loadRuns(ctx.site.id)
+        loadRuns(ctx.site.id),
+        loadSignals(ctx.site.id)
       ]);
 
       const { writerFlowView } = await import('../utils/writerFlow.js');
@@ -211,6 +236,9 @@ export function createWriterFlowRouter({
       res.json({
         ok: true,
         ...view,
+        // Who just said they need something, and what to say back. Separate from the funnel on
+        // purpose: a signal is not an offer, and counting the two together would inflate both.
+        listening,
         tenant: { slug: ctx.site.slug, name: ctx.site.name || ctx.site.slug },
         // Lets the UI soften the link-health wording when the columns are absent.
         linksAvailable: !degraded,
@@ -475,9 +503,14 @@ export function createWriterFlowRouter({
       }
 
       const detail = {
-        limit: intParam(req.body?.limit, 50, 1, 300),
+        // Listening is bounded by searches, not by roles: three searches is a useful week, thirty
+        // is a crawl. The limit means "searches" for a listen run and "items" for everything else.
+        limit: intParam(req.body?.limit, kind === 'listen' ? 3 : 50, 1, 300),
         skip: intParam(req.body?.skip, 0, 0, 5000),
-        refresh: Boolean(req.body?.refresh)
+        refresh: Boolean(req.body?.refresh),
+        // The platform decides which adapter the worker dispatches to. A listen run that did not
+        // say `linkedin` would be claimed by a marketplace capture and read the wrong site.
+        ...(kind === 'listen' ? { platform: 'linkedin' } : {})
       };
 
       let run = null;
@@ -485,7 +518,7 @@ export function createWriterFlowRouter({
         run = await store.queue({
           tenantId: ctx.site.id,
           kind,
-          sourceSlug: req.body?.source ? String(req.body.source) : null,
+          sourceSlug: req.body?.source ? String(req.body.source) : (kind === 'listen' ? 'linkedin' : null),
           requestedBy: 'tenant',
           detail
         });
@@ -505,14 +538,20 @@ export function createWriterFlowRouter({
       // The worker command is in the response on purpose: the tenant has no browser, the
       // operator does. Handing over the exact line is more honest than a progress bar
       // that would never move.
-      const script = kind === 'referrals'
-        ? 'scripts/browser_actor_referrals.mjs'
-        : kind === 'collect'
-          ? 'scripts/browser_actor_collect.mjs'
-          : 'scripts/browser_actor_import.mjs';
-      const flags = [`--tenant ${ctx.site.slug}`, `--limit ${detail.limit}`, `--skip ${detail.skip}`];
-      if (detail.refresh) flags.push('--refresh');
-      flags.push('--apply');
+      const script = kind === 'listen'
+        ? 'scripts/browser_actor_linkedin_listen.mjs'
+        : kind === 'referrals'
+          ? 'scripts/browser_actor_referrals.mjs'
+          : kind === 'collect'
+            ? 'scripts/browser_actor_collect.mjs'
+            : 'scripts/browser_actor_import.mjs';
+      const flags = kind === 'listen'
+        ? [`--queries ${detail.limit}`, '--per-query 10']
+        : [`--tenant ${ctx.site.slug}`, `--limit ${detail.limit}`, `--skip ${detail.skip}`];
+      if (kind !== 'listen') {
+        if (detail.refresh) flags.push('--refresh');
+        flags.push('--apply');
+      }
 
       res.status(201).json({
         ok: true,
@@ -533,6 +572,35 @@ export function createWriterFlowRouter({
       const run = await store.cancel({ runId: String(req.params.id || ''), tenantId: ctx.site.id });
       if (!run) return res.status(404).json({ error: 'Run not found for this tenant' });
       res.json({ ok: true, run, message: describeRun(run, now()) });
+    } catch (err) {
+      sendError(res, err);
+    }
+  });
+
+  /**
+   * The tenant's own record of what they did about a signal.
+   *
+   * Nothing here sends anything — the point is to close the loop honestly: a signal that was
+   * messaged is `sent`, one they decided against is `ignored`, and the panel can then say "14 new,
+   * 3 sent" instead of showing the same twenty rows for ever. Status is a statement about the
+   * tenant's own work, so it is theirs to set and nobody else's.
+   */
+  router.post('/tenant/blogger/signals/:id/status', tenantSessionAuth, async (req, res) => {
+    try {
+      const ctx = await tenantSiteFromSession(req);
+      if (!ctx) return res.status(404).json({ error: 'Tenant not found' });
+      const status = String(req.body?.status || '').toLowerCase();
+      if (!SIGNAL_STATUSES.includes(status)) {
+        return res.status(400).json({ error: `status must be one of ${SIGNAL_STATUSES.join(', ')}` });
+      }
+      const signalStore = createSocialSignalStore({ table: () => supabase.from('social_signals') });
+      const updated = await signalStore.setStatus({
+        tenantId: ctx.site.id,
+        id: String(req.params.id || ''),
+        status
+      });
+      if (!updated) return res.status(404).json({ error: 'Signal not found for this tenant' });
+      res.json({ ok: true, signal: publicSignal(updated) });
     } catch (err) {
       sendError(res, err);
     }

@@ -1,0 +1,34 @@
+Social listening: the intent taxonomy finally has eyes
+
+The intents, phrases and scorer have been in this repo since the ABOSS work and
+not one of them ever saw a post, because nothing produced
+data/ABOSS_SOCIAL_SIGNALS_RAW.csv. The tenant's own signed-in browser is the only
+actor that can close that gap without an account of ours, so the listener reads
+LinkedIn content search and the portal does the judging.
+
+- migrations/2026-11-04_social_signals.sql: the table (one row per tenant+post),
+  plus the run-kind widening for 'listen'. Nothing touches opportunities.
+- utils/socialIntent.js: the scoring lifted out of the ops script and made pure --
+  no fabrication (a post matching no intent is dropped, not scored low),
+  exclusions beat triggers, Kenya-first phone normalisation, and a draft first
+  line that quotes the post instead of inventing an offer.
+- utils/browserActor/tasks/linkedinListen.js: the DOM expressions, the last-week
+  search URL, and a jittered 4.5-11s pace. Reads only; nothing can click or send.
+- scripts/browser_actor_linkedin_listen.mjs: asks the portal which searches to
+  run, opens them in the tenant's profile, posts raw text in chunks of 15.
+- routes/agentRuns.js: POST /runs/:id/signals scores server-side (a worker cannot
+  rank a tenant's prospects), counts what was excluded and off-topic, and leaves
+  the run open for the next batch. /context sends the searches down.
+- routes/writerFlow.js + panel: a Listening card with the digest, "copy first
+  line", "I sent it" / "Not relevant" -- and no way to message anyone.
+- Worker dispatches by platform from a map now, and refuses a platform it has no
+  runner for instead of defaulting to Micro1.
+
+Two silent failures found while building, both recorded in OPEN_FLAGS #39: the
+agent routes read run.platform while the queue writes detail.platform (a listen
+run resolved as micro1 and would have driven the wrong site), and scorePost read
+post.text while the worker shape is postText (the first scored batch was empty).
+
+Suites: listening 84, browser-access 386, actor-runtime 296, micro1 84,
+writer-flow 183, portal-mobile 115, admin-console 23, site-hygiene 16,
+social-publish 111 -- 1298 assertions, 0 failures.

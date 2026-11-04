@@ -1103,3 +1103,46 @@ is 70 and the cap is 150. When the listing offers fewer, the run says how many p
 rather than implying that twelve was the request.
 
 subsystem: name the cause before spending the tenant's attention.
+
+### Social listening: the taxonomy finally has eyes (2026-11-04)
+
+The intents, the phrases and the scorer have been in this repo since the ABOSS work. What was
+missing was always the same thing: **nothing read the posts**, so `data/ABOSS_SOCIAL_SIGNALS_RAW.csv`
+was a header row and the whole pipeline was a well-tested hypothesis. The tenant's own browser is
+the only actor that can close that gap without an account of ours and a legal risk.
+
+The split is the same one the captures use, for the same reason:
+
+```
+tenant machine                                        portal
+  GET  /api/agent/runs/:id/context  ───────►  the searches to run, from the taxonomy (server-side)
+  opens each LinkedIn content search,
+  reads the posts, sends the raw text
+  POST /api/agent/runs/:id/signals  ───────►  sanitises, **scores**, stores in social_signals
+  POST /api/agent/runs/:id/finish   ───────►  closes the run
+```
+
+**The worker holds no opinion and no score.** A stolen `wkr_` token buys the ability to read a
+public page, not to put a "hot lead" in front of a tenant. That is why the taxonomy is sent *down*
+with the context instead of bundled: one source, and no laptop copy to drift.
+
+Four rules that decide whether this is a product or a spam machine:
+
+- **No fabrication.** A post that matches no intent is dropped, not scored low. An empty week is a
+  true sentence; a padded digest costs the tenant their credibility on the first send.
+- **Exclusion beats inclusion.** "Job vacancy" and "dealer ad" contain the trigger words for a fleet
+  purchase, and are most of what such a search returns. Excluded posts are not stored at all.
+- **Nothing here sends.** The panel offers *copy first line* and *open post*; the tenant sends from
+  their own account, under their own name, and records what they did (`sent` / `ignored`). There is
+  no messaging code in this path, and the suite asserts that.
+- **Human pace, jittered.** 4.5–11 s between searches, ten posts per search, six searches a run —
+  the budget is for *reading* without looking like a scraper, not for volume.
+
+`kind: 'listen'` is its own `(tenant, kind)` slot so a queued listen run cannot block a referral
+capture, and `platform: 'linkedin'` is recorded in `detail.platform` so the worker dispatches the
+listener rather than a marketplace adapter (see OPEN_FLAGS #39 — before that fix it resolved as
+micro1 and would have driven the wrong site).
+
+Apply `migrations/2026-11-04_social_signals.sql` before pressing *Start listening*: until then the
+panel says "Not set up yet", which is deliberately different from "nothing matched".
+
