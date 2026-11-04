@@ -111,6 +111,31 @@ export async function applyCaptures({
 
   if (rows.length) {
     const { data, error } = await supabase.from('opportunities').insert(rows).select('id, title, slug, referral_url');
+    if (error && String(error.code || '') === '23505') {
+      /**
+       * The unique slug index refused the batch — so the `existingOffers` snapshot was stale (a
+       * `known` list from before another run, or a second machine). One bad row used to lose the
+       * whole capture; inserting one at a time means the new roles land and the ones that already
+       * exist are reported. Either way there is no duplicate: the database is the one deciding,
+       * not this function's memory.
+       */
+      const inserted = [];
+      for (const row of rows) {
+        const single = await supabase
+          .from('opportunities')
+          .insert(row)
+          .select('id, title, slug, referral_url');
+        if (single.error) {
+          result.skipped.push({ title: row.title, reason: 'exists_or_conflict' });
+          continue;
+        }
+        inserted.push(...(Array.isArray(single.data) ? single.data : []));
+      }
+      result.inserted = inserted.length;
+      result.created = inserted;
+      result.conflicted = result.skipped.filter((row) => row.reason === 'exists_or_conflict').length;
+      return { ...result, rows };
+    }
     if (error) {
       result.error = error.message;
       return { ...result, rows };

@@ -1425,9 +1425,106 @@ function fakeOfferDb() {
   }
 }
 
-
+// ---------------------------------------------------------------------------
+// "Will collection ever create the same offer twice?"
+// ---------------------------------------------------------------------------
 //
-// Micro1 brings new roles, so its result is an insert. Turing brings a referral link and a job
+// The tenant's question, asked after 120 offers and three captures. It deserves rules and tests
+// rather than reassurance: no, for four independent reasons — and the last one holds even when
+// the first three are wrong.
+{
+  const BASE_OFFERS = [{ id: 'x', title: 'Existing Role', slug: 'acme-micro1-existing-role', external_id: 'micro1:aaa' }];
+  const capture = (over = {}) => ({ title: 'New Role', jobId: 'bbb', externalId: 'micro1:bbb', referralUrl: 'https://micro1.ai/post/bbb', ...over });
+
+  // The listing is de-duplicated across pages before anything is clicked (mergeMicro1Pages,
+  // proved in test:micro1).
+
+  // Within one batch, the same slug is planned once.
+  {
+    const db = fakeOfferDb();
+    const applied = await applyCaptures({
+      supabase: db,
+      tenant: { id: 'tenant-1', slug: 'acme' },
+      offers: [], sourceSlug: 'micro1',
+      captures: [capture(), capture()],
+      verify: async () => ({ verdict: 'match' })
+    });
+    eq('one role captured twice in a batch creates one offer', applied.inserted, 1);
+    eq('and the second is reported, not silently dropped',
+      applied.skipped.some((row) => row.reason === 'duplicate_in_batch'), true);
+    eq('nothing was written twice', db.rows.length, 1);
+  }
+
+  // A role the tenant already owns is skipped by id, then by slug, then by title — so a
+  // re-capture on a fresh day cannot duplicate what yesterday's run brought in.
+  {
+    const db = fakeOfferDb();
+    const applied = await applyCaptures({
+      supabase: db,
+      tenant: { id: 'tenant-1', slug: 'acme' },
+      offers: [
+        { id: 'a', title: 'Existing Role', slug: 'acme-micro1-existing-role', external_id: 'micro1:aaa' },
+        { id: 'b', title: 'Slug Match', slug: 'acme-micro1-slug-match', external_id: 'micro1:old' },
+        // A hand-made offer: the tenant typed this one in, so its slug has no marketplace.
+        { id: 'c', title: 'Air Traffic Controller', slug: 'air-traffic-controller', external_id: null }
+      ],
+      sourceSlug: 'micro1',
+      captures: [
+        capture({ title: 'Existing Role', jobId: 'aaa', externalId: 'micro1:aaa' }),
+        capture({ title: 'Slug Match', jobId: 'new', externalId: 'micro1:new' }),
+        capture({ title: 'Air Traffic Controller', jobId: 'atc', externalId: null })
+      ],
+      verify: async () => ({ verdict: 'match' })
+    });
+    eq('re-running a capture inserts nothing that already exists', applied.inserted, 0);
+    eq('and says which key matched',
+      applied.skipped.map((row) => row.reason).sort(),
+      ['exists', 'exists_by_external_id', 'exists_by_title']);
+    eq('the database received no rows at all', db.rows.length, 0);
+  }
+
+  // The backstop: even with a *stale* picture of what exists (an empty `offers` list, a second
+  // machine, a run that began before another finished) the unique slug index refuses the
+  // duplicate. That used to lose the whole batch; now the new rows land and the conflicts are
+  // reported — no duplicates, and no silent loss either.
+  {
+    const rows = [];
+    let batchAttempts = 0;
+    const db = {
+      rows,
+      from: () => ({
+        insert(list) {
+          const batch = Array.isArray(list) ? list : [list];
+          if (batch.length > 1) {
+            batchAttempts += 1;
+            return { select: async () => ({ data: null, error: { code: '23505', message: 'duplicate key value violates unique constraint "opportunities_slug_key"' } }) };
+          }
+          const row = batch[0];
+          if (rows.some((existing) => existing.slug === row.slug)) {
+            return { select: async () => ({ data: null, error: { code: '23505', message: 'duplicate key' } }) };
+          }
+          rows.push(row);
+          return { select: async () => ({ data: [{ id: `offer-${rows.length}`, title: row.title, slug: row.slug }], error: null }) };
+        },
+        select() { const query = { eq: () => query, then: (resolve) => resolve({ data: rows, error: null }) }; return query; }
+      })
+    };
+    const applied = await applyCaptures({
+      supabase: db,
+      tenant: { id: 'tenant-1', slug: 'acme' },
+      offers: [],
+      sourceSlug: 'micro1',
+      captures: [capture({ title: 'Role A', jobId: 'a', externalId: 'micro1:a' }), capture({ title: 'Role B', jobId: 'b', externalId: 'micro1:b' })],
+      verify: async () => ({ verdict: 'match' })
+    });
+    eq('a refused batch is retried row by row', batchAttempts, 1);
+    eq('every distinct role still lands', applied.inserted, 2);
+    eq('exactly two rows exist, so nothing was duplicated', rows.length, 2);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Turing on demand: a capture may *update* offers the tenant already has
 // body for roles that are already imported — inserting those would duplicate 78 offers. The
 // server therefore has two write paths, and the update path holds the same line as everything
 // else here: a link is written only if it resolves to its own role, and only into an offer that
