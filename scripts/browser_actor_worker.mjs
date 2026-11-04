@@ -47,6 +47,7 @@ import { extractPairingCode } from '../utils/browserActor/pairing.js';
 import { maskEnvId } from '../utils/browserActor/identity.js';
 import { createMoreloginClient } from '../utils/browserActor/moreloginClient.js';
 import { createBrowserRuntime } from '../utils/browserActor/runtime.js';
+import { absoluteArgv, buildRunArgs } from '../utils/browserActor/runArgs.js';
 
 const argv = process.argv.slice(2);
 function flag(name, fallback = null) {
@@ -408,43 +409,25 @@ function lastProblemLine(lines) {
 }
 
 function runCapture({ tenantSlug, runId, limit, platform = 'micro1' }) {
+  // `relative` is what the registry holds and what the args are built from; `script` is the
+  // absolute path to spawn. Mixing the two is how every social run became a LinkedIn read on
+  // 2026-11-04 — see `utils/browserActor/runArgs.js`.
+  const relative = scriptForPlatform(platform);
   const script = scriptPath(platform);
   // Refused rather than defaulted: running the wrong adapter is worse than running none, and
   // running *nothing* while holding the claim is worse than both.
-  if (!script || !fs.existsSync(script)) {
-    const reason = `this worker does not contain ${script || `${platform} runner`} — download the worker again from the portal`;
+  if (!relative || !script || !fs.existsSync(script)) {
+    const reason = `this worker does not contain ${relative || `${platform} runner`} — download the worker again from the portal`;
     console.error(reason);
     return Promise.resolve({ code: 1, reason });
   }
-  const isListen = script === SOCIAL_LISTENER;
-  const args = isListen
-    // Reading is cheap per page and expensive per query, so the listener is bounded by queries
-    // plus a cap on posts, not by "roles". `--platform` picks the site's description.
-    ? [
-        script,
-        '--tenant', tenantSlug,
-        '--platform', platform,
-        '--queries', String(Math.min(6, Math.max(1, Number(limit) || 3))),
-        '--run-id', String(runId),
-        '--agent-api', api
-      ]
-    : [
-        script,
-        '--tenant', tenantSlug,
-        '--limit', String(limit || 70),
-        '--apply',
-        '--only-missing',
-        '--run-id', String(runId),
-        '--agent-api', api
-        // The token goes through the environment, not argv: a command line is visible to every
-        // process on the machine (Task Manager, `ps`), and this one is a credential.
-      ];
+  const args = absoluteArgv(buildRunArgs({ relative, platform, tenantSlug, runId, limit, api }), (value) => (
+    path.resolve(WORKER_ROOT, value)
+  ));
   const childEnv = { ...process.env, TENANT_WORKER_TOKEN: token };
-  // Say exactly what is being launched. Two windows of this worker on one machine is easy to do
-  // (an old folder on the desktop, a new one unzipped next to it) and impossible to see from the
-  // outside: a run claimed here could be executing a listener from another folder, with another
-  // platform, while this window looks innocent. One line removes the guessing.
-  console.error(`spawn: ${path.basename(script)} --platform ${platform} --run-id ${runId} (cwd ${path.resolve(WORKER_ROOT)})`);
+  // Print the argv that is actually being spawned, never a description of it. On 2026-11-04 this
+  // line claimed `--platform youtube` while the argv had no such flag, and cost a day.
+  console.error(`spawn: ${[path.basename(args[0]), ...args.slice(1)].join(' ')} (cwd ${WORKER_ROOT})`);
   return new Promise((resolve) => {
     // Piped rather than inherited so the child's last words can be carried to the portal. They
     // are still printed line by line, so the worker window a tenant watches looks the same.

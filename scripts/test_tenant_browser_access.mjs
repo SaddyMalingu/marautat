@@ -1036,8 +1036,10 @@ const tokenRows = [
     /agentMode/.test(textOf('scripts/browser_actor_micro1.mjs')) &&
     /await import\('@supabase\/supabase-js'\)/.test(textOf('scripts/browser_actor_micro1.mjs')));
   ok('the worker passes the portal and the token to the capture in agent mode',
-    /--agent-api/.test(textOf('scripts/browser_actor_worker.mjs')) &&
-    /TENANT_WORKER_TOKEN: token/.test(textOf('scripts/browser_actor_worker.mjs')));
+    // The argv lives in runArgs.js since 2026-11-04 (it is pure so it can be tested); the token
+    // still travels through the environment, never the command line.
+    /--agent-api/.test(textOf('utils/browserActor/runArgs.js'))
+    && /TENANT_WORKER_TOKEN: token/.test(textOf('scripts/browser_actor_worker.mjs')));
   ok('the worker does not put the token on a command line',
     !/--agent-token', token/.test(textOf('scripts/browser_actor_worker.mjs')));
   ok('the readme tells the tenant it never sees a password',
@@ -1811,7 +1813,7 @@ function fakeOfferDb() {
     /SCRIPT_BY_PLATFORM = Object\.freeze\(\{[\s\S]{0,260}micro1:[\s\S]{0,160}turing:[\s\S]{0,160}linkedin:/.test(workerSrc)
     && /const script = scriptPath\(platform\)/.test(workerSrc));
   ok('and refuses a platform it has no runner for instead of defaulting to Micro1',
-    /if \(!script \|\| !fs\.existsSync\(script\)\)[\s\S]{0,200}return Promise\.resolve\(\{ code: 1, reason \}\)/.test(workerSrc));
+    /if \(!relative \|\| !script \|\| !fs\.existsSync\(script\)\)[\s\S]{0,220}return Promise\.resolve\(\{ code: 1, reason \}\)/.test(workerSrc));
   // Claiming a run whose runner file is missing is how a listen run sat in "running" until the
   // tenant cancelled it. The claim itself now requires the file.
   ok('and will not claim a run it cannot actually run',
@@ -1821,14 +1823,16 @@ function fakeOfferDb() {
     /stdout\.on\('data', keep\)/.test(workerSrc) && /lastProblemLine\(tail\)/.test(workerSrc)
     && /closeAbandonedRun\(run\.id, code\.code, code\.reason\)/.test(workerSrc));
   // Every social network runs the same listener, told which site to read.
+  const runArgsSrc = fs.readFileSync(path.join(root, 'utils', 'browserActor', 'runArgs.js'), 'utf8');
   ok('all five networks dispatch to the one listener',
     ['linkedin', 'x', 'facebook', 'reddit', 'youtube'].every((id) => new RegExp(`${id}: SOCIAL_LISTENER`).test(workerSrc))
-    && /'--platform', platform/.test(workerSrc));
-  // The 12:10 run claimed `(youtube)` and the child ran `platform=linkedin`; nothing in the log
-  // said which file was launched, so it could not be diagnosed from the outside.
+    && /'--platform', String\(platform\)/.test(runArgsSrc));
+  // The 13:49 run claimed `(x)` and the child ran `platform=linkedin`, and the log line claimed
+  // `--platform x` anyway: it printed an intention, not the argv. Now it prints the argv.
   ok('and the window says exactly what it launched',
-    /console\.error\(`spawn: \$\{path\.basename\(script\)\} --platform \$\{platform\}/.test(workerSrc));
-  ok('and is bounded by searches rather than by roles', /'--queries'/.test(workerSrc) && !/'--per-query'/.test(workerSrc));
+    /console\.error\(`spawn: \$\{\[path\.basename\(args\[0\]\), \.\.\.args\.slice\(1\)\]\.join\(' '\)\}/.test(workerSrc));
+  ok('and is bounded by searches rather than by roles',
+    /'--queries'/.test(runArgsSrc) && !/'--per-query'/.test(runArgsSrc));
   ok('the bundle carries the Turing runner it dispatches to',
     buildWorkerBundle({ apiBase: 'https://portal.example' }).entries.some((entry) => entry.name === 'scripts/browser_actor_referrals.mjs'));
   ok('and the social listener too, with its per-network descriptions',
