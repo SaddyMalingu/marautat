@@ -574,27 +574,42 @@ async function finishRunTracking({ status, message, detail } = {}) {
  * is attached — holding a valid token makes a worker authentic, not trusted.
  */
 async function reportAgentResult({ captures, listing }) {
-  const res = await agentCall('POST', `/api/agent/runs/${encodeURIComponent(String(runIdFlag))}/result`, {
-    listing: { cards: listing?.count || 0, waitedMs: listing?.waitedMs || null },
-    captures: captures.map((capture) => ({
-      title: capture.title,
-      jobId: capture.jobId,
-      externalId: capture.externalId,
-      url: capture.url,
-      referralUrl: capture.referralUrl,
-      content: capture.content,
-      rate: capture.rate,
-      summary: capture.summary,
-      reason: capture.reason,
-      descriptionChars: capture.descriptionChars
-    }))
-  });
-  if (!res.ok) {
-    const message = res.data?.error || 'the portal rejected the result';
-    console.error(`the portal rejected the result (${res.status}): ${message}`);
-    return { planned: 0, inserted: 0, withLinks: 0, skipped: [], verification: [], coverage: null, error: message };
+  // Chunked for the same reason the Turing runner chunks: one request per 20 roles keeps the body
+  // far below any server limit, and a 413 splits rather than loses the batch.
+  const CHUNK = 20;
+  const applied = { planned: 0, inserted: 0, withLinks: 0, skipped: [], verification: [], coverage: null, error: null };
+  for (let index = 0; index < captures.length; index += CHUNK) {
+    const chunk = captures.slice(index, index + CHUNK);
+    const res = await agentCall('POST', `/api/agent/runs/${encodeURIComponent(String(runIdFlag))}/result`, {
+      listing: { cards: listing?.count || 0, waitedMs: listing?.waitedMs || null },
+      captures: chunk.map((capture) => ({
+        title: capture.title,
+        jobId: capture.jobId,
+        externalId: capture.externalId,
+        url: capture.url,
+        referralUrl: capture.referralUrl,
+        content: capture.content,
+        rate: capture.rate,
+        summary: capture.summary,
+        reason: capture.reason,
+        descriptionChars: capture.descriptionChars
+      }))
+    });
+    if (!res.ok) {
+      const message = res.data?.error || `the portal rejected the result (${res.status})`;
+      console.error(`the portal rejected the result (${res.status}): ${message}`);
+      applied.error = message;
+      return applied;
+    }
+    const body = res.data?.applied || {};
+    applied.planned += body.planned || 0;
+    applied.inserted += body.inserted || 0;
+    applied.withLinks += body.withLinks || 0;
+    applied.skipped.push(...(body.skipped || []));
+    applied.verification.push(...(body.verification || []));
+    applied.coverage = res.data?.coverage || applied.coverage;
   }
-  return { ...(res.data?.applied || {}), coverage: res.data?.coverage || null };
+  return applied;
 }
 
 async function main() {

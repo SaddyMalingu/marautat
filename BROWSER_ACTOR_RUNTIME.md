@@ -927,8 +927,12 @@ tenant machine                                    portal
   spawns the same capture script,
   drives the local profile, reads pages
   POST /api/agent/runs/:id/result     ───────►   sanitises the payload, re-verifies every link,
-                                                  plans + inserts offers, closes the run
+                                                  plans + writes offers, **leaves the run open**
+  POST /api/agent/runs/:id/finish     ───────►   counters + status, closes the run once
 ```
+
+`/result` is called **repeatedly**: the runner banks what it has every 20 roles and sends only the
+captures the portal has not seen yet, so a long run never grows into one giant request.
 
 `scripts/browser_actor_micro1.mjs` runs both ways from one file: with Supabase for an operator, and
 with `--agent-api/--agent-token` for a tenant. `dotenv` and `@supabase/supabase-js` are imported
@@ -944,6 +948,15 @@ Rules that keep the new endpoints safe rather than merely convenient:
 - **Every link is re-verified server-side** before it is attached, so a compromised worker cannot
   inject a link that pays somebody else.
 - **A closed run cannot be written to** (409), so a retry cannot double-insert.
+- **A batch is bounded, and a 413 is split, not swallowed.** On 2026-11-04 a 120-role Turing run
+  re-sent everything it had on every flush: the last post was ~400 KB, Express answered
+  `PayloadTooLargeError`, and the run closed `120/120 · failed` with **no** links written. So
+  `/api/agent` carries its own 12 MB parser (mounted *before* the global one — every other route
+  still refuses >100 KB), the runner advances a `postedCount` cursor instead of re-sending, and a
+  chunk that is refused with 413 is halved and retried before it is treated as a failure.
+- **A run ends on `/finish`, and only there.** If some batches landed and the last did not, the run
+  closes as `partial` — neither success nor failure, because either word would hide the number that
+  matters: how many links actually reached the portal.
 - **No MoreLogin key in the context.** A stolen `wkr_` token therefore buys the ability to burn that
   tenant's own daily starts — not control of their marketplace accounts.
 

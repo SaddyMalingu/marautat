@@ -1610,7 +1610,7 @@ function fakeOfferDb() {
   ok('it fetches identity and known offers from the portal, not from a local guess',
     /\/api\/agent\/runs\/\$\{encodeURIComponent\(String\(runIdFlag\)\)\}\/context/.test(turingRunner));
   ok('and it posts the result instead of writing to the database',
-    /\/api\/agent\/runs\/\$\{encodeURIComponent\(runState\.runId\)\}\/result/.test(turingRunner));
+    /\/api\/agent\/runs\/\$\{encodeURIComponent\(runId\)\}\/result/.test(turingRunner));
   ok('while its supabase import stays lazy, so a bundle without node_modules still runs',
     /await import\('@supabase\/supabase-js'\)/.test(turingRunner));
   // A four-minute run must not be all-or-nothing: it banks every twentieth link, and closes the
@@ -1618,7 +1618,22 @@ function fakeOfferDb() {
   ok('the Turing runner banks links in batches while it works',
     /AGENT_BATCH = 20/.test(turingRunner) && /onBatch\(captures\)/.test(turingRunner));
   ok('and closes the run itself, because /result no longer does',
-    /finishRunTracking\(\{[\s\S]{0,200}status: posted/.test(turingRunner));
+    /finishRunTracking\(\{[\s\S]{0,240}status: flush\.ok/.test(turingRunner));
+
+  // 2026-11-04: a 120-role run posted all of itself at once (~400 KB), Express answered
+  // 413 PayloadTooLargeError, and the run closed with 120/120 captured and nothing written.
+  // Now the payload is incremental, chunked, and split again if the server still says 413.
+  ok('the payload is incremental, not the whole run every time',
+    /postedCount/.test(turingRunner) && /from: postedCount/.test(turingRunner));
+  ok('chunks are bounded', /AGENT_POST_CHUNK = 15/.test(turingRunner) && /slice\(index, index \+ AGENT_POST_CHUNK\)/.test(turingRunner));
+  ok('and a 413 splits the chunk instead of losing it',
+    /res\.status === 413 && chunk\.length > 1/.test(turingRunner) && /splitting/.test(turingRunner));
+  const serverSrcForLimit = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
+  ok('the portal gives agent routes room for a real capture body',
+    /app\.use\('\/api\/agent', express\.json\(\{ limit: '12mb' \}\)\)/.test(serverSrcForLimit));
+  ok('the Micro1 runner chunks too, so a 70-role run cannot hit the same wall',
+    /const CHUNK = 20;/.test(fs.readFileSync(path.join(root, 'scripts', 'browser_actor_micro1.mjs'), 'utf8'))
+    && /captures\.slice\(index, index \+ CHUNK\)/.test(fs.readFileSync(path.join(root, 'scripts', 'browser_actor_micro1.mjs'), 'utf8')));
 
   const micro1Runner = fs.readFileSync(path.join(root, 'scripts', 'browser_actor_micro1.mjs'), 'utf8');
   ok('the Micro1 runner closes its own run for the same reason',
@@ -1811,6 +1826,62 @@ function fakeOfferDb() {
   const dashSrc = fs.readFileSync(path.join(root, 'admin', 'tenant_dashboard.html'), 'utf8');
   ok('the panel warns when no browser is resolved for the tenant',
     /d\.runSource === 'none'/.test(dashSrc) && /a capture queues and nothing can run it/.test(dashSrc));
+}
+
+// The frozen Turing run, reproduced and fixed (2026-11-04).
+//
+// A 120-role run carrying full job bodies was one ~400 KB request. Express's default JSON ceiling
+// answered **413 PayloadTooLargeError**, the worker saw a refusal, closed the run as failed, and
+// every link minted in that run died with it. What prevents a repeat is the parser order: the
+// agent parser (12 MB) is mounted *before* the global one, and body-parser skips a body that is
+// already parsed — so the ceiling that matters for `/api/agent` is the big one.
+{
+  const app = express();
+  app.use('/api/agent', express.json({ limit: '12mb' }));
+  app.use(express.json());
+  app.post('/api/agent/runs/:id/result', (req, res) => res.json({ ok: true, captures: (req.body?.captures || []).length }));
+  app.post('/anything-else', (req, res) => res.json({ ok: true }));
+  // Express's default handler prints the 413 stack to stderr; this reproduction is *expected*
+  // to be refused, so answer it quietly. Without this the suite looks like it just froze a run.
+  app.use((err, req, res, next) => {
+    res.status(err?.status || err?.statusCode || 500).json({ error: err?.message || 'request failed' });
+  });
+  const srv = await new Promise((resolve) => {
+    const listening = app.listen(0, () => resolve(listening));
+  });
+
+  const payload = JSON.stringify({
+    captures: Array.from({ length: 120 }, (_, i) => ({ title: `Role ${i}`, content: 'x'.repeat(3300) }))
+  });
+  const post = (route) => new Promise((resolve, reject) => {
+    const request = http.request({
+      host: '127.0.0.1',
+      port: srv.address().port,
+      path: route,
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) }
+    }, (response) => {
+      let text = '';
+      response.on('data', (chunk) => { text += chunk; });
+      response.on('end', () => resolve({ status: response.statusCode, text }));
+    });
+    request.on('error', reject);
+    request.end(payload);
+  });
+
+  ok('a full Turing batch is about the size that arrived as a 413',
+    payload.length > 380000 && payload.length < 500000);
+  const agent = await post('/api/agent/runs/run-1/result');
+  eq('agent routes take a whole capture batch', agent.status, 200);
+  eq('and all 120 captures arrive in one piece', JSON.parse(agent.text).captures, 120);
+  const other = await post('/anything-else');
+  eq('every other route keeps the small ceiling, so nothing else got looser', other.status, 413);
+  await new Promise((resolve) => srv.close(resolve));
+
+  const serverSource = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
+  const agentAt = serverSource.indexOf("app.use('/api/agent', express.json({ limit: '12mb' }))");
+  const globalAt = serverSource.indexOf('app.use(express.json({');
+  ok('server.js mounts the bigger parser before the global one', agentAt > 0 && globalAt > agentAt);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -754,20 +754,37 @@ async function applyDescriptions({ supabase, updates }) {
 }
 
 /**
- * Post what was captured and let the portal write it (agent mode).
+ * How many captures to send in one request, and the counter that keeps batches incremental.
  *
- * The worker sends what it *saw*: a title, the referral link it minted, and the job body. It
- * does not decide whether the link lands on its own role, whether the offer already has a link,
- * or whether the row exists — the server re-verifies every link and performs the only writes,
- * because that machine holds a token that can describe work, not a key that can author it.
+ * Two failures are answered here at once, both seen live on 2026-11-04:
+ *
+ *   1. **The payload grew with the run.** Every batched post re-sent *all* captures so far, so a
+ *      120-role run ended as one ~400 KB request; Express answered 413 PayloadTooLargeError and
+ *      the run closed with 120/120 captured and nothing written.
+ *   2. **A refusal lost the batch.** A 413 was treated like any other error, so the links minted
+ *      up to that point were gone.
+ *
+ * So: send only what has not been sent, fifteen at a time, and split a chunk in half if the
+ * server says it is too big. Losing links to a request-size limit is not an acceptable outcome.
  */
-async function postAgentResult({ captures, offers }) {
-  const externalByTitle = new Map();
-  for (const offer of offers) {
-    const key = slugifyTitle(offer.title || '');
-    if (key && offer.external_id && !externalByTitle.has(key)) externalByTitle.set(key, offer.external_id);
+const AGENT_POST_CHUNK = 15;
+let postedCount = 0;
+
+function externalIdMap(offers) {
+  const byTitle = new Map();
+  for (const offer of Array.isArray(offers) ? offers : []) {
+    const key = slugifyTitle(offer?.title || '');
+    if (key && offer.external_id && !byTitle.has(key)) byTitle.set(key, offer.external_id);
   }
-  const payload = captures.map((capture) => ({
+  return byTitle;
+}
+
+/**
+ * Post one batch of captures. Returns what the portal applied, and whether it accepted them.
+ * A 413 is retried as two smaller requests before it is treated as a failure.
+ */
+async function postCaptureChunk({ chunk, externalByTitle, runId }) {
+  const payload = chunk.map((capture) => ({
     ...capture,
     // The server matches a capture to an offer by external id first, title second. Sending the
     // id the portal already knows removes the guesswork — and the description path needs it.
@@ -775,13 +792,27 @@ async function postAgentResult({ captures, offers }) {
   }));
 
   console.error(`posting ${payload.length} capture(s) to the portal`);
-  const res = await agentCall('POST', `/api/agent/runs/${encodeURIComponent(runState.runId)}/result`, {
+  const res = await agentCall('POST', `/api/agent/runs/${encodeURIComponent(runId)}/result`, {
     captures: payload,
     listing: { limit, cards: payload.length }
   });
+
   if (!res.ok) {
+    if (res.status === 413 && chunk.length > 1) {
+      // Too big even for the agent ceiling: halve it rather than lose the batch.
+      const half = Math.ceil(chunk.length / 2);
+      console.error(`portal asked for a smaller request (413) — splitting ${chunk.length} into ${half} + ${chunk.length - half}`);
+      const first = await postCaptureChunk({ chunk: chunk.slice(0, half), externalByTitle, runId });
+      const second = await postCaptureChunk({ chunk: chunk.slice(half), externalByTitle, runId });
+      return {
+        ok: first.ok && second.ok,
+        applied: first.applied + second.applied,
+        linksUpdated: first.linksUpdated + second.linksUpdated,
+        descriptionsUpdated: first.descriptionsUpdated + second.descriptionsUpdated
+      };
+    }
     console.error(`the portal refused the result (${res.status}): ${res.data?.error || 'no message'}`);
-    return false;
+    return { ok: false, applied: 0, linksUpdated: 0, descriptionsUpdated: 0 };
   }
 
   const applied = res.data?.applied || {};
@@ -794,7 +825,35 @@ async function postAgentResult({ captures, offers }) {
     const reasons = [...new Set(existing.linkSkipped.map((row) => row.reason))].join(', ');
     console.error(`${existing.linkSkipped.length} link(s) not attached (${reasons})`);
   }
-  return true;
+  return {
+    ok: true,
+    applied: applied.inserted || 0,
+    linksUpdated: existing.linksUpdated || 0,
+    descriptionsUpdated: existing.descriptionsUpdated || 0
+  };
+}
+
+/**
+ * Post everything captured since the last successful post, in chunks.
+ *
+ * `from` is the resume point: a batch that fails does not advance it, so the next flush retries
+ * exactly those captures instead of the whole run.
+ */
+async function postNewCaptures({ captures, offers, from = 0 }) {
+  const externalByTitle = externalIdMap(offers);
+  const runId = String(runState.runId || runIdFlag);
+  let index = from;
+  const totals = { ok: true, applied: 0, linksUpdated: 0, descriptionsUpdated: 0 };
+  while (index < captures.length) {
+    const chunk = captures.slice(index, index + AGENT_POST_CHUNK);
+    const result = await postCaptureChunk({ chunk, externalByTitle, runId });
+    if (!result.ok) return { ...totals, ok: false, posted: index };
+    totals.applied += result.applied;
+    totals.linksUpdated += result.linksUpdated;
+    totals.descriptionsUpdated += result.descriptionsUpdated;
+    index += chunk.length;
+  }
+  return { ...totals, posted: index };
 }
 
 async function main() {
@@ -824,24 +883,33 @@ async function main() {
       existing: prior,
       supabase,
       identity,
-      // Batches arrive at the portal while the run is still going; the final post below is the
-      // remainder, and `/finish` closes the run once.
-      onBatch: agentMode ? (so_far) => postAgentResult({ captures: so_far, offers }) : null
+      // Batches arrive at the portal while the run is still going; the final flush below sends
+      // the remainder, and `/finish` closes the run once. `postedCount` is the resume point, so a
+      // failed batch is retried as itself rather than re-sending the whole run.
+      onBatch: agentMode ? async (so_far) => {
+        const result = await postNewCaptures({ captures: so_far, offers, from: postedCount });
+        if (result.ok) postedCount = result.posted;
+        return result.ok;
+      } : null
     });
   }
 
   // Agent mode ends here: the portal verifies and writes. Everything below reads and writes the
   // database directly, which this machine must never do.
   if (agentMode) {
-    const posted = await postAgentResult({ captures, offers });
+    const flush = await postNewCaptures({ captures, offers, from: postedCount });
+    if (flush.ok) postedCount = flush.posted;
+    const written = flush.linksUpdated + flush.descriptionsUpdated + flush.applied;
     await finishRunTracking({
-      status: posted ? (captures.length ? 'succeeded' : 'failed') : 'failed',
-      message: posted
+      // "partial" when links were minted but the last batch did not land: neither success nor a
+      // clean failure, and saying either would hide the number that matters.
+      status: flush.ok ? (captures.length ? 'succeeded' : 'failed') : (written ? 'partial' : 'failed'),
+      message: flush.ok
         ? `${captures.length} captured · ${runState.ok} with a link`
-        : 'the portal refused the capture',
-      detail: { captured: captures.length, links: runState.ok }
+        : `${captures.length} captured, ${postedCount} posted before the portal refused the rest`,
+      detail: { captured: captures.length, links: runState.ok, posted: postedCount, written }
     });
-    process.exitCode = posted ? 0 : 1;
+    process.exitCode = flush.ok ? 0 : 1;
     return;
   }
 

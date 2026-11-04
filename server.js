@@ -109,6 +109,11 @@ const app = express();
 // inherits this, so visitor IPs were all one address. `1` (not `true`) trusts
 // exactly the Render hop, so a client-supplied X-Forwarded-For cannot spoof it.
 app.set('trust proxy', 1);
+// A worker posts what it captured in batches, and one Turing role carries a 2–4 KB job body: a
+// 120-role run arrived as one ~400 KB request and Express answered **413 PayloadTooLargeError**,
+// so every link was lost while the run reported 120/120 and closed as failed. Agent routes get a
+// larger ceiling and keep the raw-body hook off them; everything else keeps the small default.
+app.use('/api/agent', express.json({ limit: '12mb' }));
 app.use(express.json({
   verify: (req, res, buf) => {
     req.rawBody = buf ? buf.toString("utf8") : "";
