@@ -1631,15 +1631,53 @@ function wfListeningHtml(d) {
   const runState = ((d.runs && d.runs.byPlatform) || {}).linkedin || null;
   const active = runState && runState.active;
   const last = runState && runState.last;
+  // A listen run drives the tenant's profile exactly like a capture does, so it needs the same
+  // browser gate: without one the run would queue and wait, which looks like a broken button.
+  const mapped = d.identity ? d.identity.mapped !== false : true;
+  const notSetUp = listening.available === false;
+  // No `listening` key at all means the *server* predates this feature — not that the week was
+  // quiet. Saying "nothing matched" there would be a claim about the market that we cannot make.
+  const notDeployed = !Object.prototype.hasOwnProperty.call(d || {}, 'listening');
 
+  /**
+   * The button is drawn in **every** state, including the ones where it cannot run.
+   *
+   * The first version returned early when `social_signals` was missing, so the tenant saw one
+   * amber line and no button — which reads as "this feature does not exist", not "apply a
+   * migration". A disabled button beside the reason is the honest shape: the work is visible, and
+   * the sentence next to it says what is actually missing.
+   */
+  const blocked = active
+    ? 'A listening run is already going — wait for it, or press Cancel on the run above'
+    : notDeployed
+      ? 'This portal build does not report listening yet — deploy the latest commit'
+      : notSetUp
+        ? `Apply ${listening.needsMigration || 'migrations/2026-11-04_social_signals.sql'} first`
+        : !mapped
+          ? 'No browser of yours is connected yet, so this button would do nothing'
+          : '';
   const startButton = `<button class="btn btn-outline-acc btn-sm" data-wfact="queue" data-kind="listen" data-refresh="0"
-      ${active ? 'disabled title="A listening run is already going — wait for it"' : ''}
-      title="Reads the searches your taxonomy defines on your own LinkedIn, and scores what people wrote">Start listening</button>`;
+      ${blocked ? `disabled title="${esc(blocked)}"` : ''}
+      title="Reads the searches your intent taxonomy defines on your own LinkedIn, and scores what people wrote">Start listening on LinkedIn</button>`;
+  const blockedLine = blocked && !active
+    ? `<div style="color:#f59e0b;font-size:.74rem;margin-top:4px">${esc(blocked)}</div>`
+    : '';
 
-  if (listening.available === false) {
+  if (notDeployed) {
     return `<div class="mt-3">
       <div class="text-muted" style="font-size:.74rem;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Listening</div>
-      <div style="color:#f59e0b;font-size:.8rem">Not set up yet — apply <code>${esc(listening.needsMigration || 'the social signals migration')}</code>. Nothing has been read, so this is not an empty week.</div>
+      <div class="text-muted" style="font-size:.8rem">This portal build does not answer for listening yet, so nothing has been read here.</div>
+      <div class="d-flex gap-2 flex-wrap mt-2">${startButton}</div>
+      ${blockedLine}
+    </div>`;
+  }
+
+  if (notSetUp) {
+    return `<div class="mt-3">
+      <div class="text-muted" style="font-size:.74rem;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Listening</div>
+      <div style="color:#f59e0b;font-size:.8rem">Listening is not set up yet, so nothing has been read — this is not an empty week.</div>
+      <div class="d-flex gap-2 flex-wrap mt-2">${startButton}</div>
+      ${blockedLine}
     </div>`;
   }
 
@@ -1661,6 +1699,7 @@ function wfListeningHtml(d) {
       </div>
       <div class="text-muted" style="font-size:.78rem;margin:4px 0 6px">No post has matched one of your intents yet. ${esc(countsLine)}.</div>
       <div class="d-flex gap-2 flex-wrap">${startButton}</div>
+      ${blockedLine}
       <div class="text-muted" style="font-size:.72rem;margin-top:4px">Reads public posts in your own signed-in LinkedIn — a handful of searches, at a human pace, and nothing is ever sent from here.</div>
     </div>`;
   }
@@ -1699,6 +1738,7 @@ function wfListeningHtml(d) {
     </div>
     <div class="text-muted" style="font-size:.78rem;margin:4px 0 6px">${esc(countsLine)} · showing the ${items.length} strongest, best first</div>
     <div class="d-flex gap-2 flex-wrap mb-2">${startButton}</div>
+    ${blockedLine}
     ${rows}
     <div class="text-muted" style="font-size:.72rem">Nobody was messaged by this system. The draft is a starting line — you send it, from your own account, in your own name.</div>
   </div>`;
@@ -1727,8 +1767,10 @@ function wfControlHtml(d) {
       ${wfPlatformCardHtml(d, { slug: 'micro1', name: 'Micro1', icon: 'fa-solid fa-globe' })}
     </div>
     ${wfActiveRunHtml(d)}
-    ${wfFunnelHtml(d)}
+    ${/* Above the funnel on purpose: the digest is something to act on, the funnel is a report,
+         and a long table between the cards and the button is how a control gets missed. */ ''}
     ${wfListeningHtml(d)}
+    ${wfFunnelHtml(d)}
     <div class="mt-3"><div class="text-muted" style="font-size:.74rem;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Next</div>${wfActionsHtml(d)}</div>
     <div class="mt-3"><div class="text-muted" style="font-size:.74rem;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Links that need you</div>${wfLinkQueueHtml(d)}</div>`;
 }

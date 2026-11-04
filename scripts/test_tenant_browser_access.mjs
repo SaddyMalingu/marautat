@@ -1875,8 +1875,24 @@ function fakeOfferDb() {
     /function wfListeningHtml/.test(dashSrc) && /\$\{wfListeningHtml\(d\)\}/.test(dashSrc));
   ok('with a button that queues a listen run, not a capture',
     /data-wfact="queue" data-kind="listen"/.test(dashSrc));
+  ok('and the button names LinkedIn, so it can be found by name',
+    /Start listening on LinkedIn/.test(dashSrc));
+  // The first version returned the "not set up" card *before* drawing the button, so the tenant
+  // saw an amber sentence and concluded the feature did not exist. The button must be defined
+  // before any state can return, and every state must include it.
+  ok('the start button is drawn in every state, including "not set up"',
+    dashSrc.indexOf('const startButton') < dashSrc.indexOf('if (notSetUp)')
+    && /if \(notSetUp\)[\s\S]{0,400}\$\{startButton\}/.test(dashSrc));
+  ok('and each state that cannot run says why, in words',
+    /Apply \$\{listening\.needsMigration \|\| 'migrations\/2026-11-04_social_signals\.sql'\} first/.test(dashSrc)
+    && /No browser of yours is connected yet, so this button would do nothing/.test(dashSrc));
+  // A server older than the panel omits `listening` entirely. Calling that "nothing matched" would
+  // blame the market for our own deployment, so it is its own state.
+  ok('a server that predates the feature is reported as such, not as a quiet week',
+    /const notDeployed = !Object\.prototype\.hasOwnProperty\.call\(d \|\| \{\}, 'listening'\)/.test(dashSrc)
+    && /This portal build does not report listening yet/.test(dashSrc));
   ok('and it distinguishes "not set up" from "nothing matched"',
-    /Not set up yet/.test(dashSrc) && /No post has matched one of your intents yet/.test(dashSrc));
+    /Listening is not set up yet/.test(dashSrc) && /No post has matched one of your intents yet/.test(dashSrc));
   ok('the card shows the score with its evidence, and never claims to have sent anything',
     /showing the \$\{items\.length\} strongest/i.test(dashSrc)
     && /Nobody was messaged by this system/.test(dashSrc));

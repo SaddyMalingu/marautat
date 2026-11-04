@@ -543,6 +543,21 @@ eq('a second capture is refused while one is queued', queueAgain.status, 409);
 const queueVerify = await post('/tenant/blogger/runs', { kind: 'verify' });
 eq('verification cannot be queued as a run', queueVerify.status, 400);
 
+// The Listening card's button sends exactly this, so the route is the thing to test rather than
+// the markup: a `listen` run must be accepted, must record LinkedIn as its platform (the worker
+// dispatches on that), and must not be confused with a capture.
+const queueListen = await post('/tenant/blogger/runs', { kind: 'listen', limit: 3 });
+eq('listening can be queued from the panel', queueListen.status, 201);
+eq('as its own kind, not a capture', queueListen.body.run.kind, 'listen');
+eq('with LinkedIn recorded, so the worker picks the listener',
+  queueListen.body.run.detail.platform, 'linkedin');
+eq('and the runs it starts are searches, not roles', queueListen.body.run.detail.limit, 3);
+ok('the command it prints is the listener, with no --apply',
+  /browser_actor_linkedin_listen\.mjs/.test(queueListen.body.command || '')
+  && !/--apply/.test(queueListen.body.command || ''));
+const cancelListen = await post(`/tenant/blogger/runs/${queueListen.body.run.id}/cancel`, {});
+eq('and it can be cancelled like any other run', cancelListen.body.run.status, 'cancelled');
+
 const foreignCancel = await post('/tenant/blogger/runs/not-mine/cancel', {});
 eq('cancelling an unknown run is a 404', foreignCancel.status, 404);
 const cancelRes = await post(`/tenant/blogger/runs/${queueRes.body.run.id}/cancel`, {});
