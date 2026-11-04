@@ -349,12 +349,49 @@ function scriptForPlatform(platform) {
   return SCRIPT_BY_PLATFORM[String(platform || '').toLowerCase()] || null;
 }
 
+/**
+ * Does this copy of the worker actually contain that runner?
+ *
+ * A worker downloaded before a platform existed can still *claim* its runs and then do nothing,
+ * because the claim only needs the platform name. On 2026-11-04 that is exactly what happened: a
+ * listen run was claimed, no child was spawned (the file was not in the folder), the run stayed
+ * "running" until the tenant cancelled, and nothing anywhere said why. Checking the file first is
+ * one `fs.existsSync` and it turns a silent no-op into a skip the tenant can see.
+ */
+function scriptAvailable(platform) {
+  const script = scriptForPlatform(platform);
+  return Boolean(script) && fs.existsSync(path.resolve(script));
+}
+
+const missingRunnerWarned = new Set();
+function warnMissingRunner(platform) {
+  if (missingRunnerWarned.has(platform)) return;
+  missingRunnerWarned.add(platform);
+  console.error(`this worker has no runner for "${platform}" (${scriptForPlatform(platform) || 'no script'}) —`);
+  console.error('  download the worker again from the portal, then restart this window. Leaving those runs queued.');
+}
+
+/**
+ * The last line of a child's output that looks like a fault.
+ *
+ * The child prints the cause ("Cannot find module…", "the profile would not start…") and then
+ * dies. Capturing it is the difference between the portal saying "stopped with code 1" — which
+ * tells the tenant nothing — and naming the actual fault.
+ */
+function lastProblemLine(lines) {
+  const interesting = lines.filter((line) => /error|failed|refused|cannot|not found|ENOENT|invalid|denied|timed out/i.test(line));
+  const chosen = interesting.length ? interesting[interesting.length - 1] : lines[lines.length - 1];
+  return String(chosen || '').slice(0, 200);
+}
+
 function runCapture({ tenantSlug, runId, limit, platform = 'micro1' }) {
   const script = scriptForPlatform(platform);
-  if (!script) {
-    // Refused rather than defaulted: running the wrong adapter is worse than running none.
-    console.error(`this worker has no runner for "${platform}" — skipping the run so its slot is freed`);
-    return Promise.resolve(1);
+  // Refused rather than defaulted: running the wrong adapter is worse than running none, and
+  // running *nothing* while holding the claim is worse than both.
+  if (!script || !fs.existsSync(path.resolve(script))) {
+    const reason = `this worker does not contain ${script || `${platform} runner`} — download the worker again from the portal`;
+    console.error(reason);
+    return Promise.resolve({ code: 1, reason });
   }
   const args = platform === 'linkedin'
     // Reading is cheap per page and expensive per query, so the listener is bounded by queries
@@ -380,11 +417,26 @@ function runCapture({ tenantSlug, runId, limit, platform = 'micro1' }) {
       ];
   const childEnv = { ...process.env, TENANT_WORKER_TOKEN: token };
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, args, { stdio: 'inherit', env: childEnv });
-    child.on('exit', (code) => resolve(code ?? 1));
+    // Piped rather than inherited so the child's last words can be carried to the portal. They
+    // are still printed line by line, so the worker window a tenant watches looks the same.
+    const child = spawn(process.execPath, args, { env: childEnv });
+    const tail = [];
+    const keep = (chunk) => {
+      for (const raw of String(chunk).split(/\r?\n/)) {
+        const line = raw.trimEnd();
+        if (!line.trim()) continue;
+        tail.push(line);
+        if (tail.length > 20) tail.shift();
+        console.error(line);
+      }
+    };
+    child.stdout.on('data', keep);
+    child.stderr.on('data', keep);
+    child.on('exit', (code) => resolve({ code: code ?? 1, reason: lastProblemLine(tail) }));
     child.on('error', (error) => {
-      console.error(`could not start the capture: ${error.message}`);
-      resolve(1);
+      const reason = `could not start ${script}: ${error.message}`;
+      console.error(reason);
+      resolve({ code: 1, reason });
     });
   });
 }
@@ -398,13 +450,14 @@ function runCapture({ tenantSlug, runId, limit, platform = 'micro1' }) {
  * non-zero exit, close it ourselves; if the child already closed it, the run is no longer in
  * the queued/running list and this does nothing.
  */
-async function closeAbandonedRun(runId, code) {
+async function closeAbandonedRun(runId, code, reason = '') {
   const listed = await call('GET', '/api/agent/runs').catch(() => null);
   const stillOpen = (listed?.data?.runs || []).some((row) => row.id === runId);
   if (!stillOpen) return;
+  const detail = reason ? `: ${reason}` : ' before it could report';
   const closed = await call('POST', `/api/agent/runs/${encodeURIComponent(runId)}/finish`, {
     status: 'failed',
-    message: `the capture stopped with code ${code} before it could report`
+    message: `the runner stopped with code ${code}${detail}`.slice(0, 300)
   }).catch(() => null);
   console.error(closed?.ok
     ? `run ${runId} closed as failed — press Capture now again after fixing the cause above`
@@ -423,7 +476,13 @@ function platformOf(run) {
 }
 
 function canRunHere(run) {
-  return canRunOnWorker(run);
+  if (!canRunOnWorker(run)) return false;
+  // A worker that cannot find the runner must not take the run: claiming it and doing nothing is
+  // how a run sat in "running" until the tenant cancelled it (2026-11-04).
+  const platform = platformOf(run);
+  if (scriptAvailable(platform)) return true;
+  warnMissingRunner(platform);
+  return false;
 }
 
 /** Remembers the last set of runs this worker had to skip, so the warning prints once. */
@@ -474,10 +533,14 @@ async function tick(tenantSlug) {
   const platform = platformOf(claimed.data?.run) || platformOf(run) || 'micro1';
   console.error(`claimed ${run.id} (${platform}, limit ${limit}) — capturing`);
   const code = await runCapture({ tenantSlug, runId: run.id, limit, platform });
-  if (code !== 0) {
+  if (code && code.code !== undefined) {
+    if (code.code !== 0) await closeAbandonedRun(run.id, code.code, code.reason);
+    else console.error('runner exited 0 — the portal shows what it recorded');
+  } else if (code !== 0) {
+    // Defensive: an older shape (a bare exit code) still closes the run, just without a reason.
     await closeAbandonedRun(run.id, code);
   } else {
-    console.error(`capture exited 0; the run row records the outcome`);
+    console.error('runner exited 0 — the portal shows what it recorded');
   }
   return true;
 }

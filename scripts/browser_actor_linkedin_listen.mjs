@@ -13,18 +13,22 @@
  *   2. opens each search in the tenant's own signed-in profile and reads the posts;
  *   3. posts the raw text back to `/api/agent/runs/:id/signals`.
  *
- * It does not score, does not store, does not connect, does not message, and holds no database
- * key. Scoring is server-side so a worker cannot rank a tenant's prospects; sending stays with a
- * human because a first touch carries their name.
+ * It does not score, store, connect, message, or hold a database key. Scoring is server-side so a
+ * worker cannot rank a tenant's prospects; sending stays with a human because a first touch
+ * carries their name.
  *
  *   node scripts/browser_actor_linkedin_listen.mjs --agent-api https://alphadome.onrender.com \
  *     --run-id <uuid> --queries 3 --per-query 10
  *
  * The worker passes TENANT_WORKER_TOKEN through the environment, so no credential is in argv.
+ *
+ * **Every exit closes the run.** A child that dies silently leaves the portal showing "running"
+ * until the tenant cancels, and the cancel throws away a run that had already reported the fault.
+ * `finishOnce` below is the single door out, and `main().catch` uses it too.
  */
 // The tenant bundle has no node_modules: neither dotenv nor supabase may be a hard import.
 try { await import('dotenv/config'); } catch { /* not installed: the env already has what it needs */ }
-import { createMoreloginClient, redact } from '../utils/browserActor/moreloginClient.js';
+import { createMoreloginClient } from '../utils/browserActor/moreloginClient.js';
 import { createBrowserRuntime } from '../utils/browserActor/runtime.js';
 import { capturePage, resolveDebugTarget, CdpSession } from '../utils/browserActor/cdp.js';
 import { maskEnvId } from '../utils/browserActor/identity.js';
@@ -64,6 +68,9 @@ if (!runId) {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** Whether the portal already knows this run is over. Nothing may close it twice. */
+let runClosed = false;
+
 async function agentCall(method, pathname, body) {
   const res = await fetch(`${agentApi}${pathname}`, {
     method,
@@ -77,15 +84,27 @@ async function agentCall(method, pathname, body) {
   return { status: res.status, ok: res.ok, data };
 }
 
-/** Report progress; a failure here must not end the run, the run row is the tenant's only view. */
+/** Report progress; a failure here must not end the run — the run row is the tenant's only view. */
 async function beat(payload) {
   const res = await agentCall('POST', `/api/agent/runs/${encodeURIComponent(runId)}/progress`, payload).catch(() => null);
   if (!res?.ok) console.error(`progress not recorded (${res?.status ?? 'no response'})`);
 }
 
-async function finish(payload) {
+/**
+ * Close the run, once.
+ *
+ * Returns false when the portal refused, so the caller can say so in the worker window instead of
+ * assuming the run is closed.
+ */
+async function finishOnce(payload) {
+  if (runClosed) return true;
   const res = await agentCall('POST', `/api/agent/runs/${encodeURIComponent(runId)}/finish`, payload).catch(() => null);
-  if (!res?.ok) console.error(`could not close the run (${res?.status ?? 'no response'}): ${res?.data?.error || 'no message'}`);
+  if (!res?.ok) {
+    console.error(`could not close the run (${res?.status ?? 'no response'}): ${res?.data?.error || 'no message'}`);
+    return false;
+  }
+  runClosed = true;
+  return true;
 }
 
 /**
@@ -104,7 +123,6 @@ async function loadContext() {
   }
   return res.data;
 }
-
 
 // ── CDP plumbing ───────────────────────────────────────────────────────────────
 // One session for the whole run: every evaluate that reopens a socket also re-resolves the
@@ -193,72 +211,15 @@ async function postPosts({ posts }) {
     console.error(`portal stored ${res.data?.stored ?? 0} signal(s) · ${res.data?.duplicates ?? 0} already known · ${dropped.excluded ?? 0} excluded · ${dropped.notRelevant ?? 0} off-topic`);
     stored += Number(res.data?.stored) || 0;
     duplicates += Number(res.data?.duplicates) || 0;
+    index += chunk.length;
+  }
+  return { ok: true, stored, duplicates, posted: index };
+}
 
 // ── main ──────────────────────────────────────────────────────────────────────
 
-async function main() {
-  let context;
-  try {
-    context = await loadContext();
-  } catch (error) {
-    // Claimed before the context is asked for, so the catch below owns a run id either way.
-    console.error(`context refused: ${error.message}`);
-    await finish({ status: 'failed', message: error.message.slice(0, 300) }).catch(() => {});
-    throw error;
-  }
-
-  const identity = context.identity || {};
-  const tenantSlug = context.tenant?.slug || tenantFlag || '(unknown)';
-  const queries = (Array.isArray(context.queries) ? context.queries : []).slice(0, wantQueries);
-  console.error(`listen: tenant=${tenantSlug} profile=${maskEnvId(identity.envId)} queries=${queries.length}`);
-  if (!queries.length) {
-    await finish({
-      status: 'failed',
-      message: 'the portal sent no searches — the intent taxonomy is missing or empty',
-      detail: { queries: 0 }
-    });
-    process.exitCode = 1;
-    return;
-  }
-
-  const runtime = createBrowserRuntime({ client: createMoreloginClient({}) });
-  const started = await runtime.startProfile(identity.envId, {
-    runtime: identity.runtime || 'local',
-    // Headless by default, like the captures: the tenant is not watching this run, and a window
-    // that steals focus while they work is a reason to close the worker. `--headful` exists for
-    // the day a profile refuses to render without a visible window.
-    headless: flag('headful', null) === null
-  });
-  if (!started.debugPort) {
-    await finish({ status: 'failed', message: 'the profile started but returned no debug port' });
-    console.error('profile not ready — nothing was read');
-    process.exitCode = 1;
-    return;
-  }
-  const host = started.host;
-  const port = started.debugPort;
-  console.error(`profile=…${String(identity.envId).slice(-6)} port=${port}`);
-
-  // Is the tenant still signed in? A logged-out search renders an empty page, which is
-  // indistinguishable from "nobody is talking about this" — the exact lie this check prevents.
-  await capturePage({ host, port, url: LINKEDIN_PLATFORM.feedUrl, timeoutMs: 45_000 }).catch((error) => {
-    console.error(`could not open LinkedIn: ${error?.message || error}`);
-  });
-  const session = await readSession({ host, port });
-  console.error(`session: ${session.state}${session.snapshot?.wall ? ' (login wall)' : ''}`);
-  if (session.state === 'login_wall') {
-    await finish({
-      status: 'failed',
-      message: 'LinkedIn is signed out in this profile — sign in inside MoreLogin, then run again',
-      detail: { reauthRequired: true, platform: 'linkedin' }
-    });
-    process.exitCode = 1;
-    return;
-  }
-
-  const collected = [];
-  /** Posts the portal has not accepted yet. Spliced only by what actually landed. */
-  const unsent = [];
+/** Collect the searches' posts, banking each page as it is read. */
+async function readAllSearches({ host, port, queries, collected, unsent }) {
   const seen = new Set();
   let read = 0;
   let failed = 0;
@@ -285,8 +246,7 @@ async function main() {
       // Bank what we have, every query: a machine that sleeps at query five must not lose four.
       if (unsent.length) {
         const posted = await postPosts({ posts: unsent });
-        // Only the accepted prefix is dropped: what did not land is retried by the next flush,
-        // and reported at the end if it never does.
+        // Only the accepted prefix is dropped: what did not land is retried by the next flush.
         if (posted.posted) unsent.splice(0, posted.posted);
         if (!posted.ok) console.error(`  ${unsent.length} post(s) still unsent — the next search retries them`);
       }
@@ -300,7 +260,13 @@ async function main() {
     } catch (error) {
       failed += 1;
       console.error(`  query failed: ${error?.message || error}`);
-      await beat({ done: read + failed, ok: read, failed, total: queries.length, message: `search failed: ${String(error?.message || error).slice(0, 120)}` });
+      await beat({
+        done: read + failed,
+        ok: read,
+        failed,
+        total: queries.length,
+        message: `search failed: ${String(error?.message || error).slice(0, 120)}`
+      });
     }
 
     // Human pace, jittered. A fixed interval is the clearest machine signature there is.
@@ -311,27 +277,115 @@ async function main() {
     }
   }
 
+  return { read, failed };
+}
+
+async function main() {
+  let context;
+  try {
+    context = await loadContext();
+  } catch (error) {
+    // Claimed before the context is asked for, so this path owns a run id and must close it.
+    console.error(`context refused: ${error.message}`);
+    await finishOnce({ status: 'failed', message: String(error.message).slice(0, 300) });
+    throw error;
+  }
+
+  const identity = context.identity || {};
+  const tenantSlug = context.tenant?.slug || tenantFlag || '(unknown)';
+  const queries = (Array.isArray(context.queries) ? context.queries : []).slice(0, wantQueries);
+  console.error(`listen: tenant=${tenantSlug} profile=${maskEnvId(identity.envId)} queries=${queries.length}`);
+  if (!queries.length) {
+    await finishOnce({
+      status: 'failed',
+      message: 'the portal sent no searches — the intent taxonomy is missing or empty',
+      detail: { queries: 0 }
+    });
+    process.exitCode = 1;
+    return;
+  }
+
+  const runtime = createBrowserRuntime({ client: createMoreloginClient({}) });
+
+  // Starting the profile is where this run actually dies, and it **throws** rather than
+  // returning. On 2026-11-04 that exception escaped and no `/finish` was ever sent, so the portal
+  // showed "running" until the tenant cancelled — throwing away a run that had already told us
+  // exactly what was wrong.
+  let started;
+  try {
+    started = await runtime.startProfile(identity.envId, {
+      runtime: identity.runtime || 'local',
+      // Headless by default, like the captures: the tenant is not watching this run, and a window
+      // that steals focus while they work is a reason to close the worker. `--headful` exists for
+      // the day a profile refuses to render without a visible window.
+      headless: flag('headful', null) === null
+    });
+  } catch (error) {
+    const message = `the profile would not start: ${error?.message || error}`;
+    console.error(message);
+    await finishOnce({
+      status: 'failed',
+      message: message.slice(0, 300),
+      detail: { stage: 'profile_start', code: error?.code || null }
+    });
+    process.exitCode = 1;
+    return;
+  }
+  if (!started.debugPort) {
+    await finishOnce({ status: 'failed', message: 'the profile started but returned no debug port' });
+    console.error('profile not ready — nothing was read');
+    process.exitCode = 1;
+    return;
+  }
+
+  const host = started.host;
+  const port = started.debugPort;
+  console.error(`profile=…${String(identity.envId).slice(-6)} port=${port}`);
+
+  // Is the tenant still signed in? A logged-out search renders an empty page, which is
+  // indistinguishable from "nobody is talking about this" — the exact lie this check prevents.
+  await capturePage({ host, port, url: LINKEDIN_PLATFORM.feedUrl, timeoutMs: 45_000 }).catch((error) => {
+    console.error(`could not open LinkedIn: ${error?.message || error}`);
+  });
+  const session = await readSession({ host, port });
+  console.error(`session: ${session.state}${session.snapshot?.wall ? ' (login wall)' : ''}`);
+  if (session.state === 'login_wall') {
+    await finishOnce({
+      status: 'failed',
+      message: 'LinkedIn is signed out in this profile — sign in inside MoreLogin, then run again',
+      detail: { reauthRequired: true, platform: 'linkedin' }
+    });
+    process.exitCode = 1;
+    return;
+  }
+
+  const collected = [];
+  /** Posts the portal has not accepted yet. Spliced only by what actually landed. */
+  const unsent = [];
+  const { read, failed } = await readAllSearches({ host, port, queries, collected, unsent });
+
   const status = deriveRunStatus({ done: read + failed, ok: read, failed, total: queries.length });
-  await finish({
+  await finishOnce({
     status,
     done: read + failed,
     ok: read,
     failed,
     total: queries.length,
     message: `${read}/${queries.length} searches read · ${collected.length} post(s) sent for scoring${failed ? ` · ${failed} failed` : ''}`.slice(0, 300),
-    detail: { platform: 'linkedin', queries: queries.length, posts: collected.length, read }
+    detail: { platform: 'linkedin', queries: queries.length, posts: collected.length, read, unsent: unsent.length }
   });
   console.error(`listen finished: ${read}/${queries.length} searches · ${collected.length} post(s) · ${status}`);
   process.exitCode = status === 'failed' ? 1 : 0;
 }
 
-main().catch((error) => {
+main().catch(async (error) => {
   console.error(`listen failed: ${error?.message || error}`);
   if (error?.status) console.error(`  the portal answered ${error.status}`);
+  // Last resort: if nothing closed the run, close it now with the reason we have. A run left in
+  // `running` is worse than a failed run — the tenant cannot start another and learns nothing.
+  await finishOnce({ status: 'failed', message: String(error?.message || error).slice(0, 300) }).catch(() => {});
   process.exitCode = 1;
 });
 
-    index += chunk.length;
-  }
-  return { ok: true, stored, duplicates, posted: index };
-}
+
+

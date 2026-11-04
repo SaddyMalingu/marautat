@@ -43,6 +43,7 @@
     "test:micro1": "node scripts/test_micro1_adapter.mjs",
     "test:browser-access": "node scripts/test_tenant_browser_access.mjs",
     "test:listening": "node scripts/test_social_listening.mjs",
+    "test:listener": "node scripts/test_linkedin_listener.mjs",
     "secrets:check": "node scripts/tenant_secret_check.mjs",
     "test:social-publish": "node scripts/test_social_publish.mjs",
     "browser:doctor": "node scripts/browser_actor_probe.mjs doctor",

@@ -1808,7 +1808,15 @@ function fakeOfferDb() {
     /SCRIPT_BY_PLATFORM = Object\.freeze\(\{[\s\S]{0,220}micro1:[\s\S]{0,140}turing:[\s\S]{0,140}linkedin:/.test(workerSrc)
     && /const script = scriptForPlatform\(platform\)/.test(workerSrc));
   ok('and refuses a platform it has no runner for instead of defaulting to Micro1',
-    /if \(!script\)[\s\S]{0,320}return Promise\.resolve\(1\)/.test(workerSrc));
+    /if \(!script \|\| !fs\.existsSync\(path\.resolve\(script\)\)\)[\s\S]{0,200}return Promise\.resolve\(\{ code: 1, reason \}\)/.test(workerSrc));
+  // Claiming a run whose runner file is missing is how a listen run sat in "running" until the
+  // tenant cancelled it. The claim itself now requires the file.
+  ok('and will not claim a run it cannot actually run',
+    /function canRunHere\(run\) \{[\s\S]{0,320}scriptAvailable\(platform\)/.test(workerSrc)
+    && /warnMissingRunner\(platform\)/.test(workerSrc));
+  ok('the child\'s last fault is carried to the portal, not just its exit code',
+    /stdout\.on\('data', keep\)/.test(workerSrc) && /lastProblemLine\(tail\)/.test(workerSrc)
+    && /closeAbandonedRun\(run\.id, code\.code, code\.reason\)/.test(workerSrc));
   ok('a listen run is dispatched to the listener',
     /linkedin: path\.join\('scripts', 'browser_actor_linkedin_listen\.mjs'\)/.test(workerSrc));
   ok('and is bounded by searches rather than by roles', /'--queries'/.test(workerSrc) && /'--per-query'/.test(workerSrc));
