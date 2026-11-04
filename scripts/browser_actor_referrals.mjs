@@ -794,7 +794,10 @@ async function postCaptureChunk({ chunk, externalByTitle, runId }) {
   console.error(`posting ${payload.length} capture(s) to the portal`);
   const res = await agentCall('POST', `/api/agent/runs/${encodeURIComponent(runId)}/result`, {
     captures: payload,
-    listing: { limit, cards: payload.length }
+    // `batch`, not `cards`: this request carries a slice of the run, and the number of cards the
+    // listing actually held went out on `/progress`. A field named `cards` holding 15 would have
+    // been a number invented by the paging, which is the mistake this file keeps having to undo.
+    listing: { limit, batch: payload.length }
   });
 
   if (!res.ok) {
