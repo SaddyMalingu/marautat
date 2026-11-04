@@ -222,7 +222,13 @@ async function main() {
   }
 
   const runtime = createBrowserRuntime({ client: createMoreloginClient({}) });
-  const started = await runtime.startProfile(identity.envId, { runtime: identity.runtime || 'local', headless: true });
+  const started = await runtime.startProfile(identity.envId, {
+    runtime: identity.runtime || 'local',
+    // Headless by default, like the captures: the tenant is not watching this run, and a window
+    // that steals focus while they work is a reason to close the worker. `--headful` exists for
+    // the day a profile refuses to render without a visible window.
+    headless: flag('headful', null) === null
+  });
   if (!started.debugPort) {
     await finish({ status: 'failed', message: 'the profile started but returned no debug port' });
     console.error('profile not ready — nothing was read');
