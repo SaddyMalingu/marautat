@@ -1616,6 +1616,19 @@ function fakeOfferDb() {
   ok('the refusal says why, and names the conflict rather than hiding it',
     [...(applied.links.skipped || []), ...(applied.links.conflicts || [])]
       .some((row) => /already_linked|already_has_a_different_link/.test(row.reason)));
+
+  // A rejected link must carry what the server actually saw. On 2026-11-04 a 120-role Turing run
+  // attached zero links and the only output was `unverified_mismatch` a hundred times, which is a
+  // dead end for the tenant and for us.
+  const mismatched = await applyCaptureUpdates({
+    supabase: fakeDb,
+    offers: OFFERS,
+    captures: CAPTURES,
+    verify: async () => ({ verdict: 'mismatch', reason: 'title_differs', resolvedTitle: 'Sign in | Turing' })
+  });
+  const refused = (mismatched.links.skipped || []).find((row) => row.reason === 'unverified_mismatch');
+  ok('a refused link names the title it resolved to', refused?.resolvedTitle === 'Sign in | Turing');
+  ok('and the reason the verifier gave', refused?.detail === 'title_differs');
   // Both roles brought a real body, and both summaries were one line: the body wins either way.
   eq('the body replaces the one-line summary', applied.descriptions.updated, 2);
   ok('and every written link was verified first',

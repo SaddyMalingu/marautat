@@ -47,7 +47,7 @@ import { extractPairingCode } from '../utils/browserActor/pairing.js';
 import { maskEnvId } from '../utils/browserActor/identity.js';
 import { createMoreloginClient } from '../utils/browserActor/moreloginClient.js';
 import { createBrowserRuntime } from '../utils/browserActor/runtime.js';
-import { absoluteArgv, buildRunArgs } from '../utils/browserActor/runArgs.js';
+import { SOCIAL_LISTENER, absoluteArgv, buildRunArgs } from '../utils/browserActor/runArgs.js';
 
 const argv = process.argv.slice(2);
 function flag(name, fallback = null) {
@@ -339,10 +339,9 @@ async function reportProfile(profile) {
  *
  * Every social network shares one listener since 2026-11-04 and is told which one to read with
  * `--platform`; the differences between them live in `tasks/socialPlatforms.js`, not in copies of
- * the runner.
+ * the runner. The path itself comes from `runArgs.js` so there is one literal, not two spellings
+ * of it (`path.join` on Windows produced backslashes and broke the dispatch — see OPEN_FLAGS #42).
  */
-const SOCIAL_LISTENER = path.join('scripts', 'browser_actor_social_listen.mjs');
-
 const SCRIPT_BY_PLATFORM = Object.freeze({
   micro1: path.join('scripts', 'browser_actor_micro1.mjs'),
   turing: path.join('scripts', 'browser_actor_referrals.mjs'),

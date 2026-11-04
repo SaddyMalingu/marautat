@@ -14,8 +14,22 @@
  * So: pure, imported by the worker, and asserted directly by the suite.
  */
 
-/** The one script that serves every social network. */
+import { SOCIAL_PLATFORM_IDS } from './tasks/socialPlatforms.js';
+
+/**
+ * The one script that serves every social network.
+ *
+ * Written with a forward slash and never built with `path.join`: on Windows that produces
+ * `scripts\browser_actor_social_listen.mjs`, and comparing that against this literal is exactly
+ * how every "Start on X" run became a LinkedIn read twice over (2026-11-04). `path.resolve` copes
+ * with either separator; string equality does not.
+ */
 export const SOCIAL_LISTENER = 'scripts/browser_actor_social_listen.mjs';
+
+/** Does this platform run through the social listener? Decided by the platform, never by a path. */
+export function usesSocialListener(platform) {
+  return SOCIAL_PLATFORM_IDS.includes(String(platform || '').trim().toLowerCase());
+}
 
 /**
  * @param {{relative: string, platform: string, tenantSlug: string, runId: string,
@@ -23,9 +37,10 @@ export const SOCIAL_LISTENER = 'scripts/browser_actor_social_listen.mjs';
  * @returns {string[]} argv for the child, script path first (relative; the caller makes it absolute)
  */
 export function buildRunArgs({ relative, platform, tenantSlug, runId, limit, api }) {
-  // Chosen from the *registry* path, which is relative like the map it came from — never from a
-  // resolved path, because that comparison is the bug this module exists to prevent.
-  if (relative === SOCIAL_LISTENER) {
+  // The branch is chosen by the **platform id**, which is a value the queue route validated,
+  // rather than by comparing paths. Paths differ by separator, by resolution and by casing; an id
+  // does not. That mistake cost two rounds and four networks.
+  if (usesSocialListener(platform)) {
     return [
       relative,
       '--tenant', tenantSlug,

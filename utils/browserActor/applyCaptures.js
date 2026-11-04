@@ -177,7 +177,18 @@ export async function applyCaptureUpdates({ supabase, offers = [], captures = []
       resolvedTitle: check.resolvedTitle || null
     });
     if (check.verdict === 'match') accepted.push(update);
-    else linkPlan.skipped.push({ title: update.title, reason: `unverified_${check.verdict}` });
+    else {
+      // Carry the evidence, not just the verdict: "unverified_mismatch" twelve times tells the
+      // tenant nothing, while the title we actually got back names the cause (a login page, a
+      // redirect, a wrong link). 120 rejections in one run on 2026-11-04 were undiagnosable
+      // because only the reason string survived.
+      linkPlan.skipped.push({
+        title: update.title,
+        reason: `unverified_${check.verdict}`,
+        resolvedTitle: check.resolvedTitle || null,
+        detail: check.reason || null
+      });
+    }
   }
 
   const links = {

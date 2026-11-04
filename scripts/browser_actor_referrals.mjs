@@ -827,6 +827,13 @@ async function postCaptureChunk({ chunk, externalByTitle, runId }) {
   if (Array.isArray(existing.linkSkipped) && existing.linkSkipped.length) {
     const reasons = [...new Set(existing.linkSkipped.map((row) => row.reason))].join(', ');
     console.error(`${existing.linkSkipped.length} link(s) not attached (${reasons})`);
+    // Name the first few with what the server actually saw. A hundred identical reason strings
+    // cannot be acted on; one resolved title can — it says whether the link hit a login page, a
+    // redirect, or genuinely a different role.
+    for (const row of existing.linkSkipped.slice(0, 3)) {
+      if (!row.resolvedTitle) continue;
+      console.error(`  refused "${row.title}" — the link resolved to "${row.resolvedTitle}"${row.detail ? ` (${row.detail})` : ''}`);
+    }
   }
   return {
     ok: true,

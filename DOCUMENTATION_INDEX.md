@@ -10,7 +10,8 @@
 
 ### 📣 For Sales, Content, and Agency Partners
 **Start here:**
-1. [ALPHADOME_HIGH_TICKET_CONTENT_ENGINE.md](ALPHADOME_HIGH_TICKET_CONTENT_ENGINE.md) — buyer focus, offer ladder, flagship build, content cadence, lead path, and 90-day execution
+1. [docs/forge/ALPHADOME_OPEN_BRAIN_VISION.md](docs/forge/ALPHADOME_OPEN_BRAIN_VISION.md) — the Open Brain position: vision, 5 near-term phases with KPIs/baselines/kill criteria, 2028–2030 entry gates, refusals, and the clause that `npm run test:open-brain-vision` enforces
+2. [ALPHADOME_HIGH_TICKET_CONTENT_ENGINE.md](ALPHADOME_HIGH_TICKET_CONTENT_ENGINE.md) — buyer focus, offer ladder, flagship build, content cadence, lead path, and 90-day execution
 2. [LANDING_SITE_CONTENT.md](LANDING_SITE_CONTENT.md) — current landing-copy source; verify claims and implementation status before publishing
 3. [docs/TENANT_SCAN_TO_PAY.md](docs/TENANT_SCAN_TO_PAY.md) — the tenant merchant/client wallet: QR generate + download, camera/AI-free scanning, the two money calculators, the airtime/data bundle desk, endpoints, isolation, demo script, failure modes
 4. [docs/PARTNERSTACK_APPLICATION.md](docs/PARTNERSTACK_APPLICATION.md) — paste-ready PartnerStack Network profile (partner type, website/LinkedIn, pitch copy, honest traffic band, commission answers, first programs to apply to, and the `/go/:id` attribution slice that makes the commissions trackable)

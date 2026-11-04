@@ -212,14 +212,19 @@ ok('a social run is told which network to read', listenArgs.includes('--platform
 ok('and how many searches, not how many roles', listenArgs.includes('--queries') && !listenArgs.includes('--limit'));
 ok('with no --apply, because it writes nothing', !listenArgs.includes('--apply'));
 
+// The Windows bug, 2026-11-04: the worker's registry used `path.join`, which yields
+// `scripts\browser_actor_social_listen.mjs`, and the branch compared paths — so four networks ran
+// the marketplace argv and the listener fell back to LinkedIn. Every separator must work.
+const windowsPathArgs = buildRunArgs({ relative: 'scripts\\browser_actor_social_listen.mjs', platform: 'x', tenantSlug: 'acme', runId: 'r1', limit: 3, api: 'https://p' });
+ok('a Windows path still gets the social argv', windowsPathArgs.includes('--platform') && windowsPathArgs.includes('x'));
+const absolutePathArgs = buildRunArgs({ relative: 'C:\\Users\\me\\Downloads\\alphadome-worker\\scripts\\browser_actor_social_listen.mjs', platform: 'reddit', tenantSlug: 'acme', runId: 'r1', limit: 3, api: 'https://p' });
+ok('and so does an absolute one', absolutePathArgs.includes('--platform') && absolutePathArgs.includes('reddit'));
+ok('the branch is decided by the platform id, not by a path',
+  ['linkedin', 'x', 'facebook', 'reddit', 'youtube'].every((id) => buildRunArgs({ relative: 'whatever.mjs', platform: id, tenantSlug: 'acme', runId: 'r1', limit: 3, api: 'p' }).includes('--platform')));
+
 const captureArgs = buildRunArgs({ relative: 'scripts/browser_actor_micro1.mjs', platform: 'micro1', tenantSlug: 'acme', runId: 'r1', limit: 70, api: 'https://p' });
 ok('a marketplace capture still gets its own arguments', captureArgs.includes('--limit') && captureArgs.includes('--apply'));
 ok('and is never handed a social platform flag', !captureArgs.includes('--platform'));
-
-// The comparison that was wrong: an absolute path must never be what picks the branch.
-const absoluteTrap = buildRunArgs({ relative: '/abs/path/scripts/browser_actor_social_listen.mjs', platform: 'x', tenantSlug: 'acme', runId: 'r1', limit: 3, api: 'https://p' });
-ok('an absolute path is not how the listener is recognised (the caller resolves afterwards)',
-  !absoluteTrap.includes('--platform'));
 
 const resolved = absoluteArgv(['scripts/browser_actor_social_listen.mjs', '--platform', 'x'], (value) => `/root/${value}`);
 eq('the absolute path replaces the script only', resolved[0], '/root/scripts/browser_actor_social_listen.mjs');

@@ -1,0 +1,328 @@
+{
+  "version": "1.0",
+  "as_of": "2026-11-04",
+  "title": "Alphadome Open Brain — phase and KPI registry",
+  "doc": "docs/forge/ALPHADOME_OPEN_BRAIN_VISION.md",
+  "thesis": "The auditable operations brain for commerce in emerging markets: proof over promise, evidence over claims, human approval at every irreversible step.",
+  "min_kpis_per_phase": 4,
+  "doctrine": [
+    {
+      "id": "D1",
+      "rule": "Every answer cites a record",
+      "measure": "10 random outputs audited monthly; 0 without an evidence ref"
+    },
+    {
+      "id": "D2",
+      "rule": "Every irreversible action waits for a human",
+      "measure": "0 price-bearing actions without an approval row (test + DB constraint)"
+    },
+    {
+      "id": "D3",
+      "rule": "Every tenant boundary is proven, not promised",
+      "measure": "npm run proof:isolation:live:auto returns 4/4"
+    },
+    {
+      "id": "D4",
+      "rule": "Every claim is reproducible by a stranger",
+      "measure": "node scripts/open_brain_evidence.mjs regenerates the pack in under 2 minutes"
+    },
+    {
+      "id": "D5",
+      "rule": "Every system has an off switch and a rollback",
+      "measure": "AI_JOBS_MULTITENANT off returns 404 on tenant routes; every migration ships a _ROLLBACK.sql"
+    },
+    {
+      "id": "D6",
+      "rule": "Every metric is extreme-tested before it is optimized",
+      "measure": "every KPI in this registry has a kill criterion and a target"
+    },
+    {
+      "id": "D7",
+      "rule": "Dissent is funded",
+      "measure": "one recorded adversarial hour per week; failures appended to the risk register"
+    }
+  ],
+  "phases": [
+    {
+      "id": "P0",
+      "name": "Name the brain and package the proof",
+      "window": { "start": "2026-11-04", "end": "2026-11-30" },
+      "target_buyer": "International agency or consultancy evaluating a white-label licence (secondary: Kenyan SME via /discovery)",
+      "workflow": "Prove the stack is isolated, metered and real before signing a licence",
+      "reusable": [
+        "docs/forge/PROOF_RESULTS.md",
+        "docs/forge/SYSTEM_STATUS_AND_EXECUTION_ROADMAP_2026-07-17.md",
+        "alphadome-kernel/src/api/router.ts",
+        "alphadome-kernel/scripts/run-isolation-proof.mjs",
+        "routes/sitemap.js",
+        "LANDING_SITE_CONTENT.md",
+        "ABOSS_SEND_QUEUE.csv"
+      ],
+      "slice": "One buyer-facing /open-brain page plus a one-command evidence pack generator, built only from artifacts that already exist",
+      "revenue_impact": "Turns the published $10,000 licence anchor into a demonstration; target 3 agency conversations",
+      "risks": [
+        "Publishing a claim the tests no longer support (mitigate: generate numbers from suite output)",
+        "Isolation proof currently 1 pass / 3 skipped (mitigate: fill the data gaps, do not reframe them)"
+      ],
+      "objectives": [
+        "Complete the July isolation proof",
+        "Make the evidence pack regenerable by a stranger",
+        "Publish the position without breaking the landing contract"
+      ],
+      "tasks": [
+        "Populate brand_id, submissions and user_credits so all four probe checks execute",
+        "Re-run npm run proof:isolation and npm run proof:isolation:live:auto; commit 4/4",
+        "Add scripts/open_brain_evidence.mjs",
+        "Build public/open-brain.html with Live/Demo/Next labels and JSON-LD Service",
+        "Extend npm run test:landing to cover the new page",
+        "Record a 4-minute proof-first demo"
+      ],
+      "kpis": [
+        { "id": "K0.1", "metric": "Isolation probe checks passing", "baseline": "1 pass / 3 skipped", "target": "4 pass / 0 fail / 0 skipped", "source": "npm run proof:isolation" },
+        { "id": "K0.2", "metric": "Evidence pack regeneration", "baseline": "manual and founder-only", "target": "1 command, < 2 minutes, no secrets", "source": "scripts/open_brain_evidence.mjs" },
+        { "id": "K0.3", "metric": "Landing contract checks", "baseline": "53 green", "target": "53+ green including /open-brain", "source": "npm run test:landing" },
+        { "id": "K0.4", "metric": "Agency conversations opened", "baseline": "0", "target": "3", "source": "ABOSS_SEND_QUEUE.csv" }
+      ],
+      "exit_criteria": ["A stranger reproduces the proof and the pack without the founder on the call"],
+      "kill_criteria": ["Three agency calls and nobody reads the pack: stop polishing and sell the quotation slice instead"]
+    },
+    {
+      "id": "P1",
+      "name": "Wire the senses, expose the memory",
+      "window": { "start": "2026-12-01", "end": "2027-02-15" },
+      "target_buyer": "Existing paying tenant who cannot answer 'what did the brain do for me this week?'",
+      "workflow": "Activity accountability: one tenant-scoped screen showing what was sensed, decided, sent and paid",
+      "reusable": [
+        "migrations/2026-09-13_automation_log.sql",
+        "migrations/2026-11-02_writer_flow_runs.sql",
+        "migrations/2026-11-04_social_signals.sql",
+        "admin/tenant_dashboard.html",
+        "alphadome-kernel/src/core/conversation.ts",
+        "docs/MULTITENANT_AI_JOBS_RUNBOOK.md"
+      ],
+      "slice": "A read-only v_brain_activity view over existing per-domain tables plus one timeline panel in the tenant dashboard. No new write path",
+      "revenue_impact": "Renewal artefact and the first thing an agency audit asks for; reduces churn",
+      "risks": [
+        "View leaking across tenants (mitigate: session-scoped route plus offline test that tenant cannot be spoofed)",
+        "Slow joins on a growing log (mitigate: 90-day window on the existing index)",
+        "Schema drift (mitigate: additive, versioned, with _ROLLBACK.sql)"
+      ],
+      "objectives": [
+        "All six inbound surfaces tenant-attributable",
+        "One screen proves the brain's week without SQL",
+        "Cross-tenant leakage measured at zero"
+      ],
+      "tasks": [
+        "Inventory the six inbound surfaces with table, tenant key and populated status",
+        "Add migrations/2026-12-01_brain_activity_view.sql plus rollback",
+        "Add GET /tenant/open-brain/activity behind tenantSessionAuth",
+        "Render the timeline panel in admin/tenant_dashboard.html",
+        "Add scripts/test_open_brain_activity.mjs",
+        "Backfill brand_id on historical bot_tenants rows"
+      ],
+      "kpis": [
+        { "id": "K1.1", "metric": "Inbound surfaces emitting tenant-attributable records", "baseline": "3 of 6 confirmed", "target": "6 of 6", "source": "GET /tenant/open-brain/activity" },
+        { "id": "K1.2", "metric": "Cross-tenant rows visible in the isolation probe", "baseline": "0 rows, 3 checks skipped", "target": "0 rows, 4 checks executed", "source": "npm run proof:isolation:live:auto" },
+        { "id": "K1.3", "metric": "Time to answer 'what did it do yesterday?'", "baseline": "15-30 min of SQL", "target": "< 5 min, no SQL", "source": "tenant dashboard panel" },
+        { "id": "K1.4", "metric": "Owner review cadence", "baseline": "unmeasured", "target": ">= 3 sessions/week per pilot tenant", "source": "panel access rows in automation_log" }
+      ],
+      "exit_criteria": ["A pilot tenant opens the panel unprompted and cites it when renewing"],
+      "kill_criteria": ["Tenants look once and never return: stop building surfaces and return to P2 revenue work"]
+    },
+    {
+      "id": "P2",
+      "name": "Reasoning that ships paid work: quotation and tender intelligence",
+      "window": { "start": "2027-02-16", "end": "2027-05-15" },
+      "target_buyer": "Kenyan contractor, supplier or professional-services firm losing money on slow manual quotations and tender responses",
+      "workflow": "Tender or enquiry in, priced quotation draft with a source behind every line, human approval, then send and track",
+      "reusable": [
+        "alphadome-kernel/src/ai/promptEngine.ts",
+        "alphadome-kernel/src/ai/generationEngine.ts",
+        "routes/browserActors.js",
+        "routes/agentRuns.js",
+        "routes/mpesa.js",
+        "utils/scanPay.js",
+        "utils/blogQuality.js",
+        "utils/conversionPlaybook.js",
+        "BROWSER_ACTOR_RUNTIME.md"
+      ],
+      "slice": "One vertical template: quotation with per-line source references, a deterministic gate that blocks unsupported lines, and one approval screen",
+      "revenue_impact": "$3,000 deployment plus $500-2,000/month retainer; the audit's own first recommendation for fastest revenue",
+      "risks": [
+        "Hallucinated prices in a document the buyer forwards (mitigate: no line without source_ref, gate blocks emission)",
+        "Portal bans from automation (mitigate: one tenant profile plus lease, already shipped)",
+        "Scope creep into a full ERP (mitigate: kill criteria below)"
+      ],
+      "objectives": [
+        "Cut quotation turnaround by an order of magnitude on one real workflow",
+        "Make every price traceable to a source or a named assumption",
+        "Bill at least one pilot through credits"
+      ],
+      "tasks": [
+        "Model quotation and quotation_line with source_kind and source_ref",
+        "Add a per-tenant quote_draft prompt template",
+        "Build the gate modelled on utils/blogQuality.js",
+        "Wire POST /capture to fill supplier-priced lines",
+        "Build the line-by-line approval screen with approver identity and timestamp",
+        "Attach the deposit through routes/mpesa.js and utils/scanPay.js",
+        "Run three pilots and instrument turnaround and edit counts"
+      ],
+      "kpis": [
+        { "id": "K2.1", "metric": "Quotation turnaround (enquiry to approved draft)", "baseline": "days, measured per pilot", "target": "p50 < 4 h, p90 < 24 h", "source": "quotation.created_at to approved_at" },
+        { "id": "K2.2", "metric": "Lines with a resolvable source or named assumption", "baseline": "not applicable, manual today", "target": "100%", "source": "gate output per quotation" },
+        { "id": "K2.3", "metric": "First-pass human approval rate", "baseline": "not applicable", "target": ">= 70%", "source": "approval rows" },
+        { "id": "K2.4", "metric": "Paid pilots", "baseline": "0", "target": "3", "source": "bot_orders and M-Pesa callbacks" },
+        { "id": "K2.5", "metric": "Workflows billed through credits", "baseline": "0", "target": ">= 1", "source": "alphadome-kernel/src/billing/credits.ts" },
+        { "id": "K2.6", "metric": "Average edits per approved quotation", "baseline": "not applicable", "target": "<= 2", "source": "approval diff count" }
+      ],
+      "exit_criteria": ["One pilot pays a second month without a new build request"],
+      "kill_criteria": ["Pilots use the draft but will not pay for it: narrow to capture-only tender finding before writing another template"]
+    },
+    {
+      "id": "P3",
+      "name": "Hands that transact, under lease and approval",
+      "window": { "start": "2027-05-16", "end": "2027-08-15" },
+      "target_buyer": "Existing pilots moving from document drafting to running follow-up and collecting money",
+      "workflow": "Accepted quotation, deposit collected, follow-up cadence, delivery confirmation, with every automated step attributable",
+      "reusable": [
+        "routes/agentRuns.js",
+        "routes/browserActors.js",
+        "routes/mpesa.js",
+        "routes/socialPublish.js",
+        "routes/writerFlow.js",
+        "alphadome-kernel/src/billing/payments.ts",
+        "alphadome-kernel/src/core/followup.ts",
+        "FALLBACK_PAYMENT_OPTIONS.md",
+        "utils/scanPay.js"
+      ],
+      "slice": "One job-to-cash pipeline: three automatic steps and two hard human gates, each automatic step writing an automation_log row",
+      "revenue_impact": "Turns a one-off deployment into a visible retainer and creates the transaction surface",
+      "risks": [
+        "Agent sending an unapproved price (mitigate: DB constraint plus test, not convention)",
+        "WhatsApp policy violations (mitigate: template-only sends and per-contact opt-out)",
+        "Browser identity bans (mitigate: one profile per tenant lease, fail-closed AGENT_API_KEY)"
+      ],
+      "objectives": [
+        "Trust the brain with a follow-up, not only a draft",
+        "Recover money currently abandoned",
+        "Keep irreversible actions provably human"
+      ],
+      "tasks": [
+        "Define the job-to-cash state machine and forbid amount-changing transitions without approval",
+        "Write automation_log rows for every automatic step with structured details",
+        "Implement the payment recovery sweep on the kernel payments module",
+        "Add and enforce the per-contact opt-out flag",
+        "Add npm run test:open-brain-pipeline covering approval, opt-out, attempt cap and logging",
+        "Instrument attempts, recoveries, recovered value and median recovery time"
+      ],
+      "kpis": [
+        { "id": "K3.1", "metric": "Stale pending payments recovered", "baseline": "kpis.failed_count from /admin/ops-overview", "target": ">= 30% of stale pending recovered", "source": "automation_log and M-Pesa callbacks" },
+        { "id": "K3.2", "metric": "Automatic steps producing an audit row", "baseline": "0%", "target": "100%", "source": "npm run test:open-brain-pipeline" },
+        { "id": "K3.3", "metric": "Price-bearing actions without an approval row", "baseline": "unknown", "target": "0", "source": "DB constraint plus test" },
+        { "id": "K3.4", "metric": "Agent run success rate on defined tasks", "baseline": "unmeasured", "target": ">= 95%", "source": "routes/agentRuns.js finish status" },
+        { "id": "K3.5", "metric": "Opt-out violations", "baseline": "not applicable", "target": "0", "source": "outbound gate test" },
+        { "id": "K3.6", "metric": "Median recovery time", "baseline": "not applicable", "target": "< 24 h", "source": "payment callback timestamps" }
+      ],
+      "exit_criteria": ["A tenant renews because money came back and can point at the log row that proves it"],
+      "kill_criteria": ["Recovery volume is too small to matter: stop automating and return to acquisition"]
+    },
+    {
+      "id": "P4",
+      "name": "Licence the brain",
+      "window": { "start": "2027-08-16", "end": "2027-11-15" },
+      "target_buyer": "Agencies and consultancies that already sell to SMEs and want the engine, not the labour",
+      "workflow": "A new operator stands up an isolated brain for their own client in under one business day with proof and metering included",
+      "reusable": [
+        "docs/forge/ALPHADOME_KERNEL_MERGE_PLAN.md",
+        "docs/MULTITENANT_AI_JOBS_RUNBOOK.md",
+        "scripts/build_worker_bundle.mjs",
+        "docs/PARTNERSTACK_APPLICATION.md",
+        "admin/tenant_dashboard.html",
+        "alphadome-kernel/src/billing/tiers.ts",
+        "alphadome-kernel/src/billing/quota.ts"
+      ],
+      "slice": "A licence kit: kernel package, migration set, isolation proof runner, evidence pack generator, metering config, one-day checklist",
+      "revenue_impact": "$10,000 licence anchor plus $500-2,000/month per client under the operator at software margins",
+      "risks": [
+        "Becoming a bespoke consultancy again (mitigate: refuse licences that need repo write access)",
+        "Unreproducible operator environments (mitigate: the proof command is the first support question)",
+        "Key handling at the operator (mitigate: worker-bundle precedent, privileged half stays server-side)"
+      ],
+      "objectives": [
+        "Make a new isolated brain a checklist, not a project",
+        "Price it as software",
+        "Make exit as easy as entry and say so"
+      ],
+      "tasks": [
+        "Package alphadome-kernel as a versioned dependency with .env.local.example and one proof gate",
+        "Write docs/forge/OPEN_BRAIN_LICENCE_KIT.md",
+        "Add per-operator metering config from tiers and quota",
+        "Produce the per-tenant exit artefact (rows, audit trail, evidence refs)",
+        "Sign three licences and log time to first tenant",
+        "Publish an honest pricing table including exclusions"
+      ],
+      "kpis": [
+        { "id": "K4.1", "metric": "Operator time to first live tenant", "baseline": "not applicable", "target": "< 1 business day", "source": "onboarding log" },
+        { "id": "K4.2", "metric": "Licences signed", "baseline": "0", "target": "3", "source": "contracts and bot_orders" },
+        { "id": "K4.3", "metric": "Gross margin on licence revenue", "baseline": "services-shaped", "target": ">= 70%", "source": "revenue_dashboard.js" },
+        { "id": "K4.4", "metric": "Clients with a delivered audit packet", "baseline": "0", "target": "100%", "source": "evidence pack per tenant" },
+        { "id": "K4.5", "metric": "Exit requests fulfilled without engineering work", "baseline": "not applicable", "target": "100% within 5 business days", "source": "export log" },
+        { "id": "K4.6", "metric": "Support tickets resolvable by the proof command", "baseline": "not applicable", "target": ">= 50%", "source": "ticket tags" }
+      ],
+      "exit_criteria": ["An operator signs a second client without contacting us"],
+      "kill_criteria": ["Every licence needs custom work: the product is the service, so raise the price, cap the clients and stop calling it a platform"]
+    }
+  ],
+  "horizons": [
+    {
+      "id": "H1",
+      "year": 2028,
+      "name": "The business twin",
+      "narration_beat": "City digital twins and 30-day neighbourhood forecasts",
+      "translation": "Per-tenant demand, pricing and cash simulation from the tenant's own order and quotation history, replayed over 90 days before a decision is enabled",
+      "entry_gate": ["At least 30 tenants with 6+ months of clean order data", "Backtest beats a naive last-month baseline by 20% or more", "Every simulated recommendation renders with its evidence inputs"],
+      "money": "Included in the $2,000 retainer tier",
+      "refuse": ["Simulating people", "Individual customer targeting", "Outputs that cannot be traced to tenant-owned data"]
+    },
+    {
+      "id": "H2",
+      "year": 2029,
+      "name": "The Open Brain Network and the portable tenant",
+      "narration_beat": "AI passports plus Consensus 1 as a single merged global model",
+      "translation": "Many isolated brains that verify each other's audit trails; a tenant can move operators without losing identity, credits or history. Federation, not merger",
+      "entry_gate": ["At least 3 independent operators on the kernel", "Third-party verifiable cross-operator audit", "Tenant export and import proven twice end to end", "No single party can read all tenants"],
+      "money": "Network fee per verified tenant move",
+      "refuse": ["A single merged brain", "Any architecture with one global read path"]
+    },
+    {
+      "id": "H3",
+      "year": 2030,
+      "name": "The commerce edge (partners only)",
+      "narration_beat": "Household robots, kiosks, embodied agents",
+      "translation": "Tenant-premises device layer (kiosk, voice, payment, inventory) on partners' hardware and our brain, with an off switch the tenant controls",
+      "entry_gate": ["Software margin at 70% or better for four consecutive quarters", "One vertical with proven unit economics", "100 devices live in a single metro", "Published MTBF and a field-failure process"],
+      "money": "Per-device subscription plus transaction share",
+      "refuse": ["Our own hardware manufacturing", "Devices that move money without an approval row", "Any safety-critical domain"]
+    },
+    {
+      "id": "H4",
+      "year": 2030,
+      "name": "Reskilling, not resignation",
+      "narration_beat": "Universal basic income and universal basic learning credits",
+      "translation": "A tenant academy that trains the humans whose tasks the brain is changing, paid for by the licence, with completion tracked against retained revenue",
+      "entry_gate": ["A named task measurably displaced inside a paying tenant", "A completed curriculum with before-and-after task timings"],
+      "money": "Bundled into licence and retainer",
+      "refuse": ["Claims to solve unemployment", "Any macro-employment promise"]
+    }
+  ],
+  "refusals": [
+    "General intelligence, consciousness or human-level capability claims",
+    "A companion or clone that denies being a machine",
+    "A single merged global model",
+    "Autonomous money movement, price changes or refunds without an approval row",
+    "Health, aviation, weapons or safety-critical decision domains",
+    "Surveillance of a tenant's customers beyond the message they sent us",
+    "A metric without a kill criterion",
+    "A safety page whose claims a stranger cannot regenerate"
+  ]
+}
