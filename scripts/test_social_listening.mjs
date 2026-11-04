@@ -40,13 +40,14 @@ import {
   sanitizeListeningPosts
 } from '../utils/socialSignals.js';
 import {
-  LINKEDIN_MAX_POSTS_PER_QUERY,
-  LINKEDIN_PACE,
-  classifyLinkedInSession,
-  describeLinkedInTask,
-  linkedInPaceMs,
-  linkedInSearchUrl
-} from '../utils/browserActor/tasks/linkedinListen.js';
+  SOCIAL_PLATFORM_IDS,
+  classifySocialSession,
+  describeSocialPlatform,
+  getSocialPlatform,
+  listSocialPlatforms,
+  postsExprFor,
+  socialPaceMs
+} from '../utils/browserActor/tasks/socialPlatforms.js';
 import { LISTEN_RUN_KIND, RUN_KINDS, WORKER_PLATFORMS, canRunOnWorker, runPlatform } from '../utils/browserActor/runs.js';
 
 let pass = 0;
@@ -147,27 +148,59 @@ eq('the hottest intents are searched first', queries[0].intentId, 'vehicle_purch
 ok('every query names its intent', queries.every((row) => row.intentId));
 eq('a wider plan is capped by what was asked for', planSearchQueries(taxonomy, { intents: 4, perIntent: 3 }).length, 12);
 
-const searchUrl = linkedInSearchUrl('looking for a car');
-ok('the search URL encodes the phrase', searchUrl.includes('keywords=looking%20for%20a%20car'));
+const searchUrl = getSocialPlatform('linkedin').searchUrl('looking for a car');
+ok('the LinkedIn search URL encodes the phrase', searchUrl.includes('keywords=looking%20for%20a%20car'));
 ok('and is pinned to the last week, newest first',
   searchUrl.includes('datePosted=%22past-week%22') && searchUrl.includes('sortBy=%22date_posted%22'));
 ok('it asks LinkedIn, nothing else', searchUrl.startsWith('https://www.linkedin.com/search/results/content/'));
 
-eq('the adapter says it writes nothing', describeLinkedInTask().writes, false);
-eq('and that it is a listen job', describeLinkedInTask().kind, 'listen');
-ok('the per-query cap is a reading budget, not a crawl', LINKEDIN_MAX_POSTS_PER_QUERY <= 20);
-const fastPace = linkedInPaceMs({ rng: () => 0 });
-const slowPace = linkedInPaceMs({ rng: () => 1 });
-eq('the pace floor is the minimum', fastPace, LINKEDIN_PACE.minMs);
-eq('and the ceiling the maximum', slowPace, LINKEDIN_PACE.maxMs);
+// Every network has to be able to build a search URL and describe itself: the panel renders one
+// row per network from this list, and a network without a URL is a button that cannot work.
+eq('the registry covers the networks the taxonomy names', SOCIAL_PLATFORM_IDS.length, 5);
+ok('every network can build a search URL from a phrase',
+  listSocialPlatforms().every((platform) => {
+    const url = platform.searchUrl('need a vehicle');
+    return /^https:\/\//.test(url) && url.includes('need%20a%20vehicle');
+  }));
+ok('and every one is described for the panel without leaking selectors',
+  listSocialPlatforms().every((platform) => {
+    const described = describeSocialPlatform(platform.id);
+    return described && described.name && described.homeUrl && !('postsExpr' in described) && !('sessionExpr' in described);
+  }));
+eq('describing an unknown network is null, not an object of holes', describeSocialPlatform('myspace'), null);
+
+const x = getSocialPlatform('x');
+ok('X searches live posts with replies filtered out',
+  x.searchUrl('need a vehicle').includes('-filter%3Areplies') && x.searchUrl('need a vehicle').includes('f=live'));
+ok('Reddit limits the search to the last week, newest first',
+  getSocialPlatform('reddit').searchUrl('need a supplier').includes('t=week')
+  && getSocialPlatform('reddit').searchUrl('need a supplier').includes('sort=new'));
+ok('every network says a run only reads', listSocialPlatforms().every((platform) => describeSocialPlatform(platform.id).writes === false));
+ok('the per-query cap is a reading budget, not a crawl', listSocialPlatforms().every((platform) => platform.maxPostsPerQuery <= 20));
+
+// A first line must fit the site that will carry it: X truncates at 260 characters.
+eq('X allows a shorter first line than LinkedIn', x.draftLimit, 260);
+ok('and the draft we build is cut to it', buildSignalRows({
+  posts: sanitizeListeningPosts([{ postUrl: 'https://x.com/someone/status/1', postText: 'need a vehicle, budget KES 900,000, urgent, Nairobi, call me on 0722 111 222' }]),
+  taxonomy,
+  tenantId: 'tenant-1',
+  platform: 'x'
+}).rows[0].draft_first_line.length <= 260);
+
+const fastPace = socialPaceMs({ minMs: 1000, maxMs: 5000 }, { rng: () => 0 });
+const slowPace = socialPaceMs({ minMs: 1000, maxMs: 5000 }, { rng: () => 1 });
+eq('the pace floor is the minimum', fastPace, 1000);
+eq('and the ceiling the maximum', slowPace, 5000);
 ok('the two ends differ, so waits are jittered rather than fixed', fastPace !== slowPace);
 
-eq('a signed-in page with results reads as signed in', classifyLinkedInSession({ me: true, posts: 3 }), 'signed_in');
+eq('a signed-in page with results reads as signed in', classifySocialSession({ me: true, results: true }), 'signed_in');
 eq('a login wall reads as a wall even with an empty DOM',
-  classifyLinkedInSession({ wall: true, me: false, posts: 0 }), 'login_wall');
-eq('an unreadable page is unknown, not "signed in"', classifyLinkedInSession(null), 'unknown');
+  classifySocialSession({ wall: true, me: false, results: false }), 'login_wall');
+eq('a cookie sheet is its own answer, not "no results"',
+  classifySocialSession({ consent: true, results: false }), 'consent_wall');
+eq('an unreadable page is unknown, not "signed in"', classifySocialSession(null), 'unknown');
 eq('and a page with neither signal is unknown too',
-  classifyLinkedInSession({ me: false, wall: false, posts: 0 }), 'unknown');
+  classifySocialSession({ me: false, wall: false, results: false }), 'unknown');
 
 // ---------------------------------------------------------------------------
 // The transport: bounded, deduped, HTTP-only
@@ -211,8 +244,112 @@ eq('a vendor advert is not stored at all', vendorPlan.rows.length, 0);
 eq('and is counted so the run message is honest', vendorPlan.excluded, 1);
 
 // ---------------------------------------------------------------------------
-// What the panel may see, and what the run is
+// The extractor, executed against a fake DOM
 // ---------------------------------------------------------------------------
+// This is the part that failed silently on 2026-11-04: three searches, `0 post(s)`, `succeeded`.
+// The expression is generated per network, so the only honest test is to run the generated code
+// and see what it reports — including *which* selector matched, and what it says when none did.
+
+/** A card is a bag of selector -> element, exactly what `first(node, sels)` asks for. */
+function fakeCard(selectors) {
+  return {
+    querySelector(selector) {
+      return Object.prototype.hasOwnProperty.call(selectors, selector) ? selectors[selector] : null;
+    }
+  };
+}
+
+function runPostsExpr(platformId, { cardsBySelector, title = 'Search', body = 'page text' }) {
+  const platform = getSocialPlatform(platformId);
+  const document = {
+    title,
+    body: { innerText: body },
+    querySelectorAll(selector) {
+      return Array.isArray(cardsBySelector[selector]) ? cardsBySelector[selector] : [];
+    }
+  };
+  const location = { href: 'https://example.test/search' };
+  // The expression is an IIFE returning JSON; running it here is the whole point.
+  const json = new Function('document', 'location', `return ${platform.postsExpr};`)(document, location);
+  return JSON.parse(json);
+}
+
+const linkedinCard = (id, bodyText) => fakeCard({
+  '[class*="update-components-text"]': { innerText: bodyText },
+  'a[href*="/feed/update/"]': { href: `https://www.linkedin.com/feed/update/urn:li:activity:${id}/?tracking=1` },
+  '[class*="actor__name"]': { innerText: 'Jane Wanjiru' },
+  'a[href*="/in/"]': { href: 'https://www.linkedin.com/in/jane/?trk=1' }
+});
+
+const firstStrategy = runPostsExpr('linkedin', {
+  cardsBySelector: {
+    '[data-urn*="urn:li:activity"]': [linkedinCard('1', 'We need a vehicle for the fleet, budget KES 2.8M this month.')]
+  }
+});
+eq('the first container selector that matches is the one reported', firstStrategy.strategy, 'activity-urn');
+eq('and its posts are read', firstStrategy.count, 1);
+eq('the permalink is kept, tracking stripped',
+  firstStrategy.posts[0].postUrl, 'https://www.linkedin.com/feed/update/urn:li:activity:1/');
+eq('the author is captured', firstStrategy.posts[0].authorName, 'Jane Wanjiru');
+eq('and the profile link too', firstStrategy.posts[0].profileUrl, 'https://www.linkedin.com/in/jane/');
+ok('the page text comes back for diagnostics', firstStrategy.bodyStart.includes('page text'));
+
+// A site that has changed its markup: the first selector misses, the next one carries the page.
+const secondStrategy = runPostsExpr('linkedin', {
+  cardsBySelector: {
+    '.feed-shared-update-v2': [
+      linkedinCard('2', 'Looking for a car for our operations team, need it this week.'),
+      linkedinCard('2', 'Looking for a car for our operations team, need it this week.'),
+      fakeCard({ '[class*="update-components-text"]': { innerText: 'too short' } })
+    ]
+  }
+});
+eq('a fallback selector still reads the page', secondStrategy.strategy, 'feed-shared-update');
+eq('the same post twice is one post', secondStrategy.count, 1);
+eq('a card with no link is dropped rather than guessed at', secondStrategy.posts.length, 1);
+
+// The failure that started this: nothing matches at all.
+const nothingMatched = runPostsExpr('linkedin', {
+  cardsBySelector: {},
+  title: 'LinkedIn',
+  body: 'Sign in to continue to LinkedIn'
+});
+eq('no matching container is reported as no strategy, not as zero posts', nothingMatched.strategy, null);
+eq('with no candidates to count', nothingMatched.candidates, 0);
+eq('and an empty result', nothingMatched.count, 0);
+ok('while still carrying the page text, so the cause is visible',
+  nothingMatched.bodyStart.includes('Sign in to continue'));
+
+// Each network reads its own shape: X from a tweet article, Reddit from a post link.
+const tweet = runPostsExpr('x', {
+  cardsBySelector: {
+    'article[data-testid="tweet"]': [
+      fakeCard({
+        '[data-testid="tweetText"]': { innerText: 'we need a supplier for bulk office chairs, budget KES 300k' },
+        'a[href*="/status/"]': { href: 'https://x.com/wanjiru/status/123?s=20' },
+        '[data-testid="User-Name"]': { innerText: 'Wanjiru' }
+      })
+    ]
+  }
+});
+eq('X reads tweets through its own selector', tweet.strategy, 'tweet-article');
+eq('and keeps the status permalink', tweet.posts[0].postUrl, 'https://x.com/wanjiru/status/123');
+
+const reddit = runPostsExpr('reddit', {
+  cardsBySelector: {
+    'div[data-testid="post-container"]': [
+      fakeCard({
+        h1: { innerText: 'Where can I buy a delivery van in Nairobi under 2M?' },
+        'a[data-click-id="body"]': { href: 'https://www.reddit.com/r/kenya/comments/abc123/where_can_i_buy/' },
+        'a[href^="/user/"]': { innerText: 'u/wanjiru' },
+        'a.comments': { href: 'https://www.reddit.com/r/kenya/comments/abc123/where_can_i_buy/#comments' }
+      })
+    ]
+  }
+});
+eq('Reddit reads the title as the post body', reddit.strategy, 'post-container');
+ok('and keeps the thread permalink', reddit.posts[0].postUrl.includes('/comments/abc123/'));
+
 
 const shown = publicSignal({
   id: 'signal-1',
@@ -255,13 +392,16 @@ ok('it does not touch offers', !/ALTER TABLE (public\.)?opportunities/.test(migr
 // Nothing in this slice can send. That is a product decision, so it is asserted, not assumed.
 const intentSrc = fs.readFileSync(path.join(root, 'utils', 'socialIntent.js'), 'utf8');
 const signalsSrc = fs.readFileSync(path.join(root, 'utils', 'socialSignals.js'), 'utf8');
-const adapterSrc = fs.readFileSync(path.join(root, 'utils', 'browserActor', 'tasks', 'linkedinListen.js'), 'utf8');
-const listenerSrc = fs.readFileSync(path.join(root, 'scripts', 'browser_actor_linkedin_listen.mjs'), 'utf8');
+const platformsSrc = fs.readFileSync(path.join(root, 'utils', 'browserActor', 'tasks', 'socialPlatforms.js'), 'utf8');
+const listenerSrc = fs.readFileSync(path.join(root, 'scripts', 'browser_actor_social_listen.mjs'), 'utf8');
 ok('no module in the listening path can message anyone',
-  !/sendMessage|connectRequest|invite|\/messaging/i.test(`${intentSrc}${signalsSrc}${adapterSrc}${listenerSrc}`));
+  !/sendMessage|connectRequest|invite|createTweet|\/messaging/i.test(`${intentSrc}${signalsSrc}${platformsSrc}${listenerSrc}`));
 ok('and the listener holds no database credential',
   !/from '@supabase\/supabase-js'|createClient\(/.test(listenerSrc));
-ok('the adapter only reads the page', !/\.click\(|dispatchEvent/.test(adapterSrc));
+ok('nothing in the registry clicks',
+  !/\.click\(|dispatchEvent/.test(platformsSrc));
+ok('the listener is told which network to read, never defaulting to one',
+  /--platform/.test(listenerSrc) && /flag\('platform'/.test(listenerSrc));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

@@ -1683,7 +1683,10 @@ function fakeOfferDb() {
     .split('\n')
     .filter((file) => (file.startsWith('scripts/') || file.startsWith('utils/') || file.startsWith('routes/')))
     // Test files are excluded on purpose: this very comment names the typo it forbids.
-    .filter((file) => !/\/test_|^scripts\/test_/.test(file));
+    .filter((file) => !/\/test_|^scripts\/test_/.test(file))
+    // A file deleted in the working tree is still in the index until it is staged, and reading it
+    // would crash the suite for a reason that has nothing to do with the typo it is looking for.
+    .filter((file) => fs.existsSync(path.join(root, file)));
   const dollarTypos = [];
   for (const file of files) {
     const text = fs.readFileSync(path.join(root, file), 'utf8');
@@ -1805,7 +1808,7 @@ function fakeOfferDb() {
 
   const workerSrc = fs.readFileSync(path.join(root, 'scripts', 'browser_actor_worker.mjs'), 'utf8');
   ok('and it picks the script by platform, never by a default',
-    /SCRIPT_BY_PLATFORM = Object\.freeze\(\{[\s\S]{0,220}micro1:[\s\S]{0,140}turing:[\s\S]{0,140}linkedin:/.test(workerSrc)
+    /SCRIPT_BY_PLATFORM = Object\.freeze\(\{[\s\S]{0,260}micro1:[\s\S]{0,160}turing:[\s\S]{0,160}linkedin:/.test(workerSrc)
     && /const script = scriptPath\(platform\)/.test(workerSrc));
   ok('and refuses a platform it has no runner for instead of defaulting to Micro1',
     /if \(!script \|\| !fs\.existsSync\(script\)\)[\s\S]{0,200}return Promise\.resolve\(\{ code: 1, reason \}\)/.test(workerSrc));
@@ -1817,11 +1820,16 @@ function fakeOfferDb() {
   ok('the child\'s last fault is carried to the portal, not just its exit code',
     /stdout\.on\('data', keep\)/.test(workerSrc) && /lastProblemLine\(tail\)/.test(workerSrc)
     && /closeAbandonedRun\(run\.id, code\.code, code\.reason\)/.test(workerSrc));
-  ok('a listen run is dispatched to the listener',
-    /linkedin: path\.join\('scripts', 'browser_actor_linkedin_listen\.mjs'\)/.test(workerSrc));
-  ok('and is bounded by searches rather than by roles', /'--queries'/.test(workerSrc) && /'--per-query'/.test(workerSrc));
+  // Every social network runs the same listener, told which site to read.
+  ok('all five networks dispatch to the one listener',
+    ['linkedin', 'x', 'facebook', 'reddit', 'youtube'].every((id) => new RegExp(`${id}: SOCIAL_LISTENER`).test(workerSrc))
+    && /'--platform', platform/.test(workerSrc));
+  ok('and is bounded by searches rather than by roles', /'--queries'/.test(workerSrc) && !/'--per-query'/.test(workerSrc));
   ok('the bundle carries the Turing runner it dispatches to',
     buildWorkerBundle({ apiBase: 'https://portal.example' }).entries.some((entry) => entry.name === 'scripts/browser_actor_referrals.mjs'));
+  ok('and the social listener too, with its per-network descriptions',
+    buildWorkerBundle({ apiBase: 'https://portal.example' }).entries
+      .some((entry) => entry.name === 'scripts/browser_actor_social_listen.mjs'));
   ok('the worker filters the queue before claiming', /queued\.find\(canRunHere\)/.test(workerSrc));
   ok('and says which runs it is leaving alone', /drives Micro1 only/.test(workerSrc));
   ok('and that saying it once is enough', /lastSkipSignature/.test(workerSrc) && /lastIdleSignature/.test(workerSrc));
@@ -1883,14 +1891,20 @@ function fakeOfferDb() {
     /function wfListeningHtml/.test(dashSrc) && /\$\{wfListeningHtml\(d\)\}/.test(dashSrc));
   ok('with a button that queues a listen run, not a capture',
     /data-wfact="queue" data-kind="listen"/.test(dashSrc));
-  ok('and the button names LinkedIn, so it can be found by name',
-    /Start listening on LinkedIn/.test(dashSrc));
+  // One row per network, each with its own link and its own button, all from the server's list.
+  ok('the panel renders the network list the server sends, not a hand-written one',
+    /const networks = Array\.isArray\(listening\.networks\) \? listening\.networks : \[\]/.test(dashSrc)
+    && /networks\.map\(\(network\) =>/.test(dashSrc));
+  ok('and every network row carries its own button and its own link',
+    /data-wfact="queue" data-kind="listen"[\s\S]{0,120}data-platform="\$\{esc\(network\.id\)\}"/.test(dashSrc)
+    && /href="\$\{esc\(network\.homeUrl\)\}"/.test(dashSrc));
+  ok('the button names the network it will read',
+    /Start on \$\{esc\(network\.name\)\}/.test(dashSrc));
   // The first version returned the "not set up" card *before* drawing the button, so the tenant
-  // saw an amber sentence and concluded the feature did not exist. The button must be defined
-  // before any state can return, and every state must include it.
-  ok('the start button is drawn in every state, including "not set up"',
-    dashSrc.indexOf('const startButton') < dashSrc.indexOf('if (notSetUp)')
-    && /if \(notSetUp\)[\s\S]{0,400}\$\{startButton\}/.test(dashSrc));
+  // saw an amber sentence and concluded the feature did not exist.
+  ok('the button is drawn in every state, including "not set up"',
+    dashSrc.indexOf('const startButton') < dashSrc.indexOf('if (notDeployed || notSetUp)')
+    && /\$\{networkRows\}/.test(dashSrc));
   ok('and each state that cannot run says why, in words',
     /Apply \$\{listening\.needsMigration \|\| 'migrations\/2026-11-04_social_signals\.sql'\} first/.test(dashSrc)
     && /No browser of yours is connected yet, so this button would do nothing/.test(dashSrc));
@@ -1903,10 +1917,15 @@ function fakeOfferDb() {
     /Listening is not set up yet/.test(dashSrc) && /No post has matched one of your intents yet/.test(dashSrc));
   ok('the card shows the score with its evidence, and never claims to have sent anything',
     /showing the \$\{items\.length\} strongest/i.test(dashSrc)
-    && /Nobody was messaged by this system/.test(dashSrc));
+    && /Reading only: nobody was messaged by this system/.test(dashSrc));
+  ok('each signal names the network and what to do there',
+    /Do this: \$\{esc\(network\.actionHint\)\}/.test(dashSrc));
   ok('the listening actions are wired, so a click is never silent',
     /act === 'signal-copy'/.test(dashSrc) && /act === 'signal-status'/.test(dashSrc)
     && /async function wfSetSignalStatus/.test(dashSrc));
+  ok('and the network chosen by the button reaches the queue request',
+    /wfQueueRun\(btn\.dataset\.kind \|\| 'referrals'[\s\S]{0,60}btn\.dataset\.platform/.test(dashSrc)
+    && /\.\.\.\(platform \? \{ platform \} : \{\}\)/.test(dashSrc));
 }
 
 // The frozen Turing run, reproduced and fixed (2026-11-04).

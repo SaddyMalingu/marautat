@@ -29,6 +29,7 @@ import { publicWorkerBrowser, readAccess, writeWorkerBrowser } from '../utils/te
 import { resolveRunnerIdentity } from '../utils/tenantRunnerIdentity.js';
 import { createPairingStore, extractPairingCode, pairingState, PAIRING_TABLE } from '../utils/browserActor/pairing.js';
 import { planSearchQueries } from '../utils/socialIntent.js';
+import { isSocialPlatform } from '../utils/browserActor/tasks/socialPlatforms.js';
 import {
   buildSignalRows,
   createSocialSignalStore,
@@ -379,7 +380,7 @@ export function createAgentRunsRouter({
       // A listening run is told *what to read*, not what the tenant already owns: the taxonomy is
       // the server's, so a bundled copy on a customer's laptop cannot drift from the intents the
       // portal will score against. Two phrases per intent, three intents by default.
-      const isListen = platform === 'linkedin' || String(run.kind) === 'listen';
+      const isListen = isSocialPlatform(platform) || String(run.kind) === 'listen';
       const queries = isListen
         ? planSearchQueries(loadTaxonomy(), {
             intents: Math.max(1, Math.min(4, Number(run.detail?.limit) || 3)),

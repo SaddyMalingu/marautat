@@ -38,7 +38,7 @@ function eq(label, actual, expected) {
 }
 
 const root = path.resolve(import.meta.dirname, '..');
-const script = path.join(root, 'scripts', 'browser_actor_linkedin_listen.mjs');
+const script = path.join(root, 'scripts', 'browser_actor_social_listen.mjs');
 
 /** A portal that answers the four calls the listener is allowed to make. */
 function fakePortal({ queries = 2 } = {}) {
@@ -78,9 +78,9 @@ function fakePortal({ queries = 2 } = {}) {
 }
 
 /** Run the listener to completion, with a ceiling so a hang is a failure, not a hung suite. */
-function runListener({ api, args = [], timeoutMs = 30_000 }) {
+function runListener({ api, platform = 'linkedin', args = [], timeoutMs = 30_000 }) {
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, [script, '--agent-api', api, '--run-id', 'r1', ...args], {
+    const child = spawn(process.execPath, [script, '--agent-api', api, '--run-id', 'r1', '--platform', platform, ...args], {
       env: { ...process.env, TENANT_WORKER_TOKEN: 'wkr_test_token' },
       stdio: ['ignore', 'pipe', 'pipe']
     });
@@ -151,7 +151,38 @@ function runListener({ api, args = [], timeoutMs = 30_000 }) {
 }
 
 // ---------------------------------------------------------------------------
-// 3. The shape that caused all of this cannot come back
+// 3. Every network goes through the same door, and a network we cannot read is refused
+// ---------------------------------------------------------------------------
+
+{
+  const portal = fakePortal({ queries: 1 });
+  const api = await portal.listen();
+  try {
+    // X, not LinkedIn: the dispatch has to reach the same script with a different description.
+    const result = await runListener({ api, platform: 'x', args: ['--queries', '1'] });
+    ok('a run for another network names that network', /platform=x/.test(result.output));
+    ok('and still asks the portal for context', portal.calls.some((call) => call.url.endsWith('/context')));
+  } finally {
+    await portal.close();
+  }
+}
+
+{
+  const portal = fakePortal({ queries: 1 });
+  const api = await portal.listen();
+  try {
+    const result = await runListener({ api, platform: 'myspace', args: ['--queries', '1'], timeoutMs: 15_000 });
+    ok('an unknown network is refused outright', /unknown social platform "myspace"/.test(result.output));
+    eq('with a non-zero exit', result.code === 0, false);
+    eq('and without touching the portal', portal.calls.length, 0);
+    ok('naming the networks that do work', /linkedin, x, facebook, reddit, youtube/.test(result.output));
+  } finally {
+    await portal.close();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 4. The shape that caused all of this cannot come back
 // ---------------------------------------------------------------------------
 
 {

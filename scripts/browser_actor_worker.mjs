@@ -336,13 +336,20 @@ async function reportProfile(profile) {
  * Turing run executed by the Micro1 script would capture the wrong marketplace and look like it
  * worked. `canRunOnWorker` has already refused anything this build cannot drive.
  *
- * LinkedIn joined the map on 2026-11-04 and is the only read-only entry: the listener writes no
- * offers, it reads posts so the portal can score them.
+ * Every social network shares one listener since 2026-11-04 and is told which one to read with
+ * `--platform`; the differences between them live in `tasks/socialPlatforms.js`, not in copies of
+ * the runner.
  */
+const SOCIAL_LISTENER = path.join('scripts', 'browser_actor_social_listen.mjs');
+
 const SCRIPT_BY_PLATFORM = Object.freeze({
   micro1: path.join('scripts', 'browser_actor_micro1.mjs'),
   turing: path.join('scripts', 'browser_actor_referrals.mjs'),
-  linkedin: path.join('scripts', 'browser_actor_linkedin_listen.mjs')
+  linkedin: SOCIAL_LISTENER,
+  x: SOCIAL_LISTENER,
+  facebook: SOCIAL_LISTENER,
+  reddit: SOCIAL_LISTENER,
+  youtube: SOCIAL_LISTENER
 });
 
 function scriptForPlatform(platform) {
@@ -409,14 +416,15 @@ function runCapture({ tenantSlug, runId, limit, platform = 'micro1' }) {
     console.error(reason);
     return Promise.resolve({ code: 1, reason });
   }
-  const args = platform === 'linkedin'
+  const isListen = script === SOCIAL_LISTENER;
+  const args = isListen
     // Reading is cheap per page and expensive per query, so the listener is bounded by queries
-    // plus a cap on posts, not by "roles".
+    // plus a cap on posts, not by "roles". `--platform` picks the site's description.
     ? [
         script,
         '--tenant', tenantSlug,
+        '--platform', platform,
         '--queries', String(Math.min(6, Math.max(1, Number(limit) || 3))),
-        '--per-query', '10',
         '--run-id', String(runId),
         '--agent-api', api
       ]

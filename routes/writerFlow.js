@@ -42,6 +42,11 @@ import { verifyReferralLink } from '../utils/browserActor/referralVerify.js';
 import { parseProfileMap, maskEnvId } from '../utils/browserActor/identity.js';
 import { resolveAccessIdentity } from '../utils/tenantAccess.js';
 import { createSocialSignalStore, publicSignal, SIGNAL_STATUSES } from '../utils/socialSignals.js';
+import {
+  describeSocialPlatform,
+  getSocialPlatform,
+  listSocialPlatforms
+} from '../utils/browserActor/tasks/socialPlatforms.js';
 
 /** One click should finish inside a request, not hold a browser open. */
 const VERIFY_DEFAULT = 40;
@@ -153,18 +158,43 @@ export function createWriterFlowRouter({
    * Same rule as `loadRuns`: the panel must be able to say "listening is not set up yet" instead
    * of rendering zero signals, because "zero" is a claim about the market and "missing table" is
    * a claim about us.
+   *
+   * The digest is grouped **per network**, because the panel offers one link per network: "14 new
+   * on LinkedIn, 6 on X" is a decision, "20 new" is not.
    */
-  async function loadSignals(tenantId, limit = 12) {
+  async function loadSignals(tenantId, limit = 60) {
     const store = createSocialSignalStore({ table: () => supabase.from('social_signals') });
     try {
       const [rows, summary] = await Promise.all([
         store.recent({ tenantId, limit, minScore: 40 }),
         store.summary({ tenantId })
       ]);
-      return { available: true, items: rows.map(publicSignal).filter(Boolean), summary };
+      const items = rows.map(publicSignal).filter(Boolean);
+      const byPlatform = {};
+      for (const item of items) {
+        const key = String(item.platform || 'linkedin');
+        byPlatform[key] = (byPlatform[key] || 0) + 1;
+      }
+      return {
+        available: true,
+        items: items.slice(0, 24),
+        byPlatform,
+        summary,
+        networks: listSocialPlatforms().map((platform) => ({
+          ...describeSocialPlatform(platform.id),
+          signals: byPlatform[platform.id] || 0
+        }))
+      };
     } catch (error) {
       if (/relation|does not exist|schema cache|column/i.test(String(error?.message || error))) {
-        return { available: false, items: [], summary: null, needsMigration: 'migrations/2026-11-04_social_signals.sql' };
+        return {
+          available: false,
+          items: [],
+          byPlatform: {},
+          summary: null,
+          networks: listSocialPlatforms().map((platform) => ({ ...describeSocialPlatform(platform.id), signals: 0 })),
+          needsMigration: 'migrations/2026-11-04_social_signals.sql'
+        };
       }
       throw error;
     }
@@ -502,6 +532,16 @@ export function createWriterFlowRouter({
         console.error(`[writer-flow] tenant=${ctx.site.slug} closed ${expired ? 'expired' : 'abandoned'} run ${row.id}`);
       }
 
+      // A listen run is one network at a time, chosen by the tenant. An unknown network is a 400
+      // rather than a silent fallback to LinkedIn: reading the wrong site and reporting "0 posts"
+      // is exactly the confusion this feature has to avoid.
+      const listenPlatform = kind === 'listen' ? String(req.body?.platform || 'linkedin').toLowerCase() : null;
+      if (kind === 'listen' && !getSocialPlatform(listenPlatform)) {
+        return res.status(400).json({
+          error: `platform must be one of ${listSocialPlatforms().map((row) => row.id).join(', ')}`
+        });
+      }
+
       const detail = {
         // Listening is bounded by searches, not by roles: three searches is a useful week, thirty
         // is a crawl. The limit means "searches" for a listen run and "items" for everything else.
@@ -509,8 +549,8 @@ export function createWriterFlowRouter({
         skip: intParam(req.body?.skip, 0, 0, 5000),
         refresh: Boolean(req.body?.refresh),
         // The platform decides which adapter the worker dispatches to. A listen run that did not
-        // say `linkedin` would be claimed by a marketplace capture and read the wrong site.
-        ...(kind === 'listen' ? { platform: 'linkedin' } : {})
+        // say which network would be claimed by a marketplace capture and read the wrong site.
+        ...(kind === 'listen' ? { platform: listenPlatform } : {})
       };
 
       let run = null;
@@ -518,7 +558,7 @@ export function createWriterFlowRouter({
         run = await store.queue({
           tenantId: ctx.site.id,
           kind,
-          sourceSlug: req.body?.source ? String(req.body.source) : (kind === 'listen' ? 'linkedin' : null),
+          sourceSlug: req.body?.source ? String(req.body.source) : (kind === 'listen' ? listenPlatform : null),
           requestedBy: 'tenant',
           detail
         });
@@ -539,14 +579,14 @@ export function createWriterFlowRouter({
       // operator does. Handing over the exact line is more honest than a progress bar
       // that would never move.
       const script = kind === 'listen'
-        ? 'scripts/browser_actor_linkedin_listen.mjs'
+        ? 'scripts/browser_actor_social_listen.mjs'
         : kind === 'referrals'
           ? 'scripts/browser_actor_referrals.mjs'
           : kind === 'collect'
             ? 'scripts/browser_actor_collect.mjs'
             : 'scripts/browser_actor_import.mjs';
       const flags = kind === 'listen'
-        ? [`--queries ${detail.limit}`, '--per-query 10']
+        ? [`--platform ${listenPlatform}`, `--queries ${detail.limit}`]
         : [`--tenant ${ctx.site.slug}`, `--limit ${detail.limit}`, `--skip ${detail.skip}`];
       if (kind !== 'listen') {
         if (detail.refresh) flags.push('--refresh');

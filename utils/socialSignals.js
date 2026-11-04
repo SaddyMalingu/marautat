@@ -17,6 +17,7 @@
  *      the digest is not.
  */
 import { dedupeByPostUrl, draftFirstLine, scorePost } from './socialIntent.js';
+import { getSocialPlatform } from './browserActor/tasks/socialPlatforms.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -152,7 +153,7 @@ export function buildSignalRows({ posts, taxonomy, tenantId, platform = 'linkedi
         intentName: scored.intentName,
         authorName: post.authorName,
         authorHandle: post.authorHandle
-      }),
+      }).slice(0, getSocialPlatform(platform)?.draftLimit || 1000),
       run_id: runId
     });
   }

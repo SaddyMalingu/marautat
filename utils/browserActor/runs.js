@@ -40,15 +40,17 @@ export function runPlatform(run) {
   return String(run?.kind || '').toLowerCase() === 'referrals' ? 'turing' : '';
 }
 
+import { SOCIAL_PLATFORM_IDS } from './tasks/socialPlatforms.js';
+
 /**
  * Platforms a tenant worker can drive today.
  *
  * Both marketplaces since 2026-11-03 (the Turing runner gained the same agent mode Micro1 has),
- * and LinkedIn since 2026-11-04 for reading only: the listener opens the tenant's own signed-in
- * profile and reads public posts. `canRunOnWorker` still decides *per platform*, which is what
- * stops a worker claiming a run it cannot actually drive.
+ * and the social networks since 2026-11-04 for **reading only**: the listener opens the tenant's
+ * own signed-in profile and reads public posts. `canRunOnWorker` still decides *per platform*,
+ * which is what stops a worker claiming a run it cannot actually drive.
  */
-export const WORKER_PLATFORMS = Object.freeze(['micro1', 'turing', 'linkedin']);
+export const WORKER_PLATFORMS = Object.freeze(['micro1', 'turing', ...SOCIAL_PLATFORM_IDS]);
 
 export function canRunOnWorker(run) {
   return WORKER_PLATFORMS.includes(runPlatform(run));
@@ -80,6 +82,13 @@ export const MICRO1_RUN_KIND = 'micro1';
  */
 export const LISTEN_RUN_KIND = 'listen';
 export const LISTEN_PLATFORM = 'linkedin';
+
+/**
+ * Every platform a listen run may target. A listening run is one network at a time on purpose:
+ * six searches on one network is a coherent read, six networks in one run is a crawl that looks
+ * like a bot on all of them.
+ */
+export const LISTEN_PLATFORMS = Object.freeze([...SOCIAL_PLATFORM_IDS]);
 
 export const RUN_STATUSES = Object.freeze([
   'queued', 'running', 'succeeded', 'partial', 'failed', 'cancelled'

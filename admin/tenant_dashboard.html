@@ -1628,9 +1628,8 @@ function wfListeningHtml(d) {
   const listening = d.listening || {};
   const items = Array.isArray(listening.items) ? listening.items : [];
   const summary = listening.summary || {};
-  const runState = ((d.runs && d.runs.byPlatform) || {}).linkedin || null;
-  const active = runState && runState.active;
-  const last = runState && runState.last;
+  const networks = Array.isArray(listening.networks) ? listening.networks : [];
+  const runsByPlatform = (d.runs && d.runs.byPlatform) || {};
   // A listen run drives the tenant's profile exactly like a capture does, so it needs the same
   // browser gate: without one the run would queue and wait, which looks like a broken button.
   const mapped = d.identity ? d.identity.mapped !== false : true;
@@ -1640,79 +1639,104 @@ function wfListeningHtml(d) {
   const notDeployed = !Object.prototype.hasOwnProperty.call(d || {}, 'listening');
 
   /**
-   * The button is drawn in **every** state, including the ones where it cannot run.
+   * Why a network's button cannot run, in one sentence — or '' when it can.
    *
-   * The first version returned early when `social_signals` was missing, so the tenant saw one
-   * amber line and no button — which reads as "this feature does not exist", not "apply a
-   * migration". A disabled button beside the reason is the honest shape: the work is visible, and
-   * the sentence next to it says what is actually missing.
+   * Drawn in every state, including the ones where it cannot run: a control that disappears when
+   * it is blocked reads as "this feature does not exist", which is exactly what the first version
+   * did to the only tenant who wanted to use it.
    */
-  const blocked = active
-    ? 'A listening run is already going — wait for it, or press Cancel on the run above'
-    : notDeployed
-      ? 'This portal build does not report listening yet — deploy the latest commit'
-      : notSetUp
-        ? `Apply ${listening.needsMigration || 'migrations/2026-11-04_social_signals.sql'} first`
-        : !mapped
-          ? 'No browser of yours is connected yet, so this button would do nothing'
-          : '';
-  const startButton = `<button class="btn btn-outline-acc btn-sm" data-wfact="queue" data-kind="listen" data-refresh="0"
+  const blockedReason = (network) => {
+    const state = runsByPlatform[network.id] || null;
+    if (state && state.active) return 'A listening run is already going for this network — wait for it, or press Cancel';
+    if (notDeployed) return 'This portal build does not report listening yet — deploy the latest commit';
+    if (notSetUp) return `Apply ${listening.needsMigration || 'migrations/2026-11-04_social_signals.sql'} first`;
+    if (!mapped) return 'No browser of yours is connected yet, so this button would do nothing';
+    return '';
+  };
+
+  const startButton = (network) => {
+    const blocked = blockedReason(network);
+    return `<button class="btn btn-outline-acc btn-sm" data-wfact="queue" data-kind="listen"
+      data-platform="${esc(network.id)}" data-refresh="0"
       ${blocked ? `disabled title="${esc(blocked)}"` : ''}
-      title="Reads the searches your intent taxonomy defines on your own LinkedIn, and scores what people wrote">Start listening on LinkedIn</button>`;
-  const blockedLine = blocked && !active
-    ? `<div style="color:#f59e0b;font-size:.74rem;margin-top:4px">${esc(blocked)}</div>`
-    : '';
+      title="Reads this network on your own signed-in profile, and scores what people wrote">Start on ${esc(network.name)}</button>`;
+  };
 
-  if (notDeployed) {
-    return `<div class="mt-3">
-      <div class="text-muted" style="font-size:.74rem;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Listening</div>
-      <div class="text-muted" style="font-size:.8rem">This portal build does not answer for listening yet, so nothing has been read here.</div>
-      <div class="d-flex gap-2 flex-wrap mt-2">${startButton}</div>
-      ${blockedLine}
-    </div>`;
-  }
-
-  if (notSetUp) {
-    return `<div class="mt-3">
-      <div class="text-muted" style="font-size:.74rem;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Listening</div>
-      <div style="color:#f59e0b;font-size:.8rem">Listening is not set up yet, so nothing has been read — this is not an empty week.</div>
-      <div class="d-flex gap-2 flex-wrap mt-2">${startButton}</div>
-      ${blockedLine}
-    </div>`;
-  }
-
-  const statusLine = active
-    ? `${wfRunChip(active.status)} · ${active.done}/${active.total || '?'} searches · started ${wfAgo(active.startedAt || active.createdAt)}`
-    : last
-      ? `${wfRunChip(last.status)} · last ${wfAgo(last.finishedAt || last.createdAt)}${last.total ? ` · ${last.done}/${last.total} searches` : ''}`
-      : '<span class="text-muted">never run for this tenant</span>';
+  const statusOf = (network) => {
+    const state = runsByPlatform[network.id] || {};
+    const active = state.active;
+    const last = state.last;
+    if (active) return `${wfRunChip(active.status)} · ${active.done}/${active.total || '?'} searches · started ${wfAgo(active.startedAt || active.createdAt)}`;
+    if (last) return `${wfRunChip(last.status)} · last ${wfAgo(last.finishedAt || last.createdAt)}${last.total ? ` · ${last.done}/${last.total} searches` : ''}`;
+    return '<span class="text-muted">never run</span>';
+  };
 
   const countsLine = summary.total
     ? `${esc(String(summary.new || 0))} new · ${esc(String(summary.drafted || 0))} drafted · ${esc(String(summary.sent || 0))} sent · ${esc(String(summary.ignored || 0))} ignored`
     : 'nothing scored yet';
 
+  /**
+   * One row per network: where it runs, what it last did, how many signals it holds, and two
+   * links — one for the tenant to look at the site themselves, one to start a read.
+   *
+   * The list comes from the server, which reads the same registry the worker dispatches on; a
+   * hand-written list here would eventually offer a button for a site no runner can read.
+   */
+  const networkRows = networks.map((network) => {
+    const reason = blockedReason(network);
+    const active = (runsByPlatform[network.id] || {}).active;
+    return `
+    <div style="border:1px solid rgba(148,163,184,.2);border-radius:8px;padding:8px 10px;margin-bottom:6px">
+      <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
+        <div style="font-size:.82rem;min-width:0">
+          <strong>${esc(network.name)}</strong>
+          <span class="text-muted" style="font-size:.74rem"> · ${network.signals || 0} signal(s) waiting</span>
+          <div style="font-size:.74rem">${statusOf(network)}</div>
+          <div class="text-muted" style="font-size:.72rem">${esc(network.note || '')}</div>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+          <a class="btn btn-outline-light btn-sm" href="${esc(network.homeUrl)}" target="_blank" rel="noopener noreferrer"
+             title="Opens ${esc(network.name)} in your browser — this link is for you, not for the run">Open ${esc(network.name)}</a>
+          ${startButton(network)}
+        </div>
+      </div>
+      ${reason && !active ? `<div style="color:#f59e0b;font-size:.72rem;margin-top:4px">${esc(reason)}</div>` : ''}
+    </div>`;
+  }).join('');
+
+  if (notDeployed || notSetUp) {
+    return `<div class="mt-3">
+      <div class="text-muted" style="font-size:.74rem;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Listening</div>
+      <div style="color:#f59e0b;font-size:.8rem">
+        ${notDeployed
+          ? 'This portal build does not answer for listening yet, so nothing has been read here.'
+          : 'Listening is not set up yet, so nothing has been read — this is not an empty week.'}
+      </div>
+      ${networkRows}
+    </div>`;
+  }
+
   if (!items.length) {
     return `<div class="mt-3">
       <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
         <div class="text-muted" style="font-size:.74rem;text-transform:uppercase;letter-spacing:1px">Listening</div>
-        <span style="font-size:.76rem">${statusLine}</span>
+        <span style="font-size:.76rem">${esc(countsLine)}</span>
       </div>
-      <div class="text-muted" style="font-size:.78rem;margin:4px 0 6px">No post has matched one of your intents yet. ${esc(countsLine)}.</div>
-      <div class="d-flex gap-2 flex-wrap">${startButton}</div>
-      ${blockedLine}
-      <div class="text-muted" style="font-size:.72rem;margin-top:4px">Reads public posts in your own signed-in LinkedIn — a handful of searches, at a human pace, and nothing is ever sent from here.</div>
+      <div class="text-muted" style="font-size:.78rem;margin:4px 0 8px">No post has matched one of your intents yet.</div>
+      ${networkRows}
     </div>`;
   }
 
-  const rows = items.slice(0, 6).map((item) => {
+  const signalRows = items.slice(0, 6).map((item) => {
     const scoreColour = Number(item.score) >= 70 ? '#22c55e' : Number(item.score) >= 50 ? '#f59e0b' : '#94a3b8';
+    const network = networks.find((row) => row.id === item.platform) || null;
     const channel = item.recommendedChannel === 'whatsapp' ? 'WhatsApp' : item.recommendedChannel === 'email' ? 'email' : 'message';
     const draft = item.draftFirstLine || '';
     return `<div style="border:1px solid rgba(148,163,184,.2);border-radius:8px;padding:8px 10px;margin-bottom:6px">
       <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
         <div style="font-size:.82rem;min-width:0">
           <strong>${esc(item.authorName || item.authorHandle || 'someone')}</strong>
-          <span class="text-muted"> · ${esc(item.intentName || item.intentId)}</span>
+          <span class="text-muted"> · ${esc(network ? network.name : (item.platform || ''))} · ${esc(item.intentName || item.intentId)}</span>
           <div class="text-muted" style="font-size:.76rem;margin-top:2px">${esc(item.postText || '')}</div>
         </div>
         <div style="text-align:right;white-space:nowrap">
@@ -1722,6 +1746,7 @@ function wfListeningHtml(d) {
         </div>
       </div>
       ${draft ? `<div class="text-muted" style="font-size:.74rem;margin-top:6px;border-left:2px solid rgba(148,163,184,.35);padding-left:8px">${esc(draft)}</div>` : ''}
+      ${network ? `<div class="text-muted" style="font-size:.72rem;margin-top:4px">Do this: ${esc(network.actionHint)}</div>` : ''}
       <div class="d-flex gap-2 flex-wrap mt-1">
         <button class="btn btn-outline-light btn-sm" data-wfact="signal-copy" data-id="${esc(item.id)}" title="Copies the first line, so you paste it into your own message">Copy first line</button>
         ${item.postUrl ? `<a class="btn btn-outline-light btn-sm" href="${esc(item.postUrl)}" target="_blank" rel="noopener noreferrer">Open post</a>` : ''}
@@ -1734,13 +1759,14 @@ function wfListeningHtml(d) {
   return `<div class="mt-3">
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
       <div class="text-muted" style="font-size:.74rem;text-transform:uppercase;letter-spacing:1px">Listening</div>
-      <span style="font-size:.76rem">${statusLine}</span>
+      <span style="font-size:.76rem">${esc(countsLine)}</span>
     </div>
-    <div class="text-muted" style="font-size:.78rem;margin:4px 0 6px">${esc(countsLine)} · showing the ${items.length} strongest, best first</div>
-    <div class="d-flex gap-2 flex-wrap mb-2">${startButton}</div>
-    ${blockedLine}
-    ${rows}
-    <div class="text-muted" style="font-size:.72rem">Nobody was messaged by this system. The draft is a starting line — you send it, from your own account, in your own name.</div>
+    <div class="text-muted" style="font-size:.78rem;margin:4px 0 8px">
+      Showing the ${items.length} strongest, best first — each row names the network and what to do there.
+    </div>
+    ${networkRows}
+    <div class="text-muted" style="font-size:.72rem;margin:6px 0">Reading only: nobody was messaged by this system. Each run opens a few searches on one network, at a human pace, and leaves the sending to you.</div>
+    ${signalRows}
   </div>`;
 }
 
@@ -1819,7 +1845,7 @@ async function wfVerifyLinks(btn) {
   }
 }
 
-async function wfQueueRun(kind, refresh, btn) {
+async function wfQueueRun(kind, refresh, btn, platform = null) {
   const label = btn ? btn.textContent : 'Queue';
   if (btn) { btn.disabled = true; btn.textContent = 'Queueing…'; }
   try {
@@ -1829,6 +1855,8 @@ async function wfQueueRun(kind, refresh, btn) {
       body: JSON.stringify({
         kind: kind || 'referrals',
         refresh: Boolean(refresh),
+        // Listening is one network per run: the button that was pressed decides which.
+        ...(platform ? { platform } : {}),
         // A listen run counts searches, not roles: three intents' worth is a useful week, and a
         // "120" left over from the capture default would show a progress bar that never fills.
         limit: (kind || 'referrals') === 'listen' ? 3 : 120
@@ -1931,7 +1959,7 @@ function wfWireControl() {
     if (!btn || btn.disabled) return;
     const act = btn.dataset.wfact;
     if (act === 'verify') wfVerifyLinks(btn);
-    else if (act === 'queue') wfQueueRun(btn.dataset.kind || 'referrals', btn.dataset.refresh === '1', btn);
+    else if (act === 'queue') wfQueueRun(btn.dataset.kind || 'referrals', btn.dataset.refresh === '1', btn, btn.dataset.platform || null);
     else if (act === 'cancel') wfCancelRun(btn.dataset.run, btn);
     else if (act === 'resolve') wfResolveLink(btn.dataset.id, btn.dataset.act, btn);
     else if (act === 'filter') wfApplyLinkFilter(btn.dataset.filter);

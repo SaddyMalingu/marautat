@@ -543,20 +543,25 @@ eq('a second capture is refused while one is queued', queueAgain.status, 409);
 const queueVerify = await post('/tenant/blogger/runs', { kind: 'verify' });
 eq('verification cannot be queued as a run', queueVerify.status, 400);
 
-// The Listening card's button sends exactly this, so the route is the thing to test rather than
-// the markup: a `listen` run must be accepted, must record LinkedIn as its platform (the worker
-// dispatches on that), and must not be confused with a capture.
-const queueListen = await post('/tenant/blogger/runs', { kind: 'listen', limit: 3 });
+// The Listening card's buttons send exactly this, so the route is the thing to test rather than
+// the markup: a `listen` run must be accepted, must record the network it targets (the worker
+// dispatches on that), and must refuse a network no runner can read.
+const queueListen = await post('/tenant/blogger/runs', { kind: 'listen', platform: 'x', limit: 3 });
 eq('listening can be queued from the panel', queueListen.status, 201);
 eq('as its own kind, not a capture', queueListen.body.run.kind, 'listen');
-eq('with LinkedIn recorded, so the worker picks the listener',
-  queueListen.body.run.detail.platform, 'linkedin');
+eq('with the chosen network recorded, so the worker picks the right site',
+  queueListen.body.run.detail.platform, 'x');
 eq('and the runs it starts are searches, not roles', queueListen.body.run.detail.limit, 3);
-ok('the command it prints is the listener, with no --apply',
-  /browser_actor_linkedin_listen\.mjs/.test(queueListen.body.command || '')
+ok('the command it prints names the network and has no --apply',
+  /browser_actor_social_listen\.mjs/.test(queueListen.body.command || '')
+  && /--platform x/.test(queueListen.body.command || '')
   && !/--apply/.test(queueListen.body.command || ''));
 const cancelListen = await post(`/tenant/blogger/runs/${queueListen.body.run.id}/cancel`, {});
 eq('and it can be cancelled like any other run', cancelListen.body.run.status, 'cancelled');
+
+const unknownNetwork = await post('/tenant/blogger/runs', { kind: 'listen', platform: 'myspace' });
+eq('a network no runner can read is refused', unknownNetwork.status, 400);
+ok('naming the ones that work', /linkedin, x, facebook, reddit, youtube/.test(unknownNetwork.body.error || ''));
 
 const foreignCancel = await post('/tenant/blogger/runs/not-mine/cancel', {});
 eq('cancelling an unknown run is a 404', foreignCancel.status, 404);

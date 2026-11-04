@@ -1104,45 +1104,62 @@ rather than implying that twelve was the request.
 
 subsystem: name the cause before spending the tenant's attention.
 
-### Social listening: the taxonomy finally has eyes (2026-11-04)
+### Social listening: five networks, and a zero that explains itself (2026-11-04)
 
 The intents, the phrases and the scorer have been in this repo since the ABOSS work. What was
-missing was always the same thing: **nothing read the posts**, so `data/ABOSS_SOCIAL_SIGNALS_RAW.csv`
-was a header row and the whole pipeline was a well-tested hypothesis. The tenant's own browser is
-the only actor that can close that gap without an account of ours and a legal risk.
-
-The split is the same one the captures use, for the same reason:
+missing was always the same thing: **nothing read the posts**, so
+`data/ABOSS_SOCIAL_SIGNALS_RAW.csv` was a header row and the whole pipeline was a well-tested
+hypothesis. The tenant's own browser is the only actor that can close that gap without an account
+of ours and a legal risk.
 
 ```
-tenant machine                                        portal
-  GET  /api/agent/runs/:id/context  ───────►  the searches to run, from the taxonomy (server-side)
-  opens each LinkedIn content search,
-  reads the posts, sends the raw text
-  POST /api/agent/runs/:id/signals  ───────►  sanitises, **scores**, stores in social_signals
-  POST /api/agent/runs/:id/finish   ───────►  closes the run
+tenant machine                                          portal
+  GET  /api/agent/runs/:id/context    ───────►  the searches to run, from the taxonomy
+  --platform <network> chooses the description
+  POST /api/agent/runs/:id/signals    ───────►  sanitises, **scores**, stores in social_signals
+  POST /api/agent/runs/:id/finish     ───────►  closes the run
 ```
 
-**The worker holds no opinion and no score.** A stolen `wkr_` token buys the ability to read a
-public page, not to put a "hot lead" in front of a tenant. That is why the taxonomy is sent *down*
-with the context instead of bundled: one source, and no laptop copy to drift.
+**One script, five networks.** `tasks/socialPlatforms.js` describes each site and nothing else:
+where to search, how to tell signed-in from walled (and from a cookie sheet), the **ordered
+selector lists** for container / text / author / link, the reading budget and the pace. Adding a
+sixth network is a description, not a copy of the runner.
 
-Four rules that decide whether this is a product or a spam machine:
+| Network | Where it looks | What a signal is | First line limit |
+|---|---|---|---|
+| LinkedIn | content search, last week, newest first | the post body | 1900 |
+| X | live search, `-filter:replies` | the tweet | 260 |
+| Facebook | public post search | the post | 8000 |
+| Reddit | search by week, newest | the **title** (weaker evidence, stated) | 10000 |
+| YouTube | search results | the **video title** (weaker: it is publication, not a question) | 10000 |
 
-- **No fabrication.** A post that matches no intent is dropped, not scored low. An empty week is a
-  true sentence; a padded digest costs the tenant their credibility on the first send.
-- **Exclusion beats inclusion.** "Job vacancy" and "dealer ad" contain the trigger words for a fleet
-  purchase, and are most of what such a search returns. Excluded posts are not stored at all.
-- **Nothing here sends.** The panel offers *copy first line* and *open post*; the tenant sends from
-  their own account, under their own name, and records what they did (`sent` / `ignored`). There is
-  no messaging code in this path, and the suite asserts that.
-- **Human pace, jittered.** 4.5–11 s between searches, ten posts per search, six searches a run —
-  the budget is for *reading* without looking like a scraper, not for volume.
+**The lesson this file keeps relearning, now enforced.** On 2026-11-04 the LinkedIn-only version
+ran three searches and printed `0 post(s) on the page` three times, then finished `succeeded` —
+identical, from the outside, to a quiet week. Every query now reports:
 
-`kind: 'listen'` is its own `(tenant, kind)` slot so a queued listen run cannot block a referral
-capture, and `platform: 'linkedin'` is recorded in `detail.platform` so the worker dispatches the
-listener rather than a marketplace adapter (see OPEN_FLAGS #39 — before that fix it resolved as
-micro1 and would have driven the wrong site).
+- **which selector strategy matched** (or that none did → the markup moved),
+- how many **candidate cards** were on the page,
+- the page **title** and the first 240 characters of its text,
+- the **session** answer: `signed_in` / `login_wall` / `consent_wall` / `unknown`.
 
-Apply `migrations/2026-11-04_social_signals.sql` before pressing *Start listening*: until then the
-panel says "Not set up yet", which is deliberately different from "nothing matched".
+That goes into the run's `detail.diagnostics`, so the portal can say *why* a search came back
+empty instead of implying nobody is talking. A page whose selectors match nothing is a fix we can
+make in an hour; a page reported as "0 posts" is a bug that hides for a month.
+
+Two smaller decisions worth stating:
+
+- **Tracking parameters are stripped** from permalinks (except Facebook, whose id lives in the
+  query), so the same post cannot arrive twice under two URLs and defeat the
+  `(tenant, post_url)` uniqueness.
+- **A cookie sheet is not a login wall**, and neither is clicked on the tenant's behalf: the run
+  stops with "accept it once in MoreLogin, then run again". Consenting for someone is a decision
+  about their account, not ours to make.
+
+Nothing in this path sends. The panel offers *copy first line* and *open post*, plus the per
+network action ("Reply in the thread", "Comment under the video"), and the tenant records what
+they did (`sent` / `ignored`). The suite asserts that no module here can message anyone.
+
+Apply `migrations/2026-11-04_social_signals.sql` before pressing a *Start on …* button: until then
+the panel says "Not set up yet", which is deliberately different from "nothing matched".
+
 
