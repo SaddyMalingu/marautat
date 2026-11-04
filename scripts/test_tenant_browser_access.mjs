@@ -1806,9 +1806,9 @@ function fakeOfferDb() {
   const workerSrc = fs.readFileSync(path.join(root, 'scripts', 'browser_actor_worker.mjs'), 'utf8');
   ok('and it picks the script by platform, never by a default',
     /SCRIPT_BY_PLATFORM = Object\.freeze\(\{[\s\S]{0,220}micro1:[\s\S]{0,140}turing:[\s\S]{0,140}linkedin:/.test(workerSrc)
-    && /const script = scriptForPlatform\(platform\)/.test(workerSrc));
+    && /const script = scriptPath\(platform\)/.test(workerSrc));
   ok('and refuses a platform it has no runner for instead of defaulting to Micro1',
-    /if \(!script \|\| !fs\.existsSync\(path\.resolve\(script\)\)\)[\s\S]{0,200}return Promise\.resolve\(\{ code: 1, reason \}\)/.test(workerSrc));
+    /if \(!script \|\| !fs\.existsSync\(script\)\)[\s\S]{0,200}return Promise\.resolve\(\{ code: 1, reason \}\)/.test(workerSrc));
   // Claiming a run whose runner file is missing is how a listen run sat in "running" until the
   // tenant cancelled it. The claim itself now requires the file.
   ok('and will not claim a run it cannot actually run',

@@ -350,6 +350,22 @@ function scriptForPlatform(platform) {
 }
 
 /**
+ * Where this worker's own files live.
+ *
+ * The start scripts `cd` into the folder, but a tenant who runs
+ * `node C:\\Users\\me\\Desktop\\alphadome-worker\\scripts\\browser_actor_worker.mjs` from anywhere
+ * else would previously get `ENOENT` on every spawn — or, with a naive existence check, a worker
+ * that refused to run anything. Resolving against the worker file itself removes the question.
+ */
+const WORKER_ROOT = path.resolve(import.meta.dirname, '..');
+
+/** The absolute path of a platform's runner, or null when this build does not carry one. */
+function scriptPath(platform) {
+  const relative = scriptForPlatform(platform);
+  return relative ? path.resolve(WORKER_ROOT, relative) : null;
+}
+
+/**
  * Does this copy of the worker actually contain that runner?
  *
  * A worker downloaded before a platform existed can still *claim* its runs and then do nothing,
@@ -359,8 +375,8 @@ function scriptForPlatform(platform) {
  * one `fs.existsSync` and it turns a silent no-op into a skip the tenant can see.
  */
 function scriptAvailable(platform) {
-  const script = scriptForPlatform(platform);
-  return Boolean(script) && fs.existsSync(path.resolve(script));
+  const resolved = scriptPath(platform);
+  return Boolean(resolved) && fs.existsSync(resolved);
 }
 
 const missingRunnerWarned = new Set();
@@ -385,10 +401,10 @@ function lastProblemLine(lines) {
 }
 
 function runCapture({ tenantSlug, runId, limit, platform = 'micro1' }) {
-  const script = scriptForPlatform(platform);
+  const script = scriptPath(platform);
   // Refused rather than defaulted: running the wrong adapter is worse than running none, and
   // running *nothing* while holding the claim is worse than both.
-  if (!script || !fs.existsSync(path.resolve(script))) {
+  if (!script || !fs.existsSync(script)) {
     const reason = `this worker does not contain ${script || `${platform} runner`} — download the worker again from the portal`;
     console.error(reason);
     return Promise.resolve({ code: 1, reason });
