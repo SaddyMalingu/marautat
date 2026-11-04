@@ -1189,6 +1189,22 @@ function fakeOfferDb() {
   // into the token box. The terminal route is now folded away as advanced.
   ok('the terminal command is tucked behind an "Advanced" disclosure',
     /<summary[^>]*>Advanced: run it from a terminal instead<\/summary>/.test(dash2));
+
+  // The zip is assembled on demand from this repository, so a deploy is enough — but only if the
+  // runners that land in it are the current ones. A stale bundle would have re-sent 400 KB a flush
+  // however good the server-side fix was, so the shipped copy is checked, not assumed.
+  const built = buildWorkerBundle({ apiBase: 'https://alphadome.onrender.com', pairCode: null });
+  const entrySource = (pattern) => {
+    const entry = built.entries.find((row) => pattern.test(row.name || ''));
+    return entry ? Buffer.from(entry.data || '').toString('utf8') : '';
+  };
+  const shippedTuring = entrySource(/browser_actor_referrals\.mjs$/);
+  const shippedMicro1 = entrySource(/browser_actor_micro1\.mjs$/);
+  ok('the downloaded worker carries both marketplace runners',
+    shippedTuring.length > 1000 && shippedMicro1.length > 1000);
+  ok('and the fixed batching, not the version that sent 400 KB at once',
+    /postedCount/.test(shippedTuring) && /res\.status === 413 && chunk\.length > 1/.test(shippedTuring)
+    && /const CHUNK = 20;/.test(shippedMicro1));
 }
 
 // ---------------------------------------------------------------------------
