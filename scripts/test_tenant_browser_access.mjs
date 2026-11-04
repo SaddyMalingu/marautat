@@ -1824,6 +1824,10 @@ function fakeOfferDb() {
   ok('all five networks dispatch to the one listener',
     ['linkedin', 'x', 'facebook', 'reddit', 'youtube'].every((id) => new RegExp(`${id}: SOCIAL_LISTENER`).test(workerSrc))
     && /'--platform', platform/.test(workerSrc));
+  // The 12:10 run claimed `(youtube)` and the child ran `platform=linkedin`; nothing in the log
+  // said which file was launched, so it could not be diagnosed from the outside.
+  ok('and the window says exactly what it launched',
+    /console\.error\(`spawn: \$\{path\.basename\(script\)\} --platform \$\{platform\}/.test(workerSrc));
   ok('and is bounded by searches rather than by roles', /'--queries'/.test(workerSrc) && !/'--per-query'/.test(workerSrc));
   ok('the bundle carries the Turing runner it dispatches to',
     buildWorkerBundle({ apiBase: 'https://portal.example' }).entries.some((entry) => entry.name === 'scripts/browser_actor_referrals.mjs'));

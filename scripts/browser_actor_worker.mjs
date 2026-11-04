@@ -440,6 +440,11 @@ function runCapture({ tenantSlug, runId, limit, platform = 'micro1' }) {
         // process on the machine (Task Manager, `ps`), and this one is a credential.
       ];
   const childEnv = { ...process.env, TENANT_WORKER_TOKEN: token };
+  // Say exactly what is being launched. Two windows of this worker on one machine is easy to do
+  // (an old folder on the desktop, a new one unzipped next to it) and impossible to see from the
+  // outside: a run claimed here could be executing a listener from another folder, with another
+  // platform, while this window looks innocent. One line removes the guessing.
+  console.error(`spawn: ${path.basename(script)} --platform ${platform} --run-id ${runId} (cwd ${path.resolve(WORKER_ROOT)})`);
   return new Promise((resolve) => {
     // Piped rather than inherited so the child's last words can be carried to the portal. They
     // are still printed line by line, so the worker window a tenant watches looks the same.

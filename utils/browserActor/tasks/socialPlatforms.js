@@ -282,6 +282,26 @@ export const SOCIAL_PLATFORMS = Object.freeze({
   })
 });
 
+/**
+ * How long to keep waiting for results, per network.
+ *
+ * LinkedIn's content search hydrates slowly on a cold profile — the first search of a run can
+ * spend twenty seconds showing nothing but the global nav, which reads as `0 candidates` and
+ * looks exactly like a changed DOM. Facebook is not much faster. Reddit and YouTube render
+ * server-side and are ready almost immediately.
+ */
+const WAIT_MS = Object.freeze({
+  linkedin: 60_000,
+  facebook: 45_000,
+  x: 30_000,
+  youtube: 30_000,
+  reddit: 25_000
+});
+
+export function waitMsFor(platformId) {
+  return WAIT_MS[String(platformId || '').toLowerCase()] || 30_000;
+}
+
 /** Ordered list for the panel and the run, so the UI and the worker cannot disagree. */
 export function listSocialPlatforms() {
   return SOCIAL_PLATFORM_IDS.map((id) => SOCIAL_PLATFORMS[id]).filter(Boolean);

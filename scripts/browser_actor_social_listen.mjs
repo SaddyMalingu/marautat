@@ -30,7 +30,8 @@ import { deriveRunStatus } from '../utils/browserActor/runs.js';
 import {
   classifySocialSession,
   getSocialPlatform,
-  socialPaceMs
+  socialPaceMs,
+  waitMsFor
 } from '../utils/browserActor/tasks/socialPlatforms.js';
 
 const argv = process.argv.slice(2);
@@ -149,19 +150,40 @@ async function evaluateJson({ host, port, expression }) {
 /**
  * Read the page until it has posts, or until waiting stops being honest.
  *
- * Three passes with a scroll between them: search pages render their first screen late and their
- * second screen only after a scroll, so a single read reports zero on a page that has twenty.
+ * Search pages hydrate late: the first pass sees the global navigation and nothing else, which is
+ * exactly what a *changed DOM* looks like. So this waits on a real budget per network, scrolls
+ * progressively (result lists render beyond the first screen), and — if a page is still empty
+ * after the whole budget — reloads once and tries again. A stuck first navigation is common on a
+ * freshly started profile and is not the same fault as a selector that moved.
  */
-async function readPosts({ host, port, maxMs = 20_000 }) {
+async function readPosts({ host, port }) {
   const startedAt = Date.now();
+  const budget = waitMsFor(platform.id);
   let last = null;
-  while (Date.now() - startedAt < maxMs) {
-    last = await evaluateJson({ host, port, expression: platform.postsExpr });
-    if (last && Number(last.count) > 0) return last;
-    await evaluateJson({ host, port, expression: 'window.scrollBy(0, window.innerHeight * 0.9); "ok"' });
-    await sleep(1_500);
-  }
-  return last || { ok: true, count: 0, posts: [], strategy: null, candidates: 0 };
+  const passes = async (until) => {
+    let step = 1;
+    while (Date.now() < until) {
+      last = await evaluateJson({ host, port, expression: platform.postsExpr });
+      if (last && Number(last.count) > 0) return true;
+      // Progressive scroll: half a screen, then a screen, then two — enough to trigger the
+      // lazy-render of the list without walking to the footer.
+      await evaluateJson({ host, port, expression: `window.scrollBy(0, window.innerHeight * ${step}); "ok"` });
+      step = Math.min(step + 0.5, 2.5);
+      await sleep(1_200);
+    }
+    return false;
+  };
+
+  if (await passes(startedAt + budget)) return { ...last, waitedMs: Date.now() - startedAt };
+
+  // One reload, then half the budget again: a profile that just started often shows a partial
+  // page whose own router never fires.
+  console.error('  nothing rendered yet — reloading once before giving up');
+  await evaluateJson({ host, port, expression: 'location.reload(); "ok"' }).catch(() => {});
+  await sleep(2_500);
+  const retriedAt = Date.now();
+  await passes(retriedAt + Math.min(30_000, Math.round(budget / 2)));
+  return { ...(last || { ok: true, count: 0, posts: [], strategy: null, candidates: 0 }), waitedMs: Date.now() - startedAt };
 }
 
 async function readSession({ host, port }) {
@@ -182,6 +204,9 @@ function diagnose(page, session, phrase) {
     phrase,
     strategy: page?.strategy || null,
     candidates: Number(page?.candidates) || 0,
+    // How long we actually waited before declaring the page empty: a page that gave up after 2s
+    // is a bug in the wait; one that waited 90s is a page that genuinely has nothing.
+    waitedMs: Number(page?.waitedMs) || 0,
     title: String(page?.title || '').slice(0, 120),
     url: String(page?.url || '').slice(0, 300),
     session: session?.state || 'unknown',
@@ -240,8 +265,11 @@ async function readAllSearches({ host, port, queries, collected, unsent, diagnos
     console.error(`[${index + 1}/${queries.length}] "${query.phrase}" (${query.intentId})`);
     try {
       await capturePage({ host, port, url, timeoutMs: 45_000 });
-      const session = await readSession({ host, port });
+      let session = await readSession({ host, port });
       const page = await readPosts({ host, port });
+      // A page that was still hydrating answers "unknown" the first time. Ask again once it has
+      // settled, so the diagnosis names a wall or a cookie sheet rather than shrugging.
+      if (session.state === 'unknown') session = await readSession({ host, port });
       const posts = Array.isArray(page?.posts) ? page.posts.slice(0, perQuery) : [];
       let added = 0;
       for (const post of posts) {
@@ -254,13 +282,13 @@ async function readAllSearches({ host, port, queries, collected, unsent, diagnos
       }
       read += 1;
       const label = page?.strategy ? `via ${page.strategy}` : 'no card selector matched';
-      console.error(`  ${posts.length}/${page?.candidates ?? 0} candidate card(s) read ${label} · ${added} new`);
+      console.error(`  ${posts.length}/${page?.candidates ?? 0} candidate card(s) read ${label} after ${(Math.round((page?.waitedMs || 0) / 100) / 10)}s · ${added} new`);
 
       if (!posts.length) {
         empty += 1;
         const d = diagnose(page, session, query.phrase);
         diagnostics.push(d);
-        console.error(`  nothing on this page · session=${d.session} · title="${d.title}" · page says: "${d.bodyStart.slice(0, 90)}"`);
+        console.error(`  nothing after ${Math.round(d.waitedMs / 1000)}s · session=${d.session} · title="${d.title}" · page says: "${d.bodyStart.slice(0, 90)}"`);
       }
 
       // Bank what we have, every search: a machine that sleeps at search five must not lose four.
@@ -312,7 +340,18 @@ async function main() {
   const identity = context.identity || {};
   const tenantSlug = context.tenant?.slug || tenantFlag || '(unknown)';
   const queries = (Array.isArray(context.queries) ? context.queries : []).slice(0, wantQueries);
+  const portalPlatform = String(context.run?.platform || '').toLowerCase();
   console.error(`listen: tenant=${tenantSlug} platform=${platform.id} profile=${maskEnvId(identity.envId)} queries=${queries.length}`);
+  // If the portal thinks this run belongs to another network, stop. Driving LinkedIn on behalf of
+  // a YouTube run writes signals that no one asked for, under the wrong name in the digest.
+  if (portalPlatform && portalPlatform !== platform.id) {
+    const message = `this run is for ${portalPlatform}, but the worker started the ${platform.id} listener — `
+      + 'press Start again from the portal (and close any other worker window)';
+    console.error(message);
+    await finishOnce({ status: 'failed', message: message.slice(0, 300), detail: { platform: platform.id, portalPlatform, mismatch: true } });
+    process.exitCode = 1;
+    return;
+  }
   if (!queries.length) {
     await finishOnce({
       status: 'failed',

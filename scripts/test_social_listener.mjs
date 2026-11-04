@@ -41,7 +41,7 @@ const root = path.resolve(import.meta.dirname, '..');
 const script = path.join(root, 'scripts', 'browser_actor_social_listen.mjs');
 
 /** A portal that answers the four calls the listener is allowed to make. */
-function fakePortal({ queries = 2 } = {}) {
+function fakePortal({ queries = 2, platform = 'linkedin' } = {}) {
   const calls = [];
   const server = http.createServer((req, res) => {
     let body = '';
@@ -53,7 +53,7 @@ function fakePortal({ queries = 2 } = {}) {
       if (url.endsWith('/context')) {
         res.end(JSON.stringify({
           ok: true,
-          run: { id: 'r1', status: 'running', platform: 'linkedin', limit: queries },
+          run: { id: 'r1', status: 'running', platform, limit: queries },
           tenant: { slug: 'malingu-ventures', name: 'Malingu Ventures' },
           // An envId that cannot exist, so the profile start fails fast and deterministically.
           identity: { envId: '000000000000000000', runtime: 'local', source: 'worker' },
@@ -155,13 +155,30 @@ function runListener({ api, platform = 'linkedin', args = [], timeoutMs = 30_000
 // ---------------------------------------------------------------------------
 
 {
-  const portal = fakePortal({ queries: 1 });
+  const portal = fakePortal({ queries: 1, platform: 'x' });
   const api = await portal.listen();
   try {
     // X, not LinkedIn: the dispatch has to reach the same script with a different description.
     const result = await runListener({ api, platform: 'x', args: ['--queries', '1'] });
     ok('a run for another network names that network', /platform=x/.test(result.output));
     ok('and still asks the portal for context', portal.calls.some((call) => call.url.endsWith('/context')));
+  } finally {
+    await portal.close();
+  }
+}
+
+{
+  // The 12:10 run: the worker claimed a YouTube run and the child started the LinkedIn listener.
+  // Driving the wrong site under someone else's run is worse than stopping, so it stops.
+  const portal = fakePortal({ queries: 1, platform: 'youtube' });
+  const api = await portal.listen();
+  try {
+    const result = await runListener({ api, platform: 'linkedin', args: ['--queries', '1'] });
+    const finished = portal.calls.find((call) => call.url.endsWith('/finish'));
+    ok('a listener started for the wrong network notices', /this run is for youtube/.test(result.output));
+    eq('and closes the run instead of reading the wrong site', finished?.body?.status, 'failed');
+    eq('flagging the mismatch on the run', finished?.body?.detail?.mismatch, true);
+    eq('with a non-zero exit', result.code === 0, false);
   } finally {
     await portal.close();
   }
