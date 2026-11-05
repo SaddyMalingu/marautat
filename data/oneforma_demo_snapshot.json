@@ -1,0 +1,24 @@
+{
+  "certifications": {
+    "ok": true,
+    "url": "https://my.oneforma.com/contributor/dashboard",
+    "strategy": "table",
+    "headers": ["Certification name", "Category", "Questions", "Time limit", "Required score", "Last score", "Status", "Actions"],
+    "rows": [
+      { "cells": ["", "Search Engine Evaluation", "Search", "40", "60 minutes", "80", "", "Not started", ""], "links": ["", "", "", "", "", "", "", ""] },
+      { "cells": ["", "Photo Classification", "Images", "20", "30 min", "70", "66", "Failed", ""], "links": ["", "", "", "", "", "", "", ""] },
+      { "cells": ["", "Translation Basics", "Language", "10", "15 min", "60", "95", "Passed", ""], "links": ["", "", "", "", "", "", "", ""] }
+    ],
+    "count": 3
+  },
+  "projects": {
+    "ok": true,
+    "url": "https://my.oneforma.com/contributor/dashboard",
+    "strategy": "table",
+    "headers": ["Project name", "Category", "Rate", "Status", "Deadline"],
+    "rows": [
+      { "cells": ["Search Relevance Rating (Kenya)", "Search", "18/hr", "Open", "2026-11-08"], "links": ["https://my.oneforma.com/contributor/jobs/4821"] }
+    ],
+    "count": 1
+  }
+}
