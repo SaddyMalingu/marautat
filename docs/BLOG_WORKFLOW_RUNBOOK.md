@@ -49,14 +49,37 @@ Moving thumbnails to Supabase Storage is the fix; until then, a `thumbnail_url` 
 ## Deploy checklist
 
 1. Confirm `main` is deployed (the workflow builds the same commit the site serves).
-2. Create the workflow: Name `marautat-blog`, Language Node, Branch `main`, Region Frankfurt,
+2. Create the workflow: Name `alphadome-blog`, Language Node, Branch `main`, Region Frankfurt,
    Root Directory blank.
 3. Build Command: `npm install && npm install @renderinc/sdk@^1.7.0`
 4. Start Command: `node workflows/index.js` — **not** `node index.js`, which does not exist.
 5. Add the environment variables above.
 6. Deploy and check the log for `[workflow] registered blogQueue + blogOffer`.
 7. Trigger once — dashboard task run, `render workflows tasks list`, or the nightly GitHub
-   Action. The task slug is `<workflow-name>/blogQueue`.
+   Action.
+
+**The task slug is `<workflow-slug>/blogQueue`.** Ours is `alphadome-blog/blogQueue`
+(service `wfl-dbm4ea56e07s73b49qn0`). That string appears in two other places and all three
+must agree:
+
+| Place | Value |
+|---|---|
+| Render dashboard → Workflow Slug | `alphadome-blog` |
+| `.github/workflows/blog-automation.yml` | `BLOG_WORKFLOW_TASK`, defaulting to `alphadome-blog/blogQueue`; override with the repository variable of that name |
+| `render.yaml` | `name: alphadome-blog` |
+
+A wrong slug returns **404** from the Render API, not 401 — which reads like an auth problem
+but is not. Trigger by hand to check:
+
+```bash
+curl --fail-with-body -X POST https://api.render.com/v1/task-runs \
+  -H "Authorization: Bearer $RENDER_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"task":"alphadome-blog/blogQueue","input":[{"limit":3}]}'
+```
+
+`input` is always an **array** of positional arguments, so the queue's options object is the
+single element `[{"limit":3}]`.
 
 ## Health check
 

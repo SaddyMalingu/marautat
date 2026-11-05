@@ -28,8 +28,17 @@ jobs:
     # steps need are computed here. `HAS_DB_CREDS` is a boolean, not a credential: it lets the
     # fallback decide whether it can run at all without lifting the service-role key into every
     # step's environment.
+    # The workflow slug and task name, as registered in the Render dashboard. This is the
+    # one string that must match the deployed workflow: the service was created as
+    # `alphadome-blog` (service id wfl-dbm4ea56e07s73b49qn0), so the task is
+    # `alphadome-blog/blogQueue`. A mismatch is a 404 from the Render API, not a 401.
+    #
+    # Override without editing this file by setting the repository variable
+    # BLOG_WORKFLOW_TASK (Settings → Secrets and variables → Actions → Variables). That
+    # matters if the workflow is ever renamed: a rename should not need a commit here.
     env:
       RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+      BLOG_WORKFLOW_TASK: ${{ vars.BLOG_WORKFLOW_TASK || 'alphadome-blog/blogQueue' }}
       HAS_DB_CREDS: ${{ secrets.SUPABASE_URL != '' && secrets.SUPABASE_SERVICE_ROLE_KEY != '' }}
 
     steps:
@@ -57,11 +66,17 @@ jobs:
           # A failure here fails the job on purpose. Falling back to the runner on a trigger
           # error would need database credentials in GitHub, and a workflow that quietly does
           # the work somewhere else is how a red night becomes a mystery.
-          curl --fail-with-body --silent --show-error \
+          echo "Triggering $BLOG_WORKFLOW_TASK with limit=$LIMIT"
+          if ! curl --fail-with-body --silent --show-error \
             --request POST 'https://api.render.com/v1/task-runs' \
             --header "Authorization: Bearer $RENDER_API_KEY" \
             --header 'Content-Type: application/json' \
-            --data "{\"task\":\"marautat-blog/blogQueue\",\"input\":[{\"limit\":$LIMIT}]}"
+            --data "{\"task\":\"$BLOG_WORKFLOW_TASK\",\"input\":[{\"limit\":$LIMIT}]}"; then
+            echo "::error::Trigger rejected. A 404 means the task slug does not match the deployed"
+            echo "::error::workflow — check Workflow Slug in the dashboard, or set the repository"
+            echo "::error::variable BLOG_WORKFLOW_TASK. A 401 means RENDER_API_KEY is wrong or revoked."
+            exit 1
+          fi
 
       # Sequential, on the runner: slower, but it writes the same blog_posts rows the site
       # restores from. Only runs when there is no workflow to trigger — and only when the

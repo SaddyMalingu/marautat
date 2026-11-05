@@ -13,7 +13,7 @@
 # for a workflow SDK. Installing it here keeps both true.
 services:
   - type: workflow
-    name: marautat-blog
+    name: alphadome-blog
     runtime: node
     region: frankfurt
     branch: main
