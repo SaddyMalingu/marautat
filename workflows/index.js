@@ -58,5 +58,34 @@ async function generateOffer(offerId) {
   return generateBlogPostsForOpportunity(offerId, { images: false });
 }
 
-registerBlogWorkflow({ task, deps: { load, generateOffer } });
+/**
+ * Ask the web service to re-read `blog_posts` into `public/blog`.
+ *
+ * The pages were written to the *database* from this run; the site serves them from a
+ * directory on a different machine. `POST /admin/restore-blogs` is the existing ops path for
+ * that, and `server.js` accepts the key in an `x-admin-key` header so the password never
+ * appears in a URL, a request log or an access log.
+ *
+ * Skipped when `ADMIN_PASS` is not configured rather than failing: the run's real output is
+ * already durable, and the next deploy restores anyway.
+ */
+async function refreshSite() {
+  const site = process.env.SITE_URL || 'https://alphadome.onrender.com';
+  const key = process.env.ADMIN_PASS || process.env.ADMIN_KEY;
+  if (!key) return { ok: false, skipped: 'no ADMIN_PASS on this service' };
+  try {
+    const response = await fetch(site.replace(/\/$/, '') + '/admin/restore-blogs', {
+      method: 'POST',
+      headers: { 'x-admin-key': key }
+    });
+    if (!response.ok) return { ok: false, status: response.status };
+    const body = await response.json().catch(() => ({}));
+    console.log('[workflow] site refreshed: ' + (body.restored == null ? 'ok' : body.restored + ' posts'));
+    return { ok: true, restored: body.restored ?? null };
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+}
+
+registerBlogWorkflow({ task, deps: { load, generateOffer, refreshSite } });
 console.log('[workflow] registered blogQueue + blogOffer');

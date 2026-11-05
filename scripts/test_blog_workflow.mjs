@@ -145,7 +145,57 @@ function build(deps) {
   eq('and reports one page', result.pages, 1);
 }
 
+// ─── The site nudge ────────────────────────────────────────────────────────
+// A generated page lives in `blog_posts`; the web service serves `public/blog` from its own
+// disk. If the run does not tell the site to re-read the database, the page exists and 404s
+// until the next deploy — so the nudge is part of the contract, not a nicety.
+{
+  let refreshed = 0;
+  const built = registerBlogWorkflow({
+    task: fakeTaskFactory([]),
+    deps: {
+      load: async () => ({ offers: [offer('o1')], posts: [] }),
+      generateOffer: async () => ({ success: true, posts: [{ slug: 'a' }] }),
+      refreshSite: async () => { refreshed++; return { ok: true, restored: 9 }; }
+    }
+  });
+  const result = await built.blogQueue.fn(ctxOf(), {});
+  eq('the site is asked to re-read after pages were written', refreshed, 1);
+  eq('the outcome is reported back to the caller', result.refresh.restored, 9);
+}
+
+{
+  let refreshed = 0;
+  const built = registerBlogWorkflow({
+    task: fakeTaskFactory([]),
+    deps: {
+      load: async () => ({ offers: [], posts: [] }),
+      generateOffer: async () => ({ success: true, posts: [] }),
+      refreshSite: async () => { refreshed++; return { ok: true }; }
+    }
+  });
+  await built.blogQueue.fn(ctxOf(), {});
+  eq('nothing written means nothing to refresh', refreshed, 0);
+}
+
+{
+  const built = registerBlogWorkflow({
+    task: fakeTaskFactory([]),
+    deps: {
+      load: async () => ({ offers: [offer('o1')], posts: [] }),
+      generateOffer: async () => ({ success: true, posts: [{ slug: 'a' }] }),
+      refreshSite: async () => { throw new Error('restore endpoint 502'); }
+    }
+  });
+  const result = await built.blogQueue.fn(ctxOf(), {});
+  // The pages are already committed to the database; a failed nudge must not turn a good run red.
+  eq('a failed nudge does not fail the run', result.success, true);
+  eq('but it is reported', result.refresh.ok, false);
+  ok('with the reason', /502/.test(result.refresh.error || ''), result.refresh.error);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
+
 
 }

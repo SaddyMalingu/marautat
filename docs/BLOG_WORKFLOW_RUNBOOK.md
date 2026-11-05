@@ -30,6 +30,20 @@ the `SB_*` pair would fail on its first run even though "the key is set".
 | `SITE_URL` | recommended | canonical link and CTA URLs on each page (`https://alphadome.onrender.com` if unset) |
 | `BLOG_RUN_BUDGET_MS` | recommended | `600000`. The 90 s default exists because generation normally runs inside a tenant's HTTP request; a task run may last two hours, so the budget can be spent instead of truncating angles |
 | `BLOG_ANGLE_DELAY_MS` | optional | `1200` keeps nine sequential calls inside free-tier per-minute limits |
+| `ADMIN_PASS` | recommended | lets the run tell the web service to re-read `blog_posts` when it finishes. Without it the pages are still durable, but they 404 until the next deploy |
+
+## Why the run nudges the site
+
+The workflow writes pages to **`blog_posts`**; the web service serves `/blog/:slug` from
+**`public/blog` on its own disk**, and only rebuilds that directory at boot
+(`restoreBlogs()`). Those are two different machines with two different filesystems, and a
+workflow's disk is discarded when the run ends.
+
+So `blogQueue` finishes by calling `POST /admin/restore-blogs` with an `x-admin-key` header.
+Without that, every freshly generated page would exist in the database and return 404 —
+the generator working perfectly while looking broken. `server.js` also serves any missing
+slug straight from `blog_posts` and writes it to disk as it goes, so a shared link works even
+in the seconds before the nudge lands.
 
 Do **not** copy to the workflow: `ADMIN_PASS`, `TENANT_*`, `MPESA_*`, `WHATSAPP_*`,
 `SENDGRID_*`, `SMTP_*`, `SERPAPI_KEY`, `GOOGLE_CSE_*`, `POSTGRES_URL` (this path uses the

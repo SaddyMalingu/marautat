@@ -98,7 +98,14 @@ export async function runBlogQueue(ctx, input = {}, deps = {}) {
 /**
  * Register both tasks with the workflow service.
  *
- * @param {{task: Function, deps: {load: Function, generateOffer: Function}}} config
+ * `refreshSite` is optional and matters more than it looks: a page generated here lands in
+ * `blog_posts`, but the web service serves `/blog/:slug` from `public/blog` on **its own**
+ * disk and only rebuilds that directory at boot. Without a nudge, the page exists and 404s
+ * until the next deploy. So the run ends by asking the site to re-read the database
+ * (`POST /admin/restore-blogs`), which rebuilds every file, the index, and the sitemap.
+ *
+ * @param {{task: Function, deps: {load: Function, generateOffer: Function,
+ *          refreshSite?: Function}}} config
  * @returns {{blogOffer: any, blogQueue: any}}
  */
 export function registerBlogWorkflow({ task, deps }) {
@@ -110,7 +117,17 @@ export function registerBlogWorkflow({ task, deps }) {
   });
 
   const blogQueue = task({ name: BLOG_TASK_NAMES.queue }, async function blogQueue(ctx, input) {
-    return runBlogQueue(ctx, input, { load: deps.load, blogOffer });
+    const result = await runBlogQueue(ctx, input, { load: deps.load, blogOffer });
+    if (typeof deps.refreshSite === 'function' && result.pages > 0) {
+      // Never let the nudge fail the run: the pages are already committed to the database,
+      // and a restart would pick them up anyway.
+      try {
+        result.refresh = await deps.refreshSite();
+      } catch (error) {
+        result.refresh = { ok: false, error: error.message };
+      }
+    }
+    return result;
   });
 
   return { blogOffer, blogQueue };

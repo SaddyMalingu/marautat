@@ -474,7 +474,12 @@ app.get('/admin/backup-blogs', async (req, res) => {
 //     `key !== undefined && key !== undefined` is false, so a host with neither `ADMIN_KEY`
 //     nor `ADMIN_PASS` configured accepted *anyone* with a bare GET. Unset values are now
 //     filtered out before comparison, and a missing key is always rejected.
-app.get('/admin/restore-blogs', async (req, res) => {
+//
+// Registered for POST as well as GET: the workflow service calls it after a generation run to
+// make the site re-read `blog_posts`. A state-changing nudge should not be a GET (proxies and
+// prefetchers are allowed to replay those), and the header keeps the credential out of the URL
+// either way.
+const restoreBlogsFromDb = async (req, res) => {
   const supplied = req.get('x-admin-key') || req.query.key;
   const accepted = [process.env.ADMIN_KEY, process.env.ADMIN_PASS].filter(Boolean);
   if (!supplied || !accepted.length || !accepted.includes(String(supplied))) {
@@ -487,7 +492,9 @@ app.get('/admin/restore-blogs', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
-});
+};
+app.get('/admin/restore-blogs', restoreBlogsFromDb);
+app.post('/admin/restore-blogs', restoreBlogsFromDb);
 
 // Blog routes - serve from public/blog or generate dynamically
 app.get(['/blog', '/blog/'], async (req, res) => {
@@ -561,6 +568,39 @@ app.get('/blog/:slug', async (req, res) => {
   }
   
   if (fs.existsSync(blogFile)) return res.sendFile(blogFile);
+
+  // A published page can exist in `blog_posts` and not on this instance's disk. That is the
+  // normal case now that a Render Workflow writes the rows: a task run's filesystem is
+  // discarded, and this process only rebuilds `public/blog` at boot (`restoreBlogs()`). Without
+  // the read below, every freshly generated page 404s until the next deploy — the generator
+  // would look broken while working perfectly.
+  //
+  // The row is also written through to disk so the next reader (the /blog index, the sitemap,
+  // which both walk the directory) sees a file. Drafts are never served: a demoted page is not
+  // public, and `blog_posts.status` is how the rest of the system decides that.
+  try {
+    const { data: post } = await supabase
+      .from('blog_posts')
+      .select('slug, title, html_content, status')
+      .eq('slug', cleanSlug)
+      .maybeSingle();
+    const isDraft = String(post?.status || '').toLowerCase() === 'draft';
+    if (post && post.html_content && !isDraft) {
+      try {
+        const blogDir = path.join(publicDir, 'blog');
+        if (!fs.existsSync(blogDir)) fs.mkdirSync(blogDir, { recursive: true });
+        fs.writeFileSync(blogFile, post.html_content, 'utf8');
+      } catch (e) {
+        // A read-only or full disk must not cost the reader the page.
+        console.warn('[Blog] Could not cache ' + cleanSlug + ' to disk: ' + e.message);
+      }
+      res.set('Content-Type', 'text/html; charset=utf-8');
+      return res.send(post.html_content);
+    }
+  } catch (e) {
+    console.warn('[Blog] DB fallback failed for ' + cleanSlug + ': ' + e.message);
+  }
+
   res.status(404).send('Blog post not found. Visit <a href="/blog">Blog Index</a>');
 });
 

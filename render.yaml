@@ -31,6 +31,12 @@ services:
         sync: false
       - key: SITE_URL
         value: https://alphadome.onrender.com
+      # The workflow ends by asking the site to re-read `blog_posts`, because the site serves
+      # /blog/:slug from its own disk and only rebuilds it at boot. Sent as an x-admin-key
+      # header, never a query string. Optional: without it the pages are still durable and the
+      # next deploy shows them.
+      - key: ADMIN_PASS
+        sync: false
       # The generation budget exists because generation normally runs inside a tenant's HTTP
       # request. A task run may last two hours, so it can be spent here instead of truncated.
       - key: BLOG_RUN_BUDGET_MS
