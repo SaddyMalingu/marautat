@@ -100,6 +100,10 @@ export function sanitizeAgentCaptures(raw) {
     title: clampText(item?.title, 300),
     jobId: clampText(item?.jobId, 64),
     externalId: clampText(item?.externalId, 120),
+    // The role page's own <title>, as the tenant's browser saw it. Some marketplaces render roles
+    // in JavaScript, so the server's fetch gets the shell — only this evidence can prove a
+    // captured link points at the role it claims (120 links were refused without it, 2026-11-04).
+    pageTitle: clampText(item?.pageTitle, 300),
     url: cleanUrl(item?.url),
     referralUrl: cleanUrl(item?.referralUrl),
     content: clampText(item?.content, MAX_TEXT),

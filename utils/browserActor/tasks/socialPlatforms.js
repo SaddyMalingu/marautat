@@ -31,11 +31,12 @@ const CLEAN = `const clean = (v) => String(v == null ? '' : v).replace(/\\s+/g, 
  * back with the posts. That single field is the difference between "LinkedIn changed its markup"
  * and "nobody is talking about this", which look identical from the outside.
  */
-export function postsExprFor({ containers, text, author, link, profile, stripQuery = true }) {
+export function postsExprFor({ containers, text, author, link, profile, stripQuery = true, textAttrs = [] }) {
   return `(() => {
   ${CLEAN}
   const containers = ${JSON.stringify(containers)};
   const textSel = ${JSON.stringify(text)};
+  const textAttrs = ${JSON.stringify(textAttrs)};
   const authorSel = ${JSON.stringify(author)};
   const linkSel = ${JSON.stringify(link)};
   const profileSel = ${JSON.stringify(profile || [])};
@@ -63,7 +64,15 @@ export function postsExprFor({ containers, text, author, link, profile, stripQue
   const seen = new Set();
   for (const node of nodes) {
     const textEl = first(node, textSel) || node;
-    const bodyText = clean(textEl.innerText || textEl.textContent || '').slice(0, 3000);
+    // Some listings put the words in an attribute, not in the text node (YouTube's title link is
+    // an empty anchor with a \`title\`), so those are read first when the platform names them.
+    let bodyText = '';
+    for (const attr of textAttrs) {
+      const value = textEl && typeof textEl.getAttribute === 'function' ? textEl.getAttribute(attr) : null;
+      if (value) { bodyText = clean(value); break; }
+    }
+    if (!bodyText) bodyText = clean(textEl.innerText || textEl.textContent || '');
+    bodyText = bodyText.slice(0, 3000);
     if (bodyText.length < 20) continue;
     const linkEl = first(node, linkSel);
     let href = linkEl ? String(linkEl.href || '') : '';
@@ -199,6 +208,8 @@ export const SOCIAL_PLATFORMS = Object.freeze({
     actionHint: 'Comment on the post, or message the author',
     draftLimit: 8000,
     pace: { minMs: 4000, maxMs: 9000 },
+    // Facebook's search results live in an inner feed: the window does not scroll them.
+    scrollTarget: 'div[role="feed"], div[role="main"]',
     maxPostsPerQuery: 12,
     searchUrl: (phrase) => `https://www.facebook.com/search/posts/?q=${encodeURIComponent(phrase)}`,
     sessionExpr: sessionExprFor({
@@ -230,6 +241,8 @@ export const SOCIAL_PLATFORMS = Object.freeze({
     actionHint: 'Reply in the thread',
     draftLimit: 10000,
     pace: { minMs: 2000, maxMs: 5000 },
+    // Reddit scrolls its own results pane, and renders results into a web component tree.
+    scrollTarget: '[data-testid="search-results"], shreddit-feed, #siteTable, div[role="main"]',
     maxPostsPerQuery: 20,
     searchUrl: (phrase) => `https://www.reddit.com/search/?q=${encodeURIComponent(phrase)}&t=week&sort=new`,
     sessionExpr: sessionExprFor({
@@ -276,11 +289,40 @@ export const SOCIAL_PLATFORMS = Object.freeze({
       text: ['#video-title', 'h3 a#video-title', 'yt-formatted-string#video-title'],
       author: ['#channel-name a', 'ytd-channel-name a', 'a.yt-simple-endpoint'],
       link: ['a#video-title', 'a#thumbnail'],
-      profile: ['#channel-name a', 'ytd-channel-name a']
+      profile: ['#channel-name a', 'ytd-channel-name a'],
+      // YouTube's title link is often an empty anchor whose words are in `title`.
+      textAttrs: ['title', 'aria-label']
     }),
     note: 'Reads video titles, not comments — so the signal is "someone published about this", which is weaker than a reply. Comments would mean opening every result.'
   })
 });
+
+/**
+ * Scroll the thing that actually scrolls.
+ *
+ * Facebook and Reddit put their results in an inner scroll container: `window.scrollBy` moves
+ * nothing, so the page looked empty for 70 seconds while the posts sat one wheel-turn below the
+ * filter bar (2026-11-04). Where the container is known, scroll it, capped at the container's own
+ * height; otherwise fall back to the window.
+ */
+export function scrollExprFor(selector) {
+  const target = String(selector || '').trim();
+  return `(() => {
+  const step = Math.max(320, Math.round(window.innerHeight * 0.9));
+  if (${JSON.stringify(target)}.length) {
+    for (const sel of ${JSON.stringify(target)}.split(',')) {
+      const el = document.querySelector(sel.trim());
+      if (el) {
+        const before = el.scrollTop;
+        el.scrollBy(0, step);
+        if (el.scrollTop !== before) return 'container';
+      }
+    }
+  }
+  window.scrollBy(0, step);
+  return 'window';
+})()`;
+}
 
 /**
  * How long to keep waiting for results, per network.

@@ -425,7 +425,11 @@ export function planReferralBackfill({ offers = [], captures = [], host = TURING
       id: offer.id || null,
       external_id: offer.external_id || null,
       title: offer.title || label,
-      referral_url: link
+      referral_url: link,
+      // The title the tenant's own browser saw on the role page, when it reported one. It is the
+      // evidence that rescues a link whose page the server cannot render (Turing is a SPA): the
+      // machine that minted the link is the machine that can read it.
+      pageTitle: String(capture?.pageTitle || '').trim() || null
     });
   }
 

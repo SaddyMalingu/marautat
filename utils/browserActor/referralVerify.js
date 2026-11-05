@@ -112,6 +112,14 @@ export function judgeReferralLink({ expectedTitle = '', resolvedTitle = null, st
     return { verdict: 'match', reason: 'title_identical', expectedTitle, resolvedTitle };
   }
 
+  // A page we cannot read is not a wrong link. This is the difference that lost 120 correct
+  // Turing links on 2026-11-04: an SPA shell answers every URL with `Turing Jobs`, and every
+  // role was therefore judged `mismatch` and refused. The **raw** title goes in, because
+  // normalisation turns "Just a moment..." into "just-a-moment" and loses the phrase.
+  if (looksLikeShellTitle(resolvedTitle)) {
+    return { verdict: 'unresolvable', reason: 'shell_page', expectedTitle, resolvedTitle };
+  }
+
   if (resolved.startsWith(`${expected}-`)) {
     const tail = resolved.slice(expected.length + 1).split('-').filter(Boolean);
     if (tail.length && tail.every((word) => KNOWN_TAIL_WORDS.has(word))) {
@@ -120,6 +128,53 @@ export function judgeReferralLink({ expectedTitle = '', resolvedTitle = null, st
   }
 
   return { verdict: 'mismatch', reason: 'title_differs', expectedTitle, resolvedTitle };
+}
+
+/**
+ * Titles that mean "I got the application shell, not the role".
+ *
+ * Turing (and most modern job boards) render the role in JavaScript: a plain fetch gets the same
+ * `<title>` for every URL — the brand, or a sign-in page. Judging that as `mismatch` refused 120
+ * correct links in one run on 2026-11-04. A page we cannot *read* is `unresolvable`, which is a
+ * different statement from "this link points at another role", and it lets the caller accept
+ * evidence from the browser that actually loaded the page.
+ */
+const AUTH_TITLE_RE = /\b(sign[\s-]?in|log[\s-]?in|login|signin|just a moment|attention required|access denied|captcha|verify you are human|are you a robot|blocked|forbidden)\b/i;
+const BRAND_ONLY_WORDS = Object.freeze(['turing', 'micro1', 'jobs', 'careers', 'job', 'home', 'search']);
+
+/**
+ * Is this the application shell rather than the role?
+ *
+ * Two shapes only, because a loose test is worse than none: it silently disables verification.
+ *
+ *   - an **auth or interstitial** phrase (`Sign in`, `Just a moment`, `Access denied`), matched
+ *     against the raw title because normalisation destroys the phrase (`sign-in-turing` is three
+ *     words, none of which is `sign-in`);
+ *   - a **brand-only** title (`Turing Jobs`, `Careers`), where every word is the site's own name.
+ *
+ * `Business Analyst - US | Turing` is a real role with a brand suffix and must stay comparable —
+ * `judgeReferralLink` already accepts that as `title_plus_marketing_tail`.
+ */
+export function looksLikeShellTitle(resolvedTitle) {
+  const raw = String(resolvedTitle || '').trim();
+  if (!raw) return true;
+  if (AUTH_TITLE_RE.test(raw)) return true;
+  const words = normalizeTitleForCompare(raw).split('-').filter(Boolean);
+  return words.length <= 3 && words.every((word) => BRAND_ONLY_WORDS.includes(word));
+}
+
+/**
+ * Judge a title the tenant's own browser reported.
+ *
+ * Used when the server cannot read a JS-rendered role page: the machine that minted the link is
+ * the machine that can see it, and its evidence is checked with the same rules as a fetch.
+ */
+export function judgeWorkerReportedTitle({ expectedTitle = '', pageTitle = null } = {}) {
+  const resolvedTitle = String(pageTitle || '').trim() || null;
+  if (!resolvedTitle) {
+    return { verdict: 'unresolvable', reason: 'worker_sent_no_title', expectedTitle, resolvedTitle: null, source: 'worker' };
+  }
+  return { ...judgeReferralLink({ expectedTitle, resolvedTitle }), source: 'worker' };
 }
 
 /**

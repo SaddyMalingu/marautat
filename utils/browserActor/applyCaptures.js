@@ -18,7 +18,7 @@
  *   - an existing offer is never touched (`planOfferImport` skips by external_id, slug and
  *     title), which is what protects a link the tenant pasted by hand
  */
-import { verifyReferralLink } from './referralVerify.js';
+import { judgeWorkerReportedTitle, verifyReferralLink } from './referralVerify.js';
 import { planReferralBackfill } from './tasks/turingReferrals.js';
 import { planDescriptionUpdates } from './enrichment.js';
 import { planOfferImport } from './offersImport.js';
@@ -169,14 +169,36 @@ export async function applyCaptureUpdates({ supabase, offers = [], captures = []
   const accepted = [];
   for (const update of linkPlan.updates) {
     const check = await verify({ url: update.referral_url, expectedTitle: update.title });
+    /**
+     * When the server cannot read the page, ask the browser that minted the link.
+     *
+     * Turing renders roles in JavaScript: a fetch from Render gets the shell and a generic title,
+     * which on 2026-11-04 refused 120 correct links as `unverified_mismatch`. The worker opened
+     * each role in the tenant's own signed-in session and reported its `<title>`; that evidence is
+     * judged with the same rules, so a link is still only attached when the title matches the role.
+     */
+    let verdict = check.verdict;
+    let reason = check.reason;
+    let resolvedTitle = check.resolvedTitle || null;
+    let source = 'server';
+    if (verdict === 'unresolvable' && update.pageTitle) {
+      const byWorker = judgeWorkerReportedTitle({ expectedTitle: update.title, pageTitle: update.pageTitle });
+      if (byWorker.verdict === 'match') {
+        verdict = 'match';
+        reason = byWorker.reason;
+        resolvedTitle = byWorker.resolvedTitle;
+        source = 'worker';
+      }
+    }
     verification.push({
       title: update.title,
       referral_url: update.referral_url,
-      verdict: check.verdict,
-      reason: check.reason,
-      resolvedTitle: check.resolvedTitle || null
+      verdict,
+      reason,
+      resolvedTitle,
+      source
     });
-    if (check.verdict === 'match') accepted.push(update);
+    if (verdict === 'match') accepted.push(update);
     else {
       // Carry the evidence, not just the verdict: "unverified_mismatch" twelve times tells the
       // tenant nothing, while the title we actually got back names the cause (a login page, a
@@ -184,9 +206,13 @@ export async function applyCaptureUpdates({ supabase, offers = [], captures = []
       // because only the reason string survived.
       linkPlan.skipped.push({
         title: update.title,
-        reason: `unverified_${check.verdict}`,
-        resolvedTitle: check.resolvedTitle || null,
-        detail: check.reason || null
+        reason: `unverified_${verdict}`,
+        resolvedTitle,
+        detail: reason || null,
+        // Say what would fix it, so the panel and the worker window can repeat it.
+        hint: verdict === 'unresolvable'
+          ? 'the page could not be read from here — capture the role again so its browser title travels with the link'
+          : null
       });
     }
   }

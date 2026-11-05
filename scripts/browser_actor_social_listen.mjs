@@ -30,6 +30,7 @@ import { deriveRunStatus } from '../utils/browserActor/runs.js';
 import {
   classifySocialSession,
   getSocialPlatform,
+  scrollExprFor,
   socialPaceMs,
   waitMsFor
 } from '../utils/browserActor/tasks/socialPlatforms.js';
@@ -159,16 +160,17 @@ async function evaluateJson({ host, port, expression }) {
 async function readPosts({ host, port }) {
   const startedAt = Date.now();
   const budget = waitMsFor(platform.id);
+  // The scroll that actually moves the list: Facebook and Reddit scroll an inner pane, where
+  // `window.scrollBy` does nothing at all.
+  const scrollExpr = scrollExprFor(platform.scrollTarget);
   let last = null;
   const passes = async (until) => {
-    let step = 1;
     while (Date.now() < until) {
       last = await evaluateJson({ host, port, expression: platform.postsExpr });
       if (last && Number(last.count) > 0) return true;
-      // Progressive scroll: half a screen, then a screen, then two — enough to trigger the
+      // One screen per pass, through the container when there is one: enough to trigger the
       // lazy-render of the list without walking to the footer.
-      await evaluateJson({ host, port, expression: `window.scrollBy(0, window.innerHeight * ${step}); "ok"` });
-      step = Math.min(step + 0.5, 2.5);
+      await evaluateJson({ host, port, expression: scrollExpr });
       await sleep(1_200);
     }
     return false;

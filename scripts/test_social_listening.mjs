@@ -46,6 +46,7 @@ import {
   getSocialPlatform,
   listSocialPlatforms,
   postsExprFor,
+  scrollExprFor,
   socialPaceMs
 } from '../utils/browserActor/tasks/socialPlatforms.js';
 import { LISTEN_RUN_KIND, RUN_KINDS, WORKER_PLATFORMS, canRunOnWorker, runPlatform } from '../utils/browserActor/runs.js';
@@ -402,6 +403,35 @@ ok('nothing in the registry clicks',
   !/\.click\(|dispatchEvent/.test(platformsSrc));
 ok('the listener is told which network to read, never defaulting to one',
   /--platform/.test(listenerSrc) && /flag\('platform'/.test(listenerSrc));
+
+// Scrolling: Facebook and Reddit scroll an inner pane, so a window scroll reads an empty page
+// for seventy seconds (2026-11-04). The registry names the container; the expression falls back.
+{
+  const fakeDoc = (container) => ({
+    querySelector: (selector) => (container && selector === container.selector ? container : null)
+  });
+  const scrolled = [];
+  const container = {
+    selector: 'div[role="feed"]',
+    scrollTop: 0,
+    scrollBy(_x, y) { this.scrollTop += y; scrolled.push('container'); }
+  };
+  const fakeWindow = { innerHeight: 800, scrollBy: () => scrolled.push('window') };
+  const run = (selector, doc) => new Function('document', 'window', `return ${scrollExprFor(selector)};`)(doc, fakeWindow);
+
+  eq('a platform with a scroll container scrolls that container', run('div[role="feed"]', fakeDoc(container)), 'container');
+  ok('and the container actually moved', container.scrollTop > 0);
+  eq('a platform without one falls back to the window', run('', fakeDoc(null)), 'window');
+  eq('and a container that cannot scroll also falls back',
+    run('div[role="feed"]', fakeDoc({ ...container, scrollTop: 0, scrollBy() {} })), 'window');
+
+  ok('Facebook and Reddit name their scroll container',
+    Boolean(getSocialPlatform('facebook').scrollTarget) && Boolean(getSocialPlatform('reddit').scrollTarget));
+  ok('LinkedIn, X and YouTube scroll the window',
+    ['linkedin', 'x', 'youtube'].every((id) => !getSocialPlatform(id).scrollTarget));
+  ok('YouTube reads its titles from the attribute the page actually fills',
+    /textAttrs/.test(getSocialPlatform('youtube').postsExpr));
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

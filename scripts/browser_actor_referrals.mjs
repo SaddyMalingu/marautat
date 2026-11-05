@@ -232,6 +232,8 @@ async function captureOne({ host, port, index }) {
   let affordance = opened?.text || null;
   let note = null;
   let content = null;
+  /** What the browser saw as the page title: evidence the server cannot fetch for itself. */
+  let observedTitle = null;
 
   // Opening a role takes you to a JOB DETAIL page (`?jobId=112467`), not a modal —
   // verified live. The referral control lives there, so the search continues on the
@@ -252,6 +254,12 @@ async function captureOne({ host, port, index }) {
         const detailContent = await evaluateJson({ host, port, expression: contentExpr });
         if (detailContent?.ok && detailContent.content) content = detailContent.content;
       }
+      // The page's own <title>, read here because this is the only place the role page is open in
+      // a signed-in browser. Turing renders roles in JavaScript, so a server-side fetch of the
+      // same URL gets the shell — which refused 120 correct links on 2026-11-04. This travels with
+      // the capture and lets the portal verify what we actually saw.
+      const pageTitle = await evaluateJson({ host, port, expression: 'document.title' }).catch(() => null);
+      if (pageTitle) observedTitle = String(pageTitle).slice(0, 300);
     } catch { /* keep going: the link matters more than the prose */ }
     const detail = await evaluateJson({ host, port, expression: TURING_DETAIL_REFERRAL_EXPR });
     if (detail?.url) pageUrl = detail.url;
@@ -288,6 +296,8 @@ async function captureOne({ host, port, index }) {
   });
   if (!capture.referralUrl && note) capture.reason = note;
   if (content) capture.content = content;
+  // What the browser saw on the role page, not what a fetch from Render would see.
+  if (observedTitle) capture.pageTitle = observedTitle;
 
   await evaluateJson({ host, port, expression: TURING_CLOSE_MODAL_EXPR });
 
