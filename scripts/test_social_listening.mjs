@@ -602,6 +602,50 @@ ok('the listener is told which network to read, never defaulting to one',
     /textAttrs/.test(getSocialPlatform('youtube').postsExpr));
 }
 
+// Corrections from real saved pages (2026-11-05). Each of these was a selector the live run would
+// have missed, found by reading the markup instead of the previous version of the markup.
+{
+  ok('LinkedIn leads with the container that still exists',
+    /feed-shared-update/.test(getSocialPlatform('linkedin').postsExpr.slice(0, 2000))
+    && getSocialPlatform('linkedin').postsExpr.indexOf('feed-shared-update')
+      < getSocialPlatform('linkedin').postsExpr.indexOf('activity-urn'));
+  ok('Facebook scrolls the pane the saved page actually has',
+    getSocialPlatform('facebook').scrollTarget.startsWith('div[role="main"]'));
+  ok('Reddit leads with shredded-feed',
+    getSocialPlatform('reddit').scrollTarget.startsWith('shreddit-feed'));
+
+  // Facebook's numbers are plain text now, so a platform may name a pattern to match.
+  const facebookCard = fakeCard({
+    'div[dir="auto"] span': fakeEl({ innerText: 'We need a supplier for office chairs in Nairobi, budget KES 300k' }),
+    'a[href*="story_fbid"]': fakeEl({ href: 'https://www.facebook.com/story.php?story_fbid=123&id=9' }),
+    'h3 a': fakeEl({ innerText: 'Wanjiru Motors' })
+  });
+  facebookCard.querySelectorAll = (selector) => (selector.startsWith('span,')
+    ? [
+      fakeEl({ innerText: 'Like' }),
+      fakeEl({ innerText: 'Reply' }),
+      fakeEl({ innerText: '12' })
+    ]
+    : []);
+  const facebookRead = runPostsExprWith('facebook', {
+    cardsBySelector: { 'div[role="article"]': [facebookCard] }
+  });
+  eq('a Facebook comment count is read from plain text', facebookRead.posts[0].engagement.comments, '12');
+}
+
+function runPostsExprWith(platformId, { cardsBySelector, title = 'Search', body = 'page text' }) {
+  const platform = getSocialPlatform(platformId);
+  const document = {
+    title,
+    body: { innerText: body },
+    querySelectorAll: (selector) => (Array.isArray(cardsBySelector[selector]) ? cardsBySelector[selector] : [])
+  };
+  const json = new Function('document', 'location', `return ${platform.postsExpr};`)(document, {
+    href: 'https://example.test/search'
+  });
+  return JSON.parse(json);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
 

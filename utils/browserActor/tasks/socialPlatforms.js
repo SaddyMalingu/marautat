@@ -84,6 +84,21 @@ export function postsExprFor({ containers, text, author, link, profile, stripQue
       const value = pick(el);
       if (value) return value.slice(0, 40);
     }
+    // Facebook no longer labels its buttons ("aria-label=\\"Comment\\"" was present zero times in a
+    // saved feed, 2026-11-05) but still prints the number as text — \\"12\\" beside \\"Comment\\". So a
+    // platform may name a pattern and the card's small elements are scanned for it. Bounded to 200
+    // nodes: this runs once per card on a page that can hold a hundred.
+    if (spec && spec.textPattern) {
+      let pattern = null;
+      try { pattern = new RegExp(spec.textPattern, 'i'); } catch { pattern = null; }
+      if (pattern) {
+        const candidates = Array.from(node.querySelectorAll('span, div[role="button"], a')).slice(0, 200);
+        for (const el of candidates) {
+          const text = clean(el.innerText || el.textContent || '');
+          if (text && text.length <= 24 && pattern.test(text)) return text.slice(0, 40);
+        }
+      }
+    }
     return '';
   };
   const posts = [];
@@ -190,12 +205,15 @@ export const SOCIAL_PLATFORMS = Object.freeze({
       wallPattern: 'authwall|/login|/signup|sign in to continue|join linkedin',
       consentSelectors: ['[data-test-id="cookie-banner"]', '.artdeco-cookie-banner', 'button[action-type="ACCEPT"]'],
       meSelectors: ['img.global-nav__me-photo', '.global-nav__me', '[data-test-id="nav-me"]', '.feed-identity-module'],
-      resultsSelectors: ['[data-urn*="urn:li:activity"]', '.feed-shared-update-v2', 'div.scaffold-finite-scroll__content']
+      resultsSelectors: ['.feed-shared-update-v2', '[data-urn*="urn:li:activity"]', 'div.scaffold-finite-scroll__content']
     }),
     postsExpr: postsExprFor({
       containers: [
-        { name: 'activity-urn', selector: '[data-urn*="urn:li:activity"]' },
+        // Verified on a saved feed (2026-11-05): `urn:li:activity` / `data-urn` appear **zero** times
+        // in current markup, while `.feed-shared-update-v2` appears on every card. Ordering by
+        // evidence means the strategy that reports back is the one that matched.
         { name: 'feed-shared-update', selector: '.feed-shared-update-v2' },
+        { name: 'activity-urn', selector: '[data-urn*="urn:li:activity"]' },
         { name: 'search-result-container', selector: 'div.search-results-container li' }
       ],
       text: ['[class*="update-components-text"]', '.feed-shared-text', '[class*="commentary"]', '[dir="ltr"]'],
@@ -256,8 +274,10 @@ export const SOCIAL_PLATFORMS = Object.freeze({
     actionHint: 'Comment on the post, or message the author',
     draftLimit: 8000,
     pace: { minMs: 4000, maxMs: 9000 },
-    // Facebook's search results live in an inner feed: the window does not scroll them.
-    scrollTarget: 'div[role="feed"], div[role="main"]',
+    // Facebook's search results live in an inner feed: the window does not scroll them. Verified on a
+    // saved page (2026-11-05): `div[role="feed"]` was present **zero** times, `div[role="main"]` once.
+    // The order is therefore by evidence, not by what the old markup used to be.
+    scrollTarget: 'div[role="main"], div[role="feed"]',
     maxPostsPerQuery: 12,
     searchUrl: (phrase) => `https://www.facebook.com/search/posts/?q=${encodeURIComponent(phrase)}`,
     sessionExpr: sessionExprFor({
@@ -279,9 +299,17 @@ export const SOCIAL_PLATFORMS = Object.freeze({
       // Facebook permalinks carry the post id in the query string, so it has to survive.
       stripQuery: false,
       stats: {
-        comments: { selectors: ['[aria-label*="comment" i]', 'div[role="button"][aria-label*="comment" i]'] },
-        likes: { selectors: ['[aria-label*="reaction" i]', 'span[role="toolbar"] [aria-label*="reaction" i]'] },
-        shares: { selectors: ['[aria-label*="share" i]'] }
+        // `aria-label="Comment"` appears zero times in a saved feed, so the selectors only catch the
+        // older markup; the text pattern is what actually reads "12" next to the word Comment.
+        comments: {
+          selectors: ['[aria-label*="comment" i]', 'div[role="button"][aria-label*="comment" i]'],
+          textPattern: '^[\\d.,]+\\s*[km]?$|^\\d[\\d.,]*\\s*[km]?\\s*comments?$|^comments?\\s*\\d'
+        },
+        likes: {
+          selectors: ['[aria-label*="reaction" i]', 'span[role="toolbar"] [aria-label*="reaction" i]'],
+          textPattern: '^\\d[\\d.,]*\\s*[km]?\\s*(likes?|reactions?|others?)$'
+        },
+        shares: { selectors: ['[aria-label*="share" i]'], textPattern: '^\\d[\\d.,]*\\s*[km]?\\s*shares?$' }
       },
       time: { attrs: ['datetime'], selectors: ['abbr', 'a[href*="/posts/"] span', 'span[id^="jsc_c"]'] }
     }),
@@ -295,8 +323,10 @@ export const SOCIAL_PLATFORMS = Object.freeze({
     actionHint: 'Reply in the thread',
     draftLimit: 10000,
     pace: { minMs: 2000, maxMs: 5000 },
-    // Reddit scrolls its own results pane, and renders results into a web component tree.
-    scrollTarget: '[data-testid="search-results"], shreddit-feed, #siteTable, div[role="main"]',
+    // Reddit scrolls its own results pane, and renders results into a web component tree. A saved
+    // search page (2026-11-05) had `shreddit-feed` six times and `[data-testid="search-results"]` not
+    // at all, so the verified container leads.
+    scrollTarget: 'shreddit-feed, shreddit-app, [data-testid="search-results"], #siteTable',
     maxPostsPerQuery: 20,
     searchUrl: (phrase) => `https://www.reddit.com/search/?q=${encodeURIComponent(phrase)}&t=week&sort=new`,
     sessionExpr: sessionExprFor({

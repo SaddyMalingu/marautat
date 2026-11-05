@@ -46,6 +46,7 @@
     "test:listening": "node scripts/test_social_listening.mjs",
     "test:listener": "node scripts/test_social_listener.mjs",
     "test:marketplace": "node scripts/test_marketplace_runners.mjs",
+    "test:workspace": "node scripts/test_workspace_platforms.mjs",
     "secrets:check": "node scripts/tenant_secret_check.mjs",
     "test:social-publish": "node scripts/test_social_publish.mjs",
     "browser:doctor": "node scripts/browser_actor_probe.mjs doctor",
