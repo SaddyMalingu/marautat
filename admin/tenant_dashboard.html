@@ -1732,11 +1732,37 @@ function wfListeningHtml(d) {
     const network = networks.find((row) => row.id === item.platform) || null;
     const channel = item.recommendedChannel === 'whatsapp' ? 'WhatsApp' : item.recommendedChannel === 'email' ? 'email' : 'message';
     const draft = item.draftFirstLine || '';
+    // Why this row is above the one below it. Recency and reach are half the reason, so they are
+    // shown, not hidden in the score: "1 comment · 3 days ago" is a different decision from
+    // "12 comments · 2h ago", and the person replying is the one who gets to make it.
+    const reach = (() => {
+      const engagement = item.engagement || {};
+      const count = (value) => {
+        const text = String(value == null ? '' : value).trim();
+        const match = text.match(/([\d.,]+\s*[km]?)/i);
+        return match ? match[1].replace(/\s+/g, '') : '';
+      };
+      const parts = [];
+      const comments = count(engagement.comments);
+      const likes = count(engagement.likes);
+      if (comments) parts.push(`${comments} comment${comments === '1' ? '' : 's'}`);
+      if (likes) parts.push(`${likes} like${likes === '1' ? '' : 's'}`);
+      const hours = Number(item.postedAgoHours);
+      if (Number.isFinite(hours)) {
+        parts.push(hours < 1 ? 'under an hour old'
+          : hours < 24 ? `${Math.round(hours)}h old`
+            : `${Math.round(hours / 24)}d old`);
+      } else if (item.postedHint) {
+        parts.push(`posted ${String(item.postedHint).slice(0, 20)}`);
+      }
+      return parts.join(' · ');
+    })();
     return `<div style="border:1px solid rgba(148,163,184,.2);border-radius:8px;padding:8px 10px;margin-bottom:6px">
       <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
         <div style="font-size:.82rem;min-width:0">
           <strong>${esc(item.authorName || item.authorHandle || 'someone')}</strong>
           <span class="text-muted"> · ${esc(network ? network.name : (item.platform || ''))} · ${esc(item.intentName || item.intentId)}</span>
+          ${reach ? `<span class="text-muted" style="font-size:.72rem"> · ${esc(reach)}</span>` : ''}
           <div class="text-muted" style="font-size:.76rem;margin-top:2px">${esc(item.postText || '')}</div>
         </div>
         <div style="text-align:right;white-space:nowrap">

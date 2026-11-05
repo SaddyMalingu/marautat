@@ -31,7 +31,7 @@ const CLEAN = `const clean = (v) => String(v == null ? '' : v).replace(/\\s+/g, 
  * back with the posts. That single field is the difference between "LinkedIn changed its markup"
  * and "nobody is talking about this", which look identical from the outside.
  */
-export function postsExprFor({ containers, text, author, link, profile, stripQuery = true, textAttrs = [] }) {
+export function postsExprFor({ containers, text, author, link, profile, stripQuery = true, textAttrs = [], stats = {}, time = {} }) {
   return `(() => {
   ${CLEAN}
   const containers = ${JSON.stringify(containers)};
@@ -40,6 +40,10 @@ export function postsExprFor({ containers, text, author, link, profile, stripQue
   const authorSel = ${JSON.stringify(author)};
   const linkSel = ${JSON.stringify(link)};
   const profileSel = ${JSON.stringify(profile || [])};
+  // Reach and age, read the same declarative way as everything else: a node's own attributes
+  // first (Reddit puts \`comment-count\` on the card), then a named element inside it.
+  const statSpec = ${JSON.stringify(stats)};
+  const timeSpec = ${JSON.stringify(time)};
   // A permalink with tracking params is the same post under a different string, which would
   // defeat the (tenant, post_url) uniqueness and show one post twice. Facebook is the exception:
   // its permalinks carry the id in the query, so there the query stays.
@@ -60,6 +64,28 @@ export function postsExprFor({ containers, text, author, link, profile, stripQue
     try { found = Array.from(document.querySelectorAll(candidate.selector)); } catch { found = []; }
     if (found.length) { strategy = candidate.name; nodes = found; break; }
   }
+  // One spec, one value: own attributes first, then the first element inside that has one.
+  const readSpec = (node, spec) => {
+    const attrs = (spec && spec.attrs) || [];
+    const sels = (spec && spec.selectors) || [];
+    const pick = (el) => {
+      if (!el) return '';
+      for (const a of attrs) {
+        const v = el.getAttribute ? el.getAttribute(a) : null;
+        if (v) return clean(v);
+      }
+      return clean(el.getAttribute ? (el.getAttribute('aria-label') || el.getAttribute('title') || el.innerText || el.textContent || '') : '');
+    };
+    const own = pick(node);
+    if (own) return own.slice(0, 40);
+    for (const sel of sels) {
+      let el = null;
+      try { el = node.querySelector(sel); } catch { el = null; }
+      const value = pick(el);
+      if (value) return value.slice(0, 40);
+    }
+    return '';
+  };
   const posts = [];
   const seen = new Set();
   for (const node of nodes) {
@@ -86,7 +112,15 @@ export function postsExprFor({ containers, text, author, link, profile, stripQue
       postUrl: href,
       text: bodyText,
       authorName: clean(authorEl ? (authorEl.innerText || authorEl.textContent) : '').slice(0, 120),
-      profileUrl: profileEl ? String(profileEl.href || '').split('?')[0] : ''
+      profileUrl: profileEl ? String(profileEl.href || '').split('?')[0] : '',
+      // What the page says about how far this post travelled and how old it is. Empty strings
+      // when the page does not say, so the scorer can tell "quiet" from "unread".
+      engagement: {
+        comments: readSpec(node, statSpec.comments),
+        likes: readSpec(node, statSpec.likes),
+        shares: readSpec(node, statSpec.shares)
+      },
+      postedText: readSpec(node, timeSpec)
     });
   }
   const bodyStart = clean(document.body ? document.body.innerText : '').slice(0, 240);
@@ -167,7 +201,15 @@ export const SOCIAL_PLATFORMS = Object.freeze({
       text: ['[class*="update-components-text"]', '.feed-shared-text', '[class*="commentary"]', '[dir="ltr"]'],
       author: ['[class*="actor__name"]', '[class*="update-components-actor__title"] span', '.feed-shared-actor__name'],
       link: ['a[href*="/feed/update/"]', 'a[href*="/posts/"]', 'a[href*="/pulse/"]'],
-      profile: ['a[href*="/in/"]']
+      profile: ['a[href*="/in/"]'],
+      // LinkedIn puts the numbers in the button's aria-label ("12 comments on ..."), which is the
+      // most stable place on the page for them.
+      stats: {
+        comments: { selectors: ['button[aria-label*="comment" i]', '[class*="social-details-social-counts__comments"]'] },
+        likes: { selectors: ['button[aria-label*="reaction" i]', '[class*="social-details-social-counts__reactions"]'] },
+        shares: { selectors: ['button[aria-label*="repost" i]'] }
+      },
+      time: { attrs: ['datetime'], selectors: ['time', '[class*="actor__sub-description"]', '[class*="sub-description"]'] }
     }),
     note: 'Content search, last week, newest first. Needs the profile signed in.'
   }),
@@ -196,7 +238,13 @@ export const SOCIAL_PLATFORMS = Object.freeze({
       text: ['[data-testid="tweetText"]', 'div[lang]'],
       author: ['[data-testid="User-Name"]', 'div[data-testid="User-Name"] a'],
       link: ['a[href*="/status/"]'],
-      profile: ['div[data-testid="User-Name"] a[href^="/"]']
+      profile: ['div[data-testid="User-Name"] a[href^="/"]'],
+      stats: {
+        comments: { attrs: ['aria-label'], selectors: ['[data-testid="reply"]', '[data-testid="reply"] span'] },
+        likes: { attrs: ['aria-label'], selectors: ['[data-testid="like"]', '[data-testid="unlike"]'] },
+        shares: { attrs: ['aria-label'], selectors: ['[data-testid="retweet"]', '[data-testid="unretweet"]'] }
+      },
+      time: { attrs: ['datetime'], selectors: ['time'] }
     }),
     note: 'Live search, replies filtered out. A first line over 260 characters is truncated by X itself.'
   }),
@@ -229,7 +277,13 @@ export const SOCIAL_PLATFORMS = Object.freeze({
       link: ['a[href*="/posts/"]', 'a[href*="story_fbid"]', 'a[href*="/permalink/"]'],
       profile: ['a[href*="/profile.php"]', 'h3 a', 'h4 a'],
       // Facebook permalinks carry the post id in the query string, so it has to survive.
-      stripQuery: false
+      stripQuery: false,
+      stats: {
+        comments: { selectors: ['[aria-label*="comment" i]', 'div[role="button"][aria-label*="comment" i]'] },
+        likes: { selectors: ['[aria-label*="reaction" i]', 'span[role="toolbar"] [aria-label*="reaction" i]'] },
+        shares: { selectors: ['[aria-label*="share" i]'] }
+      },
+      time: { attrs: ['datetime'], selectors: ['abbr', 'a[href*="/posts/"] span', 'span[id^="jsc_c"]'] }
     }),
     note: 'Public post search. Facebook shows less to a signed-in account than it used to; a wall here means the profile needs one manual visit.'
   }),
@@ -260,7 +314,14 @@ export const SOCIAL_PLATFORMS = Object.freeze({
       text: ['h1', '[slot="title"]', 'a[data-testid="post-title"]', 'a.title'],
       author: ['a[href^="/user/"]', '[slot="authorName"]'],
       link: ['a[data-click-id="body"]', 'a[slot="full-post-link"]', 'a[data-testid="post-title"]', 'a.comments'],
-      profile: ['a[href^="/user/"]']
+      profile: ['a[href^="/user/"]'],
+      // Reddit publishes both numbers as attributes on the card itself, which no selector reaches.
+      stats: {
+        comments: { attrs: ['comment-count'], selectors: ['a[data-testid="comments-count"]', 'faceplate-number[pretty-number]'] },
+        likes: { attrs: ['score'], selectors: ['faceplate-number[pretty-number]', '[id*="vote-arrows"]'] },
+        shares: { attrs: ['share-count'] }
+      },
+      time: { attrs: ['created-timestamp', 'datetime'], selectors: ['time', 'faceplate-timeago', 'span[data-testid="post_timestamp"]'] }
     }),
     note: 'Search returns titles, so the score leans on the title wording: fast to read, weaker evidence than a body.'
   }),
@@ -291,7 +352,9 @@ export const SOCIAL_PLATFORMS = Object.freeze({
       link: ['a#video-title', 'a#thumbnail'],
       profile: ['#channel-name a', 'ytd-channel-name a'],
       // YouTube's title link is often an empty anchor whose words are in `title`.
-      textAttrs: ['title', 'aria-label']
+      textAttrs: ['title', 'aria-label'],
+      // Search results carry no comments, but the metadata line does carry age and views.
+      time: { selectors: ['#metadata-line span:last-child', '#metadata-line', 'span.inline-metadata-item'] }
     }),
     note: 'Reads video titles, not comments — so the signal is "someone published about this", which is weaker than a reply. Comments would mean opening every result.'
   })

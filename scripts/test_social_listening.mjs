@@ -27,7 +27,9 @@ import {
   draftFirstLine,
   extractContact,
   isOutreachReady,
+  normalizeEngagement,
   normalizeKenyaPhone,
+  parsePostedAgoHours,
   planSearchQueries,
   recommendedChannel,
   scorePost
@@ -252,11 +254,27 @@ eq('and is counted so the run message is honest', vendorPlan.excluded, 1);
 // and see what it reports — including *which* selector matched, and what it says when none did.
 
 /** A card is a bag of selector -> element, exactly what `first(node, sels)` asks for. */
-function fakeCard(selectors) {
-  return {
+function fakeCard(selectors, attrs = null) {
+  const card = {
     querySelector(selector) {
       return Object.prototype.hasOwnProperty.call(selectors, selector) ? selectors[selector] : null;
     }
+  };
+  // Reddit publishes its counts as attributes on the card itself, so the card must be able to
+  // answer `getAttribute` for the same test to be honest.
+  if (attrs) {
+    card.getAttribute = (name) => (Object.prototype.hasOwnProperty.call(attrs, name) ? attrs[name] : null);
+  }
+  return card;
+}
+
+/** An element that answers both reads the extractor makes: text and attributes. */
+function fakeEl({ innerText = '', href = '', attrs = null } = {}) {
+  return {
+    innerText,
+    textContent: innerText,
+    href,
+    getAttribute: (name) => (attrs && Object.prototype.hasOwnProperty.call(attrs, name) ? attrs[name] : null)
   };
 }
 
@@ -403,6 +421,157 @@ ok('nothing in the registry clicks',
   !/\.click\(|dispatchEvent/.test(platformsSrc));
 ok('the listener is told which network to read, never defaulting to one',
   /--platform/.test(listenerSrc) && /flag\('platform'/.test(listenerSrc));
+
+// Reach and timing: the two inputs the scorer always wanted and never had (2026-11-05).
+// A page writes age five different ways; all of them are the same fact, and "we could not read it"
+// must not look like "just posted" — that would hand recency points to a page we failed to parse.
+{
+  const now = Date.parse('2026-11-05T12:00:00.000Z');
+  eq('"2h" is two hours', parsePostedAgoHours('2h', now), 2);
+  eq('"3 days ago" is seventy-two', parsePostedAgoHours('3 days ago', now), 72);
+  eq('"35 minutes" is under an hour', parsePostedAgoHours('35 minutes ago', now), 0.6);
+  eq('an ISO timestamp is measured, not guessed',
+    parsePostedAgoHours('2026-11-05T09:00:00.000Z', now), 3);
+  eq('Reddit\'s unix seconds work too',
+    parsePostedAgoHours(String(Math.floor((now - 6 * 3_600_000) / 1000)), now), 6);
+  eq('"just now" is zero', parsePostedAgoHours('Just now', now), 0);
+  eq('an unreadable age is null, not zero', parsePostedAgoHours('Promoted', now), null);
+  eq('and an absent one is null as well', parsePostedAgoHours('', now), null);
+
+  eq('"12 comments" is twelve', normalizeEngagement({ comments: '12 comments' }).comments, 12);
+  eq('"1.2K" is twelve hundred', normalizeEngagement({ likes: '1.2K' }).likes, 1200);
+  eq('a bare number still reads', normalizeEngagement({ likes: '47' }).likes, 47);
+  eq('a label with no number is zero, not NaN', normalizeEngagement({ comments: 'Comment' }).comments, 0);
+}
+
+{
+  const taxonomy = loadTaxonomy();
+  const base = { postText: 'need supplier for office chairs, budget KES 300,000, Nairobi' };
+  const plain = scorePost(base, taxonomy);
+  const asked = scorePost({ ...base, postText: `${base.postText} — anyone know one?` }, taxonomy);
+  const hot = scorePost({
+    ...base,
+    postText: `${base.postText} — anyone know one?`,
+    engagement: { comments: '12 comments', likes: '1.2K' },
+    postedAgoHours: 5
+  }, taxonomy);
+
+  ok('a statement and a question are not the same signal', asked.intentScore > plain.intentScore);
+  eq('the question cue is recorded as evidence', asked.askingCue, true);
+  ok('reach and recency raise the score further', hot.intentScore > asked.intentScore);
+  eq('and the numbers behind it are kept with the signal',
+    hot.engagement, { comments: 12, likes: 1200, shares: 0 });
+  eq('as is the age', hot.postedAgoHours, 5);
+  ok('a stale post does not earn recency points',
+    scorePost({ ...base, postedAgoHours: 24 * 30 }, taxonomy).intentScore
+      < scorePost({ ...base, postedAgoHours: 2 }, taxonomy).intentScore);
+  ok('and no score exceeds the column limit', hot.intentScore <= 100);
+}
+
+// Reach travels from the page to the row, and survives a hostile worker.
+{
+  const posts = sanitizeListeningPosts([{
+    postUrl: 'https://www.linkedin.com/feed/update/urn:li:activity:9/',
+    postText: 'need supplier for office chairs, budget KES 300,000, Nairobi',
+    engagement: { comments: '12 comments', likes: '1.2K', shares: 'x'.repeat(200) },
+    postedText: '3h'
+  }]);
+  eq('sanitising keeps the reach it was given', posts[0].engagement.comments, '12 comments');
+  eq('and trims a field that tried to be a payload', posts[0].engagement.shares.length, 24);
+  eq('the age phrase survives', posts[0].postedText, '3h');
+
+  const reachPlan = buildSignalRows({
+    posts,
+    taxonomy: loadTaxonomy(),
+    tenantId: 'tenant-1',
+    platform: 'linkedin',
+    runId: 'run-1'
+  });
+  eq('one post becomes one row', reachPlan.matched, 1);
+  eq('the row stores reach', reachPlan.rows[0].engagement.comments, 12);
+  eq('and the age, parsed from the phrase', reachPlan.rows[0].posted_ago_hours, 3);
+  eq('keeping the phrase the page actually showed', reachPlan.rows[0].posted_hint, '3h');
+
+  const shownRow = publicSignal({ ...reachPlan.rows[0], id: 's1' });
+  ok('the panel can say why the row is where it is',
+    shownRow.engagement.comments === 12 && shownRow.postedAgoHours === 3);
+}
+
+// The extractor reads reach and age off a card without a network.
+{
+  const linkedinReach = runPostsExpr('linkedin', {
+    cardsBySelector: {
+      '[data-urn*="urn:li:activity"]': [
+        fakeCard({
+          '[class*="update-components-text"]': fakeEl({ innerText: 'need supplier for office chairs, Nairobi' }),
+          'a[href*="/feed/update/"]': fakeEl({ href: 'https://www.linkedin.com/feed/update/urn:li:activity:77/' }),
+          'button[aria-label*="comment" i]': fakeEl({ attrs: { 'aria-label': '12 comments on this post' } }),
+          time: fakeEl({ attrs: { datetime: '2026-11-05T09:00:00.000Z' } })
+        })
+      ]
+    }
+  });
+  eq('LinkedIn reaches its comment count through the aria-label',
+    linkedinReach.posts[0].engagement.comments, '12 comments on this post');
+  eq('and its age through the time element',
+    linkedinReach.posts[0].postedText, '2026-11-05T09:00:00.000Z');
+
+  // Reddit puts the numbers on the card itself, where no selector can reach them.
+  const redditReach = runPostsExpr('reddit', {
+    cardsBySelector: {
+      'div[data-testid="post-container"]': [
+        fakeCard({
+          h1: fakeEl({ innerText: 'Where can I buy a delivery van in Nairobi under 2M?' }),
+          'a[data-click-id="body"]': fakeEl({ href: 'https://www.reddit.com/r/kenya/comments/abc123/where/' }),
+          'a[href^="/user/"]': fakeEl({ innerText: 'u/wanjiru' })
+        }, { 'comment-count': '7', score: '31', 'created-timestamp': '1762340400' })
+      ]
+    }
+  });
+  eq('Reddit reads its own attributes for comments', redditReach.posts[0].engagement.comments, '7');
+  eq('and for votes', redditReach.posts[0].engagement.likes, '31');
+  eq('and for when it was posted', redditReach.posts[0].postedText, '1762340400');
+
+  const youtubeAge = runPostsExpr('youtube', {
+    cardsBySelector: {
+      'ytd-video-renderer': [
+        fakeCard({
+          '#video-title': fakeEl({ attrs: { title: 'How to buy a fleet van in Nairobi' } }),
+          'a#video-title': fakeEl({ href: 'https://www.youtube.com/watch?v=abc' }),
+          '#channel-name a': fakeEl({ innerText: 'Fleet Kenya' }),
+          '#metadata-line span:last-child': fakeEl({ innerText: '2 days ago' })
+        })
+      ]
+    }
+  });
+  eq('YouTube reads its title from the attribute',
+    youtubeAge.posts[0].text, 'How to buy a fleet van in Nairobi');
+  eq('and its age from the metadata line', youtubeAge.posts[0].postedText, '2 days ago');
+
+  // A page that says nothing about reach is not an error: the post is still worth reading.
+  const silent = runPostsExpr('linkedin', {
+    cardsBySelector: {
+      '[data-urn*="urn:li:activity"]': [
+        fakeCard({
+          '[class*="update-components-text"]': fakeEl({ innerText: 'need supplier for office chairs, Nairobi' }),
+          'a[href*="/feed/update/"]': fakeEl({ href: 'https://www.linkedin.com/feed/update/urn:li:activity:78/' })
+        })
+      ]
+    }
+  });
+  eq('a card with no counts reports none, not zero', silent.posts[0].engagement.comments, '');
+  eq('and no age', silent.posts[0].postedText, '');
+}
+
+// The migration that adds those columns must be safe to re-run and additive only.
+{
+  const reachMigration = fs.readFileSync(
+    path.join(root, 'migrations', '2026-11-05_social_signal_reach.sql'), 'utf8');
+  ok('the reach migration adds its columns idempotently',
+    /ADD COLUMN IF NOT EXISTS engagement/.test(reachMigration)
+    && /ADD COLUMN IF NOT EXISTS posted_ago_hours/.test(reachMigration));
+  ok('it never drops or rewrites a signal', !/DROP COLUMN|DELETE FROM|TRUNCATE/i.test(reachMigration));
+}
 
 // Scrolling: Facebook and Reddit scroll an inner pane, so a window scroll reads an empty page
 // for seventy seconds (2026-11-04). The registry names the container; the expression falls back.

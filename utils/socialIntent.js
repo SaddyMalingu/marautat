@@ -44,6 +44,15 @@ const TIMELINE_RE = /\basap\b|\burgent\b|\bimmediately\b|\btoday\b|\bthis week\b
 const DECISION_RE = /(owner|founder|procurement|operations|fleet|manager|head of|director|ceo|coo|commercial)/i;
 const CONTACT_WORDS_RE = /whatsapp|\bdm\b|inbox|email me|\bcall me\b/i;
 
+/**
+ * "Who can help me with this?" — the words that separate a person asking from a person talking.
+ *
+ * English and Swahili, because the taxonomy's own languages are both and a Kenyan buyer asking
+ * for a supplier often asks in Swahili. This is scored **on top of** the intent phrases: a post
+ * that says "need supplier" is a topic, one that says "need supplier — anyone know one?" is a
+ * person waiting for an answer.
+ */
+const QUESTION_CUE_RE = /\b(anyone know|any one know|who can|who knows|recommend|recommendations?|suggestions?|any advice|where can i|looking for (a |the )?recommendation|natafuta|naomba msaada|msaada|ninahitaji|nisaidie|wapi ninaweza)\b/i;
 const EMAIL_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[A-Za-z]{2,}/;
 const PHONE_RE = /(?:\+?254|0)(?:\d[\s().-]?){8,10}/;
 
@@ -114,6 +123,81 @@ export function draftFirstLine({ intentName, authorName, authorHandle }) {
 }
 
 /**
+ * How old is this post, in hours — from whatever the page wrote.
+ *
+ * Pages write age five ways: "2h", "3 days ago", "2 days ago", an ISO timestamp in `datetime`,
+ * or a Unix timestamp in seconds (Reddit's `created-timestamp`). All of them are the same fact.
+ * Anything unreadable returns `null`, not 0: "we don't know" and "just posted" must not score
+ * the same, and half the point of reading age is to stop replying to a week-old thread.
+ */
+export function parsePostedAgoHours(raw, now = Date.now()) {
+  const text = String(raw == null ? '' : raw).trim().toLowerCase();
+  if (!text) return null;
+
+  // Unix seconds or milliseconds, which is how Reddit stamps a card.
+  if (/^\d{10}(\d{3})?$/.test(text)) {
+    const value = Number(text);
+    const ms = text.length === 13 ? value : value * 1000;
+    const hours = (now - ms) / 3_600_000;
+    return Number.isFinite(hours) && hours >= 0 ? Math.round(hours * 10) / 10 : null;
+  }
+
+  // ISO or RFC date from a `datetime` attribute.
+  if (/^\d{4}-\d{2}-\d{2}/.test(text)) {
+    const parsed = Date.parse(text);
+    if (Number.isFinite(parsed)) {
+      const hours = (now - parsed) / 3_600_000;
+      return hours >= 0 ? Math.round(hours * 10) / 10 : null;
+    }
+    return null;
+  }
+
+  // "5m", "2h", "3d", "2 hours ago", "just now", "yesterday".
+  if (/just now|wewe|now\b/.test(text)) return 0;
+  if (/^\s*ju?st\b/.test(text)) return 0;
+  const relative = text.match(/(\d+)\s*(s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days|w|wk|week|weeks|mo|month|months|y|yr|year|years)\b/);
+  if (relative) {
+    const value = Number(relative[1]);
+    const unit = relative[2];
+    // Longest-first, because 'minutes' starts with 'm' and 'months' starts with 'mo'.
+    const hoursPer = /^(s|sec)/.test(unit) ? 1 / 3600
+      : /^mo/.test(unit) ? 24 * 30
+        : /^(m|min|minute)/.test(unit) ? 1 / 60
+          : /^h/.test(unit) ? 1
+            : /^d/.test(unit) ? 24
+              : /^w/.test(unit) ? 24 * 7
+                : 24 * 365;
+    const hours = value * hoursPer;
+    return Number.isFinite(hours) ? Math.round(hours * 10) / 10 : null;
+  }
+  return null;
+}
+
+/**
+ * Engagement as numbers, from whatever the page showed.
+ *
+ * "1.2K comments", "12", "12 comments" — all the same fact. Anything unreadable becomes 0 rather
+ * than a guess, because this feeds a score someone will act on.
+ */
+export function normalizeEngagement(raw = {}) {
+  const parse = (value) => {
+    if (typeof value === 'number' && Number.isFinite(value)) return Math.max(0, Math.round(value));
+    const text = String(value == null ? '' : value).replace(/,/g, '').trim().toLowerCase();
+    const match = text.match(/(\d+(?:\.\d+)?)\s*([km])?/);
+    if (!match) return 0;
+    const base = Number(match[1]);
+    if (!Number.isFinite(base)) return 0;
+    const multiplier = match[2] === 'k' ? 1_000 : match[2] === 'm' ? 1_000_000 : 1;
+    return Math.max(0, Math.round(base * multiplier));
+  };
+  return {
+    comments: parse(raw.comments ?? raw.replies),
+    likes: parse(raw.likes ?? raw.reactions),
+    shares: parse(raw.shares ?? raw.reposts)
+  };
+}
+
+/**
  * Score one post against the taxonomy.
  *
  * Returns `null` when the post is not about anything we sell — the honest answer for most posts,
@@ -142,6 +226,10 @@ export function scorePost(post = {}, taxonomy = {}, options = {}) {
 
   const contact = extractContact(text);
   const hasContact = Boolean(contact.email || contact.phone) || CONTACT_WORDS_RE.test(blob);
+  /** Is this someone asking for an answer, rather than stating a fact? */
+  const askingCue = QUESTION_CUE_RE.test(blob);
+  const engagement = normalizeEngagement(post.engagement || {});
+  const postedAgoHours = Number.isFinite(Number(post.postedAgoHours)) ? Math.max(0, Number(post.postedAgoHours)) : null;
 
   let best = null;
   for (const intent of Array.isArray(taxonomy.intents) ? taxonomy.intents : []) {
@@ -159,6 +247,20 @@ export function scorePost(post = {}, taxonomy = {}, options = {}) {
     if (cities.some((city) => lower.includes(city))) score += 10;
     if (hasContact) score += 10;
     if (DECISION_RE.test(blob)) score += 10;
+    // A question is worth more than a statement: "need supplier" is a topic, "need supplier —
+    // anyone know one?" is someone waiting for an answer they will give to whoever replies first.
+    if (askingCue) score += 8;
+    // Reach: a post other people already answered is a live conversation, and a reply there is
+    // seen by everyone in it. Counts are read from the page, never assumed.
+    if (engagement.comments >= 3) score += 6;
+    else if (engagement.comments >= 1) score += 3;
+    if (engagement.likes >= 5) score += 4;
+    else if (engagement.likes >= 1) score += 2;
+    // Timing: nobody hires from a three-week-old thread.
+    if (postedAgoHours !== null) {
+      if (postedAgoHours <= 24) score += 6;
+      else if (postedAgoHours <= 72) score += 3;
+    }
     if (exclusionHits.length) score -= 40;
     score = Math.max(0, Math.min(100, score));
 
@@ -186,7 +288,11 @@ export function scorePost(post = {}, taxonomy = {}, options = {}) {
       profileUrl: post.profileUrl
     }),
     offerAngle: best.intent.offer_angle ? String(best.intent.offer_angle) : null,
-    decisionRoles: Array.isArray(best.intent.decision_roles) ? best.intent.decision_roles.slice(0, 6) : []
+    decisionRoles: Array.isArray(best.intent.decision_roles) ? best.intent.decision_roles.slice(0, 6) : [],
+    // The evidence behind the extra points, kept with the score so a human can disagree with it.
+    askingCue,
+    engagement,
+    postedAgoHours
   };
 }
 

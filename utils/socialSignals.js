@@ -16,7 +16,7 @@
  *   3. **Duplicates are counted, not inserted.** Re-running the same search is normal; doubling
  *      the digest is not.
  */
-import { dedupeByPostUrl, draftFirstLine, scorePost } from './socialIntent.js';
+import { dedupeByPostUrl, draftFirstLine, parsePostedAgoHours, scorePost } from './socialIntent.js';
 import { getSocialPlatform } from './browserActor/tasks/socialPlatforms.js';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -91,7 +91,17 @@ export function sanitizeListeningPosts(raw) {
       authorName: clamp(item?.authorName, 120),
       authorHandle: clamp(item?.authorHandle, 80),
       profileUrl: cleanUrl(item?.profileUrl),
-      locationHint: clamp(item?.locationHint, 120)
+      locationHint: clamp(item?.locationHint, 120),
+      // Reach and age are optional evidence: a page that does not say them is still a good post.
+      engagement: item?.engagement && typeof item.engagement === 'object'
+        ? {
+          comments: clamp(item.engagement.comments, 24),
+          likes: clamp(item.engagement.likes, 24),
+          shares: clamp(item.engagement.shares, 24)
+        }
+        : {},
+      postedText: clamp(item?.postedText || item?.postedAtHint, 40),
+      postedAgoHours: Number.isFinite(Number(item?.postedAgoHours)) ? Math.max(0, Number(item.postedAgoHours)) : null
     });
   }
   // Same post twice in one batch is one post. The adapter already dedupes; a worker is not
@@ -110,13 +120,20 @@ export function buildSignalRows({ posts, taxonomy, tenantId, platform = 'linkedi
   let excluded = 0;
 
   for (const post of Array.isArray(posts) ? posts : []) {
+    // Age is computed once, here, from whichever field the page gave: a worker may send an ISO
+    // timestamp, a relative phrase, or nothing at all.
+    const postedAgoHours = post.postedAgoHours != null
+      ? post.postedAgoHours
+      : parsePostedAgoHours(post.postedText ?? post.postedAtHint);
     const scored = scorePost({
       text: post.postText,
       authorName: post.authorName,
       authorHandle: post.authorHandle,
       location: post.locationHint,
       postUrl: post.postUrl,
-      profileUrl: post.profileUrl
+      profileUrl: post.profileUrl,
+      engagement: post.engagement,
+      postedAgoHours
     }, taxonomy, options);
 
     if (!scored) {
@@ -138,6 +155,11 @@ export function buildSignalRows({ posts, taxonomy, tenantId, platform = 'linkedi
       author_handle: post.authorHandle,
       profile_url: post.profileUrl,
       location_hint: post.locationHint,
+      // Reach and age are stored, not just scored: the panel says "12 comments · 2h ago", and the
+      // audit trail can explain a score after the fact.
+      engagement: scored.engagement || {},
+      posted_hint: post.postedText || null,
+      posted_ago_hours: scored.postedAgoHours,
       intent_id: scored.intentId,
       intent_name: scored.intentName,
       buyer_signal_strength: scored.buyerSignalStrength,
@@ -182,7 +204,12 @@ export function publicSignal(row) {
     contactPhone: row.contact_phone || null,
     contactEmail: row.contact_email || null,
     status: row.status || 'new',
-    capturedAt: row.captured_at || row.created_at || null
+    capturedAt: row.captured_at || row.created_at || null,
+    // Why this scored what it scored: a human deciding whether to reply deserves to see that the
+    // post is two hours old with twelve replies, not just a number.
+    engagement: row.engagement && typeof row.engagement === 'object' ? row.engagement : {},
+    postedHint: row.posted_hint || null,
+    postedAgoHours: Number.isFinite(Number(row.posted_ago_hours)) ? Number(row.posted_ago_hours) : null
   };
 }
 
@@ -225,9 +252,31 @@ export function createSocialSignalStore({ table }) {
     const fresh = list.filter((row) => !already.has(row.post_url));
     if (!fresh.length) return { inserted: 0, duplicates: list.length, failed: 0 };
 
-    const { data, error } = await table()
+    // Reach and age arrived after the table did. If the migration has not run yet, storing the
+    // signal without them is better than refusing it: the post is the asset, the numbers are
+    // decoration. The warning names the file so the fix is one paste away.
+    const withoutReach = (row) => {
+      const copy = { ...row };
+      delete copy.engagement;
+      delete copy.posted_hint;
+      delete copy.posted_ago_hours;
+      return copy;
+    };
+    const isMissingColumn = (error) => {
+      const message = String(error?.message || '');
+      return String(error?.code || '') === '42703' || /column .* does not exist/i.test(message);
+    };
+
+    let { data, error } = await table()
       .insert(fresh.map((row) => ({ ...row, tenant_id: tenantId })))
       .select('id');
+    if (error && isMissingColumn(error)) {
+      console.error('[signals] social_signals has no reach columns yet — run '
+        + 'migrations/2026-11-05_social_signal_reach.sql. Storing without engagement/age.');
+      ({ data, error } = await table()
+        .insert(fresh.map((row) => ({ ...withoutReach(row), tenant_id: tenantId })))
+        .select('id'));
+    }
     if (!error) {
       return { inserted: Array.isArray(data) ? data.length : fresh.length, duplicates: list.length - fresh.length, failed: 0 };
     }
