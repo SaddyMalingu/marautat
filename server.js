@@ -463,10 +463,21 @@ app.get('/admin/backup-blogs', async (req, res) => {
   }
 });
 
-// Restore endpoint - force restore from database
+// Restore endpoint - force restore from database.
+//
+// Manual ops only; nothing in the repo calls it. Two fixes here (2026-11-05):
+//
+//   - The key may arrive as an `x-admin-key` header. It used to be accepted only as `?key=`,
+//     and a query string is written to `request.log` and to the platform's access log, so an
+//     operator's admin password ends up in two log sinks every time it is used.
+//   - The old check compared against `undefined` when a variable was unset:
+//     `key !== undefined && key !== undefined` is false, so a host with neither `ADMIN_KEY`
+//     nor `ADMIN_PASS` configured accepted *anyone* with a bare GET. Unset values are now
+//     filtered out before comparison, and a missing key is always rejected.
 app.get('/admin/restore-blogs', async (req, res) => {
-  const key = req.query.key;
-  if (key !== process.env.ADMIN_KEY && key !== process.env.ADMIN_PASS) {
+  const supplied = req.get('x-admin-key') || req.query.key;
+  const accepted = [process.env.ADMIN_KEY, process.env.ADMIN_PASS].filter(Boolean);
+  if (!supplied || !accepted.length || !accepted.includes(String(supplied))) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   try {
