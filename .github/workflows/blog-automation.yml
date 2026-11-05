@@ -1,37 +1,79 @@
 name: Daily Blog Generation
 
+# The clock. Render Workflows has no native schedule trigger — runs start from the API, the SDK,
+# the CLI or the dashboard — so the schedule lives in git, which is also where it is reviewable.
+#
+# Two ways to spend this slot, and both are wired below:
+#   1. If RENDER_API_KEY is set, the job asks the Workflow service to run its `blogQueue` task.
+#      That buys parallel per-offer runs, automatic retries per step, and a two-hour ceiling
+#      instead of the ninety seconds a tenant's HTTP request allows.
+#   2. Otherwise it runs the queue directly on the runner, which is enough to get pages written
+#      and needs no Render service at all.
 on:
   schedule:
-    # Run daily at 2 AM UTC
+    # 02:00 UTC daily. Free AI tiers rate-limit per minute, so one nightly pass is deliberate.
     - cron: '0 2 * * *'
-  # Allow manual trigger
   workflow_dispatch:
+    inputs:
+      limit:
+        description: 'Max offers to generate this run'
+        required: false
+        default: '3'
 
 jobs:
   generate-blogs:
     runs-on: ubuntu-latest
-    
+
+    # GitHub does not expose the `secrets` context to a step-level `if:`, so the key is lifted
+    # into the job env where `env.RENDER_API_KEY` can be tested. Without this the trigger step
+    # would never have run and every night would have silently used the fallback.
+    env:
+      RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
-      
+
       - name: Install dependencies
         run: npm ci
-      
-      - name: Run smart blog automation
+
+      - name: Trigger the Render Workflow
+        id: workflow
+        if: env.RENDER_API_KEY != ''
+        env:
+          LIMIT: ${{ github.event.inputs.limit || '3' }}
+        run: |
+          # `blogQueue` plans from the same tables the portal reads, then fans out one chained
+          # run per offer. `blogQueue` is registered by workflows/index.js.
+          curl --fail-with-body --silent --show-error \
+            --request POST 'https://api.render.com/v1/task-runs' \
+            --header "Authorization: Bearer $RENDER_API_KEY" \
+            --header 'Content-Type: application/json' \
+            --data "{\"task\":\"marautat-blog/blogQueue\",\"input\":[{\"limit\":$LIMIT}]}"
+
+      # Runs when there is no API key, or when the trigger failed. Sequential, on the runner:
+      # slower, but it still writes blog_posts rows, which is what the site restores from.
+      - name: Generate on the runner (fallback)
+        if: ${{ steps.workflow.outcome != 'success' }}
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           HF_API_KEY: ${{ secrets.HF_API_KEY }}
-          REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
-        run: node scripts/smartAutomation.js
-      
+          SITE_URL: https://alphadome.onrender.com
+          # No HTTP request to bound here, so give the writer room instead of truncating angles.
+          BLOG_RUN_BUDGET_MS: '600000'
+        run: node scripts/blog_queue.mjs --apply --limit ${{ github.event.inputs.limit || '3' }}
+
       - name: Report results
         if: always()
-        run: echo "Blog generation complete"
+        run: echo "Blog queue run finished"
+

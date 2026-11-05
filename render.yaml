@@ -1,0 +1,39 @@
+# Render Workflow service for the blog queue (2026-11-05)
+#
+# This file documents the *workflow* service only. The existing web service
+# (alphadome.onrender.com) was created in the dashboard and is not described here, so do not
+# assume a Blueprint created from this file replaces it.
+#
+# The values below mirror the dashboard fields: Language Node, Branch main, Root Directory
+# empty, Region Frankfurt (where the other four services already run).
+#
+# Why the build command installs the SDK separately: `@renderinc/sdk` is deliberately NOT a
+# dependency of the web app. Adding it to package.json without regenerating package-lock.json
+# would break `npm ci` in .github/workflows/blog-automation.yml, and the web service has no use
+# for a workflow SDK. Installing it here keeps both true.
+services:
+  - type: workflow
+    name: marautat-blog
+    runtime: node
+    region: frankfurt
+    branch: main
+    plan: starter
+    buildCommand: npm install && npm install @renderinc/sdk@^1.7.0
+    # The dashboard default is `node index.js`, which crashes: there is no index.js in the repo
+    # root (that is a stale `main` field in package.json; the web service runs `node server.js`).
+    startCommand: node workflows/index.js
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: SITE_URL
+        value: https://alphadome.onrender.com
+      # The generation budget exists because generation normally runs inside a tenant's HTTP
+      # request. A task run may last two hours, so it can be spent here instead of truncated.
+      - key: BLOG_RUN_BUDGET_MS
+        value: "600000"
+      - key: BLOG_ANGLE_DELAY_MS
+        value: "1200"

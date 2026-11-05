@@ -1,97 +1,30 @@
-﻿import { createClient } from '@supabase/supabase-js';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { getContentJourney } from '../utils/contentJourney.js';
-// Same document guard the writers use: AI copy may not restyle the blog page.
-import { sanitizeArticleHTML } from '../utils/articleHtml.js';
-// One CTA implementation for every writer (utils/ctaBlock.js).
-import { ctaBlock } from '../utils/ctaBlock.js';
-const __f = fileURLToPath(import.meta.url);
-const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
-const SITE = process.env.SITE_URL || 'https://alphadome.onrender.com';
-const BLOG = path.join(process.cwd(), 'public', 'blog');
-
-async function ai(prompt) {
-  try {
-    const k = process.env.HF_API_KEY || process.env.HF_API_KEY_WRITERS_FLOW;
-    if (!k) return null;
-    const axios = (await import('axios')).default;
-    const r = await axios.post('https://router.huggingface.co/v1/chat/completions', {
-      model: 'meta-llama/Llama-3.1-8B-Instruct:novita',
-      messages: [{ role: 'user', content: prompt }],
-      max_tokens: 2500,
-      temperature: 0.7
-    }, { headers: { Authorization: 'Bearer ' + k }, timeout: 90000 });
-    return r.data?.choices?.[0]?.message?.content || null;
-  } catch (e) { return null; }
-}
-
-function clean(c) {
-  if (!c) return c;
-  // Markdown and the document guard both live in sanitizeArticleHTML() so this
-  // legacy writer cannot drift from the tenant writer's rules.
-  return sanitizeArticleHTML(c).replace(/\n{3,}/g, '\n\n').trim();
-}
-
-const OFFER_CTA = { job: 'Apply Now', product: 'Shop Now', service: 'Learn More', brand: 'Explore', affiliate: 'Get Deal', course: 'Enroll' };
-function buildHTML(post, job) {
-  const img = post.thumb ? '<img src="' + post.thumb + '" alt="' + post.title + '" style="width:100%;max-height:350px;object-fit:cover;border-radius:8px;margin:1rem 0">' : '';
-  const rt = Math.ceil(post.content.replace(/<[^>]*>/g, '').split(' ').length / 200);
-  // One CTA implementation for the whole codebase (utils/ctaBlock.js). This
-  // legacy writer kept its own copy of the old fixed block, so a fix in
-  // blogManager would have left every scheduled post on the old button.
-  const topCta = ctaBlock(job, { variant: 'top' });
-  const endCta = ctaBlock(job);
-  return '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>' + post.title + ' | AlphaDome</title><meta name="description" content="' + post.content.replace(/<[^>]*>/g,'').substring(0,160) + '"><link rel="canonical" href="' + SITE + '/blog/' + post.slug + '.html"><style>:root{--bg:#081421;--accent:#ff8a00;--text:#f3f7fa;--muted:#b8c7d6}*{box-sizing:border-box;margin:0;padding:0}body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.7}.c{max-width:800px;margin:0 auto;padding:0 24px}nav{padding:1rem 0}nav a{color:var(--accent);text-decoration:none}h1{font-size:2rem;margin:1rem 0}h2{font-size:1.4rem;color:var(--accent);margin:1.5rem 0 .75rem}p,li{color:var(--muted)}ul{padding-left:1.5rem;margin:.5rem 0}img{max-width:100%;border-radius:8px;margin:1rem 0}.cta{text-align:center;padding:2rem;margin:2rem 0;background:rgba(255,255,255,.05);border-radius:12px;border:1px solid rgba(255,138,0,.35)}.cta h2{margin-top:0}.cta h3{font-size:1.05rem;margin:1rem 0 .4rem}.cta ul{display:inline-block;text-align:left;max-width:38rem}.cta-btn{display:inline-block;background:var(--accent);color:#000;padding:1rem 2rem;border-radius:8px;text-decoration:none;font-weight:700;margin-top:.5rem}.cta-facts{color:var(--accent);font-weight:600}.cta-top{text-align:left;padding:1rem 1.25rem;margin:1rem 0;display:flex;gap:1rem;align-items:center;justify-content:space-between;flex-wrap:wrap}.cta-top p{margin:0}.cta-top .cta-btn{margin:0;padding:.75rem 1.25rem}</style></head><body><div class="c"><nav><a href="/">AlphaDome</a> / <a href="/ai-jobs">AI Jobs</a> / <a href="/blog">Blog</a></nav>' + topCta + '<article><h1>' + post.title + '</h1><p style="color:var(--muted)">Published ' + new Date().toLocaleDateString() + ' | ' + rt + ' min read</p>' + img + post.content + '</article>' + endCta + '</div></body></html>';
-}
-
-export async function runSmartAutomation(opts = {}) {
-  const maxPostsPerRun = opts.max_posts_per_run || 10;
-  const runType = opts.run_type || 'scheduled';
-  const startTime = new Date();
-  console.log('[SMART] Starting automation (' + runType + ')...');
-  const { data: logEntry } = await sb.from('automation_log').insert({ run_type: runType, status: 'running', started_at: startTime.toISOString() }).select('id').single();
-  const logId = logEntry?.id;
-  try {
-    const { data: jobs } = await sb.from('opportunities').select('id, title, slug, offer_type, destination_url, cta_label').eq('status', 'published').order('created_at', { ascending: false });
-    if (!jobs || !jobs.length) { await sb.from('automation_log').update({ status: 'success', posts_generated: 0, jobs_processed: 0, completed_at: new Date().toISOString() }).eq('id', logId); return { generated: 0, jobs_processed: 0 }; }
-    const { data: existingPosts } = await sb.from('blog_posts').select('opportunity_id, slug').eq('status', 'published');
-    const postsByJob = {};
-    if (existingPosts) { existingPosts.forEach(p => { if (!postsByJob[p.opportunity_id]) postsByJob[p.opportunity_id] = new Set(); postsByJob[p.opportunity_id].add(p.slug); }); }
-    const jobsNeedingContent = jobs.map(job => { const existingSlugs = postsByJob[job.id] || new Set(); const journey = getContentJourney(job); const missingPosts = journey.filter(p => !existingSlugs.has(p.slug)); return { ...job, existing_count: existingSlugs.size, missing_count: missingPosts.length, missing_posts: missingPosts }; }).filter(j => j.missing_count > 0).sort((a, b) => b.missing_count - a.missing_count);
-    console.log('[SMART] ' + jobsNeedingContent.length + ' jobs need content');
-    let totalGenerated = 0;
-    const details = [];
-    for (const job of jobsNeedingContent) {
-      if (totalGenerated >= maxPostsPerRun) break;
-      const toGenerate = Math.min(job.missing_posts.length, maxPostsPerRun - totalGenerated, 2);
-      console.log('[SMART] ' + job.title + ': generating ' + toGenerate + '/' + job.missing_count);
-      let generated = 0;
-      for (let i = 0; i < toGenerate; i++) {
-        const post = job.missing_posts[i];
-        try {
-          const content = await ai(post.prompt);
-          if (!content) continue;
-          const cleaned = clean(content);
-          const html = buildHTML({ title: post.title, slug: post.slug, content: cleaned, thumb: null }, job);
-          if (!fs.existsSync(BLOG)) fs.mkdirSync(BLOG, { recursive: true });
-          fs.writeFileSync(path.join(BLOG, post.slug + '.html'), html, 'utf8');
-          await sb.from('blog_posts').upsert({ slug: post.slug, title: post.title, content: cleaned, html_content: html, opportunity_id: job.id, category: post.angle, status: 'published' }, { onConflict: 'slug' });
-          generated++;
-          totalGenerated++;
-        } catch (e) { console.error('[SMART] Error: ' + e.message); }
-      }
-      details.push({ job: job.title, generated });
-    }
-    await sb.from('automation_log').update({ status: 'success', posts_generated: totalGenerated, jobs_processed: details.length, details: JSON.stringify(details), completed_at: new Date().toISOString() }).eq('id', logId);
-    console.log('[SMART] Complete: ' + totalGenerated + ' posts generated');
-    return { success: true, generated: totalGenerated, jobs_processed: details.length, details };
-  } catch (e) {
-    await sb.from('automation_log').update({ status: 'failed', completed_at: new Date().toISOString() }).eq('id', logId);
-    console.error('[SMART] Failed: ' + e.message);
-    return { success: false, error: e.message };
-  }
-}
-
-if (import.meta.url === 'file://' + process.argv[1]) { runSmartAutomation({ run_type: 'manual' }).then(r => console.log(JSON.stringify(r))).catch(console.error); }
+﻿/**
+ * DEPRECATED 2026-11-05 â€” the nightly job now runs `scripts/blog_queue.mjs`.
+ *
+ * This was the scheduled writer. It was the only automation actually running (GitHub Actions,
+ * 02:00 UTC) and it produced almost nothing, for two reasons worth keeping written down:
+ *
+ *   1. It selected `.eq('status', 'published')` from `opportunities`, and every offer the
+ *      collector captures from Turing, micro1 and the rest is `status: 'draft'` by design
+ *      (`utils/browserActor/offersImport.js`). The nightly run therefore never saw captured
+ *      offers â€” the same blind spot `generateAllBlogs` has.
+ *   2. Its only writer was one fixed HuggingFace model behind `HF_API_KEY`. When that key was
+ *      absent or the model was retired, `ai()` returned null, the loop `continue`d, and the job
+ *      logged `success` with `posts_generated: 0`. A green tick over zero output for weeks is
+ *      the worst kind of automation.
+ *
+ * `scripts/blog_queue.mjs` replaces it: coverage is computed from `blog_posts`, drafts do not
+ * count as done, offers are ordered by revenue (a verified referral link first), the run is
+ * bounded, and any failure is reported as a failure. Pages come from
+ * `scripts/blogManager.js`, which walks nine angles with a voice, a quality pass, and a
+ * composed fallback instead of one model and one prompt.
+ *
+ * Kept as a stub rather than deleted so an old crontab entry, a bookmark or a half-remembered
+ * `node scripts/smartAutomation.js` fails loudly here instead of writing template pages nobody
+ * asked for.
+ */
+console.error('smartAutomation.js is retired. The scheduled path is now:');
+console.error('  node scripts/blog_queue.mjs --apply --limit 3');
+console.error('Why: it filtered status=published (captured offers are draft) and reported success');
+console.error('with zero posts whenever its single HuggingFace model returned nothing.');
+process.exit(2);

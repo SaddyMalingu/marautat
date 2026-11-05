@@ -48,6 +48,7 @@
     "test:marketplace": "node scripts/test_marketplace_runners.mjs",
     "test:workspace": "node scripts/test_workspace_platforms.mjs",
     "test:blogqueue": "node scripts/test_blog_queue.mjs",
+    "test:workflow": "node scripts/test_blog_workflow.mjs",
     "test:oneforma": "node scripts/test_oneforma_queue.mjs",
     "blog:queue": "node scripts/blog_queue.mjs",
     "oneforma:queue": "node scripts/oneforma_queue.mjs",
