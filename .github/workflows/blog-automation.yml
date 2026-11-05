@@ -24,11 +24,13 @@ jobs:
   generate-blogs:
     runs-on: ubuntu-latest
 
-    # GitHub does not expose the `secrets` context to a step-level `if:`, so the key is lifted
-    # into the job env where `env.RENDER_API_KEY` can be tested. Without this the trigger step
-    # would never have run and every night would have silently used the fallback.
+    # GitHub does not expose the `secrets` context to a step-level `if:`, so the two facts the
+    # steps need are computed here. `HAS_DB_CREDS` is a boolean, not a credential: it lets the
+    # fallback decide whether it can run at all without lifting the service-role key into every
+    # step's environment.
     env:
       RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+      HAS_DB_CREDS: ${{ secrets.SUPABASE_URL != '' && secrets.SUPABASE_SERVICE_ROLE_KEY != '' }}
 
     steps:
       - name: Checkout code
@@ -51,16 +53,21 @@ jobs:
         run: |
           # `blogQueue` plans from the same tables the portal reads, then fans out one chained
           # run per offer. `blogQueue` is registered by workflows/index.js.
+          #
+          # A failure here fails the job on purpose. Falling back to the runner on a trigger
+          # error would need database credentials in GitHub, and a workflow that quietly does
+          # the work somewhere else is how a red night becomes a mystery.
           curl --fail-with-body --silent --show-error \
             --request POST 'https://api.render.com/v1/task-runs' \
             --header "Authorization: Bearer $RENDER_API_KEY" \
             --header 'Content-Type: application/json' \
             --data "{\"task\":\"marautat-blog/blogQueue\",\"input\":[{\"limit\":$LIMIT}]}"
 
-      # Runs when there is no API key, or when the trigger failed. Sequential, on the runner:
-      # slower, but it still writes blog_posts rows, which is what the site restores from.
+      # Sequential, on the runner: slower, but it writes the same blog_posts rows the site
+      # restores from. Only runs when there is no workflow to trigger — and only when the
+      # credentials for it actually exist, so it cannot fail with a confusing auth error.
       - name: Generate on the runner (fallback)
-        if: ${{ steps.workflow.outcome != 'success' }}
+        if: env.RENDER_API_KEY == '' && env.HAS_DB_CREDS == 'true'
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -73,7 +80,17 @@ jobs:
           BLOG_RUN_BUDGET_MS: '600000'
         run: node scripts/blog_queue.mjs --apply --limit ${{ github.event.inputs.limit || '3' }}
 
+      # Neither path is available. Say which one is missing instead of finishing green over
+      # nothing — the previous version of this job reported success while writing zero pages,
+      # which is why nobody noticed for weeks.
+      - name: Nothing to do (no credentials)
+        if: env.RENDER_API_KEY == '' && env.HAS_DB_CREDS != 'true'
+        run: |
+          echo "::error::No way to generate: set RENDER_API_KEY (to trigger the workflow) or SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY (to run here)."
+          exit 1
+
       - name: Report results
         if: always()
         run: echo "Blog queue run finished"
+
 
