@@ -1339,8 +1339,14 @@ function wfBloggerHtml(ctx) {
             <option value="not">Not optimized</option>
           </select>
           <span id="wfOfferCount" class="text-muted" style="font-size:.78rem"></span>
+          <!-- One button for the whole working set (2026-11-05). Nine angles per offer takes
+               minutes, so this queues a job and polls it — it does not generate inline. -->
+          <button id="wfOptimiseAll" class="btn btn-sm btn-outline-info" title="Write the pages for every offer that does not have them yet">
+            <i class="fa-solid fa-wand-magic-sparkles me-1"></i>Optimise all
+          </button>
         </span>
       </div>
+      <div id="wfOptimiseStatus" class="d-none px-2 py-2" style="font-size:.82rem"></div>
       <div class="table-responsive">
         <table class="table table-sm mb-0 align-middle"><thead><tr>
           <th data-wfsort="title">Title</th>
@@ -2592,6 +2598,91 @@ async function renderWritersFlow() {
     }
     renderWritersFlow();
   });
+
+  // ─── Optimise everything (2026-11-05) ───────────────────────────────────
+  // The per-offer button cannot be looped in the browser: each click holds a request open for
+  // up to 90 s, so ten offers is ten minutes of an open tab. The server owns a job instead and
+  // this only reports what it says.
+  const optimiseBtn = document.getElementById('wfOptimiseAll');
+  const optimiseBox = document.getElementById('wfOptimiseStatus');
+
+  function renderOptimise(job) {
+    if (!optimiseBox) return;
+    optimiseBox.classList.remove('d-none');
+    if (!job) { optimiseBox.innerHTML = '<span class="text-muted">Starting…</span>'; return; }
+    const total = Number(job.total || 0);
+    const done = Number(job.done || 0);
+    const failed = Number(job.failed || 0);
+    const pages = Number(job.pages || 0);
+    const needsLink = Array.isArray(job.plan?.needsLink) ? job.plan.needsLink : [];
+    const skipped = Array.isArray(job.plan?.skipped) ? job.plan.skipped.length : 0;
+
+    if (job.status === 'queued' || job.status === 'running') {
+      const label = total ? `${done}/${total} offers · ${pages} page${pages === 1 ? '' : 's'} written` : 'Planning…';
+      optimiseBox.innerHTML =
+        `<i class="fa-solid fa-circle-notch fa-spin me-1"></i>${label}` +
+        (failed ? ` <span class="text-warning">· ${failed} failed</span>` : '');
+      return;
+    }
+    if (job.status === 'done' || job.status === 'failed') {
+      const bad = job.status === 'failed';
+      const linkNote = needsLink.length ? ` · ${needsLink.length} earn nothing until a referral link is added` : '';
+      const skipNote = skipped ? ` · ${skipped} skipped (already written or removed)` : '';
+      optimiseBox.innerHTML =
+        `<span class="${bad ? 'text-warning' : 'text-success'}">` +
+        (bad ? '<i class="fa-solid fa-triangle-exclamation me-1"></i>' : '<i class="fa-solid fa-circle-check me-1"></i>') +
+        `${pages} page${pages === 1 ? '' : 's'} across ${done} offer${done === 1 ? '' : 's'}` +
+        (failed ? ` (${failed} failed)` : '') + linkNote + skipNote +
+        (job.error ? ` — ${esc(job.error)}` : '') + '</span>';
+      return;
+    }
+    optimiseBox.innerHTML = `<span class="text-muted">${esc(job.status || 'unknown')}</span>`;
+  }
+
+  async function pollOptimise(jobId, attempt = 0) {
+    const r = await apiJson(`/tenant/blogger/optimise/${jobId}`);
+    if (!r.ok) {
+      renderOptimise({ status: 'failed', error: r.data?.error || 'Could not read job progress' });
+      return;
+    }
+    const job = r.data?.job || null;
+    renderOptimise(job);
+    if (!job) return;
+    if (job.status === 'queued' || job.status === 'running') {
+      // Two seconds while it is early, then back off: a nine-page journey takes minutes and a
+      // portal that polls every 2 s for ten minutes is noise in the request log.
+      if (attempt < 300) setTimeout(() => pollOptimise(jobId, attempt + 1), attempt < 30 ? 2000 : 6000);
+      return;
+    }
+    if (Number(job.pages || 0) > 0) {
+      toast(`Optimised — ${job.pages} page${Number(job.pages) === 1 ? '' : 's'} ready`, 'ok');
+      wfOpenOffer = null;
+      renderWritersFlow();
+    }
+  }
+
+  if (optimiseBtn) {
+    optimiseBtn.addEventListener('click', async () => {
+      optimiseBtn.disabled = true;
+      renderOptimise(null);
+      const r = await apiJson('/tenant/blogger/optimise', { method: 'POST', body: JSON.stringify({ limit: 10 }) });
+      if (r.status === 409 && r.data?.jobId) {
+        // Already running: watch the one in flight instead of starting a second walk.
+        toast('An optimisation is already running — watching it', 'ok');
+        pollOptimise(r.data.jobId);
+        optimiseBtn.disabled = false;
+        return;
+      }
+      if (!r.ok) {
+        renderOptimise({ status: 'failed', error: r.data?.error || 'Could not start' });
+        toast(r.data?.error || 'Could not start optimisation', 'err');
+        optimiseBtn.disabled = false;
+        return;
+      }
+      pollOptimise(r.data.jobId);
+      optimiseBtn.disabled = false;
+    });
+  }
 }
 
 function showErr(msg) {

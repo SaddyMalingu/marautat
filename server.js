@@ -5137,6 +5137,199 @@ app.get('/tenant/blogger/offers/:id/posts', tenantSessionAuth, async (req, res) 
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ─── Optimise: the tenant's own button (2026-11-05) ─────────────────────────
+//
+// One button for the whole working set, not one per offer. It cannot do the work inline: nine
+// angles per offer at up to 90 s each is minutes, and this host ends a request long before that.
+// So it queues a job, answers 202, and the portal polls the id.
+//
+// Tenant scope comes from the session, never from the body: a tenant can only optimise its own
+// assets, and `utils/blogJobs.js` refuses a tenant job with no tenant id rather than defaulting
+// to everyone.
+
+/** The jobs table's absence is a deploy-order problem, not a bug — say so, don't 500. */
+function blogJobsMissing(error) {
+  const message = String(error?.message || '');
+  return /blog_jobs/i.test(message) && /(does not exist|schema cache|relation)/i.test(message);
+}
+
+const blogJobUnavailable = (res) => res.status(503).json({
+  ok: false,
+  error: 'Blog jobs are not available on this host yet — apply migrations/2026-11-05_blog_jobs.sql.',
+  migration: 'migrations/2026-11-05_blog_jobs.sql'
+});
+
+/** Job deps for one scope. `tenantId` null means every tenant. */
+function blogJobDeps({ tenantId = null, generate }) {
+  return {
+    perOfferMs: Number(process.env.BLOG_RUN_BUDGET_MS || 90000),
+    create: async (row) => {
+      const { data, error } = await supabase.from('blog_jobs').insert(row).select('*').single();
+      if (error) throw error;
+      return data;
+    },
+    load: async () => {
+      let query = supabase
+        .from('opportunities')
+        .select('id, title, slug, status, referral_url, compensation_max, description, deleted_at, tenant_id, source:opportunity_sources(slug)')
+        .is('deleted_at', null);
+      if (tenantId) query = query.eq('tenant_id', tenantId);
+      const { data: offers, error } = await query;
+      if (error) throw error;
+      const ids = (offers || []).map((o) => o.id);
+      let posts = [];
+      if (ids.length) {
+        const { data, error: postErr } = await supabase
+          .from('blog_posts')
+          .select('opportunity_id, slug, status')
+          .in('opportunity_id', ids);
+        // Refusing to plan on unknown coverage is deliberate: treating a schema miss as
+        // "nothing written yet" would queue a full journey for every offer in the database.
+        if (postErr) throw new Error('reading blog_posts: ' + postErr.message);
+        posts = data || [];
+      }
+      return { offers: offers || [], posts };
+    },
+    generate,
+    update: async (id, patch) => {
+      const { error } = await supabase.from('blog_jobs').update(patch).eq('id', id);
+      if (error) console.warn('[blog-jobs] progress update failed: ' + error.message);
+    }
+  };
+}
+
+async function blogGenerator() {
+  const { generateBlogPostsForOpportunity } = await import('./scripts/blogManager.js');
+  return generateBlogPostsForOpportunity;
+}
+
+app.post('/tenant/blogger/optimise', tenantSessionAuth, async (req, res) => {
+  try {
+    const ctx = await tenantSiteFromSession(req);
+    if (!ctx) return res.status(404).json({ error: 'Tenant not found' });
+    const tenantId = ctx.site.id;
+    const { startBlogJob } = await import('./utils/blogJobs.js');
+    const generate = await blogGenerator();
+    const limit = Math.max(1, Math.min(50, Number(req.body?.limit) || 5));
+
+    const started = await startBlogJob({
+      scope: 'tenant',
+      tenantId,
+      requestedBy: 'tenant:' + tenantId,
+      limit,
+      budgetMs: Number(req.body?.budgetMs) || 0,
+      deps: blogJobDeps({ tenantId, generate })
+    });
+
+    if (started.busy) {
+      return res.status(409).json({
+        ok: false,
+        busy: true,
+        jobId: started.job.id,
+        error: 'An optimisation is already running for this account. Watch it finish — a second run would only slow the first one.'
+      });
+    }
+    res.status(202).json({ ok: true, jobId: started.job.id, limit, status: started.job.status });
+  } catch (err) {
+    if (blogJobsMissing(err)) return blogJobUnavailable(res);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /tenant/blogger/optimise/:id — what the button's poller reads.
+app.get('/tenant/blogger/optimise/:id', tenantSessionAuth, async (req, res) => {
+  try {
+    const ctx = await tenantSiteFromSession(req);
+    if (!ctx) return res.status(404).json({ error: 'Tenant not found' });
+    const { data, error } = await supabase.from('blog_jobs').select('*')
+      .eq('id', req.params.id).eq('tenant_id', ctx.site.id).maybeSingle();
+    if (error) { if (blogJobsMissing(error)) return blogJobUnavailable(res); throw error; }
+    if (!data) return res.status(404).json({ error: 'Job not found' });
+    res.json({ ok: true, job: await reconcileStaleJob(data, 'tenant', ctx.site.id) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * A row left at 'queued'/'running' with no drain behind it is a lie the panel would poll forever.
+ * That happens when the process restarts mid-run (this host restarts on every deploy, and a Free
+ * instance can spin down). The in-memory lock is authoritative for this workspace because there is
+ * one web instance; on a scaled-out host this would need a heartbeat column instead.
+ */
+async function reconcileStaleJob(job, scope, tenantId) {
+  const status = String(job?.status || '');
+  if (status !== 'queued' && status !== 'running') return job;
+  const { jobInFlight } = await import('./utils/blogJobs.js');
+  if (jobInFlight(scope, tenantId)) return job;
+  // Give a just-created row a moment: the drain starts a tick after the insert.
+  const startedAt = Date.parse(job.started_at || job.created_at || 0);
+  const ageMs = Date.now() - (Number.isFinite(startedAt) ? startedAt : 0);
+  if (ageMs < 120000) return job;
+
+  const patch = {
+    status: 'failed',
+    completed_at: new Date().toISOString(),
+    error: 'The run stopped before finishing (the server restarted). Press Optimise again — pages already written are kept.'
+  };
+  try {
+    await supabase.from('blog_jobs').update(patch).eq('id', job.id);
+  } catch (e) { /* reporting it is still better than hiding it */ }
+  return { ...job, ...patch };
+}
+
+
+// ─── Optimise: the owner's button, every asset in the system ────────────────
+//
+// Same machinery, scope 'global'. Admin key in the `x-admin-key` header (a query string lands in
+// request.log and the platform's access log), with `?key=` kept for existing dashboard links.
+
+function adminKeyOk(req) {
+  const supplied = req.get('x-admin-key') || req.query.key;
+  const accepted = [process.env.ADMIN_KEY, process.env.ADMIN_PASS].filter(Boolean);
+  return Boolean(supplied) && accepted.length > 0 && accepted.includes(String(supplied));
+}
+
+app.post('/admin/optimise-blogs', async (req, res) => {
+  if (!adminKeyOk(req)) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const { startBlogJob } = await import('./utils/blogJobs.js');
+    const generate = await blogGenerator();
+    const limit = Math.max(1, Math.min(200, Number(req.body?.limit) || 10));
+
+    const started = await startBlogJob({
+      scope: 'global',
+      requestedBy: 'admin',
+      limit,
+      budgetMs: Number(req.body?.budgetMs) || 0,
+      deps: blogJobDeps({ tenantId: null, generate })
+    });
+
+    if (started.busy) {
+      return res.status(409).json({
+        ok: false, busy: true, jobId: started.job.id,
+        error: 'A system-wide optimisation is already running.'
+      });
+    }
+    res.status(202).json({ ok: true, jobId: started.job.id, limit, status: started.job.status });
+  } catch (err) {
+    if (blogJobsMissing(err)) return blogJobUnavailable(res);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/admin/optimise-blogs/:id', async (req, res) => {
+  if (!adminKeyOk(req)) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const { data, error } = await supabase.from('blog_jobs').select('*').eq('id', req.params.id).maybeSingle();
+    if (error) { if (blogJobsMissing(error)) return blogJobUnavailable(res); throw error; }
+    if (!data) return res.status(404).json({ error: 'Job not found' });
+    res.json({ ok: true, job: await reconcileStaleJob(data, 'global', null) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /tenant/blogger/coverage — what this tenant has actually captured from each
 // marketplace. The collector runs on the operator's machine (the browser does), so
 // the portal cannot watch its progress file; this reports the outcome instead:

@@ -808,7 +808,13 @@
           <a href="#" class="quick-action-btn" onclick="event.preventDefault(); tenantSettings();" style="display:flex; align-items:center; justify-content:center; gap:8px; padding:12px 16px; background:rgba(248,113,113,0.15); border:1px solid rgba(248,113,113,0.3); border-radius:6px; color:#f87171; text-decoration:none; transition:all 0.2s; cursor:pointer;">
             <i class="fa-solid fa-sliders"></i> <span>Tenant Settings</span>
           </a>
+          <!-- System-wide generation (2026-11-05). Queues one job across every tenant and polls
+               it; nine angles per offer cannot run inside a request. -->
+          <a href="#" class="quick-action-btn" onclick="event.preventDefault(); optimiseAllAssets();" style="display:flex; align-items:center; justify-content:center; gap:8px; padding:12px 16px; background:rgba(234,179,8,0.15); border:1px solid rgba(234,179,8,0.3); border-radius:6px; color:#eab308; text-decoration:none; transition:all 0.2s; cursor:pointer;">
+            <i class="fa-solid fa-wand-magic-sparkles"></i> <span>Optimise All Assets</span>
+          </a>
         </div>
+        <div id="optimiseAllStatus" class="d-none mb-4" style="font-size:.86rem"></div>
 
         <section class="card p-4 mb-4 border-warning shadow-sm" style="background:rgba(24,28,47,0.97);">
           <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
@@ -3637,6 +3643,91 @@
     function tenantSettings() {
       getModalInstance('tenantModal')?.show();
       loadTenantList();
+    }
+
+    // ─── Optimise every asset in the system (2026-11-05) ──────────────────
+    // Queues one job on the server and polls it. Nothing is generated in this tab: nine angles
+    // per offer takes minutes per offer, so the browser only reports what the job says.
+    async function optimiseAllAssets(limit = 10) {
+      const box = document.getElementById('optimiseAllStatus');
+      const render = (html, level = 'muted') => {
+        if (!box) return;
+        box.classList.remove('d-none');
+        box.innerHTML = `<span class="text-${level}">${html}</span>`;
+      };
+
+      render('Queueing up to ' + limit + ' offers…');
+      let started;
+      try {
+        const res = await fetch(buildAdminApiUrl('/admin/optimise-blogs'), {
+          method: 'POST',
+          headers: buildAdminHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ limit })
+        });
+        started = { status: res.status, data: await res.json().catch(() => ({})) };
+      } catch (e) {
+        render('Could not reach the server: ' + e.message, 'danger');
+        return;
+      }
+
+      if (started.status === 401) {
+        render('Unauthorised — reload this page with <code>?key=…</code> in the URL.', 'danger');
+        return;
+      }
+      if (started.status === 409) {
+        showAlert('Optimise', 'A system-wide run is already in progress — watching it.', 'warning');
+      } else if (started.status !== 202) {
+        render(started.data?.error || 'Could not start the run.', 'danger');
+        return;
+      } else {
+        showAlert('Optimise', `Queued ${limit} offer(s). Pages appear as they are written.`, 'success');
+      }
+
+      const jobId = started.data?.jobId;
+      if (!jobId) { render('The server did not return a job id.', 'danger'); return; }
+
+      const tick = async (attempt = 0) => {
+        let job = null;
+        try {
+          const res = await fetch(buildAdminApiUrl('/admin/optimise-blogs/' + encodeURIComponent(jobId)), {
+            headers: buildAdminHeaders()
+          });
+          job = (await res.json().catch(() => ({})))?.job || null;
+        } catch (e) {
+          render('Lost contact with the job: ' + e.message, 'danger');
+          return;
+        }
+        if (!job) { render('Job not found.', 'danger'); return; }
+
+        const total = Number(job.total || 0);
+        const done = Number(job.done || 0);
+        const pages = Number(job.pages || 0);
+        const failed = Number(job.failed || 0);
+
+        if (job.status === 'queued' || job.status === 'running') {
+          render(`<i class="fa-solid fa-circle-notch fa-spin me-1"></i>${total ? done + '/' + total + ' offers' : 'planning'} · ${pages} page(s) written` +
+            (failed ? ` · <span class="text-warning">${failed} failed</span>` : ''));
+          // Back off: a catalogue run is long, and a dashboard polling every 2 s for an hour is
+          // noise in the request log.
+          if (attempt < 900) setTimeout(() => tick(attempt + 1), attempt < 15 ? 2000 : 6000);
+          return;
+        }
+
+        const bad = job.status === 'failed';
+        const skipped = Array.isArray(job.plan?.skipped) ? job.plan.skipped.length : 0;
+        const needsLink = Array.isArray(job.plan?.needsLink) ? job.plan.needsLink.length : 0;
+        render(
+          `${pages} page(s) across ${done} offer(s)` +
+          (failed ? ` · ${failed} failed` : '') +
+          (skipped ? ` · ${skipped} skipped` : '') +
+          (needsLink ? ` · ${needsLink} earn nothing until a referral link is added` : '') +
+          (job.error ? ` — ${job.error}` : ''),
+          bad ? 'warning' : 'success'
+        );
+        if (pages > 0) updateDashboardCards();
+      };
+
+      tick();
     }
 
     function refreshCampaignHistory() {
