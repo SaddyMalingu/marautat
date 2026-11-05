@@ -38,6 +38,37 @@ export function slugifyTitle(title) {
 }
 
 /**
+ * Which roles already have a referral link — keyed by title, never by card index (2026-11-05).
+ *
+ * Two reasons this is a named function rather than three lines inside the loop:
+ *
+ *   1. **The index is not an identity.** Turing's listing is newest-first, so a role published this
+ *      morning shifts every index below it. The progress file stores `index → capture`, and a resume
+ *      that trusts it skips a role it never captured while re-capturing one it already had.
+ *   2. **The worker has no memory.** Every download lands in a new folder, so `tmp/referrals.json`
+ *      starts empty and local resume is worth nothing. The only durable answer to "what do I already
+ *      own" is the portal's own rows, which is why `referral_url` now travels in `/context`.
+ *
+ * Returns a Set of `slugifyTitle` keys — the same key `planReferralBackfill` matches on.
+ */
+export function linkedTitleSet({ offers = [], captures = [] } = {}) {
+  const titles = new Set();
+  for (const offer of Array.isArray(offers) ? offers : []) {
+    if (!String(offer?.referral_url || '').trim()) continue;
+    const key = slugifyTitle(offer.title || offer.slug || '');
+    if (key) titles.add(key);
+  }
+  // A capture that already carries a link counts even if the portal refused it later: the link was
+  // minted, so re-opening the role only adds traffic, not certainty.
+  for (const capture of Array.isArray(captures) ? captures : []) {
+    if (!String(capture?.referralUrl || '').trim()) continue;
+    const key = slugifyTitle(capture.title || '');
+    if (key) titles.add(key);
+  }
+  return titles;
+}
+
+/**
  * Find the link this tenant already holds for one role.
  *
  * @param {Array<{id?:string, external_id?:string, title?:string, slug?:string,

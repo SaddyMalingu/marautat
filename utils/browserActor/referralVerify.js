@@ -178,6 +178,45 @@ export function judgeWorkerReportedTitle({ expectedTitle = '', pageTitle = null 
 }
 
 /**
+ * The one decision about a captured link, shared by the portal and the laptop (2026-11-05).
+ *
+ * It existed twice and disagreed with itself. The server learned that a shell title is
+ * `unresolvable` and may be answered by the browser that minted the link; the Turing runner — which
+ * runs the same check when a tenant drives it by hand — still accepted only `match`, so the manual
+ * path refused every link the server would have attached. Two truths about the same evidence is
+ * worse than one wrong one, because nothing tells you which is which.
+ *
+ * Rules, in order:
+ *   1. the fetch says `match` → accept, source `server`;
+ *   2. the fetch says `mismatch` → refuse. Real HTML naming another role is evidence, and a
+ *      browser title cannot overrule it: the page may simply not have navigated yet;
+ *   3. the fetch cannot read the page (`unresolvable`) and the browser reported a title → that
+ *      title is judged by the same rules; `match` accepts it as source `worker`;
+ *   4. anything else stays `unresolvable` — a link with no readable evidence is not attached.
+ */
+export function resolveLinkVerdict({ check = null, expectedTitle = '', pageTitle = null } = {}) {
+  const fetchVerdict = String(check?.verdict || 'unresolvable');
+  const fetchReason = String(check?.reason || 'no_verdict');
+
+  if (fetchVerdict === 'match') {
+    return { verdict: 'match', reason: fetchReason, source: 'server', resolvedTitle: check?.resolvedTitle || null };
+  }
+  if (fetchVerdict === 'mismatch') {
+    return { verdict: 'mismatch', reason: fetchReason, source: 'server', resolvedTitle: check?.resolvedTitle || null };
+  }
+  if (pageTitle) {
+    const byWorker = judgeWorkerReportedTitle({ expectedTitle, pageTitle });
+    return {
+      verdict: byWorker.verdict === 'match' ? 'match' : byWorker.verdict,
+      reason: byWorker.reason,
+      source: 'worker',
+      resolvedTitle: byWorker.resolvedTitle || null
+    };
+  }
+  return { verdict: 'unresolvable', reason: fetchReason, source: 'server', resolvedTitle: check?.resolvedTitle || null };
+}
+
+/**
  * Fetch a referral link and judge it against the offer it is supposed to serve.
  * Never throws for a bad link: an unreachable page is a verdict, not a crash,
  * because the caller's next move (refuse to write) is the same either way.

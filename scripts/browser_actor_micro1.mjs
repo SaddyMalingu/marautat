@@ -66,6 +66,7 @@ import {
   MICRO1_ADVANCE_EXPR
 } from '../utils/browserActor/tasks/micro1.js';
 import { classifyProviderFailure } from '../utils/browserActor/errors.js';
+import { blocksRun, classifyMarketplaceSession, sessionGateExpr, sessionWallError } from '../utils/browserActor/sessionGate.js';
 
 const argv = process.argv.slice(2);
 function flag(name, fallback = null) {
@@ -314,8 +315,26 @@ async function runCapture({ existingOffers = [], identity = null } = {}) {
   try {
     await capturePage({ host, port, url: MICRO1_PLATFORM.listUrl, timeoutMs: 45_000 });
     const listing = await waitForListing({ host, port });
+    /**
+     * Before blaming the markup, ask the browser what it is looking at (2026-11-05).
+     *
+     * Micro1 used to report `listing did not render (waited 30000ms) — nothing captured` and close.
+     * After a day away, that sentence is usually a signed-out profile, and it reads like a broken
+     * adapter. The grid's own shape is the listing test (`div.grid`), so a page with a grid is a
+     * page we can read; a password field or a verification page is not.
+     */
+    const gate = classifyMarketplaceSession(await evaluateJson({
+      host,
+      port,
+      expression: sessionGateExpr({ listingSelector: 'div.grid, main' })
+    }).catch(() => null) || {});
+    if (blocksRun(gate.state)) {
+      console.error(`stopping: ${gate.state} — ${gate.reason}`);
+      if (gate.hint) console.error(`  ${gate.hint}`);
+      throw sessionWallError(gate);
+    }
     if (!listing.ok || !listing.count) {
-      console.error(`listing did not render (waited ${listing.waitedMs}ms) â€” nothing captured`);
+      console.error(`listing did not render (waited ${listing.waitedMs}ms) · session=${gate.state} (${gate.reason}) — nothing captured`);
       return { captures, listing };
     }
     console.error(`listing: ${listing.count} cards after ${listing.waitedMs}ms`);

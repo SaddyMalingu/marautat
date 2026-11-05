@@ -29,10 +29,11 @@ import path from 'node:path';
 import { createMoreloginClient, redact } from '../utils/browserActor/moreloginClient.js';
 import { createBrowserRuntime } from '../utils/browserActor/runtime.js';
 import { capturePage, resolveDebugTarget, CdpSession } from '../utils/browserActor/cdp.js';
-import { verifyReferralLink } from '../utils/browserActor/referralVerify.js';
+import { verifyReferralLink, resolveLinkVerdict } from '../utils/browserActor/referralVerify.js';
+import { blocksRun, classifyMarketplaceSession, sessionGateExpr, sessionWallError } from '../utils/browserActor/sessionGate.js';
 import { contentExprFor, describeEnrichment, planDescriptionUpdates } from '../utils/browserActor/enrichment.js';
 import { maskEnvId } from '../utils/browserActor/identity.js';
-import { slugifyTitle } from '../utils/browserActor/referrals.js';
+import { slugifyTitle, linkedTitleSet } from '../utils/browserActor/referrals.js';
 import { resolveRunnerIdentity } from '../utils/tenantRunnerIdentity.js';
 import { createRunStore, deriveRunStatus } from '../utils/browserActor/runs.js';
 import { TURING_PLATFORM, TURING_LIST_COUNT_EXPR, TURING_LOAD_MORE_EXPR } from '../utils/browserActor/tasks/turing.js';
@@ -68,6 +69,11 @@ const outPath = path.resolve(String(flag('out', 'tmp/referrals.json')));
 const fromFile = flag('from');
 const apply = flag('apply', null) !== null;
 const verifyLinks = flag('no-verify', null) === null;
+// A worker start is expensive and the marketplace notices repeat traffic. `--only-missing` (which
+// the worker has always passed and this runner has always ignored) means: skip the roles whose
+// link the tenant already has, *before* opening them. 2026-11-05: a fresh worker folder has no
+// `tmp/referrals.json`, so the resume file was empty and every run re-minted all 120 links.
+const onlyMissing = flag('only-missing', null) !== null;
 // --refresh ignores the progress file: used to back-fill descriptions on offers whose
 // referral link is already attached, where the normal resume would skip them.
 const refresh = flag('refresh', null) !== null;
@@ -160,6 +166,31 @@ async function evaluateJson({ host, port, expression }) {
 async function countCards({ host, port }) {
   const value = await evaluateJson({ host, port, expression: TURING_LIST_COUNT_EXPR });
   return Number(value) || 0;
+}
+
+/**
+ * Is this still the tenant's session, and is the listing really on the page? (2026-11-05)
+ *
+ * A 24-hour pause is exactly when a profile comes back signed out, and the old runner had no way to
+ * tell that from a markup change: it clicked "Share & earn" on a listing that was not there, failed
+ * five roles in a row, stopped with `card_not_found`, and sent everyone looking at selectors.
+ */
+async function readGate({ host, port }) {
+  const snapshot = await evaluateJson({
+    host,
+    port,
+    expression: sessionGateExpr({ listingSelector: TURING_PLATFORM.listSelector })
+  }).catch(() => null);
+  return classifyMarketplaceSession(snapshot || {});
+}
+
+/** Stop the run with a reason a tenant can act on, rather than 120 identical failures. */
+const wallError = sessionWallError;
+
+/** The card's title without opening the role: enough to know if we already own this link. */
+async function probeCard({ host, port, index }) {
+  const probe = await evaluateJson({ host, port, expression: turingCardProbeExpr(index) }).catch(() => null);
+  return probe?.ok ? probe : null;
 }
 
 /** The URL the page is actually on, read from the page rather than remembered. */
@@ -514,7 +545,7 @@ async function finishRunTracking({ status, message, detail } = {}) {
  *      rebuilt, and the loop continues. A 40-minute unattended job must not be
  *      all-or-nothing.
  */
-async function runCapture({ existing = [], supabase = null, identity = null, onBatch = null } = {}) {
+async function runCapture({ existing = [], offers = [], supabase = null, identity = null, onBatch = null } = {}) {
   // Identity first: a tenant who connected their own MoreLogin runs on their own profile
   // and their own key; a tenant with neither is refused rather than guessed. In agent mode the
   // portal has already resolved it and sends the envId only — the key never leaves the server.
@@ -541,6 +572,12 @@ async function runCapture({ existing = [], supabase = null, identity = null, onB
       .filter((row) => row && row.referralUrl && Number.isFinite(Number(row.index)))
       .map((row) => Number(row.index))
   );
+  /**
+   * Which roles already have a link — keyed by title, because a card index is a position in a
+   * newest-first listing and moves every time the marketplace publishes a role.
+   */
+  const linkedTitles = linkedTitleSet({ offers, captures: existing });
+  if (linkedTitles.size) console.error(`${linkedTitles.size} role(s) already have a link — they will not be opened again`);
   const captures = Array.isArray(existing) ? [...existing] : [];
 
   // Written after every single role: a crash costs one role, not the run.
@@ -560,6 +597,15 @@ async function runCapture({ existing = [], supabase = null, identity = null, onB
   try {
     await capturePage({ host, port, url: TURING_PLATFORM.listUrl, timeoutMs: 45_000 });
     const cleared = await waitForSkeletons({ host, port });
+    // A wall is checked once, before the window is spent. Signed out or challenged, every role
+    // would fail and the run would blame the markup.
+    const gate = await readGate({ host, port });
+    if (blocksRun(gate.state)) {
+      console.error(`stopping: ${gate.state} — ${gate.reason}`);
+      if (gate.hint) console.error(`  ${gate.hint}`);
+      throw wallError(gate);
+    }
+    console.error(`session: ${gate.state} (${gate.reason})`);
     const needed = skip + limit;
     let cards = await ensureCards({ host, port, needed });
     console.error(`skeletonsCleared=${cleared} cards=${cards} window=${skip + 1}..${skip + limit}`);
@@ -643,6 +689,25 @@ async function runCapture({ existing = [], supabase = null, identity = null, onB
         continue;
       }
 
+      // Before opening the role: does the tenant already own this link? Reading the card's title
+      // costs one DOM read; opening the role costs a navigation, a click and a modal wait, and the
+      // marketplace counts all three. This sits **outside** the try/finally on purpose: `continue`
+      // inside a `try` still runs `finally`, which would count the role twice and mark it failed.
+      if (onlyMissing && !refresh) {
+        const peek = await probeCard({ host, port, index }).catch(() => null);
+        const key = slugifyTitle(peek?.title || '');
+        if (key && linkedTitles.has(key)) {
+          console.error(`[${index}] already has a link — not opening it (${String(peek.title).slice(0, 60)})`);
+          runState.done += 1;
+          // Counted as a success: the role is already in the state this run exists to reach.
+          runState.ok += 1;
+          consecutiveFailures = 0;
+          await beatRun();
+          await sleep(Math.min(400, pace));
+          continue;
+        }
+      }
+
       try {
         const roleStartedAt = Date.now();
         const { capture, leftListing, note } = await readRole(index);
@@ -691,8 +756,15 @@ async function runCapture({ existing = [], supabase = null, identity = null, onB
       }
 
       if (consecutiveFailures >= 5) {
-        // Five in a row means the marketplace changed under us (signed out, layout
-        // shift). Stopping is honest, and the progress file keeps everything so far.
+        // Five in a row means the marketplace changed under us — or the session ended. Ask which,
+        // because "signed out" and "markup moved" need opposite repairs. Only the first is worth
+        // telling the tenant to fix in MoreLogin before the next window.
+        const gateNow = await readGate({ host, port }).catch(() => null);
+        if (gateNow && blocksRun(gateNow.state)) {
+          console.error(`stopping after ${consecutiveFailures} failures: ${gateNow.state} — ${gateNow.reason}`);
+          if (gateNow.hint) console.error(`  ${gateNow.hint}`);
+          throw wallError(gateNow);
+        }
         console.error(`stopping after ${consecutiveFailures} consecutive failures — re-run to resume`);
         break;
       }
@@ -901,6 +973,9 @@ async function main() {
     }
     captures = await runCapture({
       existing: prior,
+      // Which roles already have a link. In agent mode this arrives in `/context`; standalone it is
+      // the tenant's own table. Either way the runner can now skip them instead of re-opening them.
+      offers,
       supabase,
       identity,
       // Batches arrive at the portal while the run is still going; the final flush below sends
@@ -939,17 +1014,33 @@ async function main() {
   // "The dialog showed me a code" is not proof; resolving it is.
   const verification = [];
   if (verifyLinks) {
+    // The browser's title travels with the capture; here it is matched back to the offer it belongs
+    // to by title, which is also the key `planReferralBackfill` uses.
+    const pageTitleByRole = new Map();
+    for (const capture of Array.isArray(captures) ? captures : []) {
+      const key = slugifyTitle(capture?.title || '');
+      if (key && capture?.pageTitle) pageTitleByRole.set(key, capture.pageTitle);
+    }
     for (const update of plan.updates) {
       const check = await verifyReferralLink({ url: update.referral_url, expectedTitle: update.title });
+      // Same decision the portal makes (`resolveLinkVerdict`), so a link accepted in the panel is
+      // accepted here and vice versa. Before this, the manual path refused every `unresolvable`
+      // link that the worker path would have attached.
+      const decided = resolveLinkVerdict({
+        check,
+        expectedTitle: update.title,
+        pageTitle: pageTitleByRole.get(slugifyTitle(update.title)) || null
+      });
       verification.push({
         title: update.title,
         referral_url: update.referral_url,
-        verdict: check.verdict,
-        reason: check.reason,
-        resolvedTitle: check.resolvedTitle || null
+        verdict: decided.verdict,
+        reason: decided.reason,
+        source: decided.source,
+        resolvedTitle: decided.resolvedTitle || null
       });
-      if (check.verdict !== 'match') {
-        plan.skipped.push({ title: update.title, reason: `unverified_${check.verdict}` });
+      if (decided.verdict !== 'match') {
+        plan.skipped.push({ title: update.title, reason: `unverified_${decided.verdict}` });
       }
     }
     const rejected = new Set(verification.filter((row) => row.verdict !== 'match').map((row) => row.referral_url));

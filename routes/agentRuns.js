@@ -371,7 +371,10 @@ export function createAgentRunsRouter({
       console.error(`[agent] context run=${run.id} tenant=${auth.tenantSlug} source=${identity.source} profile=${identity.envId} → allowed`);
 
       const { data: offers, error: offersError } = await supabase
-        .from('opportunities').select('title, slug, external_id').eq('tenant_id', auth.tenantId);
+        // `referral_url` travels too: a worker that cannot see which roles already have a link
+        // has to open every one of them again, which is how a 120-role run repeats itself every
+        // morning (2026-11-05). The title is already the tenant's own; so is the link.
+        .from('opportunities').select('title, slug, external_id, referral_url').eq('tenant_id', auth.tenantId);
       if (offersError) throw offersError;
 
       // `runPlatform` first: the platform is written into `detail.platform` by the queue route,

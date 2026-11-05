@@ -18,7 +18,7 @@
  *   - an existing offer is never touched (`planOfferImport` skips by external_id, slug and
  *     title), which is what protects a link the tenant pasted by hand
  */
-import { judgeWorkerReportedTitle, verifyReferralLink } from './referralVerify.js';
+import { judgeWorkerReportedTitle, resolveLinkVerdict, verifyReferralLink } from './referralVerify.js';
 import { planReferralBackfill } from './tasks/turingReferrals.js';
 import { planDescriptionUpdates } from './enrichment.js';
 import { planOfferImport } from './offersImport.js';
@@ -46,18 +46,22 @@ export async function applyCaptures({
   for (const capture of captures) {
     if (!capture.referralUrl) continue;
     const check = await verify({ url: capture.referralUrl, expectedTitle: capture.title });
+    // New offers take the same decision as existing ones, including the browser's own title when
+    // the server cannot read the page. A role page rendered late is not a wrong link.
+    const decided = resolveLinkVerdict({ check, expectedTitle: capture.title, pageTitle: capture.pageTitle });
     verification.push({
       title: capture.title,
       jobId: capture.jobId,
       referral_url: capture.referralUrl,
-      verdict: check.verdict,
-      reason: check.reason,
-      resolvedTitle: check.resolvedTitle || null
+      verdict: decided.verdict,
+      reason: decided.reason,
+      source: decided.source,
+      resolvedTitle: decided.resolvedTitle || null
     });
     // A link that does not land on its own role is worse than no link: it drives the
     // tenant's candidate to somebody else's job.
-    if (check.verdict !== 'match') {
-      capture.reason = `unverified_${check.verdict}`;
+    if (decided.verdict !== 'match') {
+      capture.reason = `unverified_${decided.verdict}`;
       capture.referralUrl = null;
     }
   }
@@ -170,26 +174,20 @@ export async function applyCaptureUpdates({ supabase, offers = [], captures = []
   for (const update of linkPlan.updates) {
     const check = await verify({ url: update.referral_url, expectedTitle: update.title });
     /**
-     * When the server cannot read the page, ask the browser that minted the link.
+     * One decision, made in `referralVerify.resolveLinkVerdict`.
      *
      * Turing renders roles in JavaScript: a fetch from Render gets the shell and a generic title,
      * which on 2026-11-04 refused 120 correct links as `unverified_mismatch`. The worker opened
      * each role in the tenant's own signed-in session and reported its `<title>`; that evidence is
      * judged with the same rules, so a link is still only attached when the title matches the role.
+     * The Turing runner runs the same function when a tenant captures by hand, which is why it
+     * lives there rather than here.
      */
-    let verdict = check.verdict;
-    let reason = check.reason;
-    let resolvedTitle = check.resolvedTitle || null;
-    let source = 'server';
-    if (verdict === 'unresolvable' && update.pageTitle) {
-      const byWorker = judgeWorkerReportedTitle({ expectedTitle: update.title, pageTitle: update.pageTitle });
-      if (byWorker.verdict === 'match') {
-        verdict = 'match';
-        reason = byWorker.reason;
-        resolvedTitle = byWorker.resolvedTitle;
-        source = 'worker';
-      }
-    }
+    const { verdict, reason, resolvedTitle, source } = resolveLinkVerdict({
+      check,
+      expectedTitle: update.title,
+      pageTitle: update.pageTitle
+    });
     verification.push({
       title: update.title,
       referral_url: update.referral_url,
