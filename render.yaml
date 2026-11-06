@@ -43,3 +43,36 @@ services:
         value: "600000"
       - key: BLOG_ANGLE_DELAY_MS
         value: "1200"
+
+  # ─── The clock that actually keeps time (2026-11-06) ──────────────────────
+  #
+  # GitHub's scheduler has been 4–7 hours late on every scheduled run this repo has ever had
+  # (asked for 02:00 UTC, ran at 06:30–09:00), and after moving the cron to every 15 minutes it
+  # produced no run at all for 3½ hours. That is not a workflow-file problem — the file parses,
+  # the cron is valid — it is the public scheduler being unreliable for this repo.
+  #
+  # So the schedule lives on Render, next to the service it triggers. This job runs a script
+  # that calls the Render API directly (`scripts/trigger_blog_queue.mjs`, no dependencies, so no
+  # build step), which means the only credential involved is a Render key that never leaves
+  # Render. GitHub can keep its copy as a redundant backup, or be reverted to daily.
+  - type: cron_job
+    name: alphadome-blog-cron
+    runtime: node
+    region: frankfurt
+    branch: main
+    # TEST CADENCE. Once confirmed, "0 2 * * *" is one run a day, on time.
+    schedule: "*/30 * * * *"
+    # Nothing to build: the trigger script uses only Node's built-in fetch.
+    buildCommand: echo "no build required"
+    startCommand: node scripts/trigger_blog_queue.mjs --limit $BLOG_RUN_LIMIT
+    envVars:
+      # Create at dashboard.render.com/u/settings#api-keys. This is the whole point of moving
+      # the clock here: the key lives in one place, and it is not a CI system.
+      - key: RENDER_API_KEY
+        sync: false
+      - key: BLOG_WORKFLOW_TASK
+        value: alphadome-blog/blogQueue
+      # Cheap while testing. Raise to 10–15 for real throughput: 245 offers have no pages yet.
+      - key: BLOG_RUN_LIMIT
+        value: "3"
+
