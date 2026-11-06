@@ -540,9 +540,26 @@
       <div id="spa-content">
         <section class="mb-4 p-4 rounded-4 bg-gradient" style="background:linear-gradient(90deg,#232a4d 0%,#38bdf8 100%);color:#fff;">
             <script>
+  // The admin key travels in `?key=` on this page (that is why the URL is
+  // /admin?key=…). Every admin API call must carry it, and three of them did not:
+  // `fetch('/admin/api/executive-snapshot')` returned 401 with the key sitting in the
+  // address bar, so the executive brief and the margin cards silently never loaded.
+  //
+  // Defined on `window` because this file has two script blocks and the failing calls
+  // live in both. Any future admin fetch should use this instead of a bare path.
+  window.adminApiUrl = function (path) {
+    try {
+      const key = new URL(window.location.href).searchParams.get('key');
+      if (!key) return path;
+      return path + (path.includes('?') ? '&' : '?') + 'key=' + encodeURIComponent(key);
+    } catch (e) {
+      return path;
+    }
+  };
+
               async function fetchOwnerBrief() {
                 try {
-                  const res = await fetch('/admin/api/executive-snapshot');
+                  const res = await fetch(window.adminApiUrl('/admin/api/executive-snapshot'));
                   if (!res.ok) throw new Error('Failed to load executive snapshot');
                   const data = await res.json();
                   const h = data.headline || {};
@@ -673,7 +690,7 @@
               };
 
                 try {
-                  const res = await fetch('/admin/api/executive-snapshot');
+                  const res = await fetch(window.adminApiUrl('/admin/api/executive-snapshot'));
                   if (!res.ok) throw new Error('Failed to load executive snapshot');
                   const data = await res.json();
                   const h = data.headline || {};
@@ -2714,7 +2731,7 @@
     }
 
     async function loadExecutiveSnapshot() {
-      const payload = await fetchJsonWithFallback(['/admin/api/executive-snapshot'], { headline: {}, priorities: [] });
+      const payload = await fetchJsonWithFallback([window.adminApiUrl('/admin/api/executive-snapshot')], { headline: {}, priorities: [] });
       dashboardOpsState.executiveSnapshot = payload;
       renderExecutiveSnapshot(payload);
       return payload;
