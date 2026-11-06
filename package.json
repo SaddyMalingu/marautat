@@ -53,6 +53,7 @@
     "test:oneforma": "node scripts/test_oneforma_queue.mjs",
     "blog:queue": "node scripts/blog_queue.mjs",
     "blog:trigger": "node scripts/trigger_blog_queue.mjs",
+    "blog:watch": "node scripts/watch_blog_growth.mjs",
     "oneforma:queue": "node scripts/oneforma_queue.mjs",
     "secrets:check": "node scripts/tenant_secret_check.mjs",
     "test:social-publish": "node scripts/test_social_publish.mjs",
