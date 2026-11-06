@@ -11,10 +11,12 @@ name: Daily Blog Generation
 #      and needs no Render service at all.
 on:
   schedule:
-    # 02:00 UTC daily. GitHub's scheduler is best-effort: a scheduled run can be queued for
-    # hours, so treat this as "once a day", never as "at 02:00". If the exact hour matters,
-    # trigger the same task from a Render Cron Job instead.
-    - cron: '0 2 * * *'
+    # TEST CADENCE — every 15 minutes, so a deploy can be watched. Revert to '0 2 * * *'
+    # (daily) once the run is confirmed. GitHub's scheduler is best-effort and this repo has
+    # seen runs land 4–7 hours after their slot, so "every 15 minutes" means "often", not
+    # "on the quarter hour". If a run must happen at a known minute, trigger it by hand
+    # (Actions → Run workflow, or the Render dashboard) instead of waiting for the cron.
+    - cron: '*/15 * * * *'
   workflow_dispatch:
     inputs:
       limit:
@@ -32,21 +34,23 @@ jobs:
   generate-blogs:
     runs-on: ubuntu-latest
 
-    # GitHub does not expose the `secrets` context to a step-level `if:`, so the two facts the
-    # steps need are computed here. `HAS_DB_CREDS` is a boolean, not a credential: it lets the
-    # fallback decide whether it can run at all without lifting the service-role key into every
-    # step's environment.
-    # The workflow slug and task name, as registered in the Render dashboard. This is the
-    # one string that must match the deployed workflow: the service was created as
-    # `alphadome-blog` (service id wfl-dbm4ea56e07s73b49qn0), so the task is
-    # `alphadome-blog/blogQueue`. A mismatch is a 404 from the Render API, not a 401.
+    # Everything the steps branch on is computed here, because GitHub does not expose the
+    # `secrets` context to a step-level `if:`. `HAS_DB_CREDS` is a boolean, not a credential —
+    # it lets the fallback decide whether it can run without lifting the service-role key into
+    # every step's environment.
     #
-    # Override without editing this file by setting the repository variable
-    # BLOG_WORKFLOW_TASK (Settings → Secrets and variables → Actions → Variables). That
-    # matters if the workflow is ever renamed: a rename should not need a commit here.
+    # `BLOG_WORKFLOW_TASK` is the one string that must match the deployed workflow: the service
+    # was created as `alphadome-blog` (wfl-dbm4ea56e07s73b49qn0), so the task is
+    # `alphadome-blog/blogQueue`. A mismatch is a 404 from the Render API, not a 401. Override
+    # it with the repository variable of the same name (Settings → Secrets and variables →
+    # Actions → Variables) rather than a commit, so a rename does not need this file touched.
     env:
       RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
       BLOG_WORKFLOW_TASK: ${{ vars.BLOG_WORKFLOW_TASK || 'alphadome-blog/blogQueue' }}
+      # Scheduled runs have no dispatch input, so the limit comes from a repository variable.
+      # That is how a test run is made cheap — set BLOG_RUN_LIMIT=1 — without a commit, and why
+      # a 15-minute test cadence does not have to generate 45 pages an hour.
+      BLOG_RUN_LIMIT: ${{ github.event.inputs.limit || vars.BLOG_RUN_LIMIT || '3' }}
       HAS_DB_CREDS: ${{ secrets.SUPABASE_URL != '' && secrets.SUPABASE_SERVICE_ROLE_KEY != '' }}
 
     steps:
@@ -66,8 +70,6 @@ jobs:
       - name: Trigger the Render Workflow
         id: workflow
         if: env.RENDER_API_KEY != ''
-        env:
-          LIMIT: ${{ github.event.inputs.limit || '3' }}
         run: |
           # `blogQueue` plans from the same tables the portal reads, then fans out one chained
           # run per offer. `blogQueue` is registered by workflows/index.js.
@@ -75,12 +77,12 @@ jobs:
           # A failure here fails the job on purpose: falling back to the runner on a trigger
           # error would need database credentials in GitHub, and a job that quietly does the work
           # somewhere else is how a red night becomes a mystery.
-          echo "Triggering $BLOG_WORKFLOW_TASK with limit=$LIMIT"
+          echo "Triggering $BLOG_WORKFLOW_TASK with limit=$BLOG_RUN_LIMIT"
           if ! curl --fail-with-body --silent --show-error \
             --request POST 'https://api.render.com/v1/task-runs' \
             --header "Authorization: Bearer $RENDER_API_KEY" \
             --header 'Content-Type: application/json' \
-            --data "{\"task\":\"$BLOG_WORKFLOW_TASK\",\"input\":[{\"limit\":$LIMIT}]}"; then
+            --data "{\"task\":\"$BLOG_WORKFLOW_TASK\",\"input\":[{\"limit\":$BLOG_RUN_LIMIT}]}"; then
             echo "::error::Trigger rejected. A 404 means the task slug does not match the deployed"
             echo "::error::workflow — check Workflow Slug in the dashboard, or set the repository"
             echo "::error::variable BLOG_WORKFLOW_TASK. A 401 means RENDER_API_KEY is wrong or revoked."
@@ -104,7 +106,7 @@ jobs:
           BLOG_RUN_BUDGET_MS: '600000'
         run: |
           npm ci --no-audit --no-fund
-          node scripts/blog_queue.mjs --apply --limit ${{ github.event.inputs.limit || '3' }}
+          node scripts/blog_queue.mjs --apply --limit "$BLOG_RUN_LIMIT"
 
       # Neither path is available. Say which one is missing instead of finishing green over
       # nothing — the previous version of this job reported success while writing zero pages,
