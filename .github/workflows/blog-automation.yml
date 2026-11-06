@@ -11,7 +11,9 @@ name: Daily Blog Generation
 #      and needs no Render service at all.
 on:
   schedule:
-    # 02:00 UTC daily. Free AI tiers rate-limit per minute, so one nightly pass is deliberate.
+    # 02:00 UTC daily. GitHub's scheduler is best-effort: a scheduled run can be queued for
+    # hours, so treat this as "once a day", never as "at 02:00". If the exact hour matters,
+    # trigger the same task from a Render Cron Job instead.
     - cron: '0 2 * * *'
   workflow_dispatch:
     inputs:
@@ -19,6 +21,12 @@ on:
         description: 'Max offers to generate this run'
         required: false
         default: '3'
+
+# Two runs at once would walk the same offers and rate-limit each other. Queue instead of
+# stacking: a delayed run is harmless, two parallel runs make each other slower.
+concurrency:
+  group: blog-generation
+  cancel-in-progress: false
 
 jobs:
   generate-blogs:
@@ -51,9 +59,10 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - name: Install dependencies
-        run: npm ci
-
+      # No `npm ci` here on purpose. Triggering the workflow needs only `curl`, which the runner
+      # already has; installing 200 packages first meant that ANY dependency problem failed the
+      # job before it ever tried to trigger anything, and the failure looked like a cron problem.
+      # The fallback step below installs only when it is actually going to run.
       - name: Trigger the Render Workflow
         id: workflow
         if: env.RENDER_API_KEY != ''
@@ -63,9 +72,9 @@ jobs:
           # `blogQueue` plans from the same tables the portal reads, then fans out one chained
           # run per offer. `blogQueue` is registered by workflows/index.js.
           #
-          # A failure here fails the job on purpose. Falling back to the runner on a trigger
-          # error would need database credentials in GitHub, and a workflow that quietly does
-          # the work somewhere else is how a red night becomes a mystery.
+          # A failure here fails the job on purpose: falling back to the runner on a trigger
+          # error would need database credentials in GitHub, and a job that quietly does the work
+          # somewhere else is how a red night becomes a mystery.
           echo "Triggering $BLOG_WORKFLOW_TASK with limit=$LIMIT"
           if ! curl --fail-with-body --silent --show-error \
             --request POST 'https://api.render.com/v1/task-runs' \
@@ -93,7 +102,9 @@ jobs:
           SITE_URL: https://alphadome.onrender.com
           # No HTTP request to bound here, so give the writer room instead of truncating angles.
           BLOG_RUN_BUDGET_MS: '600000'
-        run: node scripts/blog_queue.mjs --apply --limit ${{ github.event.inputs.limit || '3' }}
+        run: |
+          npm ci --no-audit --no-fund
+          node scripts/blog_queue.mjs --apply --limit ${{ github.event.inputs.limit || '3' }}
 
       # Neither path is available. Say which one is missing instead of finishing green over
       # nothing — the previous version of this job reported success while writing zero pages,
@@ -101,7 +112,10 @@ jobs:
       - name: Nothing to do (no credentials)
         if: env.RENDER_API_KEY == '' && env.HAS_DB_CREDS != 'true'
         run: |
-          echo "::error::No way to generate: set RENDER_API_KEY (to trigger the workflow) or SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY (to run here)."
+          echo "::error::No way to generate. Every run of this job has failed here since October."
+          echo "::error::Fix it with ONE secret: Settings → Secrets and variables → Actions →"
+          echo "::error::New repository secret → RENDER_API_KEY (from dashboard.render.com/u/settings#api-keys)."
+          echo "::error::Alternative: set SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY to run on the runner instead."
           exit 1
 
       - name: Report results
