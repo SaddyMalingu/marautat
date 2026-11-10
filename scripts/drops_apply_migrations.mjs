@@ -1,0 +1,84 @@
+#!/usr/bin/env node
+
+/**
+ * Apply the Digital Drops migrations through the project's `exec_sql` RPC
+ * (2026-11-11).
+ *
+ * Why this exists: the 2026-11-11 file widens tables created by 2026-11-10, and
+ * running them out of order produces `42P01: relation "public.digital_products"
+ * does not exist`. On a Supabase project with the `exec_sql` RPC already installed
+ * (this repo uses it in `admin/check_uploads.js`), the two files can be applied in
+ * the right order from one command.
+ *
+ * Both files are idempotent (`IF NOT EXISTS`, guarded constraints) and wrapped in
+ * BEGIN/COMMIT, so re-running is safe. This script does not edit them.
+ *
+ *   npm run drops:migrate -- --probe     # read-only: is the RPC there?
+ *   npm run drops:migrate -- --apply     # run 10, then 11, then verify
+ *   npm run drops:migrate                # print the plan, touch nothing
+ */
+import 'dotenv/config';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const FILES = [
+  'migrations/2026-11-10_digital_drops.sql',
+  'migrations/2026-11-11_digital_drops_card_lane.sql',
+];
+
+const args = process.argv.slice(2);
+const probe = args.includes('--probe');
+const apply = args.includes('--apply');
+
+const url = process.env.SUPABASE_URL || process.env.SB_URL;
+const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SB_SERVICE_ROLE_KEY;
+
+if (!url || !key) {
+  console.error('No Supabase credentials in this shell. Set SB_URL + SB_SERVICE_ROLE_KEY.');
+  process.exit(2);
+}
+
+const { createClient } = await import('@supabase/supabase-js');
+const sb = createClient(url, key, { auth: { persistSession: false } });
+
+/** The RPC signature this repo already uses: (sql_query text, params json). */
+const runSql = async (sql) => sb.rpc('exec_sql', { sql_query: sql, params: '[]' });
+
+if (probe) {
+  const { error } = await runSql('select 1 as ok');
+  if (error) {
+    console.log('exec_sql is NOT available: ' + error.message);
+    console.log('Use the Supabase SQL editor and run the two files in order.');
+    process.exit(1);
+  }
+  console.log('exec_sql is available. Applying is possible with: npm run drops:migrate -- --apply');
+  process.exit(0);
+}
+
+if (!apply) {
+  console.log('Plan (nothing has been changed):');
+  FILES.forEach((f, i) => {
+    const sql = fs.readFileSync(path.join(root, f), 'utf8');
+    console.log('  ' + (i + 1) + '. ' + f + '  (' + sql.length + ' bytes)');
+  });
+  console.log('\nRun with --probe to check the RPC, or --apply to execute them in this order.');
+  process.exit(0);
+}
+
+for (const file of FILES) {
+  const sql = fs.readFileSync(path.join(root, file), 'utf8');
+  process.stdout.write('Applying ' + file + ' … ');
+  const { error } = await runSql(sql);
+  if (error) {
+    console.log('FAILED');
+    console.error('  ' + String(error.message || error).slice(0, 500));
+    console.error('\nNothing after this file was attempted. Fix the error, then re-run:');
+    console.error('  npm run drops:migrate -- --apply');
+    process.exit(1);
+  }
+  console.log('ok');
+}
+
+console.log('\nMigrations applied. Checking the schema…\n');

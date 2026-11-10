@@ -1,0 +1,1166 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>AI Agent Ops Track · Alphadome</title><style>
+:root{--ink:#0d1320;--paper:#ffffff;--muted:#5b6b85;--line:#e3e8f0;--accent:#b45309;--code:#f5f7fb}
+*{box-sizing:border-box}
+body{margin:0;background:#f1f4f9;color:var(--ink);font:16px/1.65 Georgia,'Times New Roman',serif}
+.sheet{max-width:820px;margin:0 auto;background:var(--paper);padding:56px 60px 72px;box-shadow:0 10px 40px rgba(13,19,32,.08)}
+.brand{font:600 12px/1 ui-sans-serif,system-ui,sans-serif;letter-spacing:.18em;text-transform:uppercase;color:var(--accent)}
+h1{font-size:2.1rem;line-height:1.2;margin:.4rem 0 .6rem}
+h2{font-size:1.35rem;margin:2.2rem 0 .6rem;border-top:1px solid var(--line);padding-top:1.4rem}
+h3{font-size:1.08rem;margin:1.6rem 0 .4rem}
+h4{font-size:.98rem;margin:1.2rem 0 .3rem}
+p,li{color:#22304a}
+.meta{font:14px/1.5 ui-sans-serif,system-ui,sans-serif;color:var(--muted)}
+.lead{font-size:1.05rem;color:#2b3a55}
+.rule{height:3px;background:var(--accent);width:64px;margin:1.2rem 0 1.6rem}
+ul,ol{padding-left:1.3rem}
+li{margin:.3rem 0}
+code{background:var(--code);padding:.1rem .3rem;border-radius:4px;font-size:.9em}
+pre{background:var(--code);padding:14px 16px;border-radius:8px;overflow:auto;border:1px solid var(--line)}
+pre code{background:none;padding:0;font-size:.82rem;line-height:1.5}
+blockquote{margin:1rem 0;padding:.6rem 1rem;border-left:3px solid var(--accent);color:var(--muted);background:#faf7f2}
+.box{border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin:1.2rem 0;background:#fbfcfe}
+.box h4{margin-top:0}
+.licence{font:13px/1.6 ui-sans-serif,system-ui,sans-serif;color:var(--muted);border-top:1px solid var(--line);margin-top:3rem;padding-top:1.2rem}
+.toc a{color:var(--ink);text-decoration:none;border-bottom:1px dotted var(--line)}
+@media print{body{background:#fff}.sheet{box-shadow:none;padding:0}h2{break-after:avoid}pre{white-space:pre-wrap}}
+@media (max-width:640px){.sheet{padding:28px 20px 40px}h1{font-size:1.6rem}}
+</style></head><body><div class="sheet">
+<div class="brand">Alphadome · Digital Drop</div>
+<h1>AI Agent Ops Track</h1>
+<p class="meta">Assembled pack · course · edition 2026-11-10</p>
+<div class="rule"></div>
+<p class="lead">A self-paced, written track for the job that is actually being hired: agents that run in production, with tool use, evals, cost control and an on-call story. Six modules, six labs, no video you have to sit through.</p>
+<h2>What you can do when you finish</h2><ul><li>Build an agent loop with tool use, retries and a hard cost ceiling</li><li>Write evals that fail a bad agent before a customer does</li><li>Run a browser or API agent with credentials that cannot be exfiltrated</li><li>Write the operations page a hiring manager asks for: logs, alerts, rollback</li></ul>
+<h2>Contents</h2><ol class="toc"><li>The loop, and where it breaks</li><li>Tool use and MCP</li><li>Retrieval and memory</li><li>Evals that gate a release</li><li>Runtime and credentials</li><li>Operating it</li></ol>
+<h2>1. The loop, and where it breaks</h2><p>Plan, act, observe, repeat: the four failure modes (looping, silent tool failure, context overflow, unbounded spend) and the guard each one needs. Lab: a task runner with a token budget.</p>
+<h2>2. Tool use and MCP</h2><p>Designing a tool surface an agent cannot misuse, validating arguments server-side, and when an MCP server is the right boundary. Lab: wrap an existing REST endpoint as a safe tool.</p>
+<h2>3. Retrieval and memory</h2><p>Chunking choices that change answer quality, the hybrid search baseline, and what to store versus recompute. Lab: a retrieval path with a citation requirement.</p>
+<h2>4. Evals that gate a release</h2><p>Golden sets, rubric grading, regression thresholds and cost-per-success. Lab: an eval suite wired to fail a pull request.</p>
+<h2>5. Runtime and credentials</h2><p>Tenant-scoped secrets, least privilege, the browser-agent pattern for systems with no API, and the audit trail that makes an incident survivable. Lab: a sealed credential store with a rotation test.</p>
+<h2>6. Operating it</h2><p>The dashboards, alert thresholds, retry and dead-letter policy, and the rollback that does not require a redeploy. Lab: an operations page for the agent you built.</p>
+<h2>Put it to work this week</h2><div class="box"><ol><li>Pick one task you already do manually and write its tool surface before you write the prompt.</li><li>Put a hard token ceiling on the loop and log every time it is hit; the log is your first cost review.</li><li>Write five evals from real failures you have seen, not from imagined ones.</li><li>Draw the operations page on paper: what alerts, who is paged, what rollback means for this agent.</li></ol></div>
+<h1 style="page-break-before:always">Source documents</h1><p class="lead">Bundled verbatim from the system this pack describes, so you can read the implementation rather than a summary of it.</p><h2>BROWSER_ACTOR_RUNTIME.md</h2><p class="meta">BROWSER_ACTOR_RUNTIME.md</p><h1>Browser Actor Runtime (MoreLogin)</h1>
+<blockquote>AlphaDome agents can now act on the open web through a <strong>named, isolated, fingerprinted browser identity per tenant</strong> — brokered by this server, attached over CDP, leased, and audited.</blockquote>
+<p>Status: <strong>implemented, tested, and verified live</strong> (2026-10-31). 101 assertions pass offline (no MoreLogin install, no browser, no database), and the adapter has been exercised against <strong>MoreLogin Client 2.69.0.0 + ml-cli 2.8.4</strong> on Windows x64.</p>
+<p>---</p>
+<h2>Decision summary (repo rule: one buyer, one workflow, one asset)</h2>
+<p>| | | |---|---| | <strong>Target buyer</strong> | An AlphaDome tenant or agency whose buying signal sits <em>behind a login</em> — tender portals, supplier/ERP portals, marketplaces, Facebook groups, LinkedIn, WhatsApp Web. Secondarily AlphaDome's own ABOSS outbound motion. | | <strong>Workflow solved</strong> | &quot;The agent must <em>be</em> the tenant on a site we have no API for.&quot; Tender capture, lead verification from a real Kenyan identity/IP, price and stock checks on supplier portals, marketplace listing checks. | | <strong>Reusable code already in repo</strong> | <code>routes/</code> + <code>utils/</code> split and the pure-module/thin-route pattern from <code>utils/scanPay.js</code>; Supabase service-role fallback client convention (<code>utils/aiJobsService.js</code>); <code>ADMIN_KEY</code>/<code>ADMIN_PASS</code> auth idiom (<code>routes/aiJobsAdmin.js</code>); the ABOSS pipeline (<code>scripts/aboss_*</code>) as the first producer/consumer; <code>alphadome-kernel</code> as the reasoning layer. | | <strong>Minimal slice shipped</strong> | <code>utils/browserActor/*</code> (MoreLogin client with CLI + HTTP transports, identity registry, lease broker, dependency-free CDP client) + <code>routes/browserActors.js</code> at <code>/api/agents/browser</code> + migration + probe CLI + test suite. | | <strong>Revenue impact</strong> | Unlocks the two highest-ticket motions that were blocked on &quot;we can't log in&quot;: <strong>tender intelligence</strong> and <strong>verified lead qualification</strong>. Both are already sold-into workflows (<code>aiJobs</code>, ABOSS); this removes the manual step and makes them deliverable per tenant instead of by hand. | | <strong>Main technical risks</strong> | (1) Account bans if identities are shared or abused — mitigated by one-profile-per-tenant + leases. (2) <code>ml-cli</code> version drift — mitigated by pinning to documented CLI 2.8.3 contracts and typed errors. (3) Token leakage from Cloud <code>cdpUrl</code> — mitigated by handing it only to the lease creator. (4) A remote browser farm on a public host — mitigated by fail-closed auth. | | <strong>Next validation step</strong> | On a host with the MoreLogin client: <code>npm run browser:doctor</code>, then <code>node scripts/browser_actor_probe.mjs capture --tenant &lt;slug&gt; --url &lt;real tender portal&gt;</code>, then wire ABOSS tender capture to <code>POST /api/agents/browser/capture</code>. |</p>
+<p>---</p>
+<h2>Architecture</h2>
+<pre><code>
+ agent (ABOSS worker / kernel / any HTTP client)
+   │  x-agent-key + tenant slug
+   ▼
+ POST /api/agents/browser/sessions        routes/browserActors.js
+   │                                      ├─ identity.js   tenant -&gt; envId (map | table | default)
+   │                                      ├─ sessions.js   one lease per profile, TTL, token
+   │                                      └─ runtime.js    start / close / phones
+   ▼
+ utils/browserActor/moreloginClient.js
+   ├─ transport &quot;cli&quot;  -&gt; ml-cli env start --env-id …   (port found via IPC pipe)
+   └─ transport &quot;http&quot; -&gt; POST 127.0.0.1:&lt;port&gt;/api/env/start
+   ▼
+ MoreLogin profile (fingerprint + proxy + cookies, one per tenant)
+   ▼  debugPort
+ utils/browserActor/cdp.js  -&gt;  CDP over WebSocket (Node 22+, no npm dependency)
+   ▼
+ page facts: title, description, headings, text, links, form/button counts
+</code></pre>
+<p>Why this shape:</p>
+<ul>
+<li><strong><code>ml-cli</code> is the default transport, not the Local API.</strong> The client's port is not stable between launches; <code>ml-cli</code> discovers it over <code>\\.\pipe\MoreLogin-cli</code>. Hard-coding <code>--port 40000</code> would work on one host and silently fail on the next, so the adapter only forwards <code>--port</code> when an operator explicitly sets <code>MORELOGIN_PORT</code>. The direct HTTP transport exists for verification and for hosts where the port is pinned.</li>
+<li><strong>Both transports return one normalised shape.</strong> MoreLogin answers <code>debugPort</code> as a <strong>string</strong> (<code>&quot;9222&quot;</code>). That is parsed once, in <code>normalizeStartResult</code>, so every caller attaches with a number.</li>
+<li><strong>No Puppeteer/Playwright dependency.</strong> The few CDP calls an agent needs are ~150 lines over Node's built-in <code>WebSocket</code>. A solver that needs the full surface can still attach Puppeteer to <code>browserURL</code> — the endpoint is returned as-is.</li>
+<li><strong>Leases are in memory, audit is in Postgres.</strong> A lease is a runtime fact; the audit table answers &quot;who drove whose profile, when, from which agent&quot;.</li>
+</ul>
+<p>---</p>
+<h2>Configuration</h2>
+<p>| Variable | Default | Meaning | |---|---|---| | <code>AGENT_API_KEY</code> | <em>(unset)</em> | Shared key agents present as <code>x-agent-key</code> or <code>Authorization: Bearer</code>. Falls back to <code>ADMIN_KEY</code> then <code>ADMIN_PASS</code>. <strong>If none is set the router answers 503</strong> — it never opens a browser farm by accident. | | <code>MORELOGIN_TRANSPORT</code> | <code>cli</code> | <code>cli</code> (ml-cli, IPC port discovery) or <code>http</code> (Local API directly). | | <code>MORELOGIN_CLI_PATH</code> | <code>ml-cli</code> | Path to the CLI binary. | | <code>MORELOGIN_PORT</code> / <code>ML_PORT</code> | <em>(unset)</em> | Only set this to pin the Local API port. Setting it disables IPC discovery. <code>http</code> defaults to <code>40000</code>. | | <code>MORELOGIN_API_KEY</code> / <code>ML_API_KEY</code> | <em>(unset)</em> | Local API bearer token, if the client requires one. | | <code>MORELOGIN_HOST</code> | <code>127.0.0.1</code> | Local API host. | | <code>MORELOGIN_TIMEOUT_MS</code> | <code>20000</code> | Default request timeout. <code>env start</code> uses 45s and <code>cloudphone open</code> 150s regardless. | | <code>BROWSER_ACTOR_PROFILES</code> | <em>(unset)</em> | JSON map, highest-priority binding: <code>{&quot;acme&quot;:&quot;1673823102599682&quot;,&quot;beta&quot;:{&quot;envId&quot;:&quot;42&quot;,&quot;runtime&quot;:&quot;cloud&quot;}}</code>. | | <code>BROWSER_ACTOR_DEFAULT_ENV_ID</code> | <em>(unset)</em> | Single-profile demo mode. Never use in production: every unmapped tenant would share it. |</p>
+<p>Identity resolution order: <code>BROWSER_ACTOR_PROFILES</code> → <code>browser_identities</code> table → <code>BROWSER_ACTOR_DEFAULT_ENV_ID</code> → <strong><code>profile_unmapped</code> error</strong>.</p>
+<p>Apply the schema: <code>migrations/2026-10-31_browser_actor_runtime.sql</code>.</p>
+<p>---</p>
+<h2>API</h2>
+<p>Base: <code>/api/agents/browser</code> · Header: <code>x-agent-key: &lt;AGENT_API_KEY&gt;</code></p>
+<p>| Method | Path | Purpose | |---|---|---| | <code>GET</code> | <code>/health</code> | Provider reachability (cached 30s) + active lease count. | | <code>GET</code> | <code>/profiles</code> | Tenant→profile bindings, <strong>masked</strong> (<code>16**********82</code>). | | <code>POST</code> | <code>/sessions</code> | Lease a profile and start it. Returns the attach point. | | <code>GET</code> | <code>/sessions?tenant=</code> | Active leases (token never included). | | <code>GET</code> | <code>/sessions/:id?tenant=</code> | One lease. | | <code>POST</code> | <code>/sessions/:id/heartbeat</code> | Extend a lease (<code>leaseToken</code>, <code>ttlSeconds</code>). | | <code>DELETE</code> | <code>/sessions/:id?close=false</code> | Release; closes the profile unless <code>close=false</code>. | | <code>POST</code> | <code>/capture</code> | One-shot: lease → start → read page → release/close. | | <code>GET</code> | <code>/phones</code> | Cloud phone inventory. | | <code>POST</code> | <code>/phones/open</code> | Open a cloud phone (<code>id</code> or <code>keyword</code>, not both). |</p>
+<h3>Lease a profile and attach</h3>
+<pre><code>
+curl -s -X POST http://localhost:3000/api/agents/browser/sessions \
+  -H &quot;x-agent-key: $AGENT_API_KEY&quot; -H 'content-type: application/json' \
+  -d '{&quot;tenant&quot;:&quot;acme&quot;,&quot;purpose&quot;:&quot;tender-capture&quot;,&quot;ttlSeconds&quot;:900}'
+</code></pre>
+<pre><code>
+{
+  &quot;ok&quot;: true,
+  &quot;session&quot;: { &quot;sessionId&quot;: &quot;…&quot;, &quot;leaseToken&quot;: &quot;…&quot;, &quot;tenant&quot;: &quot;acme&quot;,
+               &quot;envIdMasked&quot;: &quot;16**********82&quot;, &quot;expiresAt&quot;: &quot;…&quot;, &quot;cdp&quot;: {&quot;host&quot;:&quot;127.0.0.1&quot;,&quot;port&quot;:9222} },
+  &quot;attach&quot;: { &quot;host&quot;: &quot;127.0.0.1&quot;, &quot;port&quot;: 9222, &quot;browserURL&quot;: &quot;http://127.0.0.1:9222&quot;,
+              &quot;webdriver&quot;: &quot;…&quot;, &quot;wsUrl&quot;: null,
+              &quot;note&quot;: &quot;Attach with Puppeteer (browserURL) or Playwright (connectOverCDP) on this host.&quot; },
+  &quot;provider&quot;: { &quot;runtime&quot;: &quot;local&quot;, &quot;status&quot;: &quot;RUNNING&quot;, &quot;pending&quot;: false }
+}
+</code></pre>
+<h3>One-shot capture (the call most agents want)</h3>
+<pre><code>
+curl -s -X POST http://localhost:3000/api/agents/browser/capture \
+  -H &quot;x-agent-key: $AGENT_API_KEY&quot; -H 'content-type: application/json' \
+  -d '{&quot;tenant&quot;:&quot;acme&quot;,&quot;url&quot;:&quot;https://tenders.example/ke&quot;,&quot;maxChars&quot;:4000,&quot;maxLinks&quot;:40}'
+</code></pre>
+<pre><code>
+{
+  &quot;ok&quot;: true,
+  &quot;page&quot;: {
+    &quot;title&quot;: &quot;Tender Portal KE&quot;, &quot;url&quot;: &quot;https://tenders.example/ke&quot;,
+    &quot;description&quot;: &quot;Public tenders&quot;, &quot;headings&quot;: [&quot;Open tenders&quot;],
+    &quot;text&quot;: &quot;Supply of 200 laptops …&quot;,
+    &quot;links&quot;: [{ &quot;text&quot;: &quot;Apply&quot;, &quot;href&quot;: &quot;https://tenders.example/ke/1&quot; }],
+    &quot;counts&quot;: { &quot;links&quot;: 1, &quot;forms&quot;: 1, &quot;buttons&quot;: 2, &quot;inputs&quot;: 3 },
+    &quot;readyState&quot;: &quot;complete&quot;, &quot;browser&quot;: &quot;Chrome/124&quot;
+  },
+  &quot;session&quot;: { &quot;sessionId&quot;: &quot;…&quot;, &quot;tenant&quot;: &quot;acme&quot; }
+}
+</code></pre>
+<p>The lease is released and the profile closed even when capture throws — that is asserted in the suite.</p>
+<h3>Errors (branch on <code>error</code>, not on prose)</h3>
+<p>| <code>error</code> | HTTP | Agent should | |---|---|---| | <code>unauthorized</code> | 401 | Fix the key. | | <code>not_configured</code> | 503 | Operator action: set <code>AGENT_API_KEY</code> / map a profile. | | <code>profile_unmapped</code> | 409 | Operator must bind the tenant (<code>details.fix</code>). | | <code>profile_busy</code> | 409 | Wait for <code>details.expiresAt</code> or retry later. | | <code>lease_conflict</code> | 409 | You are not the holder of this lease. | | <code>cli_missing</code> | 503 | Install the client + <code>ml-cli</code> on this host. | | <code>provider_error</code> / <code>provider_timeout</code> | 502/504 | Retry with backoff; check <code>details.providerCode</code>. | | <code>cdp_error</code> / <code>cdp_timeout</code> | 502/504 | Profile started but not drivable; re-lease. | | <code>unsupported_transport</code> | 501 | Feature needs <code>MORELOGIN_TRANSPORT=cli</code>. |</p>
+<p>---</p>
+<h2>Driving it from an agent</h2>
+<p><strong>In-process (kernel / ABOSS script)</strong> — no HTTP hop:</p>
+<pre><code>
+import { capturePage } from '../utils/browserActor/cdp.js';
+import { createMoreloginClient } from '../utils/browserActor/moreloginClient.js';
+import { createBrowserRuntime } from '../utils/browserActor/runtime.js';
+
+const runtime = createBrowserRuntime({ client: createMoreloginClient() });
+const started = await runtime.startProfile(envId, { headless: true });
+try {
+  const page = await capturePage({ host: started.host, port: started.debugPort, url });
+  // page.title, page.text, page.links …
+} finally {
+  await runtime.closeProfile(envId);
+}
+</code></pre>
+<p><strong>Full control (Puppeteer / Playwright)</strong> — attach to the port the lease returned:</p>
+<pre><code>
+// Puppeteer
+const browser = await puppeteer.connect({ browserURL: attach.browserURL });
+
+// Playwright
+const browser = await chromium.connectOverCDP(`http://${attach.host}:${attach.port}`);
+</code></pre>
+<p>Then keep the lease alive while you work:</p>
+<pre><code>
+curl -s -X POST &quot;$BASE/sessions/$SESSION_ID/heartbeat&quot; \
+  -H &quot;x-agent-key: $AGENT_API_KEY&quot; -H 'content-type: application/json' \
+  -d &quot;{\&quot;leaseToken\&quot;:\&quot;$LEASE_TOKEN\&quot;,\&quot;ttlSeconds\&quot;:900}&quot;
+</code></pre>
+<p>If the process dies, the lease expires on its own (default 15 min, max 4 h) and the next agent can take the profile. No reaper timer is needed: expiry is enforced at every read.</p>
+<h3>First revenue workflow: tender capture</h3>
+<ol>
+<li><code>GET /ai-jobs</code> already produces opportunity rows; ABOSS already builds lead queues.</li>
+<li>Add one step to the ABOSS worker: for each tenant with a tender portal, <code>POST /capture</code> on the portal's search URL.</li>
+<li>Feed <code>page.text</code> + <code>page.links</code> into the existing generation engine (<code>alphadome-kernel/src/ai/promptEngine.ts</code>) to extract deadline, buyer, value, and eligibility.</li>
+<li>Write into the existing <code>opportunities</code> table so the tenant portal and blog surfaces show it with zero new UI.</li>
+</ol>
+<h3>Cloud phones</h3>
+<p><code>GET /phones</code> lists them; <code>POST /phones/open</code> opens one. Opening is a <strong>request accepted</strong>, not proof the device finished booting — verify separately (same caution the vendor docs give). Phone actions are CLI-transport only in v1; the direct Local API transport deliberately reports <code>unsupported_transport</code> rather than inventing an endpoint.</p>
+<p>---</p>
+<h2>Security model</h2>
+<ul>
+<li><strong>Fail closed.</strong> No key configured → 503. Wrong key → 401. Comparison is constant-time.</li>
+<li><strong>One tenant, one profile, one holder.</strong> Binding is explicit; a profile can only be leased once at a time, and only the holder's token can heartbeat or release it.</li>
+<li><strong>Tokens never persist.</strong> <code>leaseToken</code> is returned to the creator only and never appears in list/detail responses. A Cloud <code>cdpUrl</code> is returned <strong>once</strong>, to the creator, and is never written to the audit row or a log line. <code>redact()</code> strips <code>api-key</code>/<code>token</code> from every diagnostic string.</li>
+<li><strong>SSRF guard.</strong> <code>POST /capture</code> accepts only <code>http:</code>/<code>https:</code> absolute URLs, max 2048 chars.</li>
+<li><strong>Tenant scoping on reads.</strong> <code>GET /sessions/:id</code> for another tenant's session returns 404, not 403 — no existence oracle.</li>
+<li><strong>RLS on.</strong> Both tables have RLS enabled with no anon policy; only the service role touches them.</li>
+</ul>
+<h2>Operator runbook</h2>
+<h3>Host prerequisite: the MSVC runtime</h3>
+<p><code>ml-cli.exe</code> imports exactly one non-OS DLL — <code>VCRUNTIME140.dll</code>. On a host without the Visual C++ runtime it dies at startup with <code>0xC0000135</code> (<code>STATUS_DLL_NOT_FOUND</code>) and reports <strong>nothing</strong> on stdout, which is why the vendor bootstrap fails with &quot;Downloaded ml-cli could not report a valid version&quot;.</p>
+<p>Two supported fixes, in order of preference:</p>
+<ol>
+<li><strong>System-wide (needs one UAC approval):</strong> install the Microsoft Visual C++</li>
+<p>2015–2022 Redistributable (x64). Most production hosts already have it.</p>
+<li><strong>App-local (no elevation):</strong> copy a genuine <strong>x64</strong> <code>vcruntime140.dll</code> next to</li>
+<p><code>ml-cli.exe</code> in <code>%USERPROFILE%\.morelogin\bin</code>. Verify it first — a 32-bit copy fails differently (<code>0xC000007B</code>, <code>STATUS_INVALID_IMAGE_FORMAT</code>), which is the trap here: VS Code's bundled copy under <code>tools\</code> is x86.</p>
+</ol>
+<p>Check a copy's architecture before trusting it (PE machine type at <code>e_lfanew+4</code>: <code>0x8664</code> = x64, <code>0x14c</code> = x86). Confirm <code>Authenticode=Valid</code> and a Microsoft signer too — the runtime is executable code.</p>
+<pre><code>
+# 1. Is MoreLogin usable from this host?
+npm run browser:doctor
+#    -&gt; {&quot;transport&quot;:&quot;cli&quot;,&quot;reachable&quot;:true,…}   exit 0
+
+# 2. What profiles exist in the account?
+node scripts/browser_actor_probe.mjs profiles
+
+# 3. Prove one profile works end to end
+BROWSER_ACTOR_PROFILES='{&quot;acme&quot;:&quot;1673823102599682&quot;}' \
+  node scripts/browser_actor_probe.mjs capture --tenant acme --url https://example.com
+
+# 4. Run the offline suite (CI, no MoreLogin needed)
+npm run test:browser-actor
+</code></pre>
+<p>Mounting <code>ml-cli</code> (Windows, per vendor docs): copy <code>ml-cli.exe</code> into a folder on <code>%PATH%</code> (e.g. <code>%LOCALAPPDATA%\MoreLogin\bin</code>), reopen the terminal, then <code>ml-cli --version</code>.</p>
+<h2>Known limits (v1, deliberate)</h2>
+<ol>
+<li><strong>The MoreLogin desktop client must run on the same host as the broker.</strong> That is the vendor's local-runtime constraint. Cloud runtimes remove it (<code>runtime: &quot;cloud&quot;</code>), but a Cloud <code>cdpUrl</code> is only usable by a worker on that same network — the HTTP API hands it over; it does not proxy the browser session.</li>
+<li><strong>Leases are per-process.</strong> Two server instances would each keep their own lease table. Fine for the current single-instance deploy; move the broker to Postgres (<code>browser_actor_sessions</code> + a <code>select … for update</code>) before horizontal scaling.</li>
+<li><strong>No screenshot/PDF capture yet.</strong> One evaluate returns text facts; screenshots are a second CDP call (<code>Page.captureScreenshot</code>) and a decision about storage.</li>
+<li><strong>No per-tenant URL allowlist.</strong> Any authenticated agent can point a profile at any http(s) URL. Add <code>allowed_domains</code> to <code>browser_identities</code> when a second tenant onboards.</li>
+<li><strong><code>env close</code> falls back to <code>env stop</code></strong> if an older CLI build rejects the subcommand. Both are probed, neither is guessed.</li>
+</ol>
+<h2>Distribution layer (X automated, LinkedIn assisted)</h2>
+<p>A Writer's Flow page already yields a share card (<code>utils/postShare.js</code> → hook ≤140, excerpt ≤240, hashtags) and <code>admin/tenant_dashboard.html</code> already renders it. This layer adds the two places the card can go — and the difference between them is a legal constraint, not a preference.</p>
+<p>| Platform | Method | Why | |---|---|---| | <strong>X</strong> | API v2 <code>POST /2/tweets</code>, per-tenant OAuth 2.0 user token | Programmatic posting is the intended use of the API. | | <strong>LinkedIn</strong> — company page | Community Management API (app review + page admin) | The only sanctioned programmatic publishing path. | | <strong>LinkedIn</strong> — personal profile | <strong>Assisted</strong>: the agent composes, the human presses Post | LinkedIn prohibits automated activity on a member account. There is deliberately <strong>no endpoint</strong> that posts to it. |</p>
+<p>On a phone the two paths <strong>must</strong> differ, and this is a vendor limitation rather than a bug in the portal: LinkedIn's app takes over <code>linkedin.com</code> links and drops any prefilled text, so <code>feed?shareActive=true&amp;text=…</code> pre-fills the composer on desktop and silently loses the copy on mobile. Therefore:</p>
+<ul>
+<li><strong>Desktop</strong> — opens the composer with the post already typed in.</li>
+<li><strong>Mobile</strong> — opens the official <code>sharing/share-offsite/?url=…</code> link, so the</li>
+<p>article <em>preview card</em> still appears, and the tenant pastes from <strong>Copy for LinkedIn</strong>.</p>
+<li><strong>X</strong> — the intent link behaves the same on both, so it is left alone.</li>
+</ul>
+<p><code>wfIsMobileShare()</code> in <code>admin/tenant_dashboard.html</code> decides which link to render; a test asserts both branches exist.</p>
+<p>Endpoints (tenant session required, mounted beside the existing share card):</p>
+<ul>
+<li><code>GET /tenant/blogger/posts/:slug/prefill</code> — one card → X text (t.co-weighted) and</li>
+<p>LinkedIn body, plus warnings: template-mode disclosure, dropped excerpt, fold risk. Sends nothing.</p>
+<li><code>POST /tenant/blogger/posts/:slug/publish/x</code> — publishes to X. <code>{&quot;dry&quot;: true}</code> (or</li>
+<p><code>?dry=1</code>) returns the exact text without touching the API or a rate-limit slot.</p>
+</ul>
+<p>Enforced in code and pinned by tests:</p>
+<ul>
+<li>X counts a URL as <strong>23 characters</strong>. Text is measured <em>before</em> the call, so a</li>
+<p>282-character post fails locally instead of after a round trip.</p>
+<li>The link is never cut. **Hashtags go first, then the excerpt, then the hook is</li>
+<p>trimmed** — a tenant never sends a customer a truncated URL.</p>
+<li>A tenant with no token gets <code>409 social_not_configured</code>, never a fake success.</li>
+<li>The token never reaches a response body, a <code>details</code> object, or a log line.</li>
+<li><code>linkedin.assisted</code> is always <code>true</code>; the absence of a LinkedIn publish route is</li>
+<p>the control, so do not add one.</p>
+</ul>
+<p>| Variable | Purpose | |---|---| | <code>SOCIAL_X_TOKENS</code> | JSON map <code>{&quot;tenant-slug&quot;:&quot;user-access-token&quot;}</code> (same convention as <code>BROWSER_ACTOR_PROFILES</code>) | | <code>X_USER_ACCESS_TOKEN</code> | single-tenant fallback | | <code>X_API_BASE</code> | default <code>https://api.x.com</code> |</p>
+<p>Verify with <code>npm run test:social-publish</code> (83 assertions, no X credentials needed).</p>
+<h2>Marketplaces the tenant already works on</h2>
+<p>The Writer's Flow header already sends tenants to these, so the agent's job is to read the account the tenant already has — not to invent a funnel:</p>
+<p>| Platform | Portal button | Registered as | |---|---|---| | <strong>Micro1</strong> | <code>https://refer.micro1.ai/opportunities</code> | <code>account</code> — reads the tenant's own login | | <strong>Turing</strong> | <code>https://work.turing.com/jobs</code> | <code>account</code> | | <strong>Mercor</strong> | referral links (<code>utils/aiJobsConfig.js</code>) | <code>referral</code> |</p>
+<ul>
+<li><code>utils/browserActor/platforms.js</code> is the registry an adapter reads. A test asserts</li>
+<p>its URLs still equal the anchors in <code>admin/tenant_dashboard.html</code>, so an adapter can never be written against a link the tenant stopped using.</p>
+<li><code>migrations/2026-10-31_seed_micro1_turing_sources.sql</code> registers both as</li>
+<p><code>opportunity_sources</code> (dual-schema, idempotent) and merges <code>micro1.ai</code> / <code>turing.com</code> into the tenant redirect allowlist so <code>/go/:id</code> links validate.</p>
+<li><strong>Reading is the whole job.</strong> Matches land in <code>opportunities</code> and render in the</li>
+<p>portal that already exists. Nothing auto-applies to a marketplace on a tenant's behalf — that is where these platforms stop being tolerant and where a tenant's reputation gets spent.</p>
+</ul>
+<pre><code>
+BROWSER_ACTOR_PROFILES='{&quot;malingu-ventures&quot;:&quot;2116562908359495680&quot;}'
+</code></pre>
+<p>The live identity verified on 2026-10-31 belongs to <strong>Malingu Ventures</strong> (profile P-4, Turing signed in as <em>Saddy Malingu</em>). Writer's Flow is the <strong>feature inside their tenant portal</strong>, not the tenant: a role read from this profile is Malingu Ventures' offer and nobody else's. <code>toOfferDraft()</code> therefore refuses to build an offer without a tenant slug rather than defaulting one.</p>
+<h3>Refer-and-earn: the link is the asset</h3>
+<p>The offer's <code>referral_url</code> is the CTA, and <code>offerMeta()</code> already resolves <code>destination_url || referral_url || application_url</code>. So an offer published without the tenant's own referral link helps the marketplace for free.</p>
+<p>Verified live (2026-10-31): <code>work.turing.com/dashboard/job_referral</code> loads authenticated, but the referral link is <strong>not in the DOM until you interact</strong> — <code>pickReferralUrl()</code> therefore returned <code>null</code>, and that refusal is the feature: a guessed CTA would send a tenant's traffic nowhere.</p>
+<p>Practical consequence: <strong>don't scrape the link — inherit it.</strong> The Writer's Flow offer form already has a <code>referral_url</code> field (<code>POST /tenant/blogger/offers</code>), so every link a tenant uses is already stored per offer. <code>resolveReferralUrl()</code> reads that history and picks the newest link whose hostname matches the platform (<code>turing.com</code> / <code>micro1.ai</code>), refusing cross-platform matches and lookalike domains — so a Turing link can never land on a Micro1 page. A configured default is used only when the tenant has no history, and only for its own host.</p>
+<p>That is deterministic, needs no UI interaction, and needs no new secret.</p>
+<p><code>toOfferDraft()</code> maps a role onto the portal's own offer form: <code>offer_type: 'job'</code> (so the existing career copy in <code>utils/contentJourney.js</code> applies to the referred candidate), <code>status: 'draft'</code> (agent proposes, tenant publishes), the parsed rate as <code>compensation_max</code> in USD, and <code>referral_url</code> from the tenant.</p>
+<h3>Importing roles as draft offers</h3>
+<pre><code>
+node scripts/browser_actor_collect.mjs --tenant &lt;slug&gt; --platform turing --out tmp/turing_roles.json
+node scripts/browser_actor_import.mjs  --tenant &lt;slug&gt; --in tmp/turing_roles.json          # plan only
+node scripts/browser_actor_import.mjs  --tenant &lt;slug&gt; --in tmp/turing_roles.json --apply  # write drafts
+</code></pre>
+<p>Offers are <code>opportunities</code> rows — the portal's own table (<code>POST /tenant/blogger/offers</code> writes the same shape). Four properties hold, each pinned by a test:</p>
+<ul>
+<li><strong><code>slug</code> is globally UNIQUE</strong>, so it encodes tenant + source + role</li>
+<p>(<code>malingu-ventures-turing-project-lead-ai-training</code>). Two tenants finding the same role can never fight over one row, and a re-run resolves to the same slug.</p>
+<li><strong>Re-running creates nothing.</strong> Existing rows are skipped (by slug, or by title for</li>
+<p>hand-made offers) and the planner has <strong>no update path at all</strong> — which is how a tenant's per-offer <code>referral_url</code> survives every subsequent run.</p>
+<li><strong>Every row is <code>status: 'draft'</code>.</strong> Nothing publishes itself.</li>
+<li><strong>An unknown tenant slug writes nothing</strong> and prints the slugs that do exist, so a</li>
+<p>typo is visible instead of silently creating orphan rows.</p>
+</ul>
+<p>A newly discovered role arrives <strong>without</strong> a referral link, by design: each link is unique per role. <code>attachReferrals()</code> fills in only what the tenant already holds for <em>that specific role</em>, and reports the rest in <code>needsReferralLink</code> so the tenant can paste them (the offer form already has the field).</p>
+<h3>Per-role referral capture</h3>
+<p>A role's own link is read from the live session, one role at a time:</p>
+<pre><code>
+node scripts/browser_actor_referrals.mjs --tenant malingu-ventures --limit 3   # plan only
+node scripts/browser_actor_referrals.mjs --tenant malingu-ventures --from tmp/referrals.json --apply
+</code></pre>
+<p>This is a <strong>click</strong> on the tenant's logged-in account (<code>expand card → referral bonus</code>), not a read, so it lives in its own script behind its own flag instead of inside the collector. Default is plan-only; <code>--apply</code> attaches.</p>
+<p>Rules, each pinned by a test:</p>
+<ul>
+<li>a link is accepted only when it carries a referral token (<code>?ref=</code>, <code>?code=</code>, <code>/r/</code>,</li>
+<p><code>referr</code>, <code>invite</code>) <strong>and</strong> sits on the marketplace host. <code>/dashboard/job_referral</code> is never accepted, even though it contains the word &quot;referral&quot;.</p>
+<li><code>pickRoleReferralUrl</code> exists because <code>pickReferralUrl</code> — written for the</li>
+<p>tenant-level Refer &amp; Earn page — <em>penalises</em> <code>/jobs</code> paths, which is exactly where a per-job link lives. Reusing it captured nothing, and said nothing.</p>
+<li>an offer that already has a link is a <strong>conflict</strong>, never an overwrite. The write is</li>
+<p>additionally guarded by <code>.is('referral_url', null)</code>, so a race with the tenant pasting a link by hand cannot clobber it.</p>
+<li>the same link may not land on two offers.</li>
+<li>a modal with no confident pick writes nothing and keeps its candidates in</li>
+<p><code>tmp/referrals.json</code> — that is a human decision, not an agent's.</p>
+</ul>
+<p>It needs the profile map, which is <strong>not</strong> in <code>.env</code> yet (earlier runs passed it inline in the shell, so nothing was persisted):</p>
+<pre><code>
+BROWSER_ACTOR_PROFILES={&quot;malingu-ventures&quot;:&quot;&lt;morelogin envId&gt;&quot;}
+</code></pre>
+<p>Without it the script stops with <code>profile_unmapped</code> and writes nothing — the identity layer refuses to guess which browser belongs to which tenant.</p>
+<h4>What the live run proved (2026-10-31, P-4, roles 1-2)</h4>
+<p>The mechanism works end to end — profile started, listing rendered, cards clicked, evidence written — but it captured <strong>zero</strong> links, and the reason is a fact about the marketplace rather than a bug:</p>
+<ul>
+<li>Opening a role <strong>navigates to a real per-role page</strong>: <code>work.turing.com/jobs?jobId=112467</code>.</li>
+<p>The original adapter note (&quot;no per-card href&quot;) was true of the card, wrong about the destination: clicking the rate badge exposes a stable <code>jobId</code>.</p>
+<li><strong>The job detail page has no referral control.</strong> Every clickable on it was nav or</li>
+<p>a filter chip: <code>Toggle menu · Home · Jobs · Applications · Refer &amp; Earn · Complete Profile · All 226 · Priority 12 · …</code>. No &quot;Apply Now&quot;, no &quot;Referral bonus&quot;. So <code>turingDetailReferralExpr</code> correctly reported <code>no_detail_referral_affordance</code> for both roles.</p>
+<li>The per-job link is therefore expected to come from the **<code>Refer &amp; Earn</code></li>
+<p>dashboard** (<code>/dashboard/job_referral</code>), which is where the tenant mints links. That is the next slice, not a selector tweak.</p>
+</ul>
+<p>Two bugs the run exposed and this fix closes:</p>
+<ul>
+<li><code>turingOpenReferralExpr</code> returns <code>by</code>, but the runner read <code>opened.clickedBy</code>, so</li>
+<p>a click that definitely happened was recorded as <code>clickedBy: null</code>.</p>
+<li><code>isListingPage</code> compared only the pathname, and <code>?jobId=…</code> keeps the pathname</li>
+<p><code>/jobs</code>. So the runner believed it was still on the listing while reading a <strong>detail page</strong>, and would have kept clicking stale card indexes. It now treats a <code>jobId</code> as leaving the listing and navigates back between roles.</p>
+</ul>
+<h4>Where the link actually is (verified 2026-10-31, then working)</h4>
+<p>The job page <strong>does</strong> offer a referral — the first attempt missed it twice over:</p>
+<ol>
+<li>The words &quot;Referral Bonus · $750&quot; are a <strong><code>&lt;span&gt;</code> label</strong>. The clickable is</li>
+<p><code>&lt;button&gt;Share &amp; earn $750&lt;/button&gt;</code>, which never says &quot;referral&quot;.</p>
+<li>The click opens a dialog titled <em>&quot;Share this with your network&quot;</em> <strong>immediately</strong>,</li>
+<p>but the readonly input holding the link is filled a beat later. Waiting only for <code>role=&quot;dialog&quot;</code> read an empty box and reported a marketplace with no links.</p>
+</ol>
+<p>The link, confirmed two independent ways (the input's value, and <code>navigator.clipboard.writeText</code> hooked and then triggered by <em>Copy link</em>):</p>
+<pre><code>
+https://work.turing.com/r/&lt;code&gt;      e.g. r/xako-8LrQK
+</code></pre>
+<p>Two properties that shape every write:</p>
+<ul>
+<li><strong>Each role gets its own code</strong> — <code>Project Lead → r/xako-8LrQK</code>,</li>
+<p><code>Business Analyst → r/bpy0B4Jmoc</code>.</p>
+<li><strong>A link is stable per role.</strong> It does not change when the page reloads or the card</li>
+<p>is clicked again (confirmed by the tenant, 2026-10-31). An earlier version of this file claimed Turing re-mints the code on every open, inferred from a mismatch in the database. That inference was <strong>wrong</strong>, and it was dangerous: it made a wrong link look benign, and the overwrite guard then preserved it.</p>
+</ul>
+<h4>Where a link really goes is checkable — so check it</h4>
+<p><code>GET https://work.turing.com/r/&lt;code&gt;</code> renders a page whose <code>&lt;title&gt;</code> is the job, so every link can be verified without a browser:</p>
+<pre><code>
+r/xako-8LrQK  -&gt; &quot;Project Lead - AI Training - Turing&quot;                    matches
+r/9PkwepYCFE  -&gt; &quot;Strategic Project Lead – Software Engineering - Turing&quot;  WRONG JOB
+</code></pre>
+<p>That second link was live in production on the Project Lead offer, pasted by hand. <code>utils/browserActor/referralVerify.js</code> resolves a link and judges it:</p>
+<ul>
+<li>pass on identical normalized titles, or when the page appends only known marketing</li>
+<p>tail words (<code>| Apply on Job</code> — Micro1 does this, and treating it as a mismatch failed 5 correct links);</p>
+<li><strong>never</strong> pass on &quot;one contains the other&quot;: <code>Project Lead - AI Training</code> and</li>
+<p><code>Strategic Project Lead - Software Engineering</code> share a prefix, which is exactly how the wrong link got in.</p>
+</ul>
+<p>The capture path now verifies every link before writing and refuses anything that does not resolve to its role. <code>scripts/browser_actor_audit_links.mjs</code> runs the same check across stored links: <code>11 checked → 10 match, 1 mismatch</code>, and the mismatch was cleared and replaced with a verified one.</p>
+<h4>Provenance: which links are ours, and which are the tenant's</h4>
+<p>Verified 2026-11-01 against the live database:</p>
+<p>| Marketplace | Links | Where they came from | Payee check | |---|---|---|---| | Turing | 71 | <strong>us</strong> — every row created by the importer on 2026-10-31, each carrying <code>external_id</code> = <code>turing:&lt;role&gt;</code> | 71 distinct <code>/r/&lt;code&gt;</code>, one per role | | Micro1 | 5 | <strong>the tenant</strong> — created 2026-10-28…30, <code>external_id</code> null on all five | 1 distinct <code>referralCode</code> across all five: their own account code |</p>
+<p>No Micro1 adapter exists, and the collector cannot write one: <code>scripts/browser_actor_collect.mjs</code> refuses any platform other than <code>turing</code>, and <code>utils/browserActor/tasks/</code> contains only <code>turing.js</code>. So nothing of ours has ever touched those five links, and the run that produced the 71 could not have produced a Micro1 URL.</p>
+<p><code>planCodeIntegrity()</code> checks the thing title-verification cannot: <strong>does this link pay the tenant?</strong> A link can open the correct job while carrying someone else's referral code, and then the tenant does the work and another account is paid.</p>
+<ul>
+<li>query codes (<code>?referralCode=</code>) are <strong>account level</strong> — repeats are normal, and a</li>
+<p>different code is a different payee, so it is flagged <code>foreign_code</code>;</p>
+<li>path codes (<code>/r/&lt;code&gt;</code>) are <strong>per role</strong> — a repeat means two offers claim one</li>
+<p>role, so it is flagged <code>shared_code</code>.</p>
+</ul>
+<p>Both rules are decided by URL shape, not by code frequency: a first attempt guessed &quot;the most common code is the account&quot; and immediately flagged all five Micro1 links as duplicates of each other, which is exactly how correct account-level links look.</p>
+<p>The audit records its verdict per offer (<code>link_verdict</code>, <code>link_checked_at</code> — see <code>migrations/2026-11-01_add_referral_link_verification.sql</code>), so the coverage strip can answer <em>&quot;is any link wrong?&quot;</em> without resolving 76 URLs on every page load:</p>
+<ul>
+<li><code>76 links verified</code> — every stored link resolves to its own job.</li>
+<li><code>1 referral link points at the wrong job</code> — leads the line, because this is the</li>
+<p>only number here that costs money while looking fine everywhere else.</p>
+<li><code>N links not yet verified</code> — honest unknown, shown when the column is null or the</li>
+<p>migration is not applied. <strong>Unknown is never rendered as healthy.</strong></p>
+</ul>
+<p><code>GET /api/agents/browser/referral-audit?tenant=&lt;slug&gt;</code> returns the same verdicts on demand, and <code>GET /tenant/blogger/coverage</code> feeds the strip.</p>
+<h2>Next steps, in revenue order</h2>
+<ol>
+<li><strong>Tender capture for one paying tenant</strong> — smallest demo that closes a contract; wire <code>POST /capture</code> into the ABOSS worker and surface results in the tenant portal.</li>
+<li><strong>Lead verification</strong> — replace ABOSS's assumed contacts with a page-verified email/phone, from the tenant's own identity and geo.</li>
+<li><strong>WhatsApp Web fallback</strong> — for numbers where the Cloud API is not approved; the profile already carries the session cookies.</li>
+<li><strong>Screenshots + evidence</strong> — a tender PDF/screenshot is what a procurement buyer forwards internally.</li>
+<li><strong>Move leases into Postgres</strong> — only when a second server instance exists.</li>
+</ol>
+<h2>Writer's Flow controls (2026-11-02)</h2>
+<p>The portal could show <em>outcomes</em> — coverage, link health — but nothing about the <em>work</em>: no way to start a run, no way to watch one, and no way to act on a link that verification had already proven wrong. The Writer's Flow section now has a <strong>Collection control</strong> panel, per tenant, with three capabilities.</p>
+<h3>The split that makes it honest</h3>
+<p>| Work | Where it runs | Why | |---|---|---| | <strong>Verify links</strong> | inside the HTTP request | One <code>GET</code> per link. No browser, so the tenant gets an answer in the same click. | | <strong>Capture / refresh</strong> | on the operator's machine | The leased browser lives there. The portal records the <em>request</em> and shows the exact worker command. |</p>
+<p>A page that cannot do something should say so rather than spin. A queued run reads <em>&quot;waiting for a runner&quot;</em>; a run whose heartbeat is older than 5 minutes reads <em>&quot;stopped reporting&quot;</em> — never <em>&quot;running&quot;</em>.</p>
+<h3>Endpoints</h3>
+<pre><code>
+GET  /tenant/blogger/writer-flow        funnel per marketplace, run history, next actions
+POST /tenant/blogger/links/verify       { limit? }  verify now, write verdicts, log a run
+POST /tenant/blogger/links/:id/resolve  { action: recheck | clear | accept }
+POST /tenant/blogger/runs               { kind, limit, skip, refresh }  queue for a runner
+POST /tenant/blogger/runs/:id/cancel
+</code></pre>
+<p>Every query is tenant-scoped in the query, never in a post-fetch check.</p>
+<h3>The three rules the panel enforces</h3>
+<ol>
+<li><strong>Unknown is not healthy.</strong> A link with no verdict is <em>unverified</em> (amber), not <em>ok</em>.</li>
+<p>A database without the runs table says <em>&quot;run history unavailable&quot;</em>, not <em>&quot;no runs&quot;</em>.</p>
+<li><strong>A human decision outranks the robot.</strong> <code>accept</code> writes `link_note = 'accepted by</li>
+<p>tenant'`, and the verifier skips those rows. Only an explicit <em>Check</em> retires the override — the tenant asking again is the only thing that clears it.</p>
+<li><strong>Clearing keeps the reason.</strong> <code>clear</code> nulls <code>referral_url</code> but stores</li>
+<p><code>cleared by tenant: pointed at &lt;job&gt;</code>, so the audit trail outlives the wrong link.</p>
+</ol>
+<h3>Run tracking</h3>
+<p><code>browser_actor_runs</code> (see <code>migrations/2026-11-02_writer_flow_runs.sql</code>), one row per run:</p>
+<ul>
+<li><code>queued -&gt; running -&gt; succeeded | partial | failed | cancelled</code></li>
+<li>a <strong>partial unique index</strong> on <code>(tenant_id, kind) WHERE status IN ('queued','running')</code></li>
+<p>means two operators on two machines cannot both claim one tenant's capture.</p>
+<li>the runner heartbeats every ~2s from <code>scripts/browser_actor_referrals.mjs</code>; a crash</li>
+<p>closes the row as <code>failed</code> rather than leaving it looking alive.</p>
+</ul>
+<p>Worker hand-off:</p>
+<pre><code>
+node scripts/browser_actor_referrals.mjs --tenant &lt;slug&gt; --limit 120 --skip 0 --apply --run-id &lt;uuid&gt;
+# or, without the id: --claim takes the oldest queued run for that tenant
+</code></pre>
+<h3>Tests</h3>
+<p><code>npm run test:writer-flow</code> — 134 assertions covering the heartbeat/stall rules, partial-vs-success, the one-active-run rule, the human-override rule, the funnel arithmetic, the store's payloads (against an in-memory table), the endpoints over real HTTP, and the not-yet-migrated deployment the production database is currently in.</p>
+<h2>Micro1 adapter (2026-11-02) — the second marketplace, and what it proved</h2>
+<p>Turing's adapter assumed &quot;no per-role URL, rebuild the listing between roles&quot;. Micro1 disagrees on every one of those points, which is why it is a separate runner rather than a <code>--platform</code> branch.</p>
+<h3>What the live dashboard actually does</h3>
+<pre><code>
+page     https://refer.micro1.ai/opportunities/   &quot;Referral dashboard | micro1&quot;
+grid     div.grid.grid-cols-1.lg:grid-cols-3      -&gt; 12 cards
+card     div.p-1.rounded-md.flex.flex-col         (no anchors anywhere)
+           badges   &quot;Posted Yesterday&quot; / &quot;New&quot; / &quot;High demand&quot;
+           h2       the job title          &lt;- the only stable handle
+           &quot;micro1 1 Opening&quot;
+           skills   chips + &quot;+N&quot;
+           pay      &quot;Pay: $250,000 - $450,000/year&quot;
+           button   &quot;Refer and earn $1,500&quot;
+click    does NOT navigate and opens NO dialog — it copies a share link:
+           https://jobs.micro1.ai/post/&lt;jobUuid&gt;?referralCode=&lt;accountCode&gt;&amp;utm_...
+</code></pre>
+<p>So, in three rules the code now encodes:</p>
+<ol>
+<li><strong>Account code + per-role job id.</strong> The same <code>referralCode</code> appears on all five links the</li>
+<p>tenant already owned; the job id is what changes per role. <code>pickMicro1ReferralUrl</code> therefore <em>refuses</em> a post URL with no <code>referralCode</code>: it opens the right job and pays nobody, which looks identical to success in a list of URLs.</p>
+<li><strong>A real job page exists</strong> (<code>jobs.micro1.ai/post/&lt;uuid&gt;</code>), so <code>destination_url</code> is the</li>
+<p>clean job page and <code>referral_url</code> is the coded one. A reader who is not the referred candidate never receives the tenant's code.</p>
+<li><strong>The job body is client-rendered</strong> — 48 KB of HTML, 57 characters of text, no JSON-LD.</li>
+<p>The description needs the browser, which is exactly what <code>CONTENT_EXTRACTORS.micro1</code> is.</p>
+</ol>
+<h3>Two bugs the live run found (both would have shipped wrong links)</h3>
+<p>| Symptom | Cause | Fix | |---|---|---| | Two roles captured with <strong>the same job id</strong> | The share link field <em>persists</em>; a slow click meant the previous role's link was still on the page | Snapshot candidates <strong>before</strong> the click and accept only a link that is new, polled up to 5 s. No fallback to an existing link — another role's link is worse than none. | | &quot;Generalist&quot; resolved to <strong>&quot;Music &amp; Sound Annotation Expert&quot;</strong> | The share popover renders <em>inside the grid</em>, so card <strong>indices shifted</strong> after a click | Close the popover between roles and find the card <strong>by title</strong>, never by index. A duplicate-job-id guard runs as a backstop. |</p>
+<p>Both were caught by <code>verifyReferralLink</code>, not by reading the capture file — which is the argument for verifying before writing rather than after.</p>
+<h3>Running it</h3>
+<pre><code>
+node scripts/browser_actor_micro1.mjs --tenant &lt;slug&gt; --limit 12            # plan
+node scripts/browser_actor_micro1.mjs --tenant &lt;slug&gt; --limit 12 --apply    # import drafts
+  --only-missing        skip roles this tenant already has (do this by default)
+  --no-descriptions     links only (much faster; bodies come from the job-page pass)
+  --run-id &lt;uuid&gt;       report progress into browser_actor_runs for the portal
+</code></pre>
+<h3>The constraint that shapes the runner: one start is expensive</h3>
+<p>MoreLogin allows a fixed number of profile <strong>starts per day</strong>, and exceeding it fails the start with <em>&quot;The daily startup limit is exceeded&quot;</em> — the same <code>19124</code> code as a genuine start failure, which is why the message is matched rather than the code (<code>classifyProviderFailure</code>). Two rules follow:</p>
+<ul>
+<li><strong>A failed start is classified before it is retried.</strong> A quota failure is not</li>
+<p>retryable, so the run stops with the one instruction that helps rather than spending more of the allowance discovering the same thing.</p>
+<li><strong>A successful start must do all the work it can.</strong> One navigation reads all 12 cards;</li>
+<p>the bodies come from the same session; <code>--only-missing</code> skips roles the tenant already owns; the report prints <code>alreadyImported</code> so a wasted start is visible.</p>
+</ul>
+<p>Measured on the live dashboard: <strong>12 cards, ~350 ms per link, ~2.2 s per body</strong>. A verified sample run produced 4/4 links <code>match</code> with bodies of 5,391 and 3,168 characters.</p>
+<h2>Tenant-owned browser access (BYO MoreLogin, 2026-11-02)</h2>
+<p>The tenant brings their own MoreLogin account and profile, signs into Micro1/Turing <strong>on their own machine</strong>, and hands Alphadome an API key. We never see a password or an OTP, so &quot;could an Alphadome employee log in as me?&quot; is answered by architecture rather than policy.</p>
+<h3>Why this shape</h3>
+<p>| | Hosted (operator's profiles) | BYO (this) | |---|---|---| | Custody of the session | ours | the tenant's | | Password/OTP visible to us | during a remote login | never | | Daily start quota | ours (OPEN_FLAGS #16) | theirs | | Fingerprint / IP a marketplace sees | our proxies | their own machine | | What we store | nothing | one sealed API key per tenant |</p>
+<h3>The flow</h3>
+<pre><code>
+tenant (5 min, their machine)     portal
+  create MoreLogin account   →    Writer's Flow → Your own browser
+  create one profile         →    paste the MoreLogin API key → Connect
+  sign into Micro1/Turing         (profile list is read live from their account)
+  inside that profile
+                             →    Verify sessions  → &quot;connected · micro1 + turing&quot;
+</code></pre>
+<p>Endpoints (all tenant-session scoped):</p>
+<pre><code>
+GET  /tenant/blogger/browser-access            status + which profile a run would use
+POST /tenant/blogger/browser-access/connect    { apiKey, envId?, label?, runtime? }
+POST /tenant/blogger/browser-access/verify     start once, read each marketplace listing
+POST /tenant/blogger/browser-access/disconnect
+</code></pre>
+<h3>What is stored, and what is never returned</h3>
+<p><code>site_tenants.metadata.browserAccess</code>:</p>
+<pre><code>
+{ &quot;envId&quot;: &quot;2116…&quot;, &quot;runtime&quot;: &quot;cloud&quot;, &quot;label&quot;: &quot;Acme Studio&quot;,
+  &quot;keySealed&quot;: &quot;v1.&lt;iv&gt;.&lt;tag&gt;.&lt;ct&gt;&quot;, &quot;keyFingerprint&quot;: &quot;sha256:ab12…&quot;,
+  &quot;connectedAt&quot;: &quot;...&quot;, &quot;verifiedAt&quot;: &quot;...&quot;, &quot;verifiedPlatforms&quot;: [&quot;micro1&quot;],
+  &quot;reauthRequired&quot;: false, &quot;reauthPlatforms&quot;: [], &quot;lastCheckedAt&quot;: &quot;...&quot; }
+</code></pre>
+<ul>
+<li>The key is <strong>AES-256-GCM</strong> sealed under <code>TENANT_SECRET_KEY</code>. Missing that env var ⇒</li>
+<p>connecting is refused with the variable named; nothing is stored in the clear.</p>
+<li><code>publicAccessStatus</code> is the only shape a tenant sees: **no key, no ciphertext, no</li>
+<p>fingerprint**, and the profile id is masked.</p>
+<li><code>disconnect</code> deletes the record and leaves the tenant's MoreLogin account untouched.</li>
+</ul>
+<h3>Three rules the endpoints enforce</h3>
+<ol>
+<li><strong>A key may only bind a profile it owns.</strong> <code>connect</code> reads the profile list live from the</li>
+<p>tenant's account; an <code>envId</code> outside that list is a 403, and an account with several profiles must choose (409 with the list).</p>
+<li><strong>Runs prefer the tenant's own profile.</strong> <code>resolveRunnerIdentity</code> order is</li>
+<p>tenant → hosted → default → refuse. A seal that will not open stops the run with <code>reconnect_required</code>; it never falls back to the operator's profile, because running as the wrong account is worse than stopping.</p>
+<li><strong>&quot;Verified&quot; is evidence.</strong> <code>verify</code> starts the profile once and reads each listing:</li>
+<p>cards ⇒ <code>signed_in</code>, a sign-in affordance and no cards ⇒ <code>login_wall</code> ⇒ written as <code>reauthRequired</code>. A check that could not run is a 502 and <strong>never</strong> becomes &quot;signed out&quot;.</p>
+</ol>
+<h3>Not yet verified live</h3>
+<p>The cloud attach path (<code>cdpUrl</code> → websocket) in <code>utils/tenantBrowserProvider.js</code> is written against the documented contract but has not been exercised end-to-end: this host's plan is out of daily starts (OPEN_FLAGS #16) and malingu-ventures runs a hosted <strong>local</strong> profile. The first BYO tenant run is the test — everything pure is covered by <code>npm run test:browser-access</code> (100 assertions), including the sealing, the masking, the refusals, the resolution order and key rotation.</p>
+<h3>The sealing key, operationally</h3>
+<p><code>TENANT_SECRET_KEY</code> is the only secret this feature needs, and it has one rule that is easy to get wrong: <strong>the portal seals, the runner opens, so both must hold the same value.</strong> A mismatch is silent until a run starts and then reports <code>reconnect_required</code>, which looks like the tenant's fault.</p>
+<pre><code>
+node -e &quot;console.log(require('crypto').randomBytes(32).toString('hex'))&quot;   # generate
+npm run secrets:check                                                     # verify this host
+</code></pre>
+<p><code>secrets:check</code> prints the <code>sha256:</code> fingerprint of the configured key(s) and, per tenant, whether their stored key opens — with <code>current</code>, with the <strong>retiring</strong> key, or not at all. Compare the fingerprint in the Render log with the one on the operator machine; equal fingerprints mean equal secrets, and neither side has to reveal it. Exit code is 1 if any tenant cannot be opened, so it can gate a deploy.</p>
+<p>Rotation is a three-step move, supported by <code>TENANT_SECRET_KEY_PREVIOUS</code>:</p>
+<ol>
+<li><code>TENANT_SECRET_KEY_PREVIOUS=&lt;old&gt;</code> and <code>TENANT_SECRET_KEY=&lt;new&gt;</code>, on the portal <strong>and</strong></li>
+<p>every runner host.</p>
+<li>Deploy. Old seals keep opening (the runner logs that the tenant is on the retiring key);</li>
+<p>new connects seal with the new key.</p>
+<li>Once <code>secrets:check</code> reports zero on the retiring key, remove</li>
+<p><code>TENANT_SECRET_KEY_PREVIOUS</code>.</p>
+</ol>
+<p>Without step 3 the old key stays valid forever, which defeats the point of rotating.</p>
+<h3>The tenant can start the capture themselves</h3>
+<p>Because a BYO profile is <strong>cloud</strong>, the browser is reachable from Render — so a tenant can press a button instead of waiting for an operator:</p>
+<pre><code>
+POST /tenant/blogger/browser-access/capture   { platform: 'micro1', limit?: 12 }
+  → 409 not_connected     no profile connected
+  → 409 local_runtime     their profile runs on the operator machine, not in the cloud
+  → 400 unsupported       only micro1 has a verified adapter
+  → 409 already_running   one run at a time, enforced by browser_actor_runs
+  → 202 { run }           a queued row + a spawned runner; the portal polls the row
+</code></pre>
+<p>The route does not run the capture inline: it queues a run, spawns the <strong>same</strong> script an operator would run (<code>--tenant … --apply --only-missing --run-id …</code>), and answers 202. The child's stdout goes to <code>tmp/run-&lt;id&gt;.log</code>, its report to <code>tmp/run-&lt;id&gt;.json</code>, and progress lands in the run row the portal already polls.</p>
+<p>Two consequences worth stating: the run costs one of the <strong>tenant's</strong> daily starts, and a Render redeploy during a run kills the child — which is why the row records what happened rather than leaving the tenant guessing. A durable job runner is the next step if this becomes the normal path.</p>
+<p>Every script that starts a browser now goes through <code>resolveRunnerIdentity({ supabase, tenantSlug })</code>: <code>browser_actor_micro1.mjs</code>, <code>browser_actor_referrals.mjs</code> (Turing), <code>browser_actor_collect.mjs</code>, and <code>browser_actor_inspect.mjs</code> (so an operator can debug a BYO tenant's profile). One resolver, one order — tenant → hosted → default → refuse — instead of five copies that could drift.</p>
+<p>Two deliberate exceptions:</p>
+<ul>
+<li><code>browser_actor_probe.mjs</code> (the host doctor) keeps the env map: it tests <em>this machine's</em></li>
+<p>MoreLogin install, not a tenant's account.</p>
+<li><code>browser_actor_inspect.mjs</code> writes its debugging artifact by hand rather than spreading the</li>
+<p>identity object, because that object now carries the tenant's decrypted key and the artifact is a file on disk.</p>
+</ul>
+<h3>When cloud browsing is not available: the tenant's own worker</h3>
+<p>A desktop MoreLogin profile can only be driven from the machine that started it, and its debug port has no authentication — exposing it would hand anyone who finds the URL remote control of a logged-in marketplace account. So there are exactly two ways a profile gets used, and both are honest about where the browser is:</p>
+<p>| Profile runtime | Who runs the capture | What the tenant sees | |---|---|---| | <code>cloud</code> | the portal (spawns the runner) | progress immediately | | <code>local</code> | <strong>the tenant's own machine</strong> | <code>202 queuedForWorker</code>, then progress when their worker picks it up |</p>
+<p>The local path, end to end — and note that the tenant never leaves the portal except to paste one line:</p>
+<pre><code>
+portal:  Capture now  → POST /browser-access/capture
+                       → 202 { run, queuedForWorker: true, needsWorkerToken }   (no spawn; nothing to fake)
+         &quot;Queued for your worker — it starts as soon as your computer picks it up.&quot;
+         (first time, no worker yet: &quot;create a worker token below and start the worker there&quot;)
+
+portal:  Create worker token → POST /browser-access/worker-token
+                             → 201 { token, command, note: &quot;not shown again&quot; }
+         the panel prints the command under a Copy button and warns once
+
+tenant:  paste it into a terminal on the MoreLogin machine, leave it running:
+         node scripts/browser_actor_worker.mjs --api https://… --token wkr_…
+worker:  GET  /api/agent/runs              this tenant's queued/running rows
+         POST /api/agent/runs/:id/claim    atomic: update … where status = 'queued'
+         spawn scripts/browser_actor_micro1.mjs --run-id &lt;id&gt;   (the same path an operator uses)
+         POST /api/agent/runs/:id/finish   counters → succeeded | partial | failed
+
+portal:  &quot;Run captures on your computer. last seen 2/11/2026, 14:02&quot;     (or &quot;never connected&quot;)
+         Revoke wkr_ab12… (my computer)   ← one click, effective immediately
+</code></pre>
+<p>The panel states three things a tenant needs and nothing else: whether a worker exists, whether it has ever checked in, and how to switch one off. &quot;Last seen&quot; is the field that separates &quot;queued and waiting for my machine&quot; from &quot;queued and nobody is listening&quot; — the difference between patience and a support ticket.</p>
+<h4>What the tenant actually downloads</h4>
+<p><code>GET /tenant/blogger/browser-access/worker-bundle</code> streams a zip built <strong>on demand from this repo's own source files</strong> (<code>utils/browserActor/workerBundle.js</code>), so a pilot never runs a stale artifact. Thirty files, ~229 kb, and what is <em>not</em> in it is the point:</p>
+<p>| Not in the zip | Why it matters | |---|---| | <code>.env</code>, service-role key, JWT | A tenant laptop must never hold a key that can write for <strong>every</strong> tenant | | <code>TENANT_SECRET_KEY</code> | That key unseals <em>any</em> tenant's MoreLogin key; it cannot leave the server | | a worker token | Typed by the tenant on their machine, saved as <code>worker-token.txt</code>, never transmitted to us | | <code>node_modules</code>, any npm package | The browser layer is CDP + <code>ml-cli</code> directly, so there is nothing to install and no supply chain to audit | | anything tenant-specific | The same zip is served to everyone |</p>
+<p>The tenant's experience is three steps in the panel: <em>Download</em> → <em>Create a token</em> → double-click <code>Start Worker.cmd</code> and paste it. <code>Start Worker.cmd</code> checks for Node.js and, if it is missing, says so and gives the link rather than printing a stack trace. <code>worker-bundle/README.txt</code> is written for someone who has never opened a terminal.</p>
+<h4>Agent mode: why the tenant machine never touches the database</h4>
+<p>Handing out a bundle that required <code>SUPABASE_SERVICE_ROLE_KEY</code> would have been the largest security regression in this repo — one careless tenant screenshot and every tenant's data is writable. So the privileged half of the capture moved to the server, behind the worker token:</p>
+<pre><code>
+tenant machine                                    portal
+  GET  /api/agent/runs/:id/context     ───────►   resolves the tenant from the token, resolves the
+                                                  profile, returns envId + the roles they already own
+                                                  (never the MoreLogin key)
+  POST /api/agent/runs/:id/progress   ───────►    counters + heartbeat
+  spawns the same capture script,
+  drives the local profile, reads pages
+  POST /api/agent/runs/:id/result     ───────►   sanitises the payload, re-verifies every link,
+                                                  plans + writes offers, **leaves the run open**
+  POST /api/agent/runs/:id/finish     ───────►   counters + status, closes the run once
+</code></pre>
+<p><code>/result</code> is called <strong>repeatedly</strong>: the runner banks what it has every 20 roles and sends only the captures the portal has not seen yet, so a long run never grows into one giant request.</p>
+<p><code>scripts/browser_actor_micro1.mjs</code> runs both ways from one file: with Supabase for an operator, and with <code>--agent-api/--agent-token</code> for a tenant. <code>dotenv</code> and <code>@supabase/supabase-js</code> are imported lazily so the bundled copy needs neither.</p>
+<p>Rules that keep the new endpoints safe rather than merely convenient:</p>
+<ul>
+<li><strong>The tenant comes from the token</strong>, never from the body — same as the claim path.</li>
+<li><strong>The context refuses anything but the tenant's own local profile.</strong> A tenant worker cannot be</li>
+<p>pointed at the operator's hosted browser, and a cloud profile is refused with &quot;press Capture again&quot;.</p>
+<li><strong>The result payload is untrusted input.</strong> Titles and bodies are bounded, unknown fields dropped,</li>
+<p>and a <code>javascript:</code>/<code>file:</code> URL is discarded rather than stored and rendered later.</p>
+<li><strong>Every link is re-verified server-side</strong> before it is attached, so a compromised worker cannot</li>
+<p>inject a link that pays somebody else.</p>
+<li><strong>A closed run cannot be written to</strong> (409), so a retry cannot double-insert.</li>
+<li><strong>A batch is bounded, and a 413 is split, not swallowed.</strong> On 2026-11-04 a 120-role Turing run</li>
+<p>re-sent everything it had on every flush: the last post was ~400 KB, Express answered <code>PayloadTooLargeError</code>, and the run closed <code>120/120 · failed</code> with <strong>no</strong> links written. So <code>/api/agent</code> carries its own 12 MB parser (mounted <em>before</em> the global one — every other route still refuses &gt;100 KB), the runner advances a <code>postedCount</code> cursor instead of re-sending, and a chunk that is refused with 413 is halved and retried before it is treated as a failure.</p>
+<li><strong>A run ends on <code>/finish</code>, and only there.</strong> If some batches landed and the last did not, the run</li>
+<p>closes as <code>partial</code> — neither success nor failure, because either word would hide the number that matters: how many links actually reached the portal.</p>
+<li><strong>No MoreLogin key in the context.</strong> A stolen <code>wkr_</code> token therefore buys the ability to burn that</li>
+<p>tenant's own daily starts — not control of their marketplace accounts.</p>
+</ul>
+<p>Verified mechanically: the extracted zip runs in a temp folder with an <strong>empty environment</strong> (no <code>SUPABASE_*</code>, no <code>TENANT_SECRET_KEY</code>, no <code>node_modules</code>) and stops with <code>the portal refused this run (404)</code> — proving it loads, starts, and reaches the portal without ever looking for a database.</p>
+<p>Rules that make it safe rather than merely convenient:</p>
+<ul>
+<li><strong>The token is the tenant.</strong> The tenant comes from the token row, never from the request,</li>
+<p>so a worker cannot claim another tenant's run however it shapes its body.</p>
+<li><strong>Hash-only storage.</strong> A database leak yields no working credential; a lost token is</li>
+<p>revoked and reissued, not recovered.</p>
+<li><strong>Revocation is immediate</strong>, and revoked tokens are refused even though the row stays for</li>
+<p>the audit trail.</p>
+<li><strong>Claim is a compare-and-set</strong>, so two workers on two machines race safely: one wins, the</li>
+<p>other gets a 409.</p>
+<li><strong>Nothing runs on the tenant's machine they did not ask for</strong>: the worker acts only on rows</li>
+<p>already queued in <em>their own</em> portal.</p>
+</ul>
+<p>The worker adds an install step, so it is the fallback — not the default. Cloud tenants get the button with no setup; a tenant whose plan has no cloud browser installs one command and gets the same button.</p>
+<h3>Source attribution (why the funnel said &quot;Unattributed&quot;)</h3>
+<p><code>migrations/2026-10-31_seed_micro1_turing_sources.sql</code> was <strong>never applied</strong>, so <code>opportunity_sources</code> held only mercor and respondent and all 96 offers had <code>source_id = NULL</code>. <code>scripts/backfill_offer_sources.mjs</code> fixes that as <strong>data</strong> (no DDL): it creates the missing source rows and attributes offers only on concrete evidence — the importer's own slug convention, or a referral link on the marketplace's own host. Result: 83 attributed (78 Turing, 5 Micro1), <strong>13 left alone</strong> because they are hand-made offers with no evidence. A guess there would have attributed somebody's own product to Micro1.</p>
+<h3>Zero-config browser on the tenant's machine (2026-11-03)</h3>
+<p>The first BYO design asked the tenant to paste a MoreLogin <strong>API key</strong> so the server could learn an envId. Production answered: <code>claim 200 → context 409 &quot;No browser is mapped to tenant malingu-ventures&quot; → finish 200</code>. The tenant had a working worker on the machine that holds the profile; the server simply had no idea which browser it was, because the only path to telling it was a key the tenant had to go and find.</p>
+<p>Two questions were being asked in the wrong place:</p>
+<p>| The question | Where it was asked | Where it belongs | |---|---|---| | Which MoreLogin account? | the server, with a pasted key | nowhere — the worker is already signed in locally | | Which profile? | the portal, as an id to pick | the machine: <code>ml-cli env list</code> needs no key |</p>
+<p>So the worker now answers both, once, at startup:</p>
+<pre><code>
+browser: &quot;P-4&quot; 21********80 (only one profile) — the portal will use it
+</code></pre>
+<p><code>POST /api/agent/browser</code> <code>{ envId, label, machine }</code> (worker token, not a session) stores <code>site_tenants.metadata.workerBrowser</code>. Three deliberate properties:</p>
+<ul>
+<li><strong>No credential is involved.</strong> Nothing is sealed, nothing is opened, and the worker holds</li>
+<p>the same <code>wkr_</code> token it already had. It is stored apart from <code>browserAccess</code> precisely so it can never be mistaken for a connection the tenant made with a key.</p>
+<li><strong>It only resolves runs on that machine.</strong> <code>resolveRunnerIdentity({ workerRuns: true })</code> —</li>
+<p>which only the worker's <code>/context</code> call passes — consults it <strong>last</strong>, after <code>tenant</code>, <code>hosted</code> and <code>default</code>. Server-side verify and portal capture deliberately ignore it: a desktop profile is not reachable from Render, and pretending otherwise is how you get a run that claims to be capturing and is not. Adding a fallback in the empty case also means no existing tenant's resolution changed, so no pilot had to be re-tested.</p>
+<li><strong>It is masked to the tenant</strong> (<code>publicWorkerBrowser</code>), like every other id in this</li>
+<p>subsystem, and <code>Disconnect</code> clears it along with the key.</p>
+</ul>
+<p>One trade-off, stated rather than hidden: if an operator has mapped a <strong>different</strong> profile for that tenant in <code>BROWSER_ACTOR_PROFILES</code>, hosted wins and the run will fail on that machine. It is logged (<code>[runner-identity] … hosted wins</code>) because the operator is the only person who can fix it, and the tenant cannot see either id in full.</p>
+<p>Several profiles and no obvious match? The worker prints them and stops, and the choice is kept in <code>worker-config.json</code> — a data file with no secret in it — so it is asked once.</p>
+<h3>One card per marketplace (2026-11-03)</h3>
+<p>Collection control used to be one button row — <code>Verify links</code>, <code>Capture Turing links</code>, <code>Fill Turing descriptions</code> — with a line underneath explaining that Micro1 lived somewhere else. A tenant could not answer three questions that decide what to click:</p>
+<p>| Question | Why the row could not answer it | |---|---| | Which button needs my worker running? | Only Micro1 does, and that was in a note, not on the button | | Which one spends a MoreLogin start? | Only Micro1 spends one — it is their plan's daily limit | | Which one failed last night? | <code>runs.headline</code> named a single run, whichever was newest |</p>
+<p>So the panel renders one card per marketplace, each with its own buttons, its own last-or-current run and age, its own counters from the funnel, and one line saying where it runs:</p>
+<pre><code>
+Turing   [done] · last 2h ago · 78/78       Micro1  [running] · 3/12 · started 40s ago
+78 captured · 74 linked · 70 verified       12 captured · 12 linked · 12 verified
+[Capture links] [Fill descriptions]         [Capture Micro1 links]
+A runner reads Turing for you.              Reads Micro1 through your own browser — your
+                                            worker has to be running.
+</code></pre>
+<p><code>runs.byPlatform</code> is a <strong>grouping</strong>, not a query: the writer-flow payload already loads the rows, and <code>runsByPlatform</code> buckets them with the same <code>runPlatform()</code> the runner uses to decide what to capture. That shared function is the whole point — a card cannot claim a run belongs to a marketplace the worker would disagree with. Legacy rows with no <code>detail.platform</code> and <code>kind: 'referrals'</code> stay Turing, which is what they were.</p>
+<p>The Micro1 card is disabled with an amber explanation when no browser is connected yet, so it cannot be a click that quietly does nothing — the same rule as everywhere else in this</p>
+<h3>Turing on the tenant worker, and a run worth starting (2026-11-03)</h3>
+<p>Two limits, hit in the same week.</p>
+<p><strong>1. Turing could not run on the tenant's machine.</strong> The runner needed a checkout of this repo and a database key, so a Turing run waited for an operator while the tenant watched a queue. It now has the same agent mode Micro1 has: <code>--agent-api/--agent-token</code>, context from <code>/api/agent/runs/:id/context</code> (the profile id and the offers the tenant already owns — never the MoreLogin key), progress posted to <code>/progress</code>, and the result posted to <code>/result</code>. <code>WORKER_PLATFORMS</code> is now <code>micro1</code> + <code>turing</code>, and the worker chooses the script <strong>by the run's platform</strong> — a Turing run executed by the Micro1 script would capture the wrong marketplace and still look like it worked.</p>
+<p>One thing had to be built for it. <code>applyCaptures</code> <strong>inserts</strong> offers, which is the Micro1 shape: its roles are new to the tenant. A Turing capture <strong>updates</strong> 78 roles that are already imported — inserting them would duplicate the catalogue. So <code>applyCaptureUpdates</code> was added. It plans with the same pure helpers the operator runner uses (<code>planReferralBackfill</code>, <code>planDescriptionUpdates</code>), verifies every link, and writes with <code>.is('referral_url', null)</code> so a slow capture cannot clobber a link someone attached in the meantime.</p>
+<p><strong>2. A run captured twelve roles.</strong> The Micro1 grid renders twelve cards, and the runner read one page then stopped — so a scarce MoreLogin start bought twelve offers, which is exactly what the tenant reported (&quot;micro1 run picked up 17 opportunities, I believe we can improve that&quot;). It now pages: <code>MICRO1_ADVANCE_EXPR</code> tries an explicit next control, then a load-more control, then the document bottom, and reports which one it used; <code>mergeMicro1Pages</code> accumulates without duplicates, keyed on the title because a card carries no id until its share link is opened. The default limit is 70 and the cap is 150. When the listing offers fewer, the run says how many pages it read rather than implying that twelve was the request.</p>
+<p>subsystem: name the cause before spending the tenant's attention.</p>
+<h3>Social listening: five networks, and a zero that explains itself (2026-11-04)</h3>
+<p>The intents, the phrases and the scorer have been in this repo since the ABOSS work. What was missing was always the same thing: <strong>nothing read the posts</strong>, so <code>data/ABOSS_SOCIAL_SIGNALS_RAW.csv</code> was a header row and the whole pipeline was a well-tested hypothesis. The tenant's own browser is the only actor that can close that gap without an account of ours and a legal risk.</p>
+<pre><code>
+tenant machine                                          portal
+  GET  /api/agent/runs/:id/context    ───────►  the searches to run, from the taxonomy
+  --platform &lt;network&gt; chooses the description
+  POST /api/agent/runs/:id/signals    ───────►  sanitises, **scores**, stores in social_signals
+  POST /api/agent/runs/:id/finish     ───────►  closes the run
+</code></pre>
+<p><strong>One script, five networks.</strong> <code>tasks/socialPlatforms.js</code> describes each site and nothing else: where to search, how to tell signed-in from walled (and from a cookie sheet), the <strong>ordered selector lists</strong> for container / text / author / link, the reading budget and the pace. Adding a sixth network is a description, not a copy of the runner.</p>
+<p>| Network | Where it looks | What a signal is | First line limit | |---|---|---|---| | LinkedIn | content search, last week, newest first | the post body | 1900 | | X | live search, <code>-filter:replies</code> | the tweet | 260 | | Facebook | public post search | the post | 8000 | | Reddit | search by week, newest | the <strong>title</strong> (weaker evidence, stated) | 10000 | | YouTube | search results | the <strong>video title</strong> (weaker: it is publication, not a question) | 10000 |</p>
+<p><strong>The lesson this file keeps relearning, now enforced.</strong> On 2026-11-04 the LinkedIn-only version ran three searches and printed <code>0 post(s) on the page</code> three times, then finished <code>succeeded</code> — identical, from the outside, to a quiet week. Every query now reports:</p>
+<ul>
+<li><strong>which selector strategy matched</strong> (or that none did → the markup moved),</li>
+<li>how many <strong>candidate cards</strong> were on the page,</li>
+<li>the page <strong>title</strong> and the first 240 characters of its text,</li>
+<li>the <strong>session</strong> answer: <code>signed_in</code> / <code>login_wall</code> / <code>consent_wall</code> / <code>unknown</code>.</li>
+</ul>
+<p>That goes into the run's <code>detail.diagnostics</code>, so the portal can say <em>why</em> a search came back empty instead of implying nobody is talking. A page whose selectors match nothing is a fix we can make in an hour; a page reported as &quot;0 posts&quot; is a bug that hides for a month.</p>
+<p>Two smaller decisions worth stating:</p>
+<ul>
+<li><strong>Tracking parameters are stripped</strong> from permalinks (except Facebook, whose id lives in the</li>
+<p>query), so the same post cannot arrive twice under two URLs and defeat the <code>(tenant, post_url)</code> uniqueness.</p>
+<li><strong>A cookie sheet is not a login wall</strong>, and neither is clicked on the tenant's behalf: the run</li>
+<p>stops with &quot;accept it once in MoreLogin, then run again&quot;. Consenting for someone is a decision about their account, not ours to make.</p>
+</ul>
+<p>Nothing in this path sends. The panel offers <em>copy first line</em> and <em>open post</em>, plus the per network action (&quot;Reply in the thread&quot;, &quot;Comment under the video&quot;), and the tenant records what they did (<code>sent</code> / <code>ignored</code>). The suite asserts that no module here can message anyone.</p>
+<p>Apply <code>migrations/2026-11-04_social_signals.sql</code> before pressing a <em>Start on …</em> button: until then the panel says &quot;Not set up yet&quot;, which is deliberately different from &quot;nothing matched&quot;.</p>
+<h2>MULTITENANT_AI_JOBS_RUNBOOK.md</h2><p class="meta">docs/MULTITENANT_AI_JOBS_RUNBOOK.md</p><h1>Multi-Tenant AI Jobs — Phase 1 Runbook (site_tenants)</h1>
+<p><strong>Decision:</strong> Option B — dedicated <code>alphadome.site_tenants</code> registry for the AI Jobs / blog / referral engine. Isolated from the WhatsApp <code>bot_tenants</code> path so the live money flow is never at risk.</p>
+<p><strong>Status:</strong> Phase 0 (safety net) + Phase 1 (additive schema) complete. Phases 2-4 pending your go-ahead.</p>
+<h2>Rollback points (created in Phase 0)</h2>
+<ul>
+<li>Tag <code>pre-multitenant-baseline</code> -&gt; committed HEAD before any work.</li>
+<li>Branch <code>feat/multi-tenant-ai-jobs</code> holds all work.</li>
+<li>Your original uncommitted edits are preserved in commit <code>8a9ebcc</code> (wip safeguard).</li>
+</ul>
+<p>To abandon everything and return to the exact prior state:</p>
+<pre><code>
+git checkout main
+git branch -D feat/multi-tenant-ai-jobs   # optional
+</code></pre>
+<h2>Files added in Phase 1</h2>
+<ul>
+<li><code>migrations/2026-10-11_add_site_tenants_multitenant.sql</code> — forward (additive)</li>
+<li><code>migrations/2026-10-11_add_site_tenants_multitenant_ROLLBACK.sql</code> — revert (drops only new objects)</li>
+<li><code>scripts/validate_site_tenants_phase1.cjs</code> — read-only validation + optional isolation proof</li>
+<li>npm scripts: <code>npm run tenants:validate</code>, <code>npm run tenants:validate:isolation</code></li>
+</ul>
+<h2>What Phase 1 changes</h2>
+<ul>
+<li>Creates <code>alphadome.site_tenants</code> (slug, name, branding, <code>allowed_redirect_domains</code>, is_active).</li>
+<li>Seeds tenant <code>default</code> (= today's Mercor experience).</li>
+<li>Adds NULLABLE <code>tenant_id</code> to: <code>opportunity_sources</code>, <code>opportunity_categories</code>, <code>opportunities</code>, <code>referral_links</code>, <code>opportunity_events</code>, <code>public.blog_posts</code>.</li>
+<li>Backfills every existing row to <code>default</code>.</li>
+<li><strong>No code reads <code>tenant_id</code> yet</strong> -&gt; live behavior is byte-for-byte unchanged.</li>
+</ul>
+<h2>Apply to STAGING first (recommended)</h2>
+<pre><code>
+# 1) Point at staging Supabase
+$env:SUPABASE_URL=&quot;https://&lt;staging-ref&gt;.supabase.co&quot;
+$env:SUPABASE_SERVICE_ROLE_KEY=&quot;&lt;staging-service-role-key&gt;&quot;
+
+# 2) Apply forward migration (Supabase SQL Editor: paste &amp; run the .sql)
+#    Path: migrations/2026-10-11_add_site_tenants_multitenant.sql
+
+# 3) Validate structure (read-only)
+&amp; 'C:\Program Files\nodejs\node.exe' scripts/validate_site_tenants_phase1.cjs
+
+# 4) Prove isolation (creates + removes its own throwaway rows)
+$env:RUN_ISOLATION_TEST='true'; &amp; 'C:\Program Files\nodejs\node.exe' scripts/validate_site_tenants_phase1.cjs
+</code></pre>
+<p>Expected: all checks PASS, <code>default</code> tenant present, <code>total == scoped</code> on every table.</p>
+<h2>Promote to PRODUCTION</h2>
+<p>Only after staging is green and you've confirmed the live site still renders <code>/ai-jobs</code> and <code>/ai-jobs/mercor/*</code>:</p>
+<ol>
+<li>Open Supabase prod -&gt; SQL Editor.</li>
+<li>Run <code>migrations/2026-10-11_add_site_tenants_multitenant.sql</code>.</li>
+<li>Run the verification SELECTs at the bottom of that file.</li>
+<li>Re-run the validator against prod (read-only).</li>
+</ol>
+<h2>Revert Phase 1 (if ever needed)</h2>
+<ul>
+<li><strong>Code-only instant revert (preferred, Phase 3):</strong> set <code>AI_JOBS_MULTITENANT=false</code>. No DB change.</li>
+<li><strong>Full schema revert:</strong> run <code>..._ROLLBACK.sql</code> (drops only the new columns + <code>site_tenants</code>; content untouched).</li>
+</ul>
+<h2>Phase 3 — Multi-Tenant Traffic Engine (DONE, commit fb15c4f)</h2>
+<p>Generalized the engine beyond jobs: any <code>site_tenant</code> can drive SEO traffic to ANY offer (job, product, service, brand, affiliate, course). All flag-gated + backward compatible.</p>
+<p><strong>Data model (additive):</strong> <code>opportunities</code> gains <code>offer_type</code> (default 'job'), <code>cta_label</code>, <code>destination_url</code>. Existing rows backfill to <code>offer_type='job'</code> → identical behavior.</p>
+<ul>
+<li>Migration: <code>migrations/2026-10-15_phase3_offer_types.sql</code> (run BEFORE deploy).</li>
+</ul>
+<p><strong>Feature flag:</strong> <code>AI_JOBS_MULTITENANT</code> (default OFF). When OFF, <code>/ai-jobs/t/*</code> returns 404 and nothing changes. Set <code>AI_JOBS_MULTITENANT=true</code> in Render env to enable.</p>
+<p><strong>New tenant routes (when flag ON):</strong></p>
+<ul>
+<li><code>GET /ai-jobs/t/:tenantSlug</code> — tenant hub (all offers, type-badged)</li>
+<li><code>GET /ai-jobs/t/:tenantSlug/o/:offerSlug</code> — individual offer (offer-aware CTA)</li>
+<li><code>GET /ai-jobs/t/:tenantSlug/:categorySlug</code> — tenant category</li>
+</ul>
+<p><strong>Offer-aware CTAs:</strong> job→Apply, product→Shop Now, service→Learn More, brand→Explore, affiliate→Get Deal, course→Enroll. Admin <code>/admin/ai-jobs</code> now has Tenant + Source + Offer Type + Destination URL + CTA pickers on the create form.</p>
+<h3>Deploy order (important — migration BEFORE code)</h3>
+<ol>
+<li>Supabase SQL Editor → run <code>migrations/2026-10-15_phase3_offer_types.sql</code> (additive, safe).</li>
+<li>Push branch → <code>main</code>; Render redeploys.</li>
+<li>(Optional) set <code>AI_JOBS_MULTITENANT=true</code> in Render to turn on tenant routes.</li>
+<li>Live-test:</li>
+</ol>
+<ul>
+<li><code>/ai-jobs</code> and <code>/ai-jobs/mercor/*</code> unchanged.</li>
+<li><code>/ai-jobs/s/respondent</code> unchanged.</li>
+<li>With flag ON: <code>/ai-jobs/t/default</code> lists all default-tenant offers.</li>
+<li>Create a <code>product</code> offer in admin (set Destination URL) → it renders with &quot;Shop Now&quot;.</li>
+</ul>
+<h2>Rollback</h2>
+<ul>
+<li>Instant: set <code>AI_JOBS_MULTITENANT=false</code> (tenant routes 404; everything else unchanged).</li>
+<li>Schema: <code>migrations/2026-10-15_..._ROLLBACK</code> not required (columns are nullable/additive);</li>
+<p>to fully revert, drop the 3 columns or redeploy previous commit.</p>
+</ul>
+<h2>Phase A — Tenant-Portal Writer's Flow (Blogger) — commit 11e4f12</h2>
+<p>Exposes a <strong>Writer's Flow</strong> section in the tenant portal (<code>/tenant-dashboard</code>) for founder's-plan clients, with two tabs: <strong>Research &amp; Outreach</strong> (placeholder) and <strong>Blogger</strong> (fully functional, tenant-scoped).</p>
+<ul>
+<li><strong>Nav:</strong> new &quot;Growth → Writer's Flow&quot; item (<code>data-sec=&quot;writers-flow&quot;</code> → <code>renderWritersFlow</code>).</li>
+<li><strong>Migration:</strong> <code>2026-10-16_tenant_blogger.sql</code> adds <code>site_tenants.client_phone</code></li>
+<p>(links a logged-in <code>bot_tenants</code> to its Blogger <code>site_tenants</code> row). <strong>Run BEFORE deploy.</strong></p>
+<li><strong>APIs (tenantSessionAuth, auto-scoped):</strong> <code>GET /tenant/blogger</code> (each offer now</li>
+<p>carries <code>page_count</code>), <code>GET /tenant/blogger/offers/:id/posts</code> (the pages that offer produced: <code>slug</code>, <code>title</code>, <code>angle</code>, <code>status</code>, <code>url</code>), <code>POST /tenant/blogger/offers</code>, <code>POST /tenant/blogger/offers/:id/publish</code>, <code>POST /tenant/blogger/offers/:id/blog</code>, <code>DELETE /tenant/blogger/offers/:id</code>, <code>DELETE /tenant/blogger/posts/:slug</code> (only posts with this tenant's <code>tenant_id</code>; removes the row and the static <code>public/blog/&lt;slug&gt;.html</code>).</p>
+<li><strong>Reaching what was generated (2026-10-22):</strong> the <strong>Blog</strong> button is now</li>
+<p><strong>Optimize</strong>, the offers table has a <strong>Pages</strong> column (<code>page_count</code>), and expanding a row lists every page of that offer with an <strong>Open</strong> link (<code>/blog/&lt;slug&gt;.html</code>) and a per-page <strong>Delete</strong>. A successful run expands the list on its own, so the deliverable is clickable instead of a number in a toast — before this a tenant generated 9/9 pages and had no handle on any of them (the dashboard only re-rendered the table). Verifier check <strong>8d</strong> asserts that every generated slug is listed for the offer and that the first page serves 200 HTML, so &quot;generated but unreachable&quot; fails the suite.</p>
+<li><strong>Share and Review (2026-10-22):</strong> each page row now carries four actions —</li>
+<p><strong>Open</strong>, <strong>Share</strong>, <strong>Review</strong>, <strong>Delete</strong>.</p>
+<li><strong>Share</strong> opens a mini card with the public URL (copy button), the AI-written</li>
+<p><strong>hook</strong> / <strong>summary</strong> / <strong>excerpt</strong>, 3 key points and hashtags, plus <em>Copy caption</em>, WhatsApp, X and LinkedIn targets. Backed by <code>GET /tenant/blogger/posts/:slug/share</code>, which returns <code>{ url, absolute_url, hook, summary, excerpt, bullets, hashtags, mode }</code>. <code>mode='ai'</code> means a model wrote the card; <code>mode='template'</code> means every provider was dry and it was composed from the page's own text by <code>utils/postShare.js</code> (same honesty rule as the page composer). <code>?ai=0</code> forces the deterministic card, which is what the verifier uses. Cards are cached in-process for 30 min keyed by <code>slug|updated_at</code>, so re-opening Share does not buy the same answer twice and a review invalidates it.</p>
+<li><strong>Review</strong> re-runs the polish pass that generation already runs per post</li>
+<p>(<code>reviewBlog</code>), for one page, via <code>POST /tenant/blogger/posts/:slug/review</code>. It rewrites <code>content</code> + <code>html_content</code>, the static file and <code>/blog/</code> index. The response is <code>{ ok, mode:'polished'|'unchanged', ai, changed }</code>; the portal says <em>&quot;no AI provider was available — page left unchanged&quot;</em> rather than claiming a polish that did not happen. The pass is bounded by <code>BLOG_REVIEW_AI_TIMEOUT_MS</code> (default <code>45000</code>) so a dry tier answers instead of holding the button for a multi-minute provider walk. That pass also used to rebuild the page CTA from a bare id (<code>/ai-jobs/apply/undefined</code>); it now loads the offer row, so the CTA and <code>tenant_id</code> survive a review.</p>
+<li>Both routes scope through <code>tenantOwnsPost()</code>: the page's <code>tenant_id</code>, or the</li>
+<p>offer it was generated from when <code>tenant_id</code> is still NULL (phase-1 schema).</p>
+<li>Verifier checks <strong>8e</strong> (card has hook/summary/excerpt + absolute URL) and</li>
+<p><strong>8f</strong> (review runs, then the page still serves 200) cover the two actions; <code>npm run test:share-card</code> proves the composer offline (15 checks).</p>
+<li><strong>Scoping:</strong> on first Blogger access, a <code>site_tenants</code> row is lazily created from the</li>
+<p>tenant's <code>bot_tenants</code> name/phone → public page at <code>/ai-jobs/t/&lt;their-slug&gt;</code>.</p>
+<li><strong>One journey per offer:</strong> <code>generateBlogPostsForOpportunity</code> holds an in-process</li>
+<p>lock keyed by offer id and returns <code>{ success:false, busy:true }</code> for a second concurrent call — the route answers <strong>409</strong> instead of starting a competing walk. Live 2026-10-22 a double click ran two walks on the same offer; they rate-limited each other on the shared free tier and both ran past 14 minutes. Verified live the same day on <code>589d7d0</code>: <code>POST …/blog 409 - 217ms</code> while the first run was still walking (client saw <code>409 busy</code> in 1.05 s). The verifier asserts this on every run (check <strong>8a</strong>), so a regression to &quot;two walks per click&quot; fails the suite rather than just costing minutes.</p>
+<li><strong>Posts outlive their offer:</strong> if the offer row is deleted mid-run, the</li>
+<p><code>blog_posts_opportunity_id_fkey</code> insert is retried without <code>opportunity_id</code> (the page stays on disk, in the tenant's list, and in restore-on-boot) instead of being lost to a logged <code>[DB] Save error</code>.</p>
+<li><strong>Public page requires</strong> <code>AI_JOBS_MULTITENANT=true</code>.</li>
+</ul>
+<h3>Deploy order (migration BEFORE code)</h3>
+<ol>
+<li>SQL Editor → run <code>migrations/2026-10-16_tenant_blogger.sql</code>.</li>
+<li>Push → <code>main</code>; Render redeploys.</li>
+<li>Log into <code>/tenant-dashboard</code> → <strong>Writer's Flow</strong> → <strong>Blogger</strong> tab.</li>
+<li>Create an offer (any type) → Publish → open the public page (flag must be ON).</li>
+</ol>
+<h3>Verify a deployment — <code>npm run verify:writers-flow</code></h3>
+<p>End-to-end check of the live host (<code>scripts/verify_writers_flow.js</code>). It reports PASS / FAIL / WARN per check and always deletes the rows it creates.</p>
+<pre><code>
+BASE_URL=https://alphadome.onrender.com \
+TENANT_TEST_PHONE=&lt;tenant phone&gt; TENANT_DASHBOARD_PASS=&lt;tenant key&gt; \
+npm run verify:writers-flow
+</code></pre>
+<p>Checks: <strong>build identity</strong> (is the served bundle the latest commit?), route registration (401 not 404, plus a 404 control), login, context, offer create, <strong>slug collision</strong> (same title twice must yield two slugs), publish, <strong>blog generation</strong> (must never return 200 with 0 posts), <strong>double click</strong> (a second run on the same offer while the first is live must answer <code>409 {busy:true}</code> immediately — probed 1.5 s into the run, so it costs no extra time), <strong>blog coverage</strong> (warns when fewer than 9 unique angle pages were written, and reports <code>mode=ai|template|mixed</code>), <strong>bounded run</strong> (fails if the generation call exceeds 120 s wall clock, i.e. the <code>BLOG_RUN_BUDGET_MS</code> ceiling stopped being applied), <strong>offer pages</strong> (every slug the run produced must come back from <code>GET /tenant/blogger/offers/:id/posts</code> and the first page must serve 200 HTML — this is the tenant's only handle on what it paid for), public page, cleanup, <strong>blog cleanup</strong> (generated <code>verify-writers-flow-*</code> posts are deleted).</p>
+<p>Live baseline on <code>589d7d0</code> (2026-10-22 13:42 UTC): 18 passed / 0 failed / 0 warnings — <code>409 busy</code> in 1.05 s, 9 posts in 82.8 s, 9/9 unique pages, 9 posts deleted, offers back to 3.</p>
+<p>Re-run on <code>2c5405c</code> (13:53 UTC) with the daily free quota <strong>fully exhausted</strong>: 18 passed / 0 failed / 0 warnings, <code>mode=template</code>, 9/9 pages in <strong>19.1 s</strong> (<code>blog 200 - 18832ms</code>, <code>409 - 379ms</code>). A dry quota is fast, not slow: the first angle fails provider-wide, <code>isAiFailureFatal()</code> stops the walk, and the remaining eight pages are composed from the offer data. So the two worst cases are both bounded — half-dry ≈ the 90 s budget, fully dry ≈ 20 s — and neither can return fewer than nine pages.</p>
+<p><strong>Why a run can still overshoot the budget by seconds (fixed after <code>2c5405c</code>).</strong> A dashboard run on 2026-10-22 13:54 UTC (offer <code>ed024a64</code>, 90 s budget) returned nine pages in <strong>109.3 s</strong> with <code>[GEN] AI budget spent (108s of 90s)</code>. The cause was one call, not the loop: the <code>openrouter/free</code> attempt started with <strong>12.8 s</strong> of budget left and answered <strong>30.7 s</strong> later — almost exactly <code>BLOG_AI_TIMEOUT_MS</code> (30 s). Clamping the axios <code>timeout</code> to the remaining budget was not a bound at all, because in Node that timeout measures <strong>socket inactivity</strong>: an upstream that trickles its response keeps the socket &quot;active&quot; and the value is never reached. <code>ai()</code> now arms an <code>AbortController</code> for <code>min(BLOG_AI_TIMEOUT_MS, remaining)</code> and destroys the socket itself when it fires, so a stalled or trickling provider is cut <strong>at</strong> the deadline (<code>[AI] openrouter &lt;slug&gt; aborted after Ns — time box spent</code>). Regression test: <code>test:ai-providers</code> → <em>&quot;a slow provider is cut at the deadline, not at its own pace&quot;</em> (1500 ms budget against a stub that needs 5000 ms must return in &lt; 3 s, and an abort stays transient, never fatal). <code>[GEN] Done:</code> now ends the run with <code>posts in Ns of Ms budget</code>, so the host log alone proves the ceiling.</p>
+<p><strong>Why a provider that never answered could still spend the whole angle (fixed after <code>d921f7f</code>).</strong> A 90 s run on 2026-10-22 18:03 UTC (offer <code>2442b8c8</code>, 45 s angle budget) returned nine composed pages with this log:</p>
+<pre><code>
+[AI] openrouter model google/gemma-4-31b-it:free unusable (429) — trying minimax…
+[AI] openrouter model minimax/minimax-m3.1-flash:free unusable (404) — trying nvidia…
+… four more 429s …
+[AI] openrouter openrouter/free aborted after 30.0s — run budget spent
+[AI] gemini gemini-flash-latest aborted after 6.3s  — run budget spent
+[AI] hf skipped — run budget spent
+[GEN] AI unavailable for [Awareness] (transient) — composed from the offer data
+</code></pre>
+<p>The deadline was respected but not <strong>shared</strong>: OpenRouter's queue (six <code>429/404</code> answers plus one 30 s stall on the router slug) took 37 s of a 45 s angle, so Gemini — never tried — was cut 6.3 s into its first call, and HF never ran. The tier then looked dry and all nine pages fell back to composed copy. Three fixes:</p>
+<ol>
+<li><strong>Fair share.</strong> Each keyed provider owns an equal slice of whatever is left</li>
+<p>(<code>remaining / providersWithAKeyLeft</code>), and time a provider does not use rolls into the next slice. One keyed provider still owns the whole deadline, so single-key hosts behave as before; three keys on a 45 s angle give ~15 s each.</p>
+<li><strong>Retired slugs are retired.</strong> A <code>404</code> now removes that slug for the life of</li>
+<p>the process (<code>[AI] openrouter retired &lt;slug&gt; (404) — dropped for this process</code>) instead of re-paying the round-trip on all nine angles.</p>
+<li><strong>The router slug is time-boxed.</strong> <code>openrouter/free</code> picks an upstream per</li>
+<p>request and held the full attempt timeout on both 13:55 and 18:03, so it is capped at <code>BLOG_ROUTER_MODEL_CAP_MS</code> (8 s) like the last resort it is.</p>
+</ol>
+<p>Regression tests in <code>test:ai-providers</code>: <em>&quot;a stalled provider cannot spend the next provider's share&quot;</em> (3 s deadline, stalled OpenRouter + healthy Gemini must return Gemini's content in ~1.5 s), <em>&quot;a 404 slug is probed once per process, not once per angle&quot;</em>, and <em>&quot;the last-resort router slug is time-boxed&quot;</em>.</p>
+<p><strong>Why a dead key still cost 16-31 s per Share/Review (fixed after <code>a7eef63</code>).</strong> The fair share above decided <em>who</em> owns the deadline, not <em>whether</em> a provider had earned one. Live 2026-10-23 04:24-04:27 every keyed provider was dead in a different way — OpenRouter's free slugs <code>429/404</code>, <code>gemini-flash-latest</code> <code>429 You exceeded your current quota</code>, <code>hf</code> <code>402 You have no remaining credits</code> — and each walk re-probed all three: <code>POST …/posts/&lt;slug&gt;/review 200 - 31336ms</code>, then another at <code>16896ms</code>, both ending in <em>AI tier unavailable — copy unchanged</em>. Three fixes:</p>
+<ol>
+<li><strong>A dead key is skipped, not re-probed.</strong> Auth/billing (<code>401/402/403</code>, &quot;no</li>
+<p>remaining credits&quot;) retires the provider for the life of the process (<code>[AI] hf retired for this process (402) — no point re-probing every angle</code>); a daily-quota <code>429</code> (&quot;exceeded your current quota&quot;, &quot;plan and billing&quot;) puts it on a <code>BLOG_PROVIDER_QUOTA_COOLDOWN_MS</code> cooldown (default 5 min). A plain <code>429</code> (&quot;temporarily rate-limited upstream&quot;) stays eligible — that one clears in seconds and the slug walk already handles it.</p>
+<li><strong>A cooling key stops claiming a share.</strong> <code>remaining / providersLeft</code> counted</li>
+<p>corpses as candidates, so a healthy key was handed one third of the deadline. Only providers that can still answer are counted now, and time they do not use rolls to the next one.</p>
+<li><strong>One key = one quota.</strong> A billing/quota answer stops that provider's slug walk</li>
+<p>instead of burning its whole share on the remaining six slugs — the <code>429</code> naps alone were 6.9 s of a 5 s Share slice. With nothing eligible the walk answers immediately: <code>[AI] every keyed provider is cooling down — openrouter (402 needs an account fix, not a retry), gemini (quota 429), hf (402 …)</code> in ~1 ms.</p>
+</ol>
+<p>Regression tests in <code>test:ai-providers</code>: <em>&quot;an out-of-credits key is not dialled again on the next angle&quot;</em>, <em>&quot;a cooling provider stops claiming a share of the deadline&quot;</em> (quota-dead OpenRouter asked <strong>once</strong>, healthy Gemini serves both angles), and <em>&quot;a known-dead tier answers immediately instead of holding the button&quot;</em> (zero requests, &lt; 250 ms against a 45 s Review budget). None of this repairs a dead key — it only stops paying for the answer. The fix per status is in the table below.</p>
+<p>Exit <code>0</code> = no failures, <code>1</code> = at least one, <code>2</code> = missing config. A stale <code>build identity</code> FAIL means the host is serving an older commit — redeploy from the Render dashboard (this repo has no CI deploy script).</p>
+<p><strong>Why the first click on the cooldown build still cost 15-32 s (<code>95ef246</code>).</strong> Keys were now skipped, but one <em>slug</em> kept being paid for: live 2026-10-23 05:17-05:18, <code>nvidia/nemotron-3.5-lightning:free</code> accepted the request and sent <strong>zero bytes</strong> — 13.1 s of a Share slice, then 30.0 s alone (gemini and hf were already out of rotation, so it owned the whole deadline), then 13.5 s on the next Share. <code>POST …/review 200 - 16209ms</code> and <code>32230ms</code>, both <em>AI tier unavailable — copy unchanged</em>: 56 s of three clicks re-proving one silence. A <code>404</code> retired the slug; silence retired nothing. Now:</p>
+<ol>
+<li><strong>Silence is evidence.</strong> An attempt that is cut by its box with no byte</li>
+<p>received (axios <code>onDownloadProgress</code>, so a response that merely trickles is <em>not</em> counted) and that got a <em>fair</em> box (≥ <code>min(BLOG_AI_TIMEOUT_MS, 8 s)</code>; a slice cut to 2 s by a neighbour says nothing about the model) counts as a silent box for that slug.</p>
+<li><strong>Two silent boxes retire the slug</strong> for the process, exactly like a <code>404</code>:</li>
+<p><code>[AI] openrouter retired nvidia/nemotron-3.5-lightning:free (no bytes in 2 time boxes) — dropped for this process</code>. Set <code>BLOG_AI_STALL_RETIRE_AFTER=0</code> to disable.</p>
+<li><strong>The second attempt is a probe, not another share.</strong> A slug that already sat</li>
+<p>out a fair box gets <code>min(remaining, 8 s)</code> next time (constant <code>STALL_PROBE_MS</code>), so the live sequence becomes 13.1 s + 8 s once, then nothing on every later click instead of 30 s per click forever.</p>
+</ol>
+<p>Regression test in <code>test:ai-providers</code>: <em>&quot;a slug that answers nothing twice is retired, not re-boxed every click&quot;</em> (silent OpenRouter slug, Gemini serving both clicks, third click answered by the next live slug with <strong>no</strong> further probe of the dead one). Again this only stops paying for a dead thing — a silent free slug is an OpenRouter-side problem, and the fix per provider is to top up or rotate the key, or drop the provider.</p>
+<h3>When blog generation fails — <code>npm run test:ai-providers</code></h3>
+<p>The writer never fabricates posts: if the LLM returns nothing it fails loudly and the 502 body ends with <code>Last AI error: &lt;provider&gt; &lt;status&gt; &lt;body&gt;</code>. That string is the diagnosis — you do not need host logs.</p>
+<p>| <code>Last AI error</code> contains | Meaning | Fix | | --- | --- | --- | | <code>openrouter/hf 402 no remaining credits</code> | key valid, account out of credits | set <code>GEMINI_API_KEY</code> (free, no card) or <code>OPENROUTER_API_KEY</code>, or buy credits | | <code>401</code> / <code>unauthor</code> | key revoked or wrong | rotate the key on Render | | <code>404</code> + <code>unavailable for free</code> | the free model slug was retired (2026-10-22: <code>llama-3.1-8b-instruct:free</code>, <code>minimax/minimax-m3.1-flash:free</code>) | nothing — the writer falls through <code>OPENROUTER_FREE_MODELS</code> on <code>404</code>, including past a retired <code>OPENROUTER_MODEL</code> pin, and drops the dead slug for the rest of the process; clear the pin if the console logs show it leading every run | | <code>404</code> (any other) | model route not available on that account | set <code>OPENROUTER_MODEL</code> / <code>HF_MODEL</code> | | <code>429</code> + <code>rate-limited upstream</code> | that one model's upstream pool is saturated; the key is fine | nothing — the writer advances to the next slug in <code>OPENROUTER_FREE_MODELS</code> (live 2026-10-22: gemma-4-31b was throttled while five siblings were healthy) | | <code>429</code> + <code>You exceeded your current quota</code> | your own free-tier quota (per day) | wait for the reset window, add a second key, or add credits (OpenRouter free tier: 50 req/day, 1000/day after a one-time $10 credit). <strong>Gemini quota belongs to the Google Cloud project, not the key</strong>, and resets at midnight Pacific (10:00 EAT): a freshly created key in the <em>same</em> project pours from the same exhausted daily bucket, so it fixes nothing. A new project, billing on the old one, or another provider does | | only 1 post written, run then stops | fail-fast matched one exhausted provider (e.g. <code>hf 402</code>) in the joined error string | fixed 2026-10-22: only an all-provider auth/billing failure aborts a journey; redeploy and re-run the verifier | | <code>verify-writers-flow-*</code> posts visible on <code>/blog</code> | verifier runs published real posts before the post-delete endpoint existed | <code>npm run prune:verify-posts</code> on the host to list them, <code>npm run prune:verify-posts -- --apply</code> to delete (needs <code>SUPABASE_SERVICE_ROLE_KEY</code>) | | <code>no AI provider key configured</code> | no key at all | set one of the three keys |</p>
+<p>Providers are tried in order — <strong>OpenRouter → Gemini → Groq → Cerebras → Mistral → OpenAI → HuggingFace</strong> — so any single key is enough. The journey only aborts when <strong>every</strong> provider it could try failed on auth/billing (<code>401/402/403</code>, &quot;no remaining credits&quot;). One exhausted provider next to a healthy one, or a <code>429</code> / <code>RESOURCE_EXHAUSTED</code> quota reply, lets the remaining angles continue — otherwise a permanently dead HuggingFace <code>402</code> in the chain caps every run at one post. Within a provider, the models are a list too (OpenRouter's free slugs, Gemini's two flash aliases, Groq's three), and a <code>404</code>/silent alias advances to the next one instead of ending the run.</p>
+<p><strong>Zero-spend recovery.</strong> Google AI Studio issues a <code>GEMINI_API_KEY</code> with a free tier and no credit card (https://aistudio.google.com/apikey). The writer talks to Gemini through its OpenAI-compatible endpoint (<code>https://generativelanguage.googleapis.com/v1beta/openai</code>), so setting only that one var restores generation on the next restart — no code change and no purchase.</p>
+<p><strong>The keys live on the host, not in the repo.</strong> A fresh clone has no <code>.env</code> (it is gitignored; this tier's keys exist only as Render environment variables), so <code>npm run check:ai-key</code> printing <code>(no key)</code> on your machine says nothing about the host — do not &quot;add a key&quot; because the local probe is empty. To test the key the host is <em>actually</em> using, reveal it in Render → <strong>Environment</strong> and pass it in-process:</p>
+<pre><code>
+npm run check:ai-key -- --only=gemini --key GEMINI_API_KEY=AIza...
+</code></pre>
+<p>Nothing is written to a file and only a masked form is printed. The value is read by the same <code>ai()</code> walk the host runs, so <code>SERVED</code> here means the host's key will serve; a <code>429 quota</code> here means the host will not, and no amount of redeploying changes that. <code>scripts/render_env_sync.ps1</code> reads the live set before it PUTs, so it re-asserts whatever key is already there rather than blanking it — but never run it with <code>-DeleteOptional</code>, which deliberately drops <code>GEMINI_API_KEY</code>, <code>OPENROUTER_*</code> and <code>HF_*</code>.</p>
+<h4>Prove a key before you deploy it — <code>npm run check:ai-key</code></h4>
+<p>Rotating a key used to be a guess: the only feedback was the Writers tab, or the host log after the fact. On 2026-10-23 the tier held four keys and served no copy — HF <code>402</code>, Gemini <code>429</code> daily quota, four of five OpenRouter free slugs <code>429</code>/<code>404</code> — and every click still came back <code>200</code> in ~31 s. This check asks the provider directly, through the same <code>ai()</code> walk that serves Writers, Share, Review and replies, so its verdict cannot drift from production:</p>
+<pre><code>
+npm run check:ai-key                       # every provider that has a key
+npm run check:ai-key -- --only=gemini      # just one
+npm run check:ai-key -- --key GEMINI_API_KEY=AIza...   # no file, no .env needed
+</code></pre>
+<p>It prints the masked key it used, then per provider either <code>SERVED in 0.4s — &quot;OK&quot;</code> or the chain's own status/body <em>plus the fix</em> (<code>out of credits</code>, <code>key rejected</code>, <code>daily quota spent</code>, <code>slug retired</code>, <code>no answer inside the time box</code>). Exit code <code>0</code> = at least one provider wrote copy, <code>1</code> = none did — so it can gate a deploy.</p>
+<p>Sequence when the tier is already keyed — the usual case, because the keys are Render variables: reveal the var in Render → <strong>Environment</strong>, then run <code>npm run check:ai-key -- --only=&lt;provider&gt; --key &lt;VAR&gt;=&lt;value&gt;</code> until it says <strong>SERVED</strong> or names the account problem. If it names quota, wait for the reset (Gemini: midnight Pacific, 10:00 EAT) or change project/provider — redeploying does not help. Sequence for a brand-new key: create it → probe it with <code>--key</code> → add the same var on Render → <strong>Manual Deploy</strong> (auto-deploy is off on this host) → boot log must say <code>gemini=true</code> → click Review on the Writers tab and confirm the API body says <code>mode:&quot;polished&quot;</code> → <code>npm run verify:writers-flow</code>.</p>
+<p><strong>A deploy that builds the wrong commit looks exactly like a broken fix.</strong> Live 2026-10-23 14:56: <code>main</code> was two commits ahead of <code>origin/main</code>. Render built <code>origin/main</code> (<code>facc1404</code>), booted with the four-provider line (<code>openai openrouter gemini hf</code> — no <code>groq</code>, <code>cerebras</code>, <code>mistral</code>) and the old <code>OPENROUTER_KEY</code>-only read, and the first Review after &quot;deploy&quot; still ended <code>AI tier unavailable — copy unchanged</code> in 16.4 s. The fix was never wrong, it was never deployed. Before a Manual Deploy:</p>
+<pre><code>
+git status -sb                      # must be &quot;## main...origin/main&quot; with no &quot;ahead&quot;
+git --no-pager log --oneline -1 origin/main
+</code></pre>
+<p>After it, the first <code>[SYSTEM] LLM providers:</code> line is the proof of which code is live — <code>Deployed commit:</code> in the same block names the SHA, so a stale build is one line away from being obvious.</p>
+<p><strong>A visitor and a health check look the same in this log — until you count what they fetch.</strong> Live 2026-10-24 03:55, on a host with no <code>[SYSTEM]</code> block in view:</p>
+<pre><code>
+[PAGE] Landing page loaded by ::1 at 2026-10-24T03:54:36.466Z   GET / 200 - 4ms
+[PAGE] Landing page loaded by ::1 at 2026-10-24T03:55:36.216Z   GET / 200 - 4ms
+POST /api/kassangas/track-visit 200 - 6ms
+GET /media/tmp5_0ryzre.mp4 206 - 95ms   (×10 clips, ~40 MB, inside 13 s)
+</code></pre>
+<p><code>::1</code> is Render's in-instance proxy, not the visitor: <code>app.set('trust proxy', 1)</code> had never been set, so <code>req.ip</code> — and therefore every <code>ip</code> / <code>source_ip</code> column in the analytics and admin-audit logs — was <code>::1</code> for everybody. The fix is one line at the top of <code>server.js</code>; <code>npm run test:site-hygiene</code> proves that a forwarded <code>X-Forwarded-For: 203.0.113.9</code> resolves to the visitor, that a forged prefix cannot move it, and that <code>/favicon.ico</code> no longer 404s twice per demo visit.</p>
+<p>Rules for reading this log:</p>
+<ul>
+<li>A <code>/</code> hit with <strong>no follow-up requests</strong> is a pinger or the Render health check.</li>
+<p>A <code>/</code> hit followed by <code>track-visit</code> + media ranges is a person.</p>
+<li><code>206</code> on <code>/media/*.mp4</code> and <code>CLOSED BEFORE END</code> on the same file is a browser</li>
+<p>swapping <code>src</code> mid-stream, not a server bug — count the clips instead: the landing carousel is set to 24 s per clip, so ten clips inside 13 s means the <code>error</code> / <code>load-timeout</code> path is advancing it, and the visitor never finishes a clip. <code>public/media</code> is 47 MB across 11 files (eight still named <code>tmp*.mp4</code>, plus a byte-identical copy of the same clip under both a dashed and a spaced filename), and every visit pulls most of it.</p>
+<li>A landing page whose payload is 47 MB cannot be shown on a bad connection: it</li>
+<p>is the first thing a prospect sees. Cut the carousel to three clips under 3 MB each before a demo — the server side of the page is fine.</p>
+</ul>
+<p>Relevant env (all optional except one key):</p>
+<p>| Var | Default | | --- | --- | | <code>OPENROUTER_API_KEY</code> | — (preferred; aliases <code>OPENROUTER_KEY</code>, <code>OPEN_ROUTER_API_KEY</code>) | | <code>OPENROUTER_MODEL</code> | unset → tries <code>google/gemma-4-31b-it:free</code>, <code>minimax/minimax-m3.1-flash:free</code>, <code>nvidia/nemotron-3-super-120b-a12b:free</code>, <code>google/gemma-4-26b-a4b-it:free</code>, <code>nvidia/nemotron-3.5-lightning:free</code>, <code>poolside/laguna-s-2.1:free</code>, <code>openrouter/free</code> in order. A pin is tried <strong>first</strong> and the free list still follows it, so a retired pin cannot starve the writer (2026-10-22: the host was pinned to <code>llama-3.1-8b-instruct:free</code>, OpenRouter retired it, and every angle 404'd while three healthy free models sat unused). Retired (<code>404</code>) and throttled (<code>429</code>) slugs advance to the next model; only <code>401/402/403</code> stops the list | | <code>BLOG_ANGLE_DELAY_MS</code> | <code>1200</code> — pause between angles so nine sequential calls stay inside per-minute free limits; set <code>0</code> on a paid key | | <code>BLOG_FALLBACK_MODE</code> | <code>auto</code> — when an angle gets nothing from every provider, compose it from the offer's own fields (<code>public/blog/&lt;slug&gt;.html</code> still gets a full page). <code>off</code> restores the loud 502 for diagnosis | | <code>BLOG_AI_MAX_MISSES</code> | <code>2</code> — consecutive angles that return nothing from any provider before the rest of the run is composed without further AI calls. This is a latency budget, not a quorum rule: per-run only, so the next run tries AI again. <code>0</code> always walks every angle | | <code>BLOG_AI_TIMEOUT_MS</code> | <code>30000</code> per HTTP attempt (was <code>120000</code>). A provider that accepts the connection then stalls must not hold the tenant's request open for two minutes per model slug | | <code>BLOG_RUN_BUDGET_MS</code> | <code>90000</code> — hard wall-clock ceiling for the whole AI walk, counted from the first angle and applied to <strong>every</strong> AI call (compose, duplicate retry, review). When it is spent the remaining angles are composed from the offer data, so a run finishes in roughly this long with all nine pages. Live 2026-10-22: <code>1 of 9 pages in 6 minutes</code> while free slugs answered <code>429</code> and the stall burned the old 120 s per-attempt timeout; later that day a run that answered <strong>one</strong> angle out of nine still held the request <code>166 s</code> (<code>mode=mixed</code>, 8 pages composed anyway) because the ceiling was only applied after a miss. Fixed on <code>589d7d0</code> the same day: the deadline now applies to every call, and the same nine-angle run that previously took <code>166 s</code> returned in <strong><code>82.8 s</code></strong> with <strong>9/9</strong> unique pages (8 composed from the offer data, <code>mode=mixed</code>) — the verifier's <strong>8c</strong> check fails the suite if a run ever exceeds 120 s again. The ceiling is enforced <em>inside</em> each call by an <code>AbortController</code>, not only between calls (see <em>Why a run can still overshoot the budget…</em> above), so an overshoot is at most the page being saved, never a whole provider timeout. Raise the budget (e.g. <code>240000</code>) on a funded key where AI copy matters more than latency. <code>0</code> disables the ceiling | | <code>BLOG_ANGLE_BUDGET_MS</code> | <code>45000</code> — ceiling for <strong>one angle's</strong> provider walk, split equally between the providers that have a key (see <em>Why a provider that never answered…</em>). A single angle tries up to seven candidate model slugs on one key: live 2026-10-22 one angle cost 37 s (5 models, one stalled 23 s before returning <code>429</code>). Effective per-call deadline is <code>min(now + this, run deadline)</code>, and each call in an angle (compose, duplicate retry, review) gets its own slice. Set <code>0</code> to cap only per attempt. The review pass is skipped once 60 % of the run budget is spent, so the tail of the budget buys AI-written pages rather than polish on page three | | <code>BLOG_ROUTER_MODEL_CAP_MS</code> | <code>8000</code> — time box for the <code>openrouter/free</code> router slug, the only candidate with no upstream latency promise (it held a full 30 s attempt on both 2026-10-22 incidents). Every other slug is bounded by <code>BLOG_AI_TIMEOUT_MS</code> and the provider's share of the deadline. <code>0</code> disables the extra cap | | <code>BLOG_PROVIDER_QUOTA_COOLDOWN_MS</code> | <code>300000</code> — how long a provider that answered a <strong>daily-quota</strong> <code>429</code> (&quot;You exceeded your current quota&quot;, &quot;check your plan and billing&quot;) is skipped. Live 2026-10-23: nine angles plus every Share and Review each paid a fresh <code>429</code> to Gemini, and each dead key still claimed a third of the deadline. <code>0</code> re-probes it on the next angle | | <code>BLOG_AI_STALL_RETIRE_AFTER</code> | <code>2</code> — how many <em>fair</em> time boxes a model slug may spend sending <strong>zero bytes</strong> before it is retired for the process (a slug that only trickles is never counted). Live 2026-10-23 05:17-05:18: <code>nvidia/nemotron-3.5-lightning:free</code> was handed 13.1 s, 30.0 s, then 13.5 s across three tenant clicks and answered none. The first retry after a silent box is a probe capped at 8 s. <code>0</code> disables it | | <code>WHATSAPP_AI_BUDGET_MS</code> | <code>12000</code> — wall-clock ceiling for one WhatsApp reply's walk through the same provider chain (<code>scripts/blogManager.js</code>, <code>ai(prompt, deadline, messages)</code>). The reply path used to keep its own copy of the provider list and it drifted: it read <code>OPENROUTER_KEY</code> (the host sets <code>OPENROUTER_API_KEY</code>), posted to <code>api.openrouter.ai</code> (no such host — <code>getaddrinfo ENOTFOUND</code>), pinned <code>meta-llama/llama-3.3-70b-instruct:free</code> (retired), and never tried Gemini at all, so a live Gemini key sat unused while the bot answered &quot;Hello&quot; from the static welcome (live 2026-10-23 06:36). One chain now serves writers, Share, Review and replies; <code>0</code>/unset keeps the 12 s default | | <code>GEMINI_API_KEY</code> | — (free tier, no card) | | <code>GEMINI_MODEL</code> | unset → tries <code>gemini-flash-lite-latest</code> then <code>gemini-flash-latest</code>. A pin is tried <strong>first</strong> and the alias list still follows it (same rule as <code>OPENROUTER_MODEL</code>). Live 2026-10-23 10:40: the daily quota had reset and no request <code>429</code>'d, yet <code>gemini-flash-latest</code> sent <strong>zero bytes for its whole 15 s slice</strong> and the click still ended &quot;AI tier unavailable — copy unchanged&quot; — one alias was a single point of failure, so the light alias now leads | | <code>GROQ_API_KEY</code> / <code>GROQ_MODEL</code> | — / unset → <code>llama-3.3-70b-versatile</code>, <code>llama-3.1-8b-instant</code>, <code>openai/gpt-oss-20b</code>. Free tier, no card (https://console.groq.com/keys). Fastest first token in the chain, and it fails <em>fast</em>: a throttled key answers <code>429</code> in ~100 ms instead of eating the slice. <code>GROK_API_KEY</code> is accepted as an alias (see <em>The variable name is part of the wiring</em>) | | <code>CEREBRAS_API_KEY</code> / <code>CEREBRAS_MODEL</code> | — / unset → <code>llama3.1-8b</code>, <code>gpt-oss-120b</code>. Free tier, no card (https://cloud.cerebras.ai). A different company with a different quota, so a Gemini <em>and</em> Groq dry spell still leaves one answer | | <code>MISTRAL_API_KEY</code> / <code>MISTRAL_MODEL</code> | — / unset → <code>mistral-small-latest</code>, <code>open-mistral-nemo</code>, <code>mistral-large-latest</code>. Free &quot;experiment&quot; tier (https://console.mistral.ai), EU-hosted, OpenAI-compatible. Last free step before paid OpenAI; alias <code>MISTRALAI_API_KEY</code> accepted | | <code>OPENAI_API_KEY</code> / <code>OPENAI_MODEL</code> | — / <code>gpt-4o-mini</code> | | <code>HF_API_KEY</code> / <code>HF_MODEL</code> | — / <code>meta-llama/Llama-3.1-8B-Instruct:novita</code>. <strong>Not a free tier in practice</strong>: a valid key on an unfunded account answers <code>402 &quot;You have no remaining credits&quot;</code> (live 2026-10-23) and is retired for the process. <code>HF_API_KEY_WRITERS_FLOW</code> is an <em>alias name</em> for the same credential, not a second account — if your two HF keys are different accounts, unset the dry one so the alias is actually read (the walk takes the first non-empty var) | | <code>*_BASE_URL</code> | provider default (used by the offline test) |</p>
+<p><strong>The variable name is part of the wiring.</strong> On 2026-10-23 this host was provisioned with <code>GROK_API_KEY</code> (for Groq), <code>OPEN_ROUTER_API_KEY</code> (for OpenRouter) and <code>MISTRAL_API_KEY</code>. All three keys were valid; two of the names were read by nothing, so two tiers were invisible and the only symptom was a boot line saying <code>groq=false openrouter=false</code> while the Render dashboard showed the variable sitting there. A key that exists and is never read is the same outage as no key — the 2026-10-22 incident hid behind exactly that kind of false signal (<code>hf=true</code> on a <code>402</code> account). Two answers are now in the code:</p>
+<ol>
+<li><strong>Canonical name first, dashboard spellings accepted</strong> — <code>OPENROUTER_API_KEY</code></li>
+<p>→ <code>OPENROUTER_KEY</code> → <code>OPEN_ROUTER_API_KEY</code>, <code>GROQ_API_KEY</code> → <code>GROK_API_KEY</code>, <code>MISTRAL_API_KEY</code> → <code>MISTRALAI_API_KEY</code>, <code>HF_API_KEY</code> → <code>HF_API_KEY_WRITERS_FLOW</code> (one <code>keyFrom()</code> helper in <code>scripts/blogManager.js</code>, so the boot log, the probe and the walk cannot disagree).</p>
+<li><strong>The probe prints the var it read</strong> — <code>npm run check:ai-key</code> shows</li>
+<p><code>Groq  gsk_…only (26 chars) via GROK_API_KEY</code>, which is how you see a misspelling in one line instead of guessing why a saved key does nothing.</p>
+</ol>
+<p>Canonical names are still the ones to use on a new service, and <code>render.yaml</code> should carry them. Any <em>other</em> name (<code>OPENROUTER_KEY_ID</code>, <code>GROQ_KEY</code>, …) is still a key nobody reads.</p>
+<p><code>npm run test:ai-providers</code> proves the whole chain offline against a stub server — no keys, no network, no DB. It reproduces the 402 incident and the 2026-10-22 live failures, and verifies fallback order, empty-content handling, model override, retired-slug fallthrough, throttled-slug (<code>429</code>) fallthrough, the 402-still-aborts rule, provider cooldowns, silent-slug retirement and the fast-fail when every key is out of rotation (<strong>33 checks</strong>), plus the no-key message — the newest seven cover Gemini's light→full alias fallback, the <code>GEMINI_MODEL</code> pin, Groq serving when OpenRouter+Gemini are out, Cerebras as the backstop when three earlier keys are <code>402</code>, the two dashboard spellings (<code>GROK_API_KEY</code>, <code>OPEN_ROUTER_API_KEY</code>) reaching their provider, and Mistral answering after four <code>402</code>s.</p>
+<p><strong>Which free tiers to wire (and why this order).</strong> Every provider below speaks the same OpenAI-compatible shape, so support is a key + a URL + a model list in <code>scripts/blogManager.js</code> — no new code path, no adapter. Limits move; check the console before you promise a buyer a number. What matters for a live demo is that a <em>key that answers</em> exists in more than one company.</p>
+<p>| Provider | Get a key | Free tier | Why it is in this chain | Watch out | | --- | --- | --- | --- | --- | | Groq <strong>(wired)</strong> | https://console.groq.com/keys | rate-limited, no card | fastest first token (LPU) and ~100 ms <code>429</code>s, so a dry key costs a fraction of a second instead of a slice | per-minute caps: a 9-angle run can hit one, which is what the slug walk absorbs | | Google AI Studio (Gemini) <strong>(wired)</strong> | https://aistudio.google.com/apikey | daily quota, no card | the zero-spend workhorse; two flash aliases | the quota belongs to the Cloud <strong>project</strong>, resets midnight PT; the heavy alias can send zero bytes for 15 s | | Cerebras <strong>(wired)</strong> | https://cloud.cerebras.ai | small daily quota, no card | a third, independent pool with a different speed profile | smallest free quota of the three — backstop, not workhorse | | Mistral La Plateforme <strong>(wired)</strong> | https://console.mistral.ai | rate-limited experiment tier | EU-hosted, OpenAI-compatible, a fourth independent company | free tier is opt-in and rate-limited; <code>mistral-large-latest</code> is slow | | OpenRouter <code>:free</code> slugs <strong>(wired)</strong> | https://openrouter.ai/keys | ~50 req/day, ~1000/day after a one-time $10 | widest model menu, and <code>openrouter/free</code> routes to whatever is healthy | slugs get retired (<code>404</code>) and throttled (<code>429</code>) with no notice — never the only key (live 2026-10-23: 2×429 + 2×404 in one walk) | | GitHub Models | https://github.com/settings/tokens (PAT) | per-model request caps with a GitHub account | GPT-class copy on a free tier, OpenAI-compatible endpoint | PAT, not an API key; per-model caps are low | | Cloudflare Workers AI | https://dash.cloudflare.com | daily free &quot;neurons&quot; | one more independent pool | <strong>not</strong> OpenAI-compatible — needs an adapter, so it is <em>not</em> a drop-in like the rest | | Together AI | https://api.together.ai | small starter allowance | many open models | not a durable free tier; it becomes paid |</p>
+<p><strong>Do not</strong> plan on HuggingFace Inference Providers as the free tier: an unfunded account answers <code>402 &quot;You have no remaining credits&quot;</code> no matter how valid the key is (live 2026-10-23, twice). Prepaid credits or PRO are required. OpenAI is paid; Anthropic, xAI and DeepSeek have no durable free API tier.</p>
+<p><strong>Free-tier budget.</strong> One journey is 9 sequential generation calls plus one review call per post, so a handful of test runs exhausts a small free tier — a real <code>429</code> from Gemini after repeated runs is expected, not a code bug. Angles are paced by <code>BLOG_ANGLE_DELAY_MS</code> (default 1200 ms) and each throttled slug falls through to the next model, so nine angles can complete on free slugs alone. Keep at least <strong>three keyed providers</strong>: on 2026-10-23 this host had four keys and still served no copy, because all four were the same two failures (a dry HF account and a Gemini project out of quota) plus a free pool that was throttled — and only one of those keys was ever dialled inside a slice.</p>
+<p><strong>When every tier is dry at once</strong> (live 2026-10-22: OpenRouter <code>429</code> on the remaining free slugs, Gemini daily quota spent, HuggingFace <code>402</code>), the journey no longer ends empty. Each angle is composed from the offer's own fields by <code>utils/angleFallback.js</code> — title, type, price, location, skills, CTA — and the run still writes nine pages under nine distinct URLs. The response says so:</p>
+<p>| Field | Meaning | | --- | --- | | <code>result.mode</code> | <code>ai</code> (every angle from a model), <code>template</code> (every angle composed), <code>mixed</code> (the AI tier recovered mid-run) | | <code>result.fallback</code> | how many posts were composed rather than generated | | <code>posts[].fallback</code> | <code>true</code> on a composed post — the dashboard toast says &quot;composed from offer details&quot; |</p>
+<p>Composed copy is deliberately honest: it never invents a price (it asks for one when the offer states none) and it escapes tenant-supplied fields. It is a demo and continuity guarantee, not an AI substitute — the page reads as structured advice, and the flags above make sure nobody claims a model wrote it.</p>
+<p><code>npm run test:blog-fallback</code> covers this path offline (10 checks): a unique slug per angle, 230+ words per composed post, no pair above the duplicate threshold, survival with a title-only offer, HTML escaping, no markdown artefacts, the price never invented, CTA resolution for every offer type, plus both directions of the job/buyer split described below.</p>
+<p><strong>Offers are not all jobs.</strong> The journey was written for the Mercor job catalog, so a tenant's service listing produced &quot;How to Get Hired as a Kassangas Music Shop&quot; and &quot;Remote … Jobs&quot; on its own blog. Every template now branches on <code>offer_type</code>: <code>job</code> (the default, which is what every legacy row and every untyped row resolves to) keeps the career copy, everything else gets buyer copy (&quot;What It Costs and What You Get&quot;, &quot;How to Brief …&quot;, &quot;Taking … Beyond a Single Site&quot;). The prompts branch too, so the AI is not asked to write career advice for a service either.</p>
+<p><strong>One page per angle.</strong> Until 2026-10-22 the two templates inside an angle were slugged <code>&lt;offer&gt;-&lt;angle&gt;</code>, so the second post overwrote the first — a &quot;9 of 9 angles&quot; run wrote five pages. Slugs now carry the stage (<code>&lt;offer&gt;-awareness-1</code>, <code>&lt;offer&gt;-awareness-2</code>, …) and the verifier counts unique slugs, not array entries.</p>
+<p><strong>One theme per page (2026-10-26).</strong> Some models answer the writer's &quot;HTML fragment&quot; request with a whole document: <code>&lt;!DOCTYPE html&gt;</code>, <code>&lt;html&gt;</code>, and a <code>&lt;head&gt;</code> carrying their own <code>&lt;style&gt;</code> with <code>background:#fff</code> / <code>color:#fff</code>. That copy was injected inside <code>&lt;article&gt;</code>, and a <code>&lt;style&gt;</code> element still applies when it sits inside <code>&lt;body&gt;</code>, so the model's palette overrode the template's. A live probe of all 283 published pages (<code>npm run probe:blog-theme</code>, 2026-10-26) found 105 failing at least one rendering rule: 20 carried a second <code>&lt;style&gt;</code> block, 27 had pasted a whole document into the article, 10 declared a white background, 97 repeated the page title as their own <code>&lt;h1&gt;</code> (70 of them failing <em>only</em> that), 8 showed markdown fences and a handful read as literal <code><strong>bold</strong></code> / <code>### heading</code> / <code>* bullet</code>. Several pages were a blank white sheet (light text on the model's own white background), i.e. a tenant opening &quot;its&quot; blog saw nothing. Three smaller variants of the same cause: <code>bgcolor=</code> attributes, <code>color:#fff</code> inline declarations, and answers fenced in ```<code> </code>`<code>html </code>``` (visible backticks).</p>
+<p>Every writer path now funnels copy through <code>sanitizeArticleHTML()</code> (<code>utils/articleHtml.js</code>): unwrap a full document to its body, drop <code>style</code>/<code>script</code>/<code>link</code>/<code>meta</code>/<code>title</code> and document tags, keep layout hints (padding, border, width) but drop <code>color</code>/<code>background</code>/<code>font</code> declarations, strip <code>bgcolor</code>/<code>color</code> attributes, convert leftover markdown to <code>h2</code>/<code>h3</code>/<code>p</code>/ <code>ul</code>/<code>ol</code>/<code>strong</code>/<code>blockquote</code>, and demote the model's <code>h1</code> to <code>h2</code> so the page keeps exactly one. <code>auditBlogHTML()</code> then proves the rendered page has exactly one <code>&lt;style&gt;</code>, one <code>&lt;html&gt;</code>, one <code>&lt;body&gt;</code>, no model CSS in the article, no literal markdown and one <code>h1</code>. <code>restoreFromDB()</code> audits each row on boot and rebuilds anything that fails from its stored article body (and saves the repair), so old pages do not come back broken on every deploy. A rebuilt page keeps the row's <code>created_at</code> as its publish date instead of looking freshly re-written.</p>
+<p>Repair the live rows with:</p>
+<pre><code>
+npm run repair:blog-html            # dry run: list pages that fail the audit
+npm run repair:blog-html -- --apply # rebuild file + html_content
+npm run test:blog-html              # offline checks for the guard + template
+npm run probe:blog-theme            # audit the live pages a reader can open
+</code></pre>
+<p><code>probe:blog-theme</code> fetches every page linked from <code>/blog</code> on the deployed site and runs the same <code>auditBlogHTML()</code> rules, so &quot;the fix is live&quot; is a command and an exit code rather than an eyeball. It prints one <code>FAIL &lt;slug&gt; [issues]</code> line per page and writes the full row set to <code>.blog_probe.json</code>.</p>
+<p>The script needs <code>SUPABASE_URL</code> / <code>SUPABASE_SERVICE_ROLE_KEY</code> in the environment. On a machine without them, the same repair runs inside the deploy: every boot calls <code>restoreFromDB()</code>, and <code>GET /admin/restore-blogs?key=$ADMIN_KEY</code> forces it on a running instance without waiting for a restart.</p>
+<p>Rehearsed against the live site on 2026-10-26 (published page taken as the stored <code>html_content</code>, its <code>&lt;article&gt;</code> body as the stored <code>content</code>): every offending page that still holds a real article body rebuilds to a page that passes every audit rule. The one exception is <code>verify-writers-flow-20261022130935-awareness-2</code>, which holds only 144 characters of article text — there is nothing to restore, so the audit keeps refusing it and it needs a regeneration (Review in the tenant portal, or Generate on its offer), not a repair.</p>
+<p>Proof the boot repair ran: the deploy log line <code>[DB] Restored 283 posts</code> gains a suffix — <code>[DB] Restored 283 posts (105 rebuilt from their article body)</code>. A bare <code>Restored 283 posts</code> means the running build predates the guard; that is how the 2026-10-26 07:11 deploy was caught still serving the old code (<code>Deployed commit: f14217ee</code>, no rebuild suffix, and a probe that still found 105 failing pages). After a deploy that carries the fix, <code>npm run probe:blog-theme</code> should report only the thin page.</p>
+<p><code>scripts/repair_blog_html.js</code> used to pull <code>auditBlogHTML</code> out of <code>scripts/blogManager.js</code>, which never re-exported it, so the first real run would have died on <code>auditBlogHTML is not a function</code>; it now imports the pure module.</p>
+<p><strong>The discovery form never confirmed a submission (2026-10-26).</strong> On <code>/discovery</code>, the &quot;Thank you&quot; panel was a child of <code>&lt;form id=&quot;discoveryForm&quot;&gt;</code>, and the submit handler set <code>form.style.display = 'none'</code> — so the confirmation was hidden together with the form and a client who had just given us their business details saw a blank page. Failures were worse: a raw <code>alert()</code> carrying the exception text, plus an unguarded <code>resp.json()</code> that surfaced &quot;Unexpected token &lt; in JSON&quot; when a proxy answered 502. The panel now lives outside the form, failures render inline with the server's reason (or the HTTP status), the submit button disables and re-labels while in flight, and the confirmation shows the <code>submission_id</code> as a reference. <code>npm run test:discovery-form</code> runs the page's own script against a DOM stub and asserts both branches.</p>
+<p><strong>Tenant campaign creation answered 500 and left no trace (2026-10-26).</strong> The Render log held <code>POST /tenant/wf/campaigns 500 - 961ms</code> and nothing else: one database round trip, so the insert itself was rejected, and the route returned <code>err.message</code> without logging it. The insert also guessed wrong about the table. Two incompatible <code>wf_campaigns</code> shapes exist in this repo: <code>migrations/2026-04-20_writers_flow_tables.sql</code> defines <code>id uuid PRIMARY KEY DEFAULT gen_random_uuid()</code> plus <code>name</code>/<code>keywords</code>, while <code>migrations/2026-05-03_create_writers_flow_tables.sql</code> defines <code>id text PRIMARY KEY</code> with <strong>no default</strong> and no <code>name</code> column at all. Against the second shape the old retry loop dropped <code>name</code>, <code>keywords</code>, <code>channels</code>, … one per attempt and then died on <code>null value in column &quot;id&quot;</code> (or would have stored a nameless campaign that can never be run).</p>
+<p><code>utils/wfCampaigns.js</code> now owns that insert for both the portal (<code>POST /tenant/wf/campaigns</code>) and the owner console (<code>POST /admin/api/wf/campaigns</code>). It sends its own <code>id</code>, which is a valid value for a <code>uuid</code> and a <code>text</code> primary key alike; retries without optional columns the live table lacks; drops a rejected <code>status</code> so the column default decides (the 2026-05-03 shape only allows <code>created|running|completed|failed</code>, the routes send <code>draft</code>); and refuses to drop <code>name</code>, <code>keywords</code> or <code>tenant_id</code> — a campaign without those is unfindable or visible to the wrong client, so that answers 503 naming the migration to run instead of &quot;succeeding&quot;. Every failure now logs <code>[TENANT WF] campaign create failed: code=… &lt;database message&gt;</code> before the response, so the next occurrence is diagnosable from Render alone. <code>npm run test:wf-create</code> replays each shape against a faked Supabase client.</p>
+<h3>Phase B — Research &amp; Outreach (shipped; see the campaign-create note above)</h3>
+<p><code>wf_campaigns.tenant_id</code>, the <code>/tenant/wf/*</code> endpoints, per-tenant SMTP and the Research &amp; Outreach tab all exist. What is left here is not build work: create a campaign from the portal once the deployment carries the insert fix, then confirm the Render log shows no <code>500</code> on the route.</p>
+<h2>Next (Phase 4, optional)</h2>
+<ul>
+<li>Converge tenant resolution onto <code>alphadome-kernel</code> behind parity tests.</li>
+<li>Per-tenant custom domains / branded paths; respondent.io sample offers.</li>
+<li>Founder's-plan gating for Writer's Flow (currently shown to all active tenants).</li>
+</ul>
+<p>---</p>
+<h2>Blog quality: voice, brief and gate (2026-10-25)</h2>
+<p><strong>What was wrong.</strong> Every tenant ran the same one-line prompt — <code>Write an educational blog post explaining what X is … HTML format, NO markdown</code> — and got back the same shape: an <code>&lt;h2&gt;</code>, four <code>&lt;li&gt;</code>, repeat. Of the 283 published pages, 105 broke a rendering rule (see the 2026-10-26 section above) and the thin ones held 144 characters of article text. Nothing in the pipeline measured quality, so <code>9 of 9 generated</code> was always reported as success, and a tenant selling studio time read exactly like a tenant selling pharma supply.</p>
+<p><strong>Three modules now own the difference.</strong> All three are pure (no fs, no network, no database) so they can be proven offline.</p>
+<p>| Module | Responsibility | |---|---| | <code>utils/tenantVoice.js</code> | Resolves one editorial voice per tenant: six profiles (<code>warm-neighbourhood-expert</code>, <code>precise-operator</code>, <code>bold-challenger</code>, <code>measured-advisor</code>, <code>storytelling-guide</code>, <code>practical-teacher</code>). An explicit <code>site_tenants.brand_voice</code> / <code>.voice</code> / <code>.tone</code>, else <code>bot_tenants.tone</code>, else <code>bot_templates.tone</code> wins; a free-text tone that matches no profile is honoured verbatim. With no setting, the profile is chosen by FNV-1a hash of the tenant's id/slug, so it is stable across runs and deploys, and 24 tenants still spread across all six. It also derives the market lens (music retail, health supply, construction …) and the reader (buyer vs candidate). | | <code>utils/blogWriter.js</code> | Builds the article brief that replaced the one-liners: business facts and a fact rule (no invented clients, statistics, guarantees or dates), the voice block, the reader and search intent, one brief per journey angle <strong>and stage</strong> (20 in total: 10 buyer, 10 career), the eight-step shape (scene → decision → five sections of prose before any list → one worked example with real numbers → one honest limitation section → a CTA using the offer's own label), length and rhythm rules, banned phrasing, and the HTML fragment contract. Also exports <code>buildRepairPrompt()</code> and <code>buildReviewPrompt()</code>. | | <code>utils/blogQuality.js</code> | The referee. Scores an article 0–100 on words, substantial paragraphs, headings, list-word ratio, list-only sections, sentences per paragraph, specifics (numbers), CTA presence, stubby paragraphs, repeated openers, duplicate headings and a banned-phrase list. Returns <code>ok</code>, <code>critical[]</code> and named <code>issues[]</code> with weights; <code>qualityBrief()</code> turns them into instructions. Targets live in <code>QUALITY_TARGETS</code> (floor 700 words, 8 paragraphs, 3 headings, ≤32% of words inside lists, ≤1 list-only section, score ≥70). |</p>
+<p><strong>How a journey uses them</strong> (<code>scripts/blogManager.js</code>):</p>
+<ol>
+<li><code>loadTenantVoice(offer)</code> resolves the tenant once per journey (site_tenants →</li>
+<p>bot_tenants by <code>client_phone</code> → bot_templates by <code>bot_tenant_id</code>). Every lookup is best-effort, so a host whose schema predates a column still generates with the house voice. The log line is <code>[GEN] Voice: &lt;id&gt; (&lt;source&gt;) for &lt;brand&gt;</code>.</p>
+<li>Each angle is commissioned with <code>buildArticlePrompt()</code>, including the other</li>
+<p>eight titles in the series so the pages do not repeat each other.</p>
+<li>The draft is scored. If it fails, <strong>one</strong> repair call is made with the measured</li>
+<p>failures; the rewrite is kept only when it scores higher. Log lines: <code>[GEN] Quality &lt;slug&gt;: 62/100, … — below target, published anyway</code> and <code>[GEN] Repaired &lt;slug&gt;: … → …</code>.</p>
+<li>The review pass is now voice-aware and refuses a polish that scores lower, so</li>
+<p>the Review button cannot turn a page into an outline.</p>
+<li>The journey result carries <code>voice</code> (<code>id</code>, <code>label</code>, <code>brand</code>, <code>source</code>) and a</li>
+<p>per-post <code>quality</code> object (<code>score</code>, <code>words</code>, <code>ok</code>, <code>issues</code>). The tenant portal toast shows the average score and the voice instead of a bare page count.</p>
+</ol>
+<p><strong>Choosing the voice in the portal.</strong> <code>GET /tenant/blogger</code> now returns <code>voice</code> (id, label, source, brand, industry) and <code>voiceOptions</code> (all six profiles with a one-line essence), and the Writer's Flow → Blogger tab shows a &quot;Your writing voice&quot; panel with a picker, <strong>Save voice</strong>, and <strong>Use assigned</strong>. <code>POST /tenant/blogger/voice</code> writes the choice to <code>site_tenants.metadata.voice</code>, merging the existing jsonb instead of replacing it, and accepts <code>{ voice: null }</code> to clear. <code>metadata</code> is used deliberately: it already exists on every deployed <code>site_tenants</code> row, so a tenant can pick a tone without waiting for a migration; a host that somehow lacks the column answers <code>503</code> naming <code>migrations/2026-10-11_add_site_tenants_multitenant.sql</code> rather than pretending it saved. Unknown ids are refused with the allowed list, and the full prompt block is never sent to the browser — only the label, source and market. Proof: <code>npm run test:tenant-voice</code> (23 checks).</p>
+<p><strong>Tuning.</strong> <code>QUALITY_TARGETS</code> is the single place to change a threshold; the prompt's banned list lives in <code>BANNED_PHRASES</code> in <code>blogWriter.js</code> and <code>BANNED</code> in <code>blogQuality.js</code> and must stay in sync. A change is either proven by <code>npm run test:blog-quality</code> or it is not shipped.</p>
+<pre><code>
+npm run test:blog-quality   # 15 checks: voices, briefs, gate, repair, review
+npm run test:tenant-voice   # 23 checks: the picker, the route, metadata merge
+npm run test:blog-fallback  # composed copy still passes the fallback contract
+npm run test:blog-html      # one-theme sanitizer and page template
+</code></pre>
+<p>The gate is deliberately a <em>floor</em>, not a style police: a page can score 78 with one weak section and still publish. What it will not accept is the shape that started this work — a heading followed by a bare list, three times over.</p>
+<h2>AI_JOBS_README.md</h2><p class="meta">AI_JOBS_README.md</p><h1>AI Jobs &amp; Mercor Referral Engine</h1>
+<h2>Overview</h2>
+<p>The AI Jobs subsystem is an additive feature that adds an SEO-driven opportunity discovery and Mercor referral engine to the existing AlphaDome platform. It operates independently without affecting existing functionality.</p>
+<h2>Architecture</h2>
+<pre><code>
+AlphaDome
+├── Existing Application (untouched)
+│   ├── Authentication
+│   ├── Tenants
+│   ├── WhatsApp Bot
+│   └── ...
+│
+└── AI Work Subsystem (new)
+    ├── /ai-jobs/* routes
+    ├── Opportunity database
+    ├── Category taxonomy
+    ├── Referral mapping
+    ├── SEO pages
+    ├── Analytics tracking
+    └── Admin interface
+</code></pre>
+<h2>Database Tables (New)</h2>
+<p>All tables are in the <code>alphadome</code> schema and do not affect existing tables:</p>
+<ul>
+<li><code>opportunity_sources</code> - External providers (Mercor, etc.)</li>
+<li><code>opportunity_categories</code> - Professional categories with referral links</li>
+<li><code>opportunities</code> - Individual job listings</li>
+<li><code>opportunity_events</code> - Analytics events</li>
+<li><code>referral_links</code> - Centralized referral URL configuration</li>
+</ul>
+<h2>Routes</h2>
+<h3>Public Routes</h3>
+<ul>
+<li><code>GET /ai-jobs</code> - AI Jobs landing page</li>
+<li><code>GET /ai-jobs/mercor</code> - Mercor opportunities page</li>
+<li><code>GET /ai-jobs/mercor/:categorySlug</code> - Category page</li>
+<li><code>GET /ai-jobs/mercor/opportunity/:slug</code> - Individual opportunity page</li>
+<li><code>GET /api/opportunities/:id/apply</code> - Track click and redirect to Mercor</li>
+<li><code>POST /api/events</code> - Track analytics events</li>
+</ul>
+<h3>Admin Routes</h3>
+<ul>
+<li><code>GET /admin/ai-jobs</code> - Admin dashboard</li>
+<li><code>POST /admin/ai-jobs/opportunities</code> - Create opportunity</li>
+<li><code>PUT /admin/ai-jobs/opportunities/:id</code> - Update opportunity</li>
+<li><code>GET /admin/ai-jobs/analytics</code> - Get analytics data</li>
+</ul>
+<h3>SEO</h3>
+<ul>
+<li><code>GET /sitemap.xml</code> - Dynamic sitemap</li>
+<li><code>GET /robots.txt</code> - Crawler configuration</li>
+</ul>
+<h2>Referral URL Resolution</h2>
+<p>The system uses a three-tier referral URL resolution:</p>
+<ol>
+<li><strong>Job-specific URL</strong> (highest priority) - Individual Mercor job referral link</li>
+<li><strong>Category URL</strong> - Category-level Mercor referral link</li>
+<li><strong>General URL</strong> (fallback) - General Mercor referral link</li>
+</ol>
+<h2>Setup Instructions</h2>
+<h3>1. Run Database Migrations</h3>
+<p>Execute the SQL migration files in order:</p>
+<pre><code>
+# Part 1: Create tables
+psql -f migrations/2026-09-04_create_ai_jobs_schema.sql
+
+# Part 2: More tables
+psql -f migrations/2026-09-04_create_ai_jobs_schema_part2.sql
+
+# Part 3: Seed data and RLS
+psql -f migrations/2026-09-04_create_ai_jobs_schema_part3.sql
+</code></pre>
+<h3>2. Environment Variables</h3>
+<p>No new environment variables are required. The system uses existing Supabase credentials.</p>
+<p>Optional:</p>
+<ul>
+<li><code>SITE_URL</code> - Canonical URL for SEO (defaults to https://alphadome.com)</li>
+<li><code>ADMIN_KEY</code> - Admin access key (defaults to ADMIN_PASS)</li>
+</ul>
+<h3>3. Verify Installation</h3>
+<ol>
+<li>Start the server: <code>npm start</code></li>
+<li>Visit <code>http://localhost:PORT/ai-jobs</code></li>
+<li>Check categories load correctly</li>
+<li>Test admin at <code>http://localhost:PORT/admin/ai-jobs</code></li>
+</ol>
+<h2>Referral URLs</h2>
+<h3>General</h3>
+<ul>
+<li>https://t.mercor.com/tqwsF</li>
+</ul>
+<h3>Categories</h3>
+<p>| Category | Slug | Referral URL | |----------|------|--------------| | Medicine | medicine | https://t.mercor.com/H0hIC | | Law | law | https://t.mercor.com/qmTg8 | | Software Engineering | software-engineering | https://t.mercor.com/20MWE | | Data Analysis | data-analysis | https://t.mercor.com/jmluX | | Finance | finance | https://t.mercor.com/vHKIv | | Business Operations | business-operations | https://t.mercor.com/LxKC0 | | Sciences | life-physical-social-sciences | https://t.mercor.com/rWlds | | Engineering | other-engineering | https://t.mercor.com/axpK4 | | Arts &amp; Design | arts-design | https://t.mercor.com/uH1OY | | Language &amp; Audio | language-audio | https://t.mercor.com/g6As3 | | Humanities | humanities | https://t.mercor.com/OcRv3 |</p>
+<h2>Opportunity Lifecycle</h2>
+<p>States:</p>
+<ul>
+<li><code>draft</code> - Created but not ready for display</li>
+<li><code>verified</code> - Information checked</li>
+<li><code>published</code> - Publicly visible</li>
+<li><code>stale</code> - Not verified recently</li>
+<li><code>closed</code> - No longer accepting applications</li>
+<li><code>archived</code> - Retained for historical value</li>
+</ul>
+<h2>Analytics Events</h2>
+<p>Tracked events:</p>
+<ul>
+<li><code>page_view</code> - General page view</li>
+<li><code>category_view</code> - Category page view</li>
+<li><code>opportunity_view</code> - Individual opportunity view</li>
+<li><code>apply_click</code> - User clicked apply button</li>
+<li><code>referral_click</code> - User clicked referral link</li>
+<li><code>external_click</code> - User clicked external link</li>
+</ul>
+<h2>Security</h2>
+<ul>
+<li>Referral URLs are validated against allowed domains</li>
+<li>Admin routes require authentication</li>
+<li>RLS policies protect database tables</li>
+<li>No open redirect vulnerabilities</li>
+</ul>
+<h2>SEO Features</h2>
+<ul>
+<li>Unique meta titles and descriptions per page</li>
+<li>Canonical URLs</li>
+<li>OpenGraph metadata</li>
+<li>JSON-LD structured data (JobPosting schema)</li>
+<li>Dynamic sitemap.xml</li>
+<li>robots.txt configuration</li>
+<li>Semantic HTML structure</li>
+<li>Internal linking between related content</li>
+</ul>
+<h2>File Structure</h2>
+<pre><code>
+routes/
+├── aiJobs.js           - Public AI Jobs routes
+├── aiJobsAdmin.js      - Admin interface routes
+└── sitemap.xml         - Sitemap generator
+
+utils/
+├── aiJobsConfig.js     - Referral URL configuration
+├── aiJobsService.js    - Database operations
+├── aiJobsViews.js      - HTML rendering (landing, category)
+└── aiJobsViewsOpp.js   - HTML rendering (opportunity)
+
+migrations/
+├── 2026-09-04_create_ai_jobs_schema.sql       - Tables (part 1)
+├── 2026-09-04_create_ai_jobs_schema_part2.sql  - Tables (part 2)
+└── 2026-09-04_create_ai_jobs_schema_part3.sql  - Seed data &amp; RLS
+
+public/
+└── robots.txt          - Crawler configuration
+</code></pre>
+<h2>Adding New Opportunity Providers</h2>
+<p>To add a new provider (e.g., Scale AI, Outlier):</p>
+<ol>
+<li>Insert into <code>opportunity_sources</code> table</li>
+<li>Create categories with referral URLs</li>
+<li>Add opportunities linked to the new source</li>
+<li>The system automatically handles routing and SEO</li>
+</ol>
+<h2>Revenue Model</h2>
+<ul>
+<li>Mercor pays 20% of eligible referral earnings</li>
+<li>Earnings begin when referred candidate is hired and starts billable work</li>
+<li>Payouts released twice weekly</li>
+<li>No earnings guarantee - quality over quantity</li>
+</ul>
+<h2>Support</h2>
+<p>For issues or questions, refer to the main AlphaDome documentation.</p>
+<h2>Review checklist</h2>
+<ul><li>I can show evidence that: Build an agent loop with tool use, retries and a hard cost ceiling</li><li>I can show evidence that: Write evals that fail a bad agent before a customer does</li><li>I can show evidence that: Run a browser or API agent with credentials that cannot be exfiltrated</li><li>I can show evidence that: Write the operations page a hiring manager asks for: logs, alerts, rollback</li></ul>
+<div class="licence">
+<strong>Licence.</strong> One buyer, one organisation, internal use. You may adapt the material for your own business and quote short excerpts with attribution. Do not resell, redistribute or publish this pack, in whole or in part, as your own product.<br><br>
+<strong>What this is.</strong> One HTML workbook: six modules, six lab briefs, the reading list and the review checklist. Written material, not recorded video. Access for 12 months, updated as the track changes.<br><br>
+<strong>What it is not.</strong> Not a guarantee of income, employment, acceptance or performance. Figures quoted in this pack are the measurements of the system it describes, with their sources named, not promises about your results.<br><br>
+Sold via Alphadome Digital Drops. Support, resends and extensions: reply to the WhatsApp message that delivered this pack.
+</div>
+</div></body></html>

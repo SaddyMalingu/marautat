@@ -54,6 +54,16 @@ router.get('/sitemap.xml', async (req, res) => {
     <loc>${SITE_URL}/ai-jobs/mercor</loc>
     <changefreq>daily</changefreq>
     <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>${SITE_URL}/drops</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>${SITE_URL}/build</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.9</priority>
   </url>`;
 
     // Published tenant/Writer's Flow pages. They are written to public/blog at

@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Alphadome Build Log 2026 · Alphadome</title><style>
+:root{--ink:#0d1320;--paper:#ffffff;--muted:#5b6b85;--line:#e3e8f0;--accent:#b45309;--code:#f5f7fb}
+*{box-sizing:border-box}
+body{margin:0;background:#f1f4f9;color:var(--ink);font:16px/1.65 Georgia,'Times New Roman',serif}
+.sheet{max-width:820px;margin:0 auto;background:var(--paper);padding:56px 60px 72px;box-shadow:0 10px 40px rgba(13,19,32,.08)}
+.brand{font:600 12px/1 ui-sans-serif,system-ui,sans-serif;letter-spacing:.18em;text-transform:uppercase;color:var(--accent)}
+h1{font-size:2.1rem;line-height:1.2;margin:.4rem 0 .6rem}
+h2{font-size:1.35rem;margin:2.2rem 0 .6rem;border-top:1px solid var(--line);padding-top:1.4rem}
+h3{font-size:1.08rem;margin:1.6rem 0 .4rem}
+h4{font-size:.98rem;margin:1.2rem 0 .3rem}
+p,li{color:#22304a}
+.meta{font:14px/1.5 ui-sans-serif,system-ui,sans-serif;color:var(--muted)}
+.lead{font-size:1.05rem;color:#2b3a55}
+.rule{height:3px;background:var(--accent);width:64px;margin:1.2rem 0 1.6rem}
+ul,ol{padding-left:1.3rem}
+li{margin:.3rem 0}
+code{background:var(--code);padding:.1rem .3rem;border-radius:4px;font-size:.9em}
+pre{background:var(--code);padding:14px 16px;border-radius:8px;overflow:auto;border:1px solid var(--line)}
+pre code{background:none;padding:0;font-size:.82rem;line-height:1.5}
+blockquote{margin:1rem 0;padding:.6rem 1rem;border-left:3px solid var(--accent);color:var(--muted);background:#faf7f2}
+.box{border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin:1.2rem 0;background:#fbfcfe}
+.box h4{margin-top:0}
+.licence{font:13px/1.6 ui-sans-serif,system-ui,sans-serif;color:var(--muted);border-top:1px solid var(--line);margin-top:3rem;padding-top:1.2rem}
+.toc a{color:var(--ink);text-decoration:none;border-bottom:1px dotted var(--line)}
+@media print{body{background:#fff}.sheet{box-shadow:none;padding:0}h2{break-after:avoid}pre{white-space:pre-wrap}}
+@media (max-width:640px){.sheet{padding:28px 20px 40px}h1{font-size:1.6rem}}
+</style></head><body><div class="sheet">
+<div class="brand">Alphadome · Digital Drop</div>
+<h1>Alphadome Build Log 2026</h1>
+<p class="meta">Assembled pack · report · edition 2026-11-10</p>
+<div class="rule"></div>
+<p class="lead">The engineering diary behind a multi-tenant WhatsApp and M-Pesa platform: what broke, what the measurement said, and the fix that shipped. Written from the commit history, not from a content calendar.</p>
+<h2>What you can do when you finish</h2><ul><li>See how a conversion engine was rebuilt after the data contradicted the copy</li><li>Copy the debugging pattern that turned a 40 MB request storm into one proxy setting</li><li>Understand the multi-tenant isolation choices and why they were forced</li><li>Use the same build-log structure to publish your own progress</li></ul>
+<h2>Contents</h2><ol class="toc"><li>The blog was well written and did not convert</li><li>299 pages, 38 of them fake</li><li>The template that could not be pressed</li><li>Money paths are state machines</li><li>Publishing the log</li></ol>
+<h2>1. The blog was well written and did not convert</h2><p>Two datasets — a referral funnel and 48 LinkedIn posts — that killed the content strategy, and the playbook module that replaced it.</p>
+<h2>2. 299 pages, 38 of them fake</h2><p>How verifier and smoke-test pages leaked into a public index, the audit that found them, and the predicate that keeps them out.</p>
+<h2>3. The template that could not be pressed</h2><p>96 pages with no closing block and 21 with a button that went nowhere; the fixed-point rebuild that repaired them without a model call.</p>
+<h2>4. Money paths are state machines</h2><p>Why the M-Pesa callback is written as transitions, how duplicate callbacks are absorbed, and what idempotency cost in code.</p>
+<h2>5. Publishing the log</h2><p>The four-part post shape used here: measurement, contradiction, change, verification. With the checklist for what must never be claimed.</p>
+<h1 style="page-break-before:always">Source documents</h1><p class="lead">Bundled verbatim from the system this pack describes, so you can read the implementation rather than a summary of it.</p><h2>BLOG_CONVERSION_ENGINE.md</h2><p class="meta">docs/BLOG_CONVERSION_ENGINE.md</p><h1>The conversion engine</h1>
+<p><strong>Status:</strong> shipped 2026-10-29. Files: <code>utils/conversionPlaybook.js</code> (new), <code>utils/ctaBlock.js</code> (new), <code>utils/blogWriter.js</code>, <code>utils/blogQuality.js</code>, <code>utils/contentJourney.js</code>, <code>scripts/blogManager.js</code>, <code>scripts/smartAutomation.js</code>.</p>
+<h2>The problem this fixes</h2>
+<p>The blog was well written and did not convert. Two measurements say why.</p>
+<h3>1. The Mercor referral funnel (rolling window)</h3>
+<p>| Step | Count | Step conversion | |---|---|---| | Signed up | 26 | — | | Applications started | 159 | — | | Applications completed | 22 | <strong>13.8% of started</strong> | | Offers extended | 4 | 18.2% | | Hired | 3 | 75% | | Paid | 0 | — |</p>
+<p>Six of every seven people who wanted the work gave up <strong>inside the application</strong>. Nothing on the page had told them what the form would ask for, so the form was the first time they met the requirements. Total referrals paid to date: $566.32.</p>
+<h3>2. The LinkedIn export (48 articles, 2025-10-27 to 2026-10-26)</h3>
+<p>| Pattern | Posts | Impressions | Median | |---|---|---|---| | Situational story (&quot;the shift towards a digital world&quot;) | 1 | 88,314 | 88,314 | | &quot;Unlock your future as a …&quot; | 1 | 25 | 25 | | &quot;Master the … assessment&quot; | 1 | 13 | 13 | | &quot;Ready to work as a …&quot; | 1 | 2 | 2 | | All 48 posts | 48 | 100,397 | <strong>91</strong> |</p>
+<p>One post took 88% of all impressions and 92% of all link clicks (679 of 741). Every title built as a command or a promise reached between 0 and 25 people.</p>
+<h2>What changed</h2>
+<h3><code>utils/conversionPlaybook.js</code> — one playbook per offer type</h3>
+<p>Six types (<code>job</code>, <code>product</code>, <code>service</code>, <code>brand</code>, <code>affiliate</code>, <code>course</code>). Each has:</p>
+<ul>
+<li><code>reader</code> — who is actually reading</li>
+<li><code>decision</code> — the single action the page sells</li>
+<li><code>blocker</code> — why they hesitate (for jobs: *&quot;they do not know what the</li>
+<p>application will demand, so the form is where they find out and quit&quot;*)</p>
+<li><code>proof</code> — the three things that move them</li>
+<li><code>readiness</code> — what they must have ready <strong>before</strong> they click</li>
+<li><code>afterClick</code> — what happens, in order</li>
+<li><code>askEarly</code> / <code>askMid</code> / <code>askClose</code> — the ask ladder</li>
+</ul>
+<p>Also exports <code>WEAK_TITLE_PATTERNS</code> (the losing title shapes, with the LinkedIn evidence in the reason string), <code>TITLE_SHAPES</code> (what to write instead), <code>conversionBrief()</code> (prompt text) and <code>readinessCard()</code> (deterministic HTML).</p>
+<h3><code>utils/blogWriter.js</code> — the brief now carries the conversion job</h3>
+<p><code>buildArticlePrompt()</code> gains a <code>THE CONVERSION JOB</code> section and <code>shapeRules()</code> gains rules 9-12:</p>
+<ul>
+<li>9. first 100 words: offer, figure, next step</li>
+<li>10. mid-page ask around section four</li>
+<li>11. answer the named hesitation in the body</li>
+<li>12. never invent the middle of the journey (no invented assessment format,</li>
+<p>delivery promise, guarantee or processing time)</p>
+</ul>
+<p><code>buildRepairPrompt()</code> chases the same targets, so the repair pass cannot loop on a page that keeps failing for a reason the repair prompt never mentioned.</p>
+<h3><code>utils/blogQuality.js</code> — the gate measures conversion</h3>
+<p><code>analyzeArticle(html, { offerType, title })</code> now also returns <code>conversion</code>:</p>
+<p>| Field | Meaning | |---|---| | <code>offerInOpening</code> | a figure, price or next step in the first 110 words | | <code>midAsk</code> | a call to action between 30% and 75% of the page | | <code>readinessHeading</code> | a &quot;Before you apply/order/enrol/get in touch&quot; section, matching the type's verb | | <code>firstPerson</code> | how often the business says we/our/us | | <code>distinctNumbers</code> | unique figures on the page | | <code>duplicateParagraphs</code> | paragraphs repeated word for word | | <code>weakTitle</code> | the title is a promise, not a situation |</p>
+<p>New issues: <code>duplicate-paragraph</code> (weight 12, <strong>blocking</strong>), <code>no-readiness</code> (10), <code>no-offer-early</code> (8), <code>no-mid-ask</code> (6), <code>thin-specifics</code> (6), <code>no-first-person</code> (4), <code>weak-title</code> (0, warning). The readiness check is type-aware: a job page saying &quot;Before you get in touch&quot; is a buyer template with the nouns swapped, and it fails.</p>
+<h3><code>utils/ctaBlock.js</code> — the button says something</h3>
+<p>Every page used to end with <code>Ready to Start? / This opportunity is available now. / [Apply Now]</code> — on a job, a product and a course alike — linking to <code>/ai-jobs/apply/&lt;id&gt;</code> even when the offer had no destination, which returns <code>{&quot;error&quot;:&quot;No destination configured for this offer&quot;}</code>.</p>
+<p>Now: the heading names the offer (&quot;Apply for ML Engineer&quot;, &quot;Get Studio Session priced&quot;), the figure and place are printed when the offer has them, the readiness list sits directly above the button, and there is a compact copy <strong>above the article</strong> so a reader who never scrolls still has a way out. Destination order is <code>destination_url → referral_url → application_url → /ai-jobs/apply/&lt;id&gt;</code>. With none of those, no button is rendered — the page asks for a message instead of sending the reader to a 404.</p>
+<p><code>OFFER_CTA</code> no longer maps <code>service → &quot;Learn More&quot;</code>.</p>
+<h3><code>utils/contentJourney.js</code> — titles that earn the click</h3>
+<p>Job titles stopped being commands and stopped carrying a trailing year or a possessive <code>s</code> (which produced &quot;…English &amp; Finnishes&quot; on live pages):</p>
+<p>| Before | After | |---|---| | What is a X? A Complete Guide for 2026 | What a X Actually Does All Day | | X Salary Guide: What You Can Actually Earn | Is $75/hr Really What a X Earns? | | Essential Skills for Xs: Do You Have What It Takes? | The Skills X Work Actually Rewards | | How to Pass the X Assessment: Complete Prep Guide | What the X Assessment Asks For, and How to Prepare | | How to Get Hired as a X: Step-by-Step | Applying for X Work: What Happens, Step by Step | | Remote X Jobs: Work from Anywhere Guide | Where Remote X Jobs Are Actually Listed | | X Career Roadmap: Junior to Senior in 5 Years | What Changes in Five Years of X Work |</p>
+<h3><code>scripts/blogManager.js</code> — publishing hygiene</h3>
+<ul>
+<li><code>verify-writers-flow-*</code> and <code>test-ai-specialist-*</code> rows are written as</li>
+<p><strong>drafts</strong> and get no static page. 36 of them were live in the public index.</p>
+<li>The pipeline passes <code>{ offerType, title }</code> into <code>analyzeArticle()</code>, so the</li>
+<p>conversion gate actually runs.</p>
+</ul>
+<h3>The boot migration (2026-10-29, after the first deploy)</h3>
+<p><code>restoreFromDB()</code> copied <code>html_content</code> byte-for-byte whenever a page passed the readability audit, so the new footer reached only newly written pages. Three changes make the existing corpus migrate itself on boot, with no model calls:</p>
+<ol>
+<li>A page still carrying <code>Ready to Start?</code> or <code>This opportunity is available now.</code></li>
+<p>is rebuilt even though it passes the audit — no code path produces those strings any more, so the page is stale by definition (<code>isStalePage()</code> in <code>utils/ctaBlock.js</code>).</p>
+<li>The offers query the rebuild uses now selects <code>compensation_max</code>,</li>
+<p><code>compensation_currency</code>, <code>location_text</code>, <code>destination_url</code>, <code>referral_url</code> and <code>application_url</code>, so the new footer can print the figure, the place and the real destination.</p>
+<li><code>/blog</code> is built from the files on disk, so any file without a published row</li>
+<p>kept being advertised — and the verifier's own pages were 93 links deep in the index, titled <code>Verify Writers Flow 20261022130935</code>. The restore now demotes existing verifier rows to draft, deletes files with no published post, and rebuilds the index from <strong>real titles</strong> instead of slug-cased filenames.</p>
+</ol>
+<p>First deploy result: <code>Restored 337 posts (240 rebuilt from their article body)</code>. Six sampled pages verified live — no legacy block, offer named in the heading, readiness list present, two buttons.</p>
+<h3>The second gap, and the fixed point (2026-10-29, evening)</h3>
+<p>That migration only knew the <strong>old</strong> footer, so the pages that had never had one were invisible to it: 96 of the 308 live pages carried no closing block at all, and 21 carried one whose only content was a sentence. Neither state fails the readability audit, so <code>restoreFromDB()</code> copied them byte-for-byte on every boot.</p>
+<p><code>pageNeedsRebuild()</code> in <code>utils/ctaBlock.js</code> is now the whole decision — audit failure, old footer, missing block, nothing to press — and the boot restore, the repair script and the tests all call it, so no copy of the rule can drift:</p>
+<pre><code>
+pageNeedsRebuild({ html, auditOk, issues, mayRebuildFooter })
+// → { rebuild: true, reason: 'no closing block' }
+</code></pre>
+<p>The reason is what the boot log prints (<code>[DB] Rebuilt &lt;slug&gt; (no closing block)</code>), so an operator sees which rule fired without cross-referencing the audit.</p>
+<p><strong>The rule this path lives or dies by:</strong> a predicate that disagrees with the template rewrites the same pages on <em>every</em> boot, and nobody notices because the site still looks fine. <code>ctaBlock()</code>'s no-destination branch used to emit a block with nothing to press — exactly what the predicate calls broken — so it now ends with a link to <code>/ai-jobs</code>. <code>npm run test:boot-convergence</code> proves the fixed point offline: it boots a corpus of stored pages (no block, block with no button, old footer, unreadable, no <code>&lt;article&gt;</code>, no <code>content</code>, healthy), asserts boot 1 rebuilds exactly the broken ones, then asserts boots 2–5 rebuild <strong>nothing</strong> — across 30 offer-type × destination combinations, including the kill switch.</p>
+<h3>What a rebuild actually changes (and what it cannot)</h3>
+<p><code>restoreFromDB()</code> re-renders the page <strong>from <code>blog_posts.content</code></strong> and writes the result to <strong><code>html_content</code> only</strong> — that is the single column it updates:</p>
+<pre><code>
+await sb.from('blog_posts').update({ html_content: fixed }).eq('slug', post.slug);
+</code></pre>
+<p>So a rebuild changes the wrapper around the article: <code>&lt;head&gt;</code>/<code>&lt;style&gt;</code>, the meta description, the compact CTA above the article, the closing block, and the &quot;Published … | N min read&quot; line. The article body is passed through <code>sanitizeArticleHTML(content)</code> and embedded verbatim — <code>content</code>, <code>title</code> and <code>slug</code> are never in an UPDATE payload from this path. (This rebuild path predates 2026-10-29; it used to fire only when a page failed the readability audit. Today it also fires on the stale footer, which is why 240 pages moved instead of ~105.)</p>
+<p>To verify that on production rather than trust it:</p>
+<pre><code>
+npm run audit:page-fidelity                 # every published post, read-only
+npm run audit:page-fidelity -- --slug=chief-of-staff-awareness-1
+</code></pre>
+<p>It compares the article inside each stored page against <code>sanitizeArticleHTML(content)</code> and prints how many are identical, which differ, and which are still on the old footer. It issues SELECTs only. <code>test:blog-html</code> pins the comparison itself (including a tampered-page case), so the audit cannot pass by being blind.</p>
+<p><strong>Two guarantees worth stating explicitly:</strong></p>
+<ol>
+<li>No published article's page is ever deleted. The prune keeps a file for every</li>
+<p>published row (<code>written</code> is built from all of them, not only the rebuilt ones) and only removes files that no published post owns.</p>
+<li>The footer rebuild can be switched off entirely with</li>
+<p><code>BLOG_REBUILD_STALE_PAGES=off</code>. With it off, the restore still repairs pages that fail the readability audit — the pre-2026-10-29 behaviour — and leaves every other stored page byte-for-byte as it is.</p>
+</ol>
+<h3>Verifying a deploy</h3>
+<pre><code>
+npm run verify:blog-deploy        # SITE_URL=… to point at staging
+</code></pre>
+<p>Checks what a visitor sees, not what the build log claims: the index responds, advertises no verifier page, still lists the corpus; a sample spread across the list all serve, all carry the current footer, and the closing block names the offer with two buttons; and a verifier URL returns 404.</p>
+<p>Result of the 2026-10-29 deploy:</p>
+<pre><code>
+Index: 200, 169267 bytes, 299 article links
+PASS  index advertises no verifier page — 0 found
+PASS  every sampled article still serves — 14 pages ok
+PASS  every sampled page is on the current footer — 14 pages ok
+PASS  verifier pages are no longer public — status 404
+</code></pre>
+<p>337 published − 38 demoted verifier/smoke pages = 299 listed. The <code>[DB] Demoted N verifier page(s) to draft</code> line in the boot log confirms N.</p>
+<h2>How to use it</h2>
+<pre><code>
+import { playbookFor, conversionBrief, weakTitleReason } from './utils/conversionPlaybook.js';
+import { analyzeArticle, qualityBrief } from './utils/blogQuality.js';
+
+playbookFor({ offer_type: 'job' }).decision;      // what the page sells
+weakTitleReason('Unlock your future as a …');      // why that title loses
+conversionBrief(offer, { price: 'USD 75' });       // prompt lines
+
+const a = analyzeArticle(html, { offerType: 'job', title: post.title });
+a.conversion;                                      // the seven signals
+qualityBrief(a);                                   // what a repair pass must fix
+</code></pre>
+<p>Tests: <code>npm run test:blog-quality</code> (playbook + gate), <code>npm run test:blog-html</code> (CTA block + template), <code>npm run test:blog-fallback</code> (journey titles).</p>
+<h2>What is not done yet</h2>
+<ol>
+<li><strong>The 300 existing pages keep their old prose.</strong> The template fix (CTA block,</li>
+<p>readiness card, top button) reaches them for free via <code>npm run repair:blog-html</code>, which rebuilds HTML from <code>blog_posts.content</code> without a model call.</p>
+<li><strong>The readiness card is generic per offer type</strong>, not per offer. A job that</li>
+<p>needs a specific document should set it on the offer row.</p>
+<li><strong>Clicks through a direct provider link are not measurable.</strong> The measurement</li>
+<p>loop itself exists (<code>GET /tenant/writers-flow/analytics</code> reports views, clicks and CTR per page, and <code>clicks_note</code> says when a zero means &quot;not counted&quot;), but a page whose CTA points straight at the provider is answered by the provider. Closing that gap means routing every CTA through <code>/ai-jobs/apply/&lt;id&gt;</code> — <code>ctaTarget()</code> in <code>utils/ctaBlock.js</code> — which re-renders page frames across the corpus (<code>content</code> untouched, and <code>BLOG_REBUILD_STALE_PAGES=off</code> still applies).</p>
+</ol>
+<h2>CTA_COVERAGE_2026-10-29.md</h2><p class="meta">docs/CTA_COVERAGE_2026-10-29.md</p><h1>The button that answered with JSON</h1>
+<p><strong>Shipped:</strong> 2026-10-29 <strong>Surface:</strong> <code>routes/aiJobs.js</code> (<code>GET /ai-jobs/apply/:id</code>) <strong>Test:</strong> <code>npm run test:apply-fallback</code> (22 checks) <strong>Audit:</strong> <code>npm run audit:cta-coverage</code> (read-only, against a live site)</p>
+<h2>What the log showed</h2>
+<pre><code>
+19:57:20  GET /ai-jobs/apply/39fa5490-… 404 - 380ms
+</code></pre>
+<p>Probing that URL returned <code>{&quot;error&quot;:&quot;No destination configured for this offer&quot;}</code>. A real reader had pressed a button on a page they read to the end, and the site answered with raw JSON. The click was not recorded either — the route returned before it reached the tracking — so the leak was invisible in the one place that should have shown it.</p>
+<h2>What it does now</h2>
+<p>| Before | After | | --- | --- | | <code>404 {&quot;error&quot;:&quot;No destination configured for this offer&quot;}</code> | a page: &quot;Applications for this one are not open yet&quot;, the offer's name, a link back to the article and to <code>/ai-jobs</code> | | the click vanished | counted as <code>apply_no_destination</code> (or <code>apply_bad_destination</code>), and recorded on the offer funnel as <code>apply_click</code> with <code>unavailable: true</code> | | a missing offer dropped silently | counted as <code>apply_missing</code>, then the same 404 JSON for API clients |</p>
+<p>A working destination still gets a <code>302</code>, and the destination is still validated (<code>http</code>/<code>https</code> only, and only if it is trusted) before it is used. <code>noindex</code> on the fallback page, so it cannot compete with the real offer in search.</p>
+<p>The reason this matters commercially: an &quot;unavailable&quot; click is the most valuable click in the system. It is a reader who wanted to buy something the business forgot to connect. It now appears in the tenant's numbers instead of looking like nobody was interested.</p>
+<h2>The number that came out of looking</h2>
+<p><code>npm run audit:cta-coverage</code> against production:</p>
+<pre><code>
+Blog index: 200, 308 article links
+
+Button goes straight to the provider .... 191 (62%)
+Button goes through this site ........... 0 (0%)   measurable
+No button at all ....................... 117 (38%)   cannot convert
+  ...of those, no CTA block at all ..... 96 (31%)   template never added one
+</code></pre>
+<p>Three facts, none of which was visible from the database:</p>
+<ol>
+<li><strong>Not one page routes its button through this site.</strong> Every tracked click the</li>
+<p>portal reports will come from future pages, hubs, or offer pages — never from the 191 that already exist. The CTR figure for those pages is not &quot;0%&quot;, it is &quot;not measured&quot;, which is why the endpoint returns <code>clicks_note</code>.</p>
+<li><strong>117 pages (38%) have no button at all</strong>, so they cannot convert however good</li>
+<p>the writing is. <strong>96 of those have no closing block whatsoever</strong> — the <code>contentJourney</code> &quot;skills/salary&quot; pages were generated by a template that never learned about the CTA.</p>
+<li>The two populations want different fixes. The 191 need a tracked redirect; the</li>
+<p>96 need a closing block. Those are template changes and therefore re-render those pages (<code>content</code> untouched, <code>BLOG_REBUILD_STALE_PAGES=off</code> still applies).</p>
+</ol>
+<h2>What shipped for it (same day)</h2>
+<p>The two failing populations were invisible to the migration because they were not <em>stale</em>: <code>isStalePage()</code> only matched the pre-2026-10-29 generic footer text, and a page with <strong>no closing block at all</strong> passes both the readability audit and that check. So the boot restore had never looked at them.</p>
+<p><code>utils/ctaBlock.js</code> now answers the question the migration should have asked:</p>
+<pre><code>
+needsClosingBlock(html)   // has an &lt;article&gt;, but no closing block or nothing to press
+</code></pre>
+<p>Used by:</p>
+<ul>
+<li><code>scripts/blogManager.js</code> → <code>restoreFromDB()</code> rebuilds such a page on boot, from</li>
+<p>its stored <code>content</code>, exactly like the old-footer migration does. <code>BLOG_REBUILD_STALE_PAGES=off</code> still disables it. The log line says which reason fired: <code>[DB] Rebuilt &lt;slug&gt; (no closing block)</code>.</p>
+<li><code>scripts/repair_blog_html.js</code> → dry-run now lists them, so you can see the list</li>
+<p>before anything is rewritten: <code>npm run repair:blog-html</code>.</p>
+<li><code>scripts/audit_page_fidelity.mjs</code> → new count,</li>
+<p><code>no closing block / nothing to press … N</code>, and still verifies the prose is byte-identical to <code>content</code> for every page.</p>
+</ul>
+<p><strong>The convergence rule.</strong> A predicate that disagrees with the template rebuilds the same page on every single boot, forever. <code>ctaBlock()</code>'s no-destination branch used to emit a block with nothing to press — precisely what the new predicate calls broken. It now ends with <code>&lt;a class=&quot;cta-btn cta-btn--alt&quot; href=&quot;/ai-jobs&quot;&gt;Browse other opportunities&lt;/a&gt;</code>, so every branch of the template satisfies the predicate and the repair reaches a fixed point on the first pass. <code>test:blog-html</code> asserts this against the built page, the no-destination page and a page with no offer at all.</p>
+<h2>What to expect on the next deploy</h2>
+<p>Up to 117 pages rebuild once (frames only — <code>content</code> untouched, verified by <code>audit:page-fidelity</code>). To see the list before trusting it:</p>
+<pre><code>
+npm run repair:blog-html        # dry run: lists every page it would rebuild, and why
+npm run audit:page-fidelity     # prose identical / differs / no closing block
+npm run audit:cta-coverage      # after the deploy: no-button count should be 0
+</code></pre>
+<p><strong>The second boot is the one that matters.</strong> A rebuild that does not converge rewrites the same pages on every deploy, and the site still looks fine while it happens. That is now a test rather than a hope:</p>
+<pre><code>
+npm run test:boot-convergence   # 11 checks: boot 1 repairs, boots 2-5 do nothing
+</code></pre>
+<p>It boots a corpus of stored pages — no block, block with no button, old footer, unreadable, no <code>&lt;article&gt;</code>, no <code>content</code>, healthy — through the same <code>pageNeedsRebuild()</code> the restore calls, and asserts the second boot rebuilds zero pages across 30 offer-type × destination combinations. I proved the test is not vacuous by removing the no-destination button from <code>ctaBlock()</code>: four checks failed with the exact pages named, then passed again on restore. On Render, the equivalent check is the boot log: the first deploy prints <code>Rebuilt &lt;slug&gt; (no closing block)</code> lines, the second prints none.</p>
+<p>If either audit looks wrong, <code>BLOG_REBUILD_STALE_PAGES=off</code> in Render stops the page rebuild entirely and leaves every stored page as it is.</p>
+<ol>
+<li><strong>Give the 96 button-less pages a closing block</strong> — a third of the corpus</li>
+<p>currently persuades and stops. This is the largest conversion gain available, and it is a template fix plus a targeted re-render.</p>
+<li><strong>Route the 191 provider links through <code>/ai-jobs/apply/&lt;id&gt;</code></strong> — makes every</li>
+<p>existing click countable. <code>ctaTarget()</code> already prefers the tracker when there is no direct URL; it needs to stop preferring the direct URL when there is one.</p>
+<li><strong>Report <code>apply_no_destination</code> per tenant in the portal</strong> — a &quot;fix these</li>
+<p>offers&quot; list, which is a renewal conversation with a number attached.</p>
+</ol>
+<p>None of the three should be done by quietly re-rendering the corpus. Each needs the kill switch respected and a before/after diff the owner can read.</p>
+<h2>Measured live, 2026-10-31 (after the deploy of <code>96ac046f</code>)</h2>
+<p>Every page on <code>/blog</code> was fetched and read, not estimated:</p>
+<pre><code>
+node scripts/audit_cta_coverage.mjs        # 434 pages, 0 without a button
+</code></pre>
+<p>| | 2026-10-30 (308 pages) | 2026-10-31 (434 pages) | |---|---|---| | No closing block at all | 96 | <strong>0</strong> | | Block but nothing to press | 21 | <strong>0</strong> | | Button goes to the provider | 191 | 378 | | Button goes through this site (measurable) | 0 | <strong>0</strong> | | Offer not linked at all — generic <code>/ai-jobs</code> button | 0 | <strong>56</strong> |</p>
+<p>The boot log for that deploy read <code>[DB] Restored 425 posts</code> and <strong>no</strong> <code>Rebuilt</code> lines, which is the fixed point: the button-less pages had already been rebuilt by an earlier boot with the same predicate, so the next one correctly did nothing. The log and the live census agree, and that is the only combination that means anything.</p>
+<h3>What the measurement changed</h3>
+<p><strong><code>btn=2</code> was the wrong metric.</strong> A page can carry two buttons and still send the reader nowhere: 56 pages have both buttons pointing at <code>/ai-jobs</code> because their post has no <code>opportunity_id</code>, so <code>ctaBlock()</code> has no offer to name and no destination to resolve. Those pages now say so honestly instead of 404ing, but they cannot convert — they are one <code>opportunity_id</code> away from being both a working destination and a measurement point (<code>/ai-jobs/apply/&lt;id&gt;</code>).</p>
+<p><strong>A bug the census exposed, fixed here.</strong> The no-destination branch returned the full block <em>before</em> the <code>variant: 'top'</code> check, so a page with an unlinked offer printed the same <code>&lt;h2&gt;</code> and the same &quot;no link configured yet&quot; sentence above the article and again below it. <code>ctaBlock()</code> now honours the compact variant in that branch, <code>repeatsFallbackNote()</code> lets the boot restore repair the 56 pages written while the bug was live, and both <code>test:blog-html</code> and <code>test:boot-convergence</code> assert it.</p>
+<p><strong>Content observation, not fixed.</strong> The sampled page renders the article title and a <code>Published … | Reading time: 3 min</code> line <strong>twice</strong> — the template's own, then a copy that lives inside <code>blog_posts.content</code>. That pollution predates this work and no page rebuild can fix it: it would mean rewriting <code>content</code>, the one column every repair path deliberately leaves alone. It needs a separate, reviewed migration.</p>
+<h2>Next slice, in the order the numbers argue for</h2>
+<ol>
+<li><strong>56 pages with no offer link.</strong> Match those posts to their <code>opportunity_id</code>.</li>
+<p>Each match turns a dead button into <code>/ai-jobs/apply/&lt;id&gt;</code> — a real destination <em>and</em> a click this server can count. Cheapest revenue-adjacent work available.</p>
+<li><strong>378 provider-direct buttons.</strong> The reader converts; the server learns nothing.</li>
+<p>Routing them through <code>/ai-jobs/apply/&lt;id&gt;</code> (which already records the click and redirects) makes the blog a measurable channel instead of a guess.</p>
+<li><strong>The duplicated title inside <code>content</code>.</strong> Visible on live pages, needs a</li>
+<p>deliberate content migration, not a page rebuild.</p>
+</ol>
+<h2>TENANT_PORTAL_BRANDING_ANALYTICS.md</h2><p class="meta">docs/TENANT_PORTAL_BRANDING_ANALYTICS.md</p><h1>Tenant portal — the client's own name, legible copy, Writer's Flow analytics</h1>
+<p><strong>Surface:</strong> <code>admin/tenant_dashboard.html</code> (served at <code>/tenant-dashboard</code>, auth-gated) <strong>Backend:</strong> <code>server.js</code> → <code>GET /tenant/writers-flow/analytics</code> <strong>Test:</strong> <code>npm run test:tenant-branding</code> → <code>scripts/test_tenant_branding_analytics.mjs</code> (71 checks) <strong>Shipped:</strong> 2026-10-27, three changes requested from a live demo of the four tenant links.</p>
+<p>---</p>
+<h2>1. The header wears the client's business name</h2>
+<p><strong>Before:</strong> every tenant saw <code>Tenant Portal</code> in the topbar; their own name sat in the small grey slot on the right.</p>
+<p><strong>After:</strong> the topbar reads <code>joska Sportiff Academy</code>, <code>Malingu Ventures</code>, <code>lifeline Inc.</code>, <code>Canary Onboarding</code> — whatever that client typed into the discovery form. The tab title follows (<code>Scan to Pay · Malingu Ventures | Alphadome</code>) and so does the sign-in card.</p>
+<p><strong>Where the name comes from — nothing new had to be stored.</strong> <code>POST /discovery</code> saves <code>business_name</code>; approval writes it to <code>bot_tenants.client_name</code> (<code>server.js:15663</code>); every session response already returned it as <code>tenant_name</code> (<code>tenantSessionPayload</code>), and <code>/tenant/session/me</code> rehydrates it after a reload. The page had it in <code>S.name</code> all along and spent it on a 0.88rem grey span.</p>
+<p><strong>Implementation.</strong> <code>tenantBrand()</code> → <code>applyBrand()</code> is the only writer of the three surfaces (brand, sign-in title, <code>document.title</code>), called from <code>showApp()</code> and <code>showLogin()</code>. Text is set with <code>textContent</code>, so a business name can never inject markup. The phone number moved from being the second copy of the name to the small slot (<code>+254 706 291 262</code>), and on phones it is hidden entirely — the name matters more, and the number is on Profile and in every WhatsApp message the client received.</p>
+<p><strong>Measured regression, fixed in the same commit.</strong> A grid track declared <code>1fr</code> is really <code>minmax(auto, 1fr)</code>, and that <code>auto</code> floor is the min-content width of the widest item in the column — the topbar. With a real name in it the floor became 431px at a 360px viewport, so the whole document scrolled sideways:</p>
+<p>| 360px viewport | document scrollWidth | name shown | | --- | --- | --- | | before the header change | 345px | n/a (<code>Tenant Portal</code>) | | name added, <code>1fr</code> track | <strong>431px</strong> (sideways scroll) | <code>joska Sport…</code> | | name added, <code>minmax(0, 1fr)</code> | 345px | <code>joska Sportiff Academy</code> |</p>
+<p><code>@media (max-width: 1023px) { .app-shell { grid-template-columns: minmax(0, 1fr); } }</code> removes the floor so the header truncates instead of stretching the page. Below 479px the word &quot;Logout&quot; collapses to its icon (still <code>aria-label=&quot;Log out&quot;</code>, still a 40px target) to hand ~40px back to the name. A 320px phone ellipsises by ~11px; 360px and up show the full name. Verified in headless Chrome at 320/360/375/430/768/1024.</p>
+<p>---</p>
+<h2>2. Muted copy is legible — measured, not eyeballed</h2>
+<p><strong>Complaint:</strong> &quot;Collect payments for your products and offers…&quot; (Scan to Pay) and the Writer's Flow voice explainer were &quot;almost invisible&quot;.</p>
+<p><strong>Cause:</strong> both are <code>&lt;p class=&quot;text-muted&quot;&gt;</code>, and Bootstrap 5.3 paints that class <code>#6c757d</code> <strong>with <code>!important</code></strong>, so the page palette never reached them. On <code>--bg-card</code> (<code>#181c2f</code>) that is <strong>3.4:1</strong> — below WCAG AA for body text, and hopeless on a phone in daylight.</p>
+<p><strong>Fix, in the page's own stylesheet (which loads after the Bootstrap <code>&lt;link&gt;</code>):</strong></p>
+<pre><code>
+.text-muted, .text-body-secondary, .text-secondary, .form-text { color: var(--text-muted) !important; }
+</code></pre>
+<p>A later rule with the same <code>!important</code> wins, and the palette is back in charge. The muted tone itself moved <code>#7c8db0</code> → <code>#8b9ac0</code>, because 4.98:1 passes on paper but still reads as faint:</p>
+<p>| surface | before (<code>#7c8db0</code>) | after (<code>#8b9ac0</code>) | | --- | --- | --- | | <code>--bg-main</code> <code>#0f1117</code> | 5.66:1 | <strong>6.72:1</strong> | | <code>--bg-card</code> <code>#181c2f</code> | 5.05:1 | <strong>6.00:1</strong> | | <code>--bg-sidebar</code> <code>#13162a</code> | 5.35:1 | <strong>6.36:1</strong> | | Bootstrap's <code>#6c757d</code> on <code>--bg-card</code> — the reported state | <strong>3.59:1</strong> | n/a |</p>
+<p>Body copy (<code>--text-light</code>) stays at 12.1:1, so hierarchy survives. The test recomputes all three ratios from the palette with the WCAG formula, so a future &quot;nicer&quot; grey cannot quietly fail AA.</p>
+<p>---</p>
+<h2>3. Writer's Flow analytics, per tenant</h2>
+<p><strong>The gap:</strong> the owner's <code>/admin/ai-jobs</code> page reports page views, clicks, CTR, posts this week, recent runs and top pages — for the whole platform. The tenant portal's Analytics section reported WhatsApp conversations only, so a client paying for the traffic engine could not see a single number about the pages it wrote for them.</p>
+<p><strong>The endpoint:</strong> <code>GET /tenant/writers-flow/analytics?days=30</code> (<code>tenantSessionAuth</code>).</p>
+<p>Everything is derived from rows the tenant already owns, so <strong>there is no migration</strong>:</p>
+<p>| number | source | | --- | --- | | offers | <code>opportunities</code> where <code>tenant_id = site_id</code> | | pages, published, words, avg words | <code>blog_posts</code> for those offer ids (<code>content</code> is counted, never returned) | | views, clicks, CTR | <code>analytics_page_views</code> / <code>analytics_clicks</code> where <code>page_path = '/blog/&lt;their slug&gt;'</code> | | series (14 days), top countries | the same view rows, bucketed by day and <code>country</code> | | recent pages | the tenant's newest <code>blog_posts.created_at</code> |</p>
+<p>Isolation is structural, not a filter added afterwards: the page-path list is built from the tenant's own slugs, and a row whose path is not in that map is dropped (<code>if (!page) return;</code>). There is no query in the handler without a tenant filter. The list is asked for in batches of 100 because PostgREST caps IN lists. A deployment without <code>blog_posts</code> or the analytics tables answers with zeros plus a <code>note</code> explaining what is missing, rather than a 500 on the section.</p>
+<p><strong>The screen:</strong> inside Analytics, under the existing conversation panels — 8 headline cards (pages written, live pages, page views, clicks, CTR, words, offers, new pages this week), a <em>Top performing pages</em> table (views / clicks / CTR, each title linking to the public page), a <em>By offer</em> rollup, a 14-day views chart, and the newest pages. The <code>/admin/ai-jobs</code> shape, scoped to one client. A tenant with no pages yet gets a call to action into Writer's Flow instead of a grid of zeros; a failed load says so rather than showing zeros.</p>
+<p><strong>Response shape</strong></p>
+<pre><code>
+{
+  &quot;ok&quot;: true, &quot;period_days&quot;: 30,
+  &quot;site&quot;: { &quot;name&quot;: &quot;joska Sportiff Academy&quot;, &quot;slug&quot;: &quot;joska&quot; },
+  &quot;public_path&quot;: &quot;/ai-jobs/t/joska&quot;,
+  &quot;totals&quot;: { &quot;offers&quot;: 2, &quot;pages&quot;: 9, &quot;published&quot;: 9, &quot;words&quot;: 8100,
+              &quot;avg_words&quot;: 900, &quot;views&quot;: 64, &quot;clicks&quot;: 11, &quot;ctr&quot;: &quot;17.2&quot;,
+              &quot;pages_this_week&quot;: 9 },
+  &quot;pages&quot;: [{ &quot;slug&quot;: &quot;…&quot;, &quot;title&quot;: &quot;…&quot;, &quot;status&quot;: &quot;published&quot;, &quot;words&quot;: 900,
+              &quot;views&quot;: 40, &quot;clicks&quot;: 8, &quot;ctr&quot;: &quot;20.0&quot;, &quot;url&quot;: &quot;/blog/….html&quot; }],
+  &quot;offers&quot;: [...], &quot;recent&quot;: [...], &quot;series&quot;: [...], &quot;top_countries&quot;: [...], &quot;note&quot;: null
+}
+</code></pre>
+<p>---</p>
+<h2>Verification</h2>
+<p>| what | how | result | | --- | --- | --- | | new behaviour | <code>node scripts/test_tenant_branding_analytics.mjs</code> | 71 checks, 0 failed | | no regressions | portal 114 · voice 23 · scan-pay 153 · discovery 122 · admin console 23 · landing 53 · blog-html 18 · blog-quality 15 · share-card 15 | 536 checks, 0 failed | | rendering | headless Chrome, real page, stubbed API, at 320/360/375/430/768/1024 | brand reads in full ≥360px, muted 6.72:1, <code>realOverflow 0</code>, drawer still <code>fixed</code> 295px/<code>overflow-y:auto</code> |</p>
+<p>The suite runs the helpers, not just greps them: <code>applyBrand()</code> is executed against a fake DOM (name painted, phone formatted, fallback honest) and <code>wfAnalyticsHtml()</code> is called with a failed load, an empty account, a populated account and a hostile page title (which must come out escaped).</p>
+<p>---</p>
+<h2>Commercial frame (Alphadome operating rules)</h2>
+<ul>
+<li><strong>Target buyer:</strong> the four live tenants on the founder's plan — Joska Sportiff</li>
+<p>Academy, Malingu Ventures, Lifeline Inc., Canary Onboarding — plus every discovery lead the same approval flow converts.</p>
+<li><strong>Workflow solved:</strong> &quot;whose portal am I in, why is half the copy unreadable, and what</li>
+<p>did the traffic engine actually deliver for me this month&quot;.</p>
+<li><strong>Reused:</strong> the discovery → approval → <code>bot_tenants.client_name</code> chain, the session</li>
+<p>payload, the tenant-scoped Blogger graph, <code>analytics_page_views</code>, the existing <code>.stat-card</code> / <code>.panel</code> / <code>.table-scroll</code> components. Nothing new was built that already existed.</p>
+<li><strong>Revenue impact:</strong> retention and renewal. A client who cannot see their own name or</li>
+<p>their own traffic numbers has no evidence the retainer is working; both are now on the first screen they open.</p>
+<li><strong>Main risks:</strong> (1) <code>blog_posts.content</code> is read to count words, capped at 200</li>
+<p>posts, so a very large tenant sees words for the newest 200 pages only; (2) a page whose CTA points straight at the provider cannot have its clicks counted here — the provider answers that click, not this server — which is why the endpoint returns <code>clicks_note</code> and the section prints it (see below).</p>
+<li><strong>Next validation:</strong> open <code>/tenant-dashboard?t=…</code> on a signed-in phone, confirm the</li>
+<p>header shows the business name, read the Scan to Pay and Writer's Flow sentences without squinting, and check Analytics shows that tenant's pages with their real view and click counts.</p>
+</ul>
+<p>---</p>
+<h2>Traffic that was never counted (2026-10-29)</h2>
+<p>Two gaps made the CTR figure — the one number that tells a client the writing works — impossible to move:</p>
+<p><strong>1. Clicks were never written.</strong> <code>trackClick()</code> existed in <code>utils/analytics.js</code> and had <strong>no caller anywhere in the repository</strong>. <code>analytics_clicks</code> was therefore always empty, and every tenant's CTR was <code>0.0%</code> by construction, however well the pages converted. The fix is one line in <code>/ai-jobs/apply/:id</code>, the only place that sees both the reader and the page that sent them:</p>
+<pre><code>
+trackClick(pagePathFromReferrer(req, '/ai-jobs/apply'), 'apply', req).catch(() =&gt; {});
+</code></pre>
+<p><code>pagePathFromReferrer</code> (<code>utils/analytics.js</code>) accepts a referrer only when it is same-host and one of the two shapes this site publishes (<code>/blog/&lt;slug&gt;</code>, <code>/ai-jobs/t/&lt;slug&gt;[/…]</code>), so a stray or spoofed referrer cannot invent traffic on a page the tenant owns. Anything unattributable is recorded as <code>/ai-jobs/apply</code> — it counts for the platform, and is credited to nobody.</p>
+<p><strong>2. Hub traffic was invisible.</strong> <code>/ai-jobs/t/&lt;slug&gt;</code> recorded views only in <code>opportunity_events</code>, which this portal does not read, so the one page a tenant actually promotes showed zeros. All three tenant routes now also write the visit to <code>analytics_page_views</code> under its real path, and the endpoint reports it as a separate <code>hub</code> object (<code>views</code>, <code>clicks</code>, <code>ctr</code>) matched on the path prefix so the hub's offer and category pages count too.</p>
+<p>Hub figures are reported <strong>beside</strong> the pages, never folded into them: one is the page the tenant hands out, the others are what search finds, and adding them together would hide which is working.</p>
+<p><strong>3. A zero now explains itself.</strong> When views exist and clicks are zero, the endpoint returns <code>clicks_note</code> and the section prints it:</p>
+<blockquote>Page views are counted on every page. Clicks are only counted when the button</blockquote>
+<blockquote>goes through this site — a page whose offer links straight to the provider</blockquote>
+<blockquote>shows 0 clicks here even if readers clicked it.</blockquote>
+<p>That sentence is the difference between &quot;the blog does not convert&quot; and &quot;we could not see this click&quot;, and only one of those is true.</p>
+<p><strong>Coverage limit, stated plainly:</strong> pages whose CTA points at the provider (<code>destination_url</code> / <code>referral_url</code>) are not measurable by this server. Making them measurable means routing every CTA through <code>/ai-jobs/apply/&lt;id&gt;</code>, which changes <code>ctaTarget()</code> in <code>utils/ctaBlock.js</code> and therefore re-renders the page frames of the corpus (<code>content</code> untouched). That is a deliberate, separate decision — not something to slip into a measurement fix.</p>
+<p>Tests: <code>npm run test:tenant-branding</code> (95 checks, including the parser run against real referrers) and <code>test_analytics_tracking.mjs</code> (20 checks, including the real click line lifted out of <code>routes/aiJobs.js</code> and executed against a mock Supabase).</p>
+<h2>BOT_SCHEMA_RECONCILE_2026-10-25.md</h2><p class="meta">docs/BOT_SCHEMA_RECONCILE_2026-10-25.md</p><h1>Bot schema reconcile — 2026-10-25</h1>
+<h2>What the diagnose proved</h2>
+<p>| schema | what it holds | | --- | --- | | <code>alphadome</code> | all 10 <code>bot_*</code> tables. <code>bot_products</code> 24, <code>bot_product_images</code> 12, <code>bot_product_variants</code> 4, <code>bot_collections</code> 3, <code>bot_collection_items</code> 7, <code>bot_tenants</code> 1 | | <code>public</code> | <code>bot_tenants</code> only (3 rows). The other ten are MISSING | | overlap | <strong>0</strong> tenant uuids exist in both schemas |</p>
+<p>The one tenant that owns the catalogue is <code>2330bdfe-7b4d-476f-ad0d-ba1b2caeed12</code> (Kassangas Music Shop, 0702245555) in <code>alphadome</code>. Section D shows it as invisible through <code>public.bot_tenants</code>.</p>
+<p>The three <code>public</code> rows are portal shells (<code>portal_token</code>, <code>status</code>, <code>description</code>). None of them owns a product — <code>public.bot_products</code> does not exist, so they cannot.</p>
+<h2>Why the dashboard half-works</h2>
+<p>| symptom | cause | | --- | --- | | catalogue looks fine | <code>server.js:3288</code> falls back to <code>get_catalog(phone)</code>, which reads <code>alphadome</code> by phone | | Orders always empty | <code>server.js:3463</code> — no table in <code>public</code>, no RPC fallback, error swallowed | | Training never saves | <code>server.js:2852/2892/2913</code> — insert into a missing table, no fallback | | Templates, settings dead | <code>get_templates_by_tenant(uuid)</code> looks the uuid up in <code>alphadome</code>; the session uuid lives in <code>public</code> | | readiness 0 products, abandoned-cart &quot;not configured&quot; | <code>server.js:1259/3884</code> select <code>whatsapp_access_token</code> / <code>is_active</code>, which <code>public.bot_tenants</code> does not have |</p>
+<h2>The shadow — confirmed by the pre-flight SELECT</h2>
+<p><code>findTenantByPhone()</code> (<code>server.js:2280</code>) reads <code>supabase.from(&quot;bot_tenants&quot;)</code>, and the client at <code>server.js:600</code> is built with <strong>no <code>schema</code> option</strong>, so that is <code>public</code>. The live lookup can only ever see the three public rows:</p>
+<p>| id | name | phone | products it can own | | --- | --- | --- | --- | | <code>cfc89b88…</code> | Coach Dawn 3.0 | +254 748 621563 | none — no <code>alphadome</code> row at all | | <code>62828821…</code> | Kassangas Music Shop | 0702245555 | 0 — <code>public.bot_products</code> does not exist | | <code>84342b47…</code> | Kassangas | 254737245555 | 0 |</p>
+<p><code>62828821…</code> holds <strong>the same phone as the catalogue owner in <code>alphadome</code></strong>, so every phone login resolves to this shell and stops. That is why the portal authenticates, greets Kassangas, and then shows nothing: the session uuid belongs to a row that cannot own a product, while the 24 products sit under a uuid the portal never asks for.</p>
+<p>After step 2 the shell's phone becomes <code>merged:62828821…</code>, the keeper is the only <code>0702245555</code> in <code>public</code>, and the session uuid <em>is</em> the catalogue owner.</p>
+<h2>What the fingerprints proved</h2>
+<p>Run on 2026-10-25 against the three public rows (<code>ecf8427e</code> is the tail of <code>md5('')</code>, i.e. &quot;empty or column absent&quot;):</p>
+<p>| row | <code>is_active</code> | <code>has_portal_token</code> | <code>phone_id_fp</code> | <code>alphadome_twin</code> | | --- | --- | --- | --- | --- | | Coach Dawn 3.0 | absent | <strong>false</strong> | <code>ecf8427e</code> (none) | <strong>0</strong> | | Kassangas Music Shop <code>62828821…</code> | absent | <strong>false</strong> | <code>0f6c6062</code> | 1 | | Kassangas <code>84342b47…</code> | absent | <strong>false</strong> | <code>e98b3f56</code> | <strong>0</strong> |</p>
+<ol>
+<li><strong>No portal token exists anywhere.</strong> All three are <code>false</code>, and</li>
+<p><code>whatsapp_access_token</code> is empty in every row. So the invite middleware at <code>server.js:2414</code> returns 401 for every invite link — the dashboard has been reached through the <strong>phone-session</strong> route at <code>server.js:2487</code>, which is exactly the route the shell shadows. Clearing <code>portal_token</code> in section C is a no-op today, and step 3 (Portal Invite) is mandatory, not cosmetic. It is also what gives the mirror trigger in section H something to carry.</p>
+<li><strong><code>is_active</code> is absent, not false.</strong> <code>is_active: &quot;-&quot;</code> is the fallback for a</li>
+<p>missing column, which confirms section B's column adds and the readiness / abandoned-cart errors at <code>server.js:1259</code> / <code>:3884</code>.</p>
+<li><strong><code>84342b47…</code> holds a different <code>whatsapp_phone_number_id</code></strong> (<code>e98b3f56</code> vs the</li>
+<p>keeper's row <code>0f6c6062</code>). That column does exist in <code>public</code>, and two distinct non-empty ids mean 0737 245 555 was registered as a separate WABA number, not a typo of 0702 245 555. It still has no <code>alphadome</code> twin, so the bot has never answered it — tombstoning it destroys no bot behaviour, and if the line is real it can be re-created as its own tenant later.</p>
+<li><strong>Coach Dawn's orphan is generated, not accidental.</strong> <code>admin/seed_coachdawn3.js</code></li>
+<p>declares <em>&quot;insert into alphadome.bot_tenants&quot;</em> in its header but built the client with no <code>db.schema</code>, so every run wrote to <code>public</code>. Fixed: the client now pins <code>db: { schema: 'alphadome' }</code>, and the error branch names <code>42P10</code> (no unique constraint for the upsert) and <code>PGRST204</code> (column missing) instead of failing silently.</p>
+</ol>
+<p>Section D is inert either way on this data: if the keeper's <code>whatsapp_phone_number_id</code> is set it reports <em>&quot;keeper already has&quot;</em> and refuses to be overwritten; if it is NULL while both shells hold a value it reports <code>D. WARNING ambiguous</code> and writes nothing. No shell value is ever taken over a keeper value.</p>
+<h2>Open decisions</h2>
+<ol>
+<li>~~Is <code>254737245555</code> a live Kassangas line?~~ <strong>Answered:</strong> it carries its own</li>
+<p>distinct <code>whatsapp_phone_number_id</code>, so it is a registered second WABA number. It still has no <code>alphadome</code> row, so the bot has never answered it and the tombstone removes no working behaviour. Keep it in the merge set; if Kassangas still wants that line, create it as a real tenant afterwards — do not un-tombstone <code>84342b47…</code>.</p>
+<li><strong>Coach Dawn 3.0 has no <code>alphadome</code> row.</strong> Sections B/G leave it alone, so it</li>
+<p>keeps behaving exactly as badly as today (nothing). The seed script that created the orphan is fixed, but the existing row still needs a <code>_03</code> that inserts the matching <code>alphadome.bot_tenants</code> row <strong>under the same uuid</strong> <code>cfc89b88-cc67-4655-ab06-b823b93a73e2</code>. Anything else leaves Coach Dawn with two identities and repeats the shadow.</p>
+<li>~~Keeper credentials are unverified.~~ **Answered 2026-10-25: the keeper is</li>
+<p>fully credentialed.** <code>has_phone_id = true</code>, <code>has_token = true</code>, <code>is_active = true</code>. Consequences:</p>
+</ol>
+<ul>
+<li><strong>No credential has to move.</strong> Every public fingerprint was <code>ecf8427e</code></li>
+<p>(empty/absent), so there is nothing for section D to rescue — it will only emit <code>D. keeper already has …</code> lines. Section D exists for future tenants, not for this apply.</p>
+<li><strong>The live WhatsApp path keeps working untouched.</strong> The bot sends with this</li>
+<p>row today and will still send with this row afterwards; the migration adds no second copy of any credential.</p>
+<li><code>E. is_active forced true</code> should <strong>not</strong> appear in the grid: <code>alphadome</code></li>
+<p>already has <code>true</code>, so the override is a no-op that only fires on bad data.</p>
+</ul>
+<p>&lt;details&gt; &lt;summary&gt;Fingerprint query used to produce the table above (read-only) — <code>phone_id_fp</code> / <code>token_fp</code> distinguish <em>absent</em> from <em>a different credential</em> without revealing either&lt;/summary&gt;</p>
+<pre><code>
+-- safe before section B: to_jsonb never fails on a missing column.
+-- Fingerprints only - no raw credential is ever printed.
+SELECT t.id, t.client_name, t.client_phone,
+       coalesce(to_jsonb(t)-&gt;&gt;'status', '')          AS status,
+       coalesce(to_jsonb(t)-&gt;&gt;'is_active', '-')      AS is_active,
+       (to_jsonb(t)-&gt;&gt;'portal_token') IS NOT NULL    AS has_portal_token,
+       right(md5(coalesce(to_jsonb(t)-&gt;&gt;'whatsapp_phone_number_id', '')), 8) AS phone_id_fp,
+       right(md5(coalesce(to_jsonb(t)-&gt;&gt;'whatsapp_access_token', '')), 8)    AS token_fp,
+       (SELECT count(*) FROM alphadome.bot_tenants a
+         WHERE right(regexp_replace(a.client_phone, '\D', '', 'g'), 9)
+             = right(regexp_replace(coalesce(t.client_phone, ''), '\D', '', 'g'), 9))
+         AS alphadome_twin
+  FROM public.bot_tenants t
+ ORDER BY t.client_phone;
+</code></pre>
+<p>&lt;/details&gt;</p>
+<h2>The fix</h2>
+<p><code>migrations/2026-10-25_bot_schema_reconcile_02_apply.sql</code>, one transaction:</p>
+<ol>
+<li><strong>B</strong> — add the columns <code>public.bot_tenants</code> is missing, types/defaults copied from <code>alphadome</code>.</li>
+<li><strong>C</strong> — tombstone the two Kassangas shells (phone → <code>merged:&lt;id&gt;</code>, <code>status=inactive</code>, <code>is_active=false</code>, portal token cleared). No DELETE.</li>
+<li><strong>D</strong> — rescue any credential only one shell still holds into the alphadome keeper when the keeper's value is NULL. Presence reported, values never printed.</li>
+<li><strong>E</strong> — promote the keeper into <code>public.bot_tenants</code> <strong>under the same uuid</strong>, so the portal session uuid and the catalogue owner are the same identity. <code>status</code> and <code>is_active</code> are forced <code>active</code>/<code>true</code> rather than copied: <code>isTenantRecordActive()</code> (<code>server.js:2251</code>) prefers the raw boolean, so a false value from <code>alphadome</code> would promote a row the phone lookup then rejects as &quot;Tenant found but inactive&quot;.</li>
+<li><strong>F</strong> — re-key rows already pointing at the shells, limited to FKs on <code>bot_tenants</code> plus <code>wf_campaigns.tenant_id</code>. <code>site_tenants</code> ids are left alone.</li>
+<li><strong>G</strong> — create one <code>public</code> view per <code>alphadome</code> <code>bot_*</code> table (ten here: every one except <code>bot_tenants</code>, which stays a real table). Single-table <code>select <em></code> views are auto-updatable, so reads <strong>and</strong> writes work with no <code>server.js</code> change. If a real <code>public</code> <strong>table</strong> already owns one of those names it is left untouched and reported with <strong>both row counts</strong>; an </em>empty* public table shadowing a populated <code>alphadome</code> one raises a warning, because that is the exact failure this migration exists to remove.</li>
+<li><strong>H</strong> — mirror future portal credential edits onto the alphadome row, so the token entered in the portal is the token WhatsApp sends with.</li>
+<li><strong>I</strong> — report grid, <code>notify pgrst, 'reload schema'</code>, commit.</li>
+</ol>
+<p>No domain rows move. The 24 products keep <code>bot_tenant_id = 2330bdfe…</code>, so <code>get_catalog</code> and <code>get_tenant_by_wa</code> keep resolving exactly as they do today.</p>
+<h2>Run order</h2>
+<pre><code>
+1. migrations/2026-10-25_bot_schema_reconcile_02_apply.sql   dry_run := true   -&gt; read grid
+2. migrations/2026-10-25_bot_schema_reconcile_02_apply.MERGE.sql               -&gt; commit
+   generated copy of step 1 with dry_run := false, confirm := 'MERGE'; identical
+   SQL otherwise, and the test suite fails if the two ever drift apart
+3. migrations/2026-10-25_bot_schema_reconcile_03_verify.sql     read only      -&gt; read grid
+4. Admin -&gt; Tenants -&gt; Kassangas Music Shop -&gt; Portal Invite  (the keeper has no portal token)
+5. node scripts/verify_writers_flow.js
+6. node scripts/smoke_tenant_onboarding.mjs --issue
+7. Live walk: catalog / orders / training -&gt; Writer's Flow -&gt; Blogger offer -&gt; F5
+8. migrations/2026-10-25_bot_schema_reconcile_04_coachdawn.sql  dry run       -&gt; read grid
+9. same file, dry_run := false, confirm := 'MERGE'                             -&gt; commit
+</code></pre>
+<p>Step 3 is not optional. Step 2 rebuilds <code>public._bot_reconcile_report</code> at the start of every run, so <strong>a re-run destroys the previous grid</strong>. The report proves what a run <em>did</em>; <code>_03_verify.sql</code> proves what the database <em>is</em>. Only the second survives a second click on Run.</p>
+<p>Steps 8 and 9 are about the second tenant, not the Kassangas demo: they can wait until step 7 has been walked end to end.</p>
+<p>The <code>.MERGE.sql</code> copy exists only so nobody hand-edits flags in the SQL Editor under pressure. Delete it once step 3 is green; the parent file stays the audited, dry-run-by-default source of truth.</p>
+<h2>Reading the <code>_03_verify</code> grid</h2>
+<p>One result set, thirteen arms now. Expected, in order:</p>
+<p>| step | healthy value | means | | --- | --- | --- | | <code>V. views</code> | <code>10 views, 0 shadowing base tables</code> | G created every view; a table of the same name would hide one | | <code>V. shadowing table</code> | <strong>no rows</strong> | nothing shadows a view name; only printed when a base table shares a name with an alphadome table | | <code>V. public-only table</code> | <code>bot_outputs</code> | expected: a <code>bot_*</code> table alphadome never had, so it shadows nothing | | <code>V. updatable views</code> | <code>10</code> | single-table <code>select <em></code> views stay writable | | <code>V. products</code> / <code>V. reachable</code> | <code>24</code> / <code>24</code> | catalogue visible </em>and* owned by an active tenant | | <code>V. supporting rows</code> | <code>3</code> | collections 3, images 12, variants 4 (one row per table) | | <code>V. tenant &lt;name&gt;</code> | keeper <code>1</code>, shells <code>0</code> | <code>0</code> on a shell is the tombstone working | | <code>V. token mirror</code> | <code>1</code> | tenants whose WhatsApp token matches across schemas, by <code>md5</code> | | <code>V. mirror trigger</code> | <code>1</code> | the section H trigger is installed and enabled | | <code>V. write targets</code> | <code>0</code> | orders/training/logs empty — nobody has written since the apply | | <code>V. tenant columns</code> | <code>public 30 vs alphadome 26</code> | <strong>informational</strong>: public keeps legacy extras | | <code>V. missing columns</code> | <code>none</code> / <code>0</code> | the assertion that matters: alphadome ⊆ public | | <code>V. orphans</code> | <code>1</code> (Coach Dawn) | live tenants that exist only in <code>public</code> |</p>
+<p><code>bot_outputs</code> is the only <code>bot_*</code> base table in <code>public</code> that alphadome has no counterpart for. It is not in any migration in this repo and no code path in <code>server.js</code> touches it, so it was created outside the repo. It shadows no view and breaks nothing — which is exactly why it gets its own line rather than being folded into the shadow count.</p>
+<p>Three of these were wrong in earlier versions of the file and are worth keeping in mind when reading any grid like this:</p>
+<ol>
+<li><strong>The column counts were compared for equality.</strong> They are not equal and never</li>
+<p>will be: B adds what public lacks, nothing removes what public has extra. The real test is subset direction, so <code>V. missing columns</code> names any alphadome column public cannot supply and expects <code>none</code>.</p>
+<li><strong><code>1 shadowing base table</code> was reported without saying which.</strong> A count cannot</li>
+<p>tell a harmless leftover (<code>bot_settings</code>) from an empty twin that starves the portal (<code>bot_products</code>), so <code>V. shadowing table</code> prints the names.</p>
+<li><strong><code>bot_outputs</code> was counted as shadowing.</strong> A shadow is a base table whose name</li>
+<p>also exists in <code>alphadome</code> — and only for <code>bot_*</code> names, since G creates no other views. The count now requires both, and the complement is listed separately as <code>V. public-only table</code> so it cannot be mistaken for leakage.</p>
+</ol>
+<h2>Step 4: the second tenant has no alphadome row</h2>
+<p><code>V. orphans: 1</code> is Coach Dawn 3.0 (<code>cfc89b88…</code>). She exists in <code>public.bot_tenants</code> and is <strong>absent</strong> from <code>alphadome.bot_tenants</code>. Two consequences:</p>
+<ol>
+<li><strong>Credentials typed for her are thrown away.</strong> The section H trigger is</li>
+<p><code>UPDATE alphadome.bot_tenants SET … WHERE id = $1</code>. With no alphadome row it matches zero rows, raises nothing, and the portal form still shows success. The first time anyone pastes her WhatsApp token into the admin UI it will vanish.</p>
+<li><strong>Phone fallback cannot find her.</strong> <code>get_tenant_by_wa()</code> reads</li>
+<p><code>alphadome.bot_tenants</code> only.</p>
+</ol>
+<p><code>_04_coachdawn.sql</code> fixes both, in the same shape as section E but reversed: same uuid, intersection of both column lists, active flags forced, and it <strong>aborts</strong> rather than clearing a value if an alphadome <code>UNIQUE</code> column would collide. <code>_02</code> cleared duplicates on the dead shells; doing that here would rewrite the credential store.</p>
+<p>It also normalises <code>client_phone</code>. Her stored number is <code>+254 748 621563</code>, but <code>server.js:6206</code> matches <code>client_phone</code> with an exact <code>.in()</code> against <code>254…</code>/<code>0…</code> and <code>get_tenant_by_wa()</code> normalises only its <em>argument</em>, never the stored value — so the formatted value matches neither form. <code>_04</code> rewrites it to <code>0748621563</code>, the local 0-format the keeper already uses, and reports old → new.</p>
+<h2>Reading the <code>_04</code> grid</h2>
+<pre><code>
+A. mode                DRY RUN - nothing written   | 0     (APPLY | 1 when committing)
+A. source              cfc89b88… | Coach Dawn 3.0 | status=active | active=true | 1
+A. phone_number_id     set | MISSING …             | 1|0   (primary lookup key, before phone)
+A. products            catalogue rows she owns     | 0     (she has none seeded yet)
+B. phone normalised    +254 748 621563 -&gt; 0748621563 | 1   (0 when already digits)
+C. collisions          no alphadome unique column taken | 0
+D. fillable            every NOT NULL column supplyable | 1
+E. promote             25 shared columns, forced: is_active | 1  (0 on re-run: skipped)
+E. phone in alphadome  0748621563                  | 1
+</code></pre>
+<p>25 shared columns is the honest number, and it is a schema fact worth understanding: alphadome has 26, one of them is <code>is_active</code>, which is deliberately <strong>not</strong> copied from the public row and is written as <code>true</code> instead. <code>status</code>, <code>description</code> and the two <code>portal_token</code> columns are public-only, so they are not in the intersection at all — the report says <code>forced: is_active</code>, not the <code>status/is_active forced</code> an earlier draft claimed, because a table that has no <code>status</code> column cannot be forced into one.</p>
+<p><code>A. products: 0</code> is a separate gap, not a <code>_04</code> failure. <code>public.bot_products</code> is a view over alphadome, so 0 there means she has <strong>no catalogue anywhere</strong>. Promoting her makes her credentials storable and her phone resolvable; it does not give her anything to sell. If she is meant to demo live, her catalogue has to be seeded in <code>alphadome</code> under the same uuid first — otherwise her bot answers <code>get_catalog</code> with nothing.</p>
+<p><code>A. phone_number_id: MISSING</code> compounds with the phone-format bug: with no id and a <code>+254 …</code> number she is currently unreachable on both lookup paths. <code>B</code> repairs the phone path; the id has to be entered from her WhatsApp Business account.</p>
+<p>Anything that raises instead of printing is a guard doing its job — it names the column or uuid and the whole transaction rolls back, including the phone rewrite.</p>
+<h2>Re-running is safe, and why that matters</h2>
+<p>If the apply grid shows <code>A. note: keeper already in public</code>, <code>B. columns to add: 0</code> and <code>E. promote keeper: already present</code>, you are looking at a <strong>second</strong> run: an earlier run already committed. Every section is written to be re-run, so nothing is damaged — but three things are worth knowing.</p>
+<ol>
+<li><strong>The first grid is gone.</strong> The report table is dropped and recreated per run.</li>
+<p>Verify the end state with <code>_03_verify.sql</code> instead of trusting the surviving grid.</p>
+<li>**<code>C. tombstone</code> prints the phone <em>before</em> the update.** On a re-run it shows</li>
+<p><code>merged:&lt;id&gt;</code> as the incoming value, which looks like the tombstone failed. It did not; it already happened.</p>
+<li><strong>The merge note is appended once only.</strong> It used to append <code> [merged into …]</code></li>
+<p>on every run, stacking the marker (found on the 2026-10-25 re-run). The <code>UPDATE</code> now checks <code>position(marker in description) &gt; 0</code> first.</p>
+</ol>
+<p><strong>Reading the result.</strong> The Results pane keeps only the <strong>last</strong> result set, so the <code>step | detail | rows</code> report is deliberately the last statement in the file and the verification <code>NOTICE</code>s sit just above it (they land in the <strong>Messages</strong> tab). If the pane shows the three-tenant list instead, the run still succeeded — the report is committed to disk, so read it with:</p>
+<pre><code>
+SELECT step, detail, rows FROM public._bot_reconcile_report ORDER BY seq;
+</code></pre>
+<p>If that query errors with <em>relation does not exist</em>, the batch actually aborted and rolled back: read the error above it, not the tenant list.</p>
+<p>If the apply grid contains <code>G. SKIPPED</code>, stop before step 3. A real public table is still shadowing that name, so reads keep returning the shadow and steps 3–6 would be debugging the wrong layer. Read the two counts in the row: a populated <code>alphadome</code> side with zero public rows <strong>is</strong> the catalogue you are trying to expose.</p>
+<p><code>2026-10-25_tenant_merge_02_apply.sql</code> is <strong>superseded</strong> by step 2. It merges <code>62828821…</code> → <code>84342b47…</code>, which are both shells owned by no catalogue; after step 2 its phone guards fail on purpose. Do not run it.</p>
+<h2>Expected grid for this data</h2>
+<p>The grid at section I is ordered by <code>seq</code>. With the keeper verified as <code>phone_id + token + is_active = true</code> and both shells holding no credential, the expected output is:</p>
+<p>| step | dry run (<code>dry_run := true</code>) | apply (<code>false, 'MERGE'</code>) | | --- | --- | --- | | <code>A. mode</code> | <code>DRY RUN - nothing written</code>, 0 | <code>APPLY</code>, 1 | | <code>A. keeper products</code> | <strong>24</strong> | <strong>24</strong> | | <code>A. row</code> ×2 | <code>62828821… Kassangas Music Shop 0702245555</code>, <code>84342b47… Kassangas 254737245555</code> | same | | <code>A. note</code> | <strong>absent</strong> — the keeper is not in <code>public</code> yet, so E will insert | same | | <code>B. add public column</code> ×15 | the 15 columns below, each 0 | each 1 | | <code>B. columns to add</code> | <strong>15</strong> | 15 | | <code>B. is_active normalised</code> | <em>absent</em> (write) | <strong>1</strong> — Coach Dawn set from <code>status</code>, shells excluded | | <code>C. tombstone</code> ×2 | both shells listed, each <strong>0</strong> — a preview writes nothing | same lines, each <strong>1</strong> | | <code>C. tombstoned rows</code> | <strong>0</strong> — nothing written yet, this is correct | <strong>2</strong> | | <code>D. keeper already has</code> ×K | one line per credential column the keeper already holds: <code>whatsapp_phone_number_id</code>, <code>whatsapp_business_account_id</code>, <code>whatsapp_access_token</code>, … | <strong>identical</strong> — D deliberately previews the columns B adds, so the apply grid must not grow here. If it does, D and B have drifted apart | | <code>D. rescued to keeper</code> | absent | absent — nothing to rescue | | <code>E. promote keeper</code> | uuid + <strong>12</strong> column names, <strong>0</strong> | <strong>1</strong>, uuid + <strong>26</strong> column names | | <code>E. is_active forced true</code> | absent | absent — alphadome is already <code>true</code> | | <code>E. cleared duplicate unique value</code> | <strong>appears</strong>, 0 — <code>client_phone on 1 shell row(s)</code>. Dry-run only: <code>public.bot_tenants.client_phone</code> carries a single-column UNIQUE index and the <code>62828821…</code> shell still shares <code>0702245555</code> with the keeper, because C has not rewritten it yet | <em><strong>absent</strong></em> — C runs first and has already moved that phone to <code>merged:62828821…</code>, so there is nothing left to clear | | <code>F. re-key to keeper</code> / <code>F. re-keyed rows</code> | 0 | 0 — nothing points at the shells | | <code>G. view</code> ×10 | 10 lines, each 0 | 10 lines, each 1 | | <code>G. views</code> | <code>10 to create, 0 skipped</code> | <code>10 to create, 0 skipped</code> | | <code>G. SKIPPED</code> | absent | absent — no real <code>public</code> table owns those names. If it <strong>does</strong> appear, read the counts: <code>public rows: 0, alphadome rows: 24</code> means something still shadows the catalogue and reads will stay empty | | <code>H. mirror trigger</code> | <code>skipped in dry run</code>, 0 | <code>… (credentials only)</code>, 1 |</p>
+<p>The two <code>E. promote keeper</code> column lists differ on purpose. A dry run runs against the schema as it is <strong>now</strong>, where <code>public.bot_tenants</code> is missing 15 columns, so E sees only the 12 it can copy. On the write pass B has just added them, so E copies 26 — including the live <code>whatsapp_access_token</code>, <code>whatsapp_token_expires_at</code> and <code>whatsapp_phone_number_id</code>. That is why the portal's WhatsApp readiness turns green immediately after the apply, and why the Portal Invite step that follows is about the <strong>login token</strong> (<code>portal_token</code>, still NULL), not about re-entering WhatsApp credentials.</p>
+<p>The 15 columns B adds, straight from diagnose section F — every one of them <code>only in alphadome</code>:</p>
+<pre><code>
+ai_api_key  ai_model  ai_provider  client_email  is_active  is_verified
+smtp_from_name  smtp_host  smtp_pass  smtp_port  smtp_user
+webhook_url  webhook_verify_token  whatsapp_access_token  whatsapp_token_expires_at
+</code></pre>
+<p><code>whatsapp_phone_number_id</code> is <strong>not</strong> in that list: it exists in both schemas, which is why section E copies it from the keeper. <code>status</code>, <code>portal_token</code>, <code>portal_token_issued_at</code> and <code>description</code> are public-only, so E sets <code>status</code> to <code>active</code> explicitly and lets the portal columns stay NULL.</p>
+<p>Three numbers look like failures in a dry run and are not: <code>C. tombstoned rows = 0</code>, every <code>G. view</code> row at 0, and <code>E. cleared duplicate unique value</code> at 0. Those are write counts, and a dry run writes nothing. Compare B's total (15), 24 keeper products and 10 views; those are the values that must match on both passes.</p>
+<h2>Rollback</h2>
+<p>The whole script is one transaction, so a failed guard rolls back by itself. After a successful apply the reversible pieces are:</p>
+<pre><code>
+DROP VIEW IF EXISTS public.bot_orders, public.bot_products, public.bot_product_images,
+  public.bot_product_variants, public.bot_collections, public.bot_collection_items,
+  public.bot_templates, public.bot_training_data, public.bot_control_settings,
+  public.bot_message_logs;
+DROP TRIGGER IF EXISTS bot_tenants_mirror ON public.bot_tenants;
+DROP TABLE IF EXISTS public._bot_reconcile_report;
+DROP TABLE IF EXISTS public._bot_coachdawn_report;
+DELETE FROM public.bot_tenants WHERE id = '2330bdfe-7b4d-476f-ad0d-ba1b2caeed12';
+DELETE FROM alphadome.bot_tenants WHERE id = 'cfc89b88-cc67-4655-ab06-b823b93a73e2';
+</code></pre>
+<p>The 15 added columns are left in place on purpose: they are additive, nullable and unused by any code path until the portal reads them, so dropping them buys nothing and risks a partial rollback.</p>
+<p>Tombstoned shells stay recoverable from <code>client_phone = 'merged:&lt;id&gt;'</code> and the <code>description</code> suffix; their tokens were cleared, so a re-invite is required.</p>
+<h2>Validation available locally</h2>
+<pre><code>
+node scripts/test_bot_schema_reconcile_sql.mjs   # 94 checks
+node scripts/test_tenant_merge_sql.mjs           # 63 checks
+</code></pre>
+<p>The 86 include the guards that matter after the fact, not just before: the <code>.MERGE.sql</code> copy is byte-compared to the audited file apart from its two flags, <code>_03_verify.sql</code> is proven to contain exactly one statement and no write verb, the tombstone is proven to append its merge note at most once, and <code>_04_coachdawn.sql</code> is proven to write to nothing but <code>alphadome.bot_tenants</code> — the one place where a stray <code>UPDATE</code> would rewrite a live credential.</p>
+<h2>Review checklist</h2>
+<ul><li>I can show evidence that: See how a conversion engine was rebuilt after the data contradicted the copy</li><li>I can show evidence that: Copy the debugging pattern that turned a 40 MB request storm into one proxy setting</li><li>I can show evidence that: Understand the multi-tenant isolation choices and why they were forced</li><li>I can show evidence that: Use the same build-log structure to publish your own progress</li></ul>
+<div class="licence">
+<strong>Licence.</strong> One buyer, one organisation, internal use. You may adapt the material for your own business and quote short excerpts with attribution. Do not resell, redistribute or publish this pack, in whole or in part, as your own product.<br><br>
+<strong>What this is.</strong> One HTML pack with five sections plus the source documents it was assembled from. Access for 12 months.<br><br>
+<strong>What it is not.</strong> Not a guarantee of income, employment, acceptance or performance. Figures quoted in this pack are the measurements of the system it describes, with their sources named, not promises about your results.<br><br>
+Sold via Alphadome Digital Drops. Support, resends and extensions: reply to the WhatsApp message that delivered this pack.
+</div>
+</div></body></html>

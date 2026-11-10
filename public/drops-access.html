@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="robots" content="noindex,nofollow" />
+  <meta name="theme-color" content="#081421" />
+  <title>Your pack | Alphadome Drops</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <style>
+    :root {
+      --bg: #081421; --panel: #0e1e30; --line: #1e3550; --text: #eef5fb; --muted: #a9bccd;
+      --accent: #ff8a00; --accent-2: #ffd166; --mint: #7ef9c8; --err: #ff6b7f;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; color: var(--text); line-height: 1.65; padding: 28px 18px 64px;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: radial-gradient(800px 420px at 50% -12%, rgba(255,138,0,.12), transparent 60%), var(--bg);
+    }
+    .wrap { max-width: 720px; margin: 0 auto; }
+    .brand { font-size: .72rem; letter-spacing: .18em; text-transform: uppercase; color: var(--muted); }
+    .brand b { color: var(--accent); }
+    h1 { font-size: clamp(1.5rem, 4vw, 2.1rem); line-height: 1.2; margin: .6rem 0 .4rem; }
+    h2 { font-size: 1.02rem; margin: 26px 0 8px; }
+    p { color: var(--muted); margin: 8px 0; }
+    .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 22px; margin-top: 18px; }
+    .kicker { color: var(--accent-2); font-size: .76rem; letter-spacing: .14em; text-transform: uppercase; }
+    ul, ol { padding-left: 1.2rem; color: var(--muted); }
+    li { margin: 7px 0; }
+    li b { color: var(--text); font-weight: 600; }
+    .cta {
+      display: block; text-align: center; margin-top: 20px; padding: 15px; border-radius: 10px;
+      font-weight: 700; color: #201000; text-decoration: none;
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    }
+    .cta[aria-disabled=true] { opacity: .5; pointer-events: none; }
+    .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+    .chip { border: 1px solid var(--line); border-radius: 999px; padding: 4px 11px; font-size: .76rem; color: var(--muted); }
+    .chip b { color: var(--mint); }
+    .ghost { display: inline-block; margin-top: 16px; color: var(--accent-2); text-decoration: none; font-size: .88rem; }
+    .err { color: var(--err); }
+    .note { font-size: .78rem; color: var(--muted); margin-top: 22px; }
+    .loading { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="brand"><b>Alphadome</b> · digital drop</div>
+    <div id="view"><p class="loading">Opening your pack…</p></div>
+    <p class="note">This link is personal to one purchase. Do not forward it; ask support for a fresh link if you need one.</p>
+  </div>
+
+  <script>
+    (function () {
+      var view = document.getElementById('view');
+      var TOKEN = (location.pathname.match(/\/drops\/access\/([^/?#]+)/) || [])[1] || '';
+
+      function esc(v) {
+        return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      }
+      function day(iso) { return String(iso || '').slice(0, 10); }
+      function fail(message) {
+        view.innerHTML = '<div class="panel"><div class="kicker">Access problem</div>' +
+          '<h1>That link cannot open a pack</h1><p class="err">' + esc(message) + '</p>' +
+          '<p>If you paid, this is our problem, not yours. Send the receipt on WhatsApp and we will resend the pack.</p>' +
+          '<a class="ghost" href="/drops">&larr; Back to the drops</a></div>';
+      }
+
+      if (!TOKEN) { fail('The link is missing its access code.'); return; }
+
+      fetch('/api/drops/access/' + encodeURIComponent(TOKEN))
+        .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+        .then(function (res) {
+          if (!res.ok || !res.d.ok) { fail((res.d && res.d.error) || 'This access link is not recognised.'); return; }
+          var d = res.d;
+          var p = d.product || {};
+          var modules = (p.modules || []).map(function (m, i) {
+            return '<li><b>' + (i + 1) + '. ' + esc(m.title || '') + '</b>' + (m.detail ? ' — ' + esc(m.detail) : '') + '</li>';
+          }).join('');
+          var outcomes = (p.outcomes || []).map(function (o) { return '<li>' + esc(o) + '</li>'; }).join('');
+
+          view.innerHTML =
+            '<div class="panel">' +
+              '<div class="kicker">Bought and paid for</div>' +
+              '<h1>' + esc(p.title || 'Your pack') + '</h1>' +
+              '<p>' + esc(p.summary || '') + '</p>' +
+              '<div class="meta">' +
+                '<span class="chip">Order <b>' + esc(d.orderRef) + '</b></span>' +
+                '<span class="chip">Access until <b>' + esc(day(d.expiresAt)) + '</b></span>' +
+                '<span class="chip">Downloads left <b>' + esc(d.downloadsLeft) + '</b></span>' +
+              '</div>' +
+              (d.file
+                ? '<a class="cta" href="' + esc(d.file) + '" target="_blank" rel="noopener">Open the pack</a>'
+                : '<a class="cta" aria-disabled="true" href="#" onclick="return false">This pack is still being assembled — we will WhatsApp it to you</a>') +
+              (outcomes ? '<h2>What you can do now</h2><ul>' + outcomes + '</ul>' : '') +
+              (modules ? '<h2>What is inside</h2><ol>' + modules + '</ol>' : '') +
+              (d.deliveryNote ? '<h2>Delivery</h2><p>' + esc(d.deliveryNote) + '</p>' : '') +
+              (d.support ? '<a class="ghost" href="' + esc(d.support) + '" rel="noopener">Need a resend? Message us on WhatsApp</a>' : '') +
+            '</div>';
+        })
+        .catch(function () {
+          fail('The pack could not be loaded. Check your connection and refresh.');
+        });
+    })();
+  </script>
+</body>
+</html>

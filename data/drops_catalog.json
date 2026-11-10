@@ -1,0 +1,306 @@
+{
+  "_comment": "Alphadome digital drops. Prices are KES anchors; price_usd is a display anchor for diaspora buyers and is not charged through M-Pesa. Every published row needs a built asset in drops_assets/ (npm run drops:build) or the access page says so instead of pretending.",
+  "_updated": "2026-11-10",
+  "products": [
+    {
+      "slug": "ai-work-application-kit",
+      "title": "The AI Work Application Kit",
+      "kind": "playbook",
+      "status": "published",
+      "rank": 10,
+      "summary": "The 22-page pack that gets an AI-work application finished instead of abandoned. Built from a measured funnel where 159 people started an application and only 22 finished it.",
+      "outcomes": [
+        "Know exactly what a Mercor-style application asks for before you open it",
+        "Have the four artefacts that shortlisters look for ready to paste",
+        "Write a rate and availability line that does not disqualify you",
+        "Recognise the three application shapes and which one your skills fit"
+      ],
+      "modules": [
+        {
+          "title": "What the form will ask, in order",
+          "detail": "The seven questions that appear in almost every AI-work application, what each one is really screening for, and the two-sentence answer shape that survives a keyword filter and a human reader."
+        },
+        {
+          "title": "The four artefacts",
+          "detail": "A one-page profile, two work samples with a one-line context note, and an availability block. Templates included, written for people whose work is under NDA or not public."
+        },
+        {
+          "title": "Rate and availability",
+          "detail": "How to set a floor, when to quote hourly versus per task, and how to state time-zone overlap without promising hours you cannot keep."
+        },
+        {
+          "title": "The assessment, taken once",
+          "detail": "How timed skills assessments are usually structured, a 45-minute practice set, and the failure pattern that loses otherwise-qualified candidates."
+        },
+        {
+          "title": "After you submit",
+          "detail": "What the matching step looks like, how long silence usually lasts, when a follow-up helps, and the one message that gets a stalled application reopened."
+        }
+      ],
+      "price_kes": 1500,
+      "price_usd": 15,
+      "compare_at_kes": 2500,
+      "bump_slug": "repo-build-log-2026",
+      "asset_file": "ai-work-application-kit.html",
+      "asset_sources": [
+        "docs/BLOG_CONVERSION_ENGINE.md"
+      ],
+      "practice": [
+        "Fill the four artefacts for one real role today, before you look at a second application.",
+        "Time yourself writing the availability block; if it takes more than ten minutes, it is too complicated to keep.",
+        "Take the practice assessment on a phone, not a laptop, because that is how most people actually sit it.",
+        "Send one application and log the date, the role and the stage you reached. The log is what makes the next attempt faster."
+      ],
+      "delivery_note": "One HTML pack, readable on a phone, with all five sections and the templates. Access for 12 months; re-download any time.",
+      "seo": {
+        "primary_keyword": "AI work application",
+        "title": "What the AI-work application asks for, before you open it",
+        "description": "A measured look at why 86% of AI-work applications are abandoned, and the four artefacts that get one finished."
+      },
+      "demand": {
+        "signals": ["ai-work-applications", "agentic-hiring"],
+        "note": "The repo's own referral funnel: 159 applications started, 22 completed (13.8%), 3 hired, 0 paid. The blocker is discoverable late."
+      }
+    },
+    {
+      "slug": "repo-build-log-2026",
+      "title": "Alphadome Build Log 2026",
+      "kind": "report",
+      "status": "published",
+      "rank": 20,
+      "summary": "The engineering diary behind a multi-tenant WhatsApp and M-Pesa platform: what broke, what the measurement said, and the fix that shipped. Written from the commit history, not from a content calendar.",
+      "outcomes": [
+        "See how a conversion engine was rebuilt after the data contradicted the copy",
+        "Copy the debugging pattern that turned a 40 MB request storm into one proxy setting",
+        "Understand the multi-tenant isolation choices and why they were forced",
+        "Use the same build-log structure to publish your own progress"
+      ],
+      "modules": [
+        {
+          "title": "The blog was well written and did not convert",
+          "detail": "Two datasets — a referral funnel and 48 LinkedIn posts — that killed the content strategy, and the playbook module that replaced it."
+        },
+        {
+          "title": "299 pages, 38 of them fake",
+          "detail": "How verifier and smoke-test pages leaked into a public index, the audit that found them, and the predicate that keeps them out."
+        },
+        {
+          "title": "The template that could not be pressed",
+          "detail": "96 pages with no closing block and 21 with a button that went nowhere; the fixed-point rebuild that repaired them without a model call."
+        },
+        {
+          "title": "Money paths are state machines",
+          "detail": "Why the M-Pesa callback is written as transitions, how duplicate callbacks are absorbed, and what idempotency cost in code."
+        },
+        {
+          "title": "Publishing the log",
+          "detail": "The four-part post shape used here: measurement, contradiction, change, verification. With the checklist for what must never be claimed."
+        }
+      ],
+      "price_kes": 2500,
+      "price_usd": 25,
+      "compare_at_kes": null,
+      "bump_slug": null,
+      "asset_file": "repo-build-log-2026.html",
+      "asset_sources": [
+        "docs/BLOG_CONVERSION_ENGINE.md",
+        "docs/CTA_COVERAGE_2026-10-29.md",
+        "docs/TENANT_PORTAL_BRANDING_ANALYTICS.md",
+        "docs/BOT_SCHEMA_RECONCILE_2026-10-25.md"
+      ],
+      "delivery_note": "One HTML pack with five sections plus the source documents it was assembled from. Access for 12 months.",
+      "seo": {
+        "primary_keyword": "build in public engineering log",
+        "title": "A build log where the measurements changed the product",
+        "description": "Five engineering reversals from a WhatsApp and M-Pesa platform, written from the evidence rather than the roadmap."
+      },
+      "demand": {
+        "signals": ["build-in-public", "agentic-hiring"],
+        "note": "Buyers of implementation work read build logs before they book a call. This is the same asset sold as proof and as a product."
+      }
+    },
+    {
+      "slug": "whatsapp-mpesa-checkout-kit",
+      "title": "WhatsApp + M-Pesa Checkout Kit",
+      "kind": "kit",
+      "status": "published",
+      "rank": 30,
+      "summary": "The implementation pack for taking a payment inside a WhatsApp conversation in Kenya: catalogue, STK prompt, callback state machine, receipt and reconciliation. Assembled from a system that runs it.",
+      "outcomes": [
+        "Send a real M-Pesa prompt from your own shortcode and read the callback safely",
+        "Write an order row that survives a retried callback without double-delivering",
+        "Give every sale a merchant code that reconciles against your statement",
+        "Handle the failed prompt with a fallback instead of losing the customer"
+      ],
+      "modules": [
+        {
+          "title": "The money lane, end to end",
+          "detail": "Daraja OAuth, the STK request body, the password timestamp, and the four environment variables that must agree. Includes the exact failure messages and what each one means."
+        },
+        {
+          "title": "The callback as a state machine",
+          "detail": "Pending, prompted, paid, delivered, failed. Why the handler must acknowledge before it works, and how to absorb a duplicate callback."
+        },
+        {
+          "title": "Order rows and reconciliations",
+          "detail": "The table shape, the account reference that fits Daraja's 12-character limit, and the merchant code that turns a statement line into a tenant."
+        },
+        {
+          "title": "WhatsApp delivery",
+          "detail": "The message that goes out after payment, the 24-hour window constraint, and which templates must be pre-approved before launch."
+        },
+        {
+          "title": "The failure path",
+          "detail": "Cancelled prompts, wrong PIN, insufficient funds, timeouts. The fallback sequence that recovers a sale instead of apologising for it."
+        }
+      ],
+      "price_kes": 4500,
+      "price_usd": 39,
+      "compare_at_kes": 7500,
+      "bump_slug": "repo-build-log-2026",
+      "asset_file": "whatsapp-mpesa-checkout-kit.html",
+      "delivery_note": "One HTML pack: the five sections plus the source documents it was assembled from (payment links, scan-to-pay, the funnel play). Access for 12 months.",
+      "asset_sources": [
+        "docs/TENANT_SCAN_TO_PAY.md",
+        "docs/CLICKFUNNELS_ZENDROP_PLAY.md",
+        "FALLBACK_PAYMENT_OPTIONS.md",
+        "utils/scanPay.js"
+      ],
+      "seo": {
+        "primary_keyword": "M-Pesa WhatsApp checkout",
+        "title": "Taking an M-Pesa payment inside WhatsApp, without a developer on call",
+        "description": "The STK prompt, the callback state machine and the reconciliation that make a WhatsApp sale collect money in Kenya."
+      },
+      "demand": {
+        "signals": ["whatsapp-commerce-kenya", "mpesa-rails"],
+        "note": "WhatsApp carries more than 20% of Kenya's online shopping orders (Mastercard/Flowcart, 2026), and 80% of Kenyan SMEs name simple payments as the top growth requirement."
+      }
+    },
+    {
+      "slug": "multitenant-whatsapp-bot-starter",
+      "title": "Multi-Tenant WhatsApp Bot Starter",
+      "kind": "bundle",
+      "status": "published",
+      "rank": 40,
+      "summary": "The schema, the tenant middleware and the onboarding runbook for running one WhatsApp bot for many businesses without the data crossing. Taken from a system that onboards tenants for a living.",
+      "outcomes": [
+        "Stand up bot_tenants, templates and training data without touching an existing schema",
+        "Route one webhook to the right tenant by phone number id",
+        "Onboard a client in an afternoon with a checklist that does not leak credentials",
+        "Add a second client without a redeploy or a second server"
+      ],
+      "modules": [
+        {
+          "title": "The multi-tenant data model",
+          "detail": "Tenant, template, training and control tables; why every child row carries the tenant id; and the additive migration order that keeps a live bot running."
+        },
+        {
+          "title": "Routing a webhook to a tenant",
+          "detail": "Phone number id to tenant resolution, the fallback when a number is unknown, and the logging that makes a misroute obvious in minutes."
+        },
+        {
+          "title": "Secrets per tenant",
+          "detail": "Which credentials live in the database rather than the environment, how they are sealed, and what must never be returned by an API."
+        },
+        {
+          "title": "Onboarding runbook",
+          "detail": "The exact credential request, the verification queries, and the three checks that decide whether a tenant is live or merely configured."
+        },
+        {
+          "title": "Isolation you can prove",
+          "detail": "The test that attempts a cross-tenant read and must fail, plus the review checklist before a second client is allowed in."
+        }
+      ],
+      "price_kes": 6500,
+      "price_usd": 59,
+      "compare_at_kes": 9500,
+      "bump_slug": "repo-build-log-2026",
+      "asset_file": "multitenant-whatsapp-bot-starter.html",
+      "delivery_note": "One HTML pack with the five sections and the migration and runbook documents it was assembled from. Access for 12 months.",
+      "asset_sources": [
+        "docs/TENANT_ONBOARDING_2026-10-25.md",
+        "docs/MULTITENANT_AI_JOBS_RUNBOOK.md",
+        "migrations/2025-02-06_add_bot_tenants_schema.sql",
+        "docs/BOT_SCHEMA_RECONCILE_2026-10-25.md"
+      ],
+      "seo": {
+        "primary_keyword": "multi-tenant WhatsApp bot",
+        "title": "One WhatsApp bot, many businesses, no crossover",
+        "description": "The schema and routing that let a single webhook serve many clients, and the test that proves isolation."
+      },
+      "demand": {
+        "signals": ["whatsapp-commerce-kenya", "agency-resale"],
+        "note": "Agencies reselling conversational commerce need the tenant layer before they can take a second client. This is the part that is usually rebuilt badly."
+      }
+    },
+    {
+      "slug": "ai-agent-ops-track",
+      "title": "AI Agent Ops Track",
+      "kind": "course",
+      "status": "published",
+      "rank": 50,
+      "summary": "A self-paced, written track for the job that is actually being hired: agents that run in production, with tool use, evals, cost control and an on-call story. Six modules, six labs, no video you have to sit through.",
+      "outcomes": [
+        "Build an agent loop with tool use, retries and a hard cost ceiling",
+        "Write evals that fail a bad agent before a customer does",
+        "Run a browser or API agent with credentials that cannot be exfiltrated",
+        "Write the operations page a hiring manager asks for: logs, alerts, rollback"
+      ],
+      "modules": [
+        {
+          "title": "The loop, and where it breaks",
+          "detail": "Plan, act, observe, repeat: the four failure modes (looping, silent tool failure, context overflow, unbounded spend) and the guard each one needs. Lab: a task runner with a token budget."
+        },
+        {
+          "title": "Tool use and MCP",
+          "detail": "Designing a tool surface an agent cannot misuse, validating arguments server-side, and when an MCP server is the right boundary. Lab: wrap an existing REST endpoint as a safe tool."
+        },
+        {
+          "title": "Retrieval and memory",
+          "detail": "Chunking choices that change answer quality, the hybrid search baseline, and what to store versus recompute. Lab: a retrieval path with a citation requirement."
+        },
+        {
+          "title": "Evals that gate a release",
+          "detail": "Golden sets, rubric grading, regression thresholds and cost-per-success. Lab: an eval suite wired to fail a pull request."
+        },
+        {
+          "title": "Runtime and credentials",
+          "detail": "Tenant-scoped secrets, least privilege, the browser-agent pattern for systems with no API, and the audit trail that makes an incident survivable. Lab: a sealed credential store with a rotation test."
+        },
+        {
+          "title": "Operating it",
+          "detail": "The dashboards, alert thresholds, retry and dead-letter policy, and the rollback that does not require a redeploy. Lab: an operations page for the agent you built."
+        }
+      ],
+      "price_kes": 12000,
+      "price_usd": 99,
+      "compare_at_kes": 18000,
+      "bump_slug": "repo-build-log-2026",
+      "asset_file": "ai-agent-ops-track.html",
+      "asset_sources": [
+        "BROWSER_ACTOR_RUNTIME.md",
+        "docs/MULTITENANT_AI_JOBS_RUNBOOK.md",
+        "AI_JOBS_README.md"
+      ],
+      "practice": [
+        "Pick one task you already do manually and write its tool surface before you write the prompt.",
+        "Put a hard token ceiling on the loop and log every time it is hit; the log is your first cost review.",
+        "Write five evals from real failures you have seen, not from imagined ones.",
+        "Draw the operations page on paper: what alerts, who is paged, what rollback means for this agent."
+      ],
+      "delivery_note": "One HTML workbook: six modules, six lab briefs, the reading list and the review checklist. Written material, not recorded video. Access for 12 months, updated as the track changes.",
+      "seo": {
+        "primary_keyword": "AI agent operations course",
+        "title": "The agent operations work that is actually being hired for",
+        "description": "Six modules on agent loops, tool use, evals, runtime credentials and on-call, built from production failure modes."
+      },
+      "demand": {
+        "signals": ["agentic-hiring", "agent-ops-skills"],
+        "note": "2,401 open agentic roles across 194 companies in October 2026; agent engineering is 65% of the mix and agent ops/infra another 157 roles. Most-requested skills: Python (1,732), RAG (661), MCP (649), TypeScript (508), LangGraph (348), evals (301)."
+      }
+    }
+  ]
+}
+
+
+

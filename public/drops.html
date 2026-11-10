@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#081421" />
+  <title>Digital Drops — courses, kits and packs paid by M-Pesa | Alphadome</title>
+  <meta name="description" content="Written courses, implementation kits and build reports from a working WhatsApp and M-Pesa system. Priced in shillings, paid by M-Pesa, delivered to the same phone." />
+  <link rel="canonical" href="https://alphadome.onrender.com/drops" />
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <style>
+    :root {
+      --bg-1: #081421; --bg-2: #0b1a2b; --panel: rgba(12, 26, 43, .82); --line: #1e3550;
+      --text: #eef5fb; --muted: #a9bccd; --accent: #ff8a00; --accent-2: #ffd166; --mint: #7ef9c8; --err: #ff6b7f;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; color: var(--text); line-height: 1.6; min-height: 100vh;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: radial-gradient(900px 500px at 12% -10%, rgba(255,138,0,.14), transparent 60%),
+                  radial-gradient(800px 480px at 92% 0%, rgba(126,249,200,.08), transparent 62%),
+                  linear-gradient(150deg, var(--bg-1), var(--bg-2));
+      background-attachment: fixed;
+    }
+    a { color: var(--accent-2); }
+    .wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px 72px; }
+    nav { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; padding: 18px 0; font-size: .88rem; }
+    nav a { color: var(--muted); text-decoration: none; }
+    nav a:hover { color: var(--text); }
+    nav .brand { color: var(--accent); font-weight: 700; letter-spacing: .04em; }
+    header.hero { padding: 22px 0 8px; }
+    .eyebrow { font-size: .74rem; letter-spacing: .16em; text-transform: uppercase; color: var(--accent-2); }
+    h1 { font-size: clamp(1.9rem, 4vw, 2.9rem); line-height: 1.15; margin: .5rem 0 .8rem; letter-spacing: -.02em; }
+    .lede { color: var(--muted); max-width: 62ch; margin: 0 0 8px; }
+    .promise { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 6px; }
+    .chip { border: 1px solid var(--line); background: rgba(255,255,255,.03); color: var(--muted);
+      border-radius: 999px; padding: 5px 12px; font-size: .78rem; }
+    .chip b { color: var(--mint); font-weight: 600; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; margin-top: 26px; }
+    .card {
+      display: flex; flex-direction: column; text-align: left; cursor: pointer; color: inherit;
+      background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 18px;
+      transition: transform .16s ease, border-color .16s ease; font: inherit;
+    }
+    .card:hover { transform: translateY(-2px); border-color: rgba(255,138,0,.45); }
+    .card .kind { font-size: .68rem; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); }
+    .card h3 { margin: 8px 0 6px; font-size: 1.08rem; line-height: 1.3; }
+    .card p { color: var(--muted); font-size: .9rem; margin: 0 0 14px; }
+    .card .foot { margin-top: auto; display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+    .price { font-size: 1.16rem; font-weight: 700; }
+    .was { color: var(--muted); font-size: .8rem; text-decoration: line-through; margin-left: 6px; font-weight: 400; }
+    .go { color: var(--accent-2); font-size: .84rem; }
+    .detail { display: none; margin-top: 18px; }
+    .detail.on { display: block; }
+    .list-off { display: none !important; }
+    .laneTabs { display: flex; gap: 8px; margin: 4px 0 10px; }
+    .laneTab {
+      flex: 1; padding: 10px 12px; border-radius: 10px; cursor: pointer; font: inherit;
+      font-size: .86rem; font-weight: 600; color: var(--muted);
+      background: rgba(255,255,255,.03); border: 1px solid var(--line);
+    }
+    .laneTab[aria-selected=true] { color: var(--text); border-color: rgba(255,138,0,.55); background: rgba(255,138,0,.1); }
+    .lane[hidden] { display: none; }
+    input[type=email] {
+      width: 100%; padding: 13px 14px; font-size: 1rem; color: var(--text);
+      background: #0a1725; border: 1px solid var(--line); border-radius: 10px; outline: none;
+    }
+    input[type=email]:focus { border-color: var(--accent); }
+    .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 22px; }
+    .panel + .panel { margin-top: 16px; }
+    .back { display: inline-block; margin-bottom: 14px; font-size: .86rem; }
+    h2 { font-size: 1.18rem; margin: 0 0 12px; }
+    h3 { font-size: .98rem; margin: 18px 0 6px; }
+    ul, ol { padding-left: 1.15rem; margin: 8px 0; }
+    li { margin: 6px 0; color: var(--muted); }
+    li strong { color: var(--text); font-weight: 600; }
+    .buybox { margin-top: 18px; border-top: 1px solid var(--line); padding-top: 18px; }
+    label.field { display: block; font-size: .8rem; color: var(--muted); margin: 12px 0 6px; }
+    input[type=tel] {
+      width: 100%; padding: 13px 14px; font-size: 1rem; color: var(--text);
+      background: #0a1725; border: 1px solid var(--line); border-radius: 10px; outline: none;
+    }
+    input[type=tel]:focus { border-color: var(--accent); }
+    .bump { display: flex; gap: 10px; align-items: flex-start; margin: 14px 0 0; padding: 12px;
+      border: 1px dashed var(--line); border-radius: 10px; font-size: .86rem; color: var(--muted); }
+    .bump input { margin-top: 3px; accent-color: var(--accent); }
+    .bump b { color: var(--text); }
+    button.pay {
+      width: 100%; margin-top: 16px; padding: 14px; font-size: 1rem; font-weight: 700; cursor: pointer;
+      color: #201000; border: 0; border-radius: 10px; background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    }
+    button.pay:disabled { opacity: .6; cursor: progress; }
+    .msg { display: none; margin-top: 14px; padding: 12px; border-radius: 10px; font-size: .88rem; line-height: 1.5; }
+    .msg.on { display: block; }
+    .msg.ok { background: rgba(126,249,200,.1); border: 1px solid rgba(126,249,200,.35); color: var(--mint); }
+    .msg.err { background: rgba(255,107,127,.1); border: 1px solid rgba(255,107,127,.35); color: var(--err); }
+    .msg.wait { background: rgba(255,209,102,.08); border: 1px solid rgba(255,209,102,.3); color: var(--accent-2); }
+    .msg a { color: inherit; font-weight: 700; }
+    .note { font-size: .78rem; color: var(--muted); margin-top: 12px; }
+    .access-link { display: block; margin-top: 10px; padding: 12px 14px; border-radius: 10px;
+      background: rgba(255,255,255,.04); border: 1px solid var(--line); text-decoration: none; color: var(--text); }
+    .access-link span { display: block; font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .12em; }
+    footer { border-top: 1px solid var(--line); margin-top: 40px; padding-top: 18px; color: var(--muted); font-size: .78rem; }
+    .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+    @media (max-width: 520px) { .panel { padding: 18px; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <nav>
+      <a class="brand" href="/">Alphadome</a>
+      <a href="/drops">Drops</a>
+      <a href="/ai-jobs">AI Jobs</a>
+      <a href="/blog">Blog</a>
+      <a id="supportLink" class="sr" href="#" rel="noopener">Support on WhatsApp</a>
+    </nav>
+
+    <section id="listView">
+      <header class="hero">
+        <p class="eyebrow">Digital drops</p>
+        <h1>Written packs that pay for themselves, paid for on the phone you already have.</h1>
+        <p class="lede">Courses, implementation kits and build reports from a system that runs WhatsApp commerce and M-Pesa for real businesses. No card, no checkout account: an M-Pesa prompt, then the pack opens here and on WhatsApp.</p>
+        <div class="promise">
+          <span class="chip"><b>M-Pesa</b> prompt, not a card form</span>
+          <span class="chip"><b>Instant</b> access after payment</span>
+          <span class="chip"><b>12 months</b> of re-downloads</span>
+        </div>
+      </header>
+      <div id="grid" class="grid" aria-live="polite"></div>
+      <p id="listMsg" class="note"></p>
+    </section>
+
+    <section id="detailView" class="detail" aria-live="polite"></section>
+
+    <footer>
+      Prices are in Kenyan shillings and charged by M-Pesa. A 0.99% Safaricom collection fee is absorbed in the listed price.
+      Packs are written material unless the page says otherwise. Nothing here promises income, employment or a business result.
+    </footer>
+  </div>
+
+  <script>
+    (function () {
+      var grid = document.getElementById('grid');
+      var listView = document.getElementById('listView');
+      var detailView = document.getElementById('detailView');
+      var listMsg = document.getElementById('listMsg');
+      var supportLink = document.getElementById('supportLink');
+      var PHONE_KEY = 'ad_drops_phone';
+
+      function esc(v) {
+        return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      }
+      function kes(n) { return 'KES ' + Number(n || 0).toLocaleString('en-KE'); }
+      function usd(n) { return n ? 'about $' + Number(n).toLocaleString('en-US') : ''; }
+      function slugFromPath() {
+        var m = location.pathname.match(/^\/drops\/([A-Za-z0-9_-]+)\/?$/);
+        return m ? m[1].toLowerCase() : '';
+      }
+      function setMsg(el, html, kind) {
+        if (!el) return;
+        el.className = 'msg on ' + kind;
+        el.innerHTML = html;
+      }
+      function clearMsg(el) { if (el) el.className = 'msg'; }
+
+      function cardHtml(p) {
+        var was = p.compare_at_kes ? '<span class="was">' + esc(kes(p.compare_at_kes)) + '</span>' : '';
+        return '<button class="card" type="button" data-slug="' + esc(p.slug) + '">' +
+          '<span class="kind">' + esc(p.kind) + '</span>' +
+          '<h3>' + esc(p.title) + '</h3>' +
+          '<p>' + esc(p.summary) + '</p>' +
+          '<span class="foot"><span class="price">' + esc(kes(p.price_kes)) + was + '</span>' +
+          '<span class="go">See what is inside &rarr;</span></span>' +
+          '</button>';
+      }
+
+      function renderList(products) {
+        if (!products.length) {
+          grid.innerHTML = '';
+          listMsg.textContent = 'Nothing is published yet. Check back shortly.';
+          return;
+        }
+        grid.innerHTML = products.map(cardHtml).join('');
+        grid.querySelectorAll('button.card').forEach(function (b) {
+          b.addEventListener('click', function () { showProduct(b.getAttribute('data-slug')); });
+        });
+      }
+
+      function showProduct(slug) {
+        history.pushState({ slug: slug }, '', '/drops/' + encodeURIComponent(slug));
+        renderDetail(slug);
+      }
+
+      function renderDetail(slug) {
+        listView.classList.add('list-off');
+        detailView.classList.add('on');
+        detailView.innerHTML = '<div class="panel"><p class="note">Loading this pack…</p></div>';
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+
+        fetch('/api/drops/' + encodeURIComponent(slug))
+          .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+          .then(function (res) {
+            if (!res.ok || !res.d.ok) {
+              detailView.innerHTML = '<div class="panel"><a class="back" href="/drops">&larr; All drops</a>' +
+                '<h2>That pack is not on sale</h2><p class="note">' + esc((res.d && res.d.error) || 'Not found.') + '</p></div>';
+              return;
+            }
+            if (res.d.support) {
+              supportLink.href = res.d.support;
+              supportLink.classList.remove('sr');
+            }
+            paint(res.d.product, res.d.bump);
+          })
+          .catch(function () {
+            detailView.innerHTML = '<div class="panel"><a class="back" href="/drops">&larr; All drops</a>' +
+              '<h2>The catalogue did not load</h2><p class="note">Check your connection and try again.</p></div>';
+          });
+      }
+
+      function isKenyaTime() {
+        try {
+          var tz = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+          var lang = (navigator.language || '').toLowerCase();
+          return tz === 'Africa/Nairobi' || lang === 'en-ke' || lang === 'sw-ke' || lang === 'sw';
+        } catch (e) { return false; }
+      }
+
+      // Two lanes, one product. A visitor outside Kenya gets the card button first;
+      // a Kenyan visitor gets M-Pesa first. Neither is ever the only option unless
+      // the product itself is single-lane.
+      function buyBoxHtml(p, bump) {
+        var lanes = p.lanes || [];
+        var card = lanes.indexOf('card') >= 0;
+        var mpesa = lanes.indexOf('mpesa') >= 0;
+        var preferCard = card && (!mpesa || !isKenyaTime());
+        var bumpLine = bump
+          ? '<label class="bump"><input type="checkbox" id="bumpBox"> <span>Add <b>' + esc(bump.title) + '</b> for ' +
+            esc(kes(bump.price_kes)) + (bump.price_usd ? ' / $' + esc(bump.price_usd) : '') + ' in the same order.</span></label>'
+          : '';
+        var tabs = (card && mpesa)
+          ? '<div class="laneTabs" role="tablist">' +
+              '<button class="laneTab" role="tab" id="tabCard" aria-selected="' + (preferCard ? 'true' : 'false') + '" type="button">Card ($' + esc(p.price_usd) + ')</button>' +
+              '<button class="laneTab" role="tab" id="tabMpesa" aria-selected="' + (preferCard ? 'false' : 'true') + '" type="button">M-Pesa (' + esc(kes(p.price_kes)) + ')</button>' +
+            '</div>'
+          : '';
+        var cardBlock = card
+          ? '<div class="lane" id="laneCard"' + (preferCard ? '' : ' hidden') + '>' +
+              '<h3 style="margin-top:0">Pay $' + esc(p.price_usd) + ' by card</h3>' +
+              '<label class="field" for="email">Email for the receipt and the pack</label>' +
+              '<input id="email" type="email" autocomplete="email" placeholder="you@company.com">' +
+              '<button class="pay" id="cardBtn" type="button">Pay $' + esc(p.price_usd) + ' by card</button>' +
+              '<div class="msg" id="cardMsg"></div>' +
+              '<p class="note">Card, Apple Pay or Google Pay on the provider\'s secure page. The pack is emailed the moment the charge clears.</p>' +
+            '</div>'
+          : '';
+        var mpesaBlock = mpesa
+          ? '<div class="lane" id="laneMpesa"' + (preferCard ? ' hidden' : '') + '>' +
+              '<h3 style="margin-top:0">Pay ' + esc(kes(p.price_kes)) + ' by M-Pesa</h3>' +
+              '<label class="field" for="phone">Your M-Pesa phone</label>' +
+              '<input id="phone" type="tel" inputmode="numeric" autocomplete="tel" placeholder="07XX XXX XXX">' +
+              '<button class="pay" id="payBtn" type="button">Send the M-Pesa prompt</button>' +
+              '<div class="msg" id="payMsg"></div>' +
+              '<p class="note">You will get a prompt on this phone. Enter your PIN and the pack opens here, and the link is sent to the same number on WhatsApp. Nothing is charged until you enter the PIN.</p>' +
+            '</div>'
+          : '';
+        return tabs + bumpLine + cardBlock + mpesaBlock;
+      }
+
+      function paint(p, bump) {
+        var outcomes = (p.outcomes || []).map(function (o) { return '<li>' + esc(o) + '</li>'; }).join('');
+        var modules = (p.modules || []).map(function (m, i) {
+          return '<li><strong>' + (i + 1) + '. ' + esc(m.title || '') + '</strong>' +
+            (m.detail ? ' — ' + esc(m.detail) : '') + '</li>';
+        }).join('');
+        var was = p.compare_at_kes ? '<span class="was">' + esc(kes(p.compare_at_kes)) + '</span>' : '';
+
+        detailView.innerHTML =
+          '<div class="panel">' +
+            '<a class="back" href="/drops">&larr; All drops</a>' +
+            '<p class="eyebrow">' + esc(p.kind) + '</p>' +
+            '<h2 style="font-size:1.7rem;line-height:1.25">' + esc(p.title) + '</h2>' +
+            '<p class="lede">' + esc(p.summary) + '</p>' +
+            '<div class="promise"><span class="chip"><b>' + esc(kes(p.price_kes)) + '</b>' + was + '</span>' +
+              (p.price_usd ? '<span class="chip"><b>$' + esc(p.price_usd) + '</b> by card</span>' : '') +
+              '<span class="chip">Instant delivery</span></div>' +
+            '<h3>What you can do when you finish</h3><ul>' + outcomes + '</ul>' +
+            '<h3>What is inside</h3><ol>' + modules + '</ol>' +
+            '<p class="note">' + esc(p.delivery_note || '') + '</p>' +
+            '<div class="buybox">' +
+              buyBoxHtml(p, bump) +
+            '</div>' +
+          '</div>';
+
+        var phoneEl = document.getElementById('phone');
+        var payBtn = document.getElementById('payBtn');
+        var payMsg = document.getElementById('payMsg');
+        var cardBtn = document.getElementById('cardBtn');
+        var cardMsg = document.getElementById('cardMsg');
+        var emailEl = document.getElementById('email');
+        var bumpBox = document.getElementById('bumpBox');
+        var tabCard = document.getElementById('tabCard');
+        var tabMpesa = document.getElementById('tabMpesa');
+
+        try {
+          var saved = localStorage.getItem(PHONE_KEY);
+          if (saved && phoneEl) phoneEl.value = saved;
+        } catch (e) {}
+
+        function selectLane(which) {
+          if (tabCard) tabCard.setAttribute('aria-selected', String(which === 'card'));
+          if (tabMpesa) tabMpesa.setAttribute('aria-selected', String(which === 'mpesa'));
+          var lc = document.getElementById('laneCard');
+          var lm = document.getElementById('laneMpesa');
+          if (lc) lc.hidden = which !== 'card';
+          if (lm) lm.hidden = which !== 'mpesa';
+        }
+        if (tabCard) tabCard.addEventListener('click', function () { selectLane('card'); });
+        if (tabMpesa) tabMpesa.addEventListener('click', function () { selectLane('mpesa'); });
+
+        if (bumpBox) {
+          bumpBox.addEventListener('change', function () {
+            if (payBtn) payBtn.textContent = 'Send the M-Pesa prompt — ' + kes(Number(p.price_kes) + (bumpBox.checked ? Number(bump.price_kes) : 0));
+            if (cardBtn) cardBtn.textContent = 'Pay $' + (Number(p.price_usd) + (bumpBox.checked ? Number(bump.price_usd || 0) : 0)) + ' by card';
+          });
+        }
+
+        if (cardBtn) cardBtn.addEventListener('click', function () {
+          clearMsg(cardMsg);
+          var original = cardBtn.textContent;
+          cardBtn.disabled = true;
+          cardBtn.textContent = 'Opening the card page…';
+          var body = { email: emailEl ? emailEl.value : '' };
+          if (bumpBox && bumpBox.checked) body.bump = true;
+
+          fetch('/api/drops/' + encodeURIComponent(p.slug) + '/checkout-card', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+          })
+            .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+            .then(function (res) {
+              if (!res.ok || !res.d.ok) {
+                cardBtn.disabled = false;
+                cardBtn.textContent = original;
+                setMsg(cardMsg, esc((res.d && res.d.error) || 'That did not work. Nothing was charged.'), 'err');
+                return;
+              }
+              setMsg(cardMsg, '<strong>Opening the secure card page…</strong> Your pack is emailed as soon as the charge clears.', 'wait');
+              if (res.d.checkoutUrl) window.location.href = res.d.checkoutUrl;
+              else setMsg(cardMsg, 'The card page is not configured yet. Nothing was charged.', 'err');
+            })
+            .catch(function () {
+              cardBtn.disabled = false;
+              cardBtn.textContent = original;
+              setMsg(cardMsg, 'The request did not reach the server. Nothing was charged; try again.', 'err');
+            });
+        });
+
+        if (payBtn) payBtn.addEventListener('click', function () {
+          clearMsg(payMsg);
+          payBtn.disabled = true;
+          payBtn.textContent = 'Sending…';
+          try { localStorage.setItem(PHONE_KEY, phoneEl.value); } catch (e) {}
+
+          var body = { phone: phoneEl.value };
+          if (bumpBox && bumpBox.checked) body.bump = true;
+
+          fetch('/api/drops/' + encodeURIComponent(p.slug) + '/checkout', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+          })
+            .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+            .then(function (res) {
+              payBtn.disabled = false;
+              payBtn.textContent = 'Send the M-Pesa prompt';
+              if (!res.ok || !res.d.ok) {
+                setMsg(payMsg, esc((res.d && res.d.error) || 'That did not work. Nothing was charged.'), 'err');
+                return;
+              }
+              setMsg(payMsg, '<strong>' + esc(res.d.message || 'Check your phone.') + '</strong>', 'wait');
+              if (res.d.reused) return; // a reused order has no new lookup; the phone already has the prompt
+              pollOrder(res.d.orderRef, res.d.lookup, payMsg);
+            })
+            .catch(function () {
+              payBtn.disabled = false;
+              payBtn.textContent = 'Send the M-Pesa prompt';
+              setMsg(payMsg, 'The request did not reach the server. Nothing was charged; try again.', 'err');
+            });
+        });
+      }
+
+      function pollOrder(ref, lookup, msgEl) {
+        var tries = 0;
+        var timer = setInterval(function () {
+          tries++;
+          fetch('/api/drops/order/' + encodeURIComponent(ref) + '?lookup=' + encodeURIComponent(lookup))
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+              if (d.status === 'paid' || d.status === 'delivered') {
+                clearInterval(timer);
+                setMsg(msgEl, '<strong>Paid. Receipt ' + esc(d.orderRef) + '.</strong><br>Your pack is open below, and the link is on its way to your WhatsApp.',
+                  'ok');
+                (d.access || []).forEach(function (a) {
+                  var el = document.createElement('a');
+                  el.className = 'access-link';
+                  el.href = a.path;
+                  el.innerHTML = '<span>Open your pack' + (d.access.length > 1 ? ' · ' + esc(a.product) : '') + '</span>' +
+                    esc(a.product) + ' <span>until ' + esc(String(a.expiresAt || '').slice(0, 10)) + '</span>';
+                  msgEl.parentNode.appendChild(el);
+                });
+                return;
+              }
+              if (d.status === 'failed') {
+                clearInterval(timer);
+                setMsg(msgEl, esc(d.message || 'That payment did not complete. Nothing was charged.'), 'err');
+                return;
+              }
+              if (tries >= 45) {
+                clearInterval(timer);
+                setMsg(msgEl, 'Still waiting for the M-Pesa confirmation. If money left your account, reply on WhatsApp with the receipt and we will resend the pack.', 'wait');
+              }
+            })
+            .catch(function () { /* keep polling through a blip */ });
+        }, 4000);
+      }
+
+      function boot() {
+        fetch('/api/drops')
+          .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+          .then(function (res) {
+            if (!res.ok || !res.d.ok) {
+              listMsg.textContent = (res.d && res.d.error) || 'The catalogue could not be loaded.';
+              return;
+            }
+            if (res.d.support) {
+              supportLink.href = res.d.support;
+              supportLink.classList.remove('sr');
+            }
+            renderList(res.d.products || []);
+            var slug = slugFromPath();
+            if (slug) renderDetail(slug);
+          })
+          .catch(function () {
+            listMsg.textContent = 'The catalogue did not load. Check your connection and try again.';
+          });
+      }
+
+      window.addEventListener('popstate', function () {
+        if (slugFromPath()) {
+          renderDetail(slugFromPath());
+        } else {
+          detailView.classList.remove('on');
+          listView.classList.remove('list-off');
+        }
+      });
+
+      boot();
+    })();
+  </script>
+</body>
+</html>
+
+

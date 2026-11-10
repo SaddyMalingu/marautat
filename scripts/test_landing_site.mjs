@@ -140,7 +140,10 @@ ok('every in-page anchor resolves', broken.length === 0, broken.join(','));
 
 // Routes that are served by server.js rather than a file on disk.
 const ROUTES = new Set(['/', '/discovery', '/blog', '/tenant-dashboard', '/admin', '/kassangas-music-shop',
-  '/kassangas-merchant-portal', '/kassangas-client-wallet', '/portfolio', '/privacy-policy']);
+  '/kassangas-merchant-portal', '/kassangas-client-wallet', '/portfolio', '/privacy-policy',
+  // Digital Drops storefront and the rung-3 funnel-build page (2026-11-10/11):
+  // both are router-served, so there is no file on disk to find.
+  '/drops', '/build']);
 const internal = [...new Set([...html.matchAll(/href="(\/[^"#?]*)"/g)].map((m) => m[1]))];
 const missing = internal.filter((href) => {
   if (ROUTES.has(href)) return false;

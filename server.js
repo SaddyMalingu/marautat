@@ -91,6 +91,9 @@ import { createSocialPublishRouter } from "./routes/socialPublish.js";
 import { createWriterFlowRouter } from "./routes/writerFlow.js";
 import { createBrowserAccessRouter } from "./routes/browserAccess.js";
 import { createAgentRunsRouter } from "./routes/agentRuns.js";
+// Digital Drops: a priced catalogue, an M-Pesa prompt and a signed paywall, so a
+// digital product can be sold and delivered without a human in the loop.
+import { createDropsRouter } from "./routes/drops.js";
 import { createTenantBrowserProvider } from "./utils/tenantBrowserProvider.js";
 import { ACCESS_KEY_ENV, accessSecrets, fingerprintSecret } from "./utils/tenantAccess.js";
 
@@ -5402,6 +5405,17 @@ app.use('/', createBrowserAccessRouter({
 // tenant runs a worker there. These routes are authenticated by a per-tenant bearer token and
 // never take a tenant from the request body — see routes/agentRuns.js.
 app.use('/', createAgentRunsRouter({ supabase }));
+
+// Digital Drops (2026-11-10): the storefront, the M-Pesa lane and the paywall.
+// Mounted here because `supabase`, `initiateStkPush`, `sendMessage` and `log` are
+// all in scope; `initiateStkPush` is a hoisted declaration, so the reference is
+// valid even though its body appears further down the file.
+app.use('/', createDropsRouter({
+  supabase,
+  initiateStkPush,
+  sendMessage,
+  log,
+}));
 
 
 
@@ -15097,7 +15111,7 @@ function getMpesaErrorMessage(errorCode) {
   return errorMap[errorCode] || '⚠️ Payment processing error. Please try again or contact support.';
 }
 
-async function initiateStkPush({ phone, amount, accountRef, transactionDesc }) {
+async function initiateStkPush({ phone, amount, accountRef, transactionDesc, callbackUrl }) {
   try {
     // ✅ Step 1: Validate environment variables
     if (
@@ -15105,7 +15119,7 @@ async function initiateStkPush({ phone, amount, accountRef, transactionDesc }) {
       !process.env.MPESA_CONSUMER_SECRET ||
       !process.env.MPESA_PASSKEY ||
       !process.env.MPESA_SHORTCODE ||
-      !process.env.MPESA_CALLBACK_URL
+      !(callbackUrl || process.env.MPESA_CALLBACK_URL)
     ) {
       log("⚠️ Missing one or more M-Pesa credentials in environment variables", "ERROR");
       throw new Error("Missing required M-Pesa credentials");
@@ -15139,7 +15153,10 @@ async function initiateStkPush({ phone, amount, accountRef, transactionDesc }) {
       PartyA: phone,               // MSISDN sending the money
       PartyB: shortcode,           // Paybill/shortcode receiving payment
       PhoneNumber: phone,
-      CallBackURL: process.env.MPESA_CALLBACK_URL,
+      // A caller may own its own callback (Digital Drops does), so a digital sale
+      // can never be routed into the subscription state machine. Defaults to the
+      // configured URL, which is what every existing caller still gets.
+      CallBackURL: callbackUrl || process.env.MPESA_CALLBACK_URL,
       AccountReference: accountRef,
       TransactionDesc: transactionDesc || "Alphadome subscription",
     };

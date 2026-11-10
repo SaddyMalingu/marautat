@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Multi-Tenant WhatsApp Bot Starter · Alphadome</title><style>
+:root{--ink:#0d1320;--paper:#ffffff;--muted:#5b6b85;--line:#e3e8f0;--accent:#b45309;--code:#f5f7fb}
+*{box-sizing:border-box}
+body{margin:0;background:#f1f4f9;color:var(--ink);font:16px/1.65 Georgia,'Times New Roman',serif}
+.sheet{max-width:820px;margin:0 auto;background:var(--paper);padding:56px 60px 72px;box-shadow:0 10px 40px rgba(13,19,32,.08)}
+.brand{font:600 12px/1 ui-sans-serif,system-ui,sans-serif;letter-spacing:.18em;text-transform:uppercase;color:var(--accent)}
+h1{font-size:2.1rem;line-height:1.2;margin:.4rem 0 .6rem}
+h2{font-size:1.35rem;margin:2.2rem 0 .6rem;border-top:1px solid var(--line);padding-top:1.4rem}
+h3{font-size:1.08rem;margin:1.6rem 0 .4rem}
+h4{font-size:.98rem;margin:1.2rem 0 .3rem}
+p,li{color:#22304a}
+.meta{font:14px/1.5 ui-sans-serif,system-ui,sans-serif;color:var(--muted)}
+.lead{font-size:1.05rem;color:#2b3a55}
+.rule{height:3px;background:var(--accent);width:64px;margin:1.2rem 0 1.6rem}
+ul,ol{padding-left:1.3rem}
+li{margin:.3rem 0}
+code{background:var(--code);padding:.1rem .3rem;border-radius:4px;font-size:.9em}
+pre{background:var(--code);padding:14px 16px;border-radius:8px;overflow:auto;border:1px solid var(--line)}
+pre code{background:none;padding:0;font-size:.82rem;line-height:1.5}
+blockquote{margin:1rem 0;padding:.6rem 1rem;border-left:3px solid var(--accent);color:var(--muted);background:#faf7f2}
+.box{border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin:1.2rem 0;background:#fbfcfe}
+.box h4{margin-top:0}
+.licence{font:13px/1.6 ui-sans-serif,system-ui,sans-serif;color:var(--muted);border-top:1px solid var(--line);margin-top:3rem;padding-top:1.2rem}
+.toc a{color:var(--ink);text-decoration:none;border-bottom:1px dotted var(--line)}
+@media print{body{background:#fff}.sheet{box-shadow:none;padding:0}h2{break-after:avoid}pre{white-space:pre-wrap}}
+@media (max-width:640px){.sheet{padding:28px 20px 40px}h1{font-size:1.6rem}}
+</style></head><body><div class="sheet">
+<div class="brand">Alphadome · Digital Drop</div>
+<h1>Multi-Tenant WhatsApp Bot Starter</h1>
+<p class="meta">Assembled pack · bundle · edition 2026-11-10</p>
+<div class="rule"></div>
+<p class="lead">The schema, the tenant middleware and the onboarding runbook for running one WhatsApp bot for many businesses without the data crossing. Taken from a system that onboards tenants for a living.</p>
+<h2>What you can do when you finish</h2><ul><li>Stand up bot_tenants, templates and training data without touching an existing schema</li><li>Route one webhook to the right tenant by phone number id</li><li>Onboard a client in an afternoon with a checklist that does not leak credentials</li><li>Add a second client without a redeploy or a second server</li></ul>
+<h2>Contents</h2><ol class="toc"><li>The multi-tenant data model</li><li>Routing a webhook to a tenant</li><li>Secrets per tenant</li><li>Onboarding runbook</li><li>Isolation you can prove</li></ol>
+<h2>1. The multi-tenant data model</h2><p>Tenant, template, training and control tables; why every child row carries the tenant id; and the additive migration order that keeps a live bot running.</p>
+<h2>2. Routing a webhook to a tenant</h2><p>Phone number id to tenant resolution, the fallback when a number is unknown, and the logging that makes a misroute obvious in minutes.</p>
+<h2>3. Secrets per tenant</h2><p>Which credentials live in the database rather than the environment, how they are sealed, and what must never be returned by an API.</p>
+<h2>4. Onboarding runbook</h2><p>The exact credential request, the verification queries, and the three checks that decide whether a tenant is live or merely configured.</p>
+<h2>5. Isolation you can prove</h2><p>The test that attempts a cross-tenant read and must fail, plus the review checklist before a second client is allowed in.</p>
+<h1 style="page-break-before:always">Source documents</h1><p class="lead">Bundled verbatim from the system this pack describes, so you can read the implementation rather than a summary of it.</p><h2>TENANT_ONBOARDING_2026-10-25.md</h2><p class="meta">docs/TENANT_ONBOARDING_2026-10-25.md</p><h1>Tenant onboarding — how a new client gets in, and what they can do</h1>
+<p><strong>Status:</strong> working end to end as of 2026-10-25, after the <code>ensureAlphadomeTenant</code> guard. Read this before demoing &quot;we can onboard you&quot;.</p>
+<h2>The one rule</h2>
+<p>A tenant is <strong>one identity with two shells</strong>:</p>
+<p>| Where | What it is | Who uses it | |---|---|---| | <code>public.bot_tenants</code> | real table, portal credentials (<code>portal_token</code>, <code>status</code>) | <code>/tenant/session/login</code>, session cookie | | <code>alphadome.bot_tenants</code> | real table, same <code>id</code>, WhatsApp + AI + SMTP credentials | webhook lookup, <code>get_tenant_by_wa</code>, <code>get_catalog</code> |</p>
+<p>Everything else in <code>public</code> named <code>bot_*</code> is an <strong>auto-updatable view over <code>alphadome</code></strong>, so the portal can read and write the bot's tables without knowing the schema exists. Those tables carry <code>bot_tenant_id … REFERENCES alphadome.bot_tenants(id)</code>.</p>
+<p><strong>Therefore: a tenant that exists only in <code>public</code> can log into the dashboard and cannot save a single product, FAQ or order.</strong> PostgREST answers <code>23503 foreign_key_violation</code>; the reads just look empty, so the failure is silent until someone tries to save.</p>
+<h2>The chain, step by step</h2>
+<ol>
+<li><strong>Discovery form</strong> — <code>GET /discovery</code> → <code>public/client-discovery-form.html</code>,</li>
+<p>posts to <code>POST /discovery</code>. Required: name, email, phone, business_name, industry, team_size, whatsapp_usage, revenue_target, ownership_interest, timeline, budget. Stored in <code>public.discovery_submissions</code>; falls back to <code>logs/discovery_submissions.jsonl</code> if the table is unavailable. The phone is normalised to <code>2547XXXXXXXX</code> on the way in.</p>
+<li><strong>Owner approval</strong> — <code>POST /admin/api/discovery/submissions/:id/approve</code></li>
+<p>(<code>x-admin-key</code>). Refuses a submission without a usable Kenyan mobile, mints a <code>portal_token</code>, creates or updates the tenant, and <strong>now also guarantees the <code>alphadome</code> twin</strong> (<code>ensureAlphadomeTenant</code>). Idempotent: an already-approved card returns the same link instead of minting a new one.</p>
+<li><strong>Invite</strong> — <code>POST /admin/api/tenants/:tenantId/portal-link</code> issues/rotates</li>
+<p>the same kind of token for tenants that never came through the form (Kassangas, manual adds). Response includes <code>portal_url</code> (<code>/tenant-dashboard?t=&lt;token&gt;&amp;phone=&lt;phone&gt;</code>), a <code>wa.me</code> hand-off and the message text. <code>catalogue_warning</code> is <code>null</code> when healthy — a string means the invite works but the catalogue cannot be saved yet.</p>
+<li><strong>Sign-in</strong> — <code>POST /tenant/session/login</code> with <code>{ key: &lt;token&gt; }</code>. The token</li>
+<p>identifies one tenant; a different <code>tenant_phone</code> is refused 403. Session lives in an HttpOnly cookie (<code>/tenant/session/me</code> rehydrates it).</p>
+<li><strong>Dashboard</strong> — <code>/tenant-dashboard</code> (<code>admin/tenant_dashboard.html</code>), gated by</li>
+<p><code>tenantDashboardAuth</code>. Features and the table each one actually writes:</p>
+</ol>
+<p>| Tab | Endpoint | Backing data | |---|---|---| | Product Catalog | <code>/tenant/catalog</code> | <code>public.bot_products</code> → <code>alphadome</code> (FK ← twin) | | Orders | <code>/tenant/orders</code> | <code>public.bot_orders</code> → <code>alphadome</code> | | Bot Training | <code>/tenant/training</code> | <code>public.bot_training_data</code> → <code>alphadome</code> | | Bot Config | <code>/tenant/bot-settings</code> | <strong><code>alphadome</code> by phone</strong> (404 if no twin) | | SMTP | <code>/tenant/smtp</code> | <code>public.bot_tenants</code> (mirrored) | | Writer's Flow → Research &amp; Outreach | <code>/tenant/wf/campaigns</code> | <code>public.wf_campaigns</code> (<code>tenant_id</code>) | | Writer's Flow → Blogger | <code>/tenant/blogger*</code> | <code>public.site_tenants</code> + <code>opportunities</code> + <code>blog_posts</code> |</p>
+<p>Writer's Flow is the one surface that is <strong>entirely public</strong>: it lazily creates <code>public.site_tenants</code> from the tenant's <code>client_phone</code>. It works for a tenant with no <code>alphadome</code> row — which is exactly how the half-tenant bug survived a dashboard review.</p>
+<ol>
+<li><strong>WhatsApp</strong> — a client is <em>reachable</em> only once</li>
+<p><code>whatsapp_phone_number_id</code> (primary) or <code>client_phone</code> (fallback, exact string) resolves. The twin is born with <code>whatsapp_phone_number_id = &quot;pending:&lt;uuid&gt;&quot;</code> and an empty token, so nothing can route to it and every check reads &quot;not configured&quot;. Entering the real Meta phone id + token in Bot Config writes <code>public</code>, and <code>bot_tenants_mirror</code> copies it onto <code>alphadome</code> (NULL never overwrites).</p>
+</ol>
+<h2>What the guard does</h2>
+<p><code>ensureAlphadomeTenant(row)</code> in <code>server.js</code>:</p>
+<ul>
+<li>looks the twin up by <code>id</code> first — <strong>no-op when it exists</strong>, so live credentials</li>
+<p>are never overwritten by a second invite;</p>
+<li>otherwise inserts <code>alphadome.bot_tenants</code> with the same uuid, the normalised</li>
+<p>phone, <code>is_active</code> copied, and <code>metadata.awaiting_whatsapp = true</code>;</p>
+<li>on <code>23505</code> (phone already held by a different uuid) it refuses and names the</li>
+<p>row to merge, instead of splitting the identity further.</p>
+</ul>
+<p><code>insertBotTenantRecord</code> mints the uuid itself and calls the guard <strong>before</strong> the public insert, so a phone already claimed in <code>alphadome</code> fails with nothing half-created; a failed public insert releases the reservation.</p>
+<h2>Verify it (no database client needed)</h2>
+<pre><code>
+node scripts/test_discovery_approvals.mjs        # 122 static checks, incl. birth order
+node scripts/test_smoke_tenant_onboarding.mjs    # stubbed end-to-end, incl. FK failure case
+node scripts/smoke_tenant_onboarding.mjs --key=&lt;ADMIN_PASS&gt; --tenant=&lt;name&gt; --issue --write
+</code></pre>
+<p><code>--write</code> saves one training row through the dashboard API and deletes it again, which is the only check that proves the foreign keys are satisfiable for that tenant. A public-only tenant fails it with <code>23503</code>.</p>
+<h2>Open gates (2026-10-25)</h2>
+<ul>
+<li><strong>Coach Dawn</strong> <code>cfc89b88…</code>: no catalogue, no <code>whatsapp_phone_number_id</code>;</li>
+<p><code>_04_coachdawn.sql</code> is written and dry-run clean but <strong>not applied</strong>. Until it runs, an invite to her reports <code>catalogue_warning</code> (phone held elsewhere) or creates a twin with no products.</p>
+<li><strong>Kassangas</strong> <code>portal_token</code> is NULL — no invite has been issued yet. Run the</li>
+<p>portal-link call above.</p>
+<li>Issuing an invite <strong>rotates</strong> the previous link. Tell the client when you do it.</li>
+</ul>
+<h2>MULTITENANT_AI_JOBS_RUNBOOK.md</h2><p class="meta">docs/MULTITENANT_AI_JOBS_RUNBOOK.md</p><h1>Multi-Tenant AI Jobs — Phase 1 Runbook (site_tenants)</h1>
+<p><strong>Decision:</strong> Option B — dedicated <code>alphadome.site_tenants</code> registry for the AI Jobs / blog / referral engine. Isolated from the WhatsApp <code>bot_tenants</code> path so the live money flow is never at risk.</p>
+<p><strong>Status:</strong> Phase 0 (safety net) + Phase 1 (additive schema) complete. Phases 2-4 pending your go-ahead.</p>
+<h2>Rollback points (created in Phase 0)</h2>
+<ul>
+<li>Tag <code>pre-multitenant-baseline</code> -&gt; committed HEAD before any work.</li>
+<li>Branch <code>feat/multi-tenant-ai-jobs</code> holds all work.</li>
+<li>Your original uncommitted edits are preserved in commit <code>8a9ebcc</code> (wip safeguard).</li>
+</ul>
+<p>To abandon everything and return to the exact prior state:</p>
+<pre><code>
+git checkout main
+git branch -D feat/multi-tenant-ai-jobs   # optional
+</code></pre>
+<h2>Files added in Phase 1</h2>
+<ul>
+<li><code>migrations/2026-10-11_add_site_tenants_multitenant.sql</code> — forward (additive)</li>
+<li><code>migrations/2026-10-11_add_site_tenants_multitenant_ROLLBACK.sql</code> — revert (drops only new objects)</li>
+<li><code>scripts/validate_site_tenants_phase1.cjs</code> — read-only validation + optional isolation proof</li>
+<li>npm scripts: <code>npm run tenants:validate</code>, <code>npm run tenants:validate:isolation</code></li>
+</ul>
+<h2>What Phase 1 changes</h2>
+<ul>
+<li>Creates <code>alphadome.site_tenants</code> (slug, name, branding, <code>allowed_redirect_domains</code>, is_active).</li>
+<li>Seeds tenant <code>default</code> (= today's Mercor experience).</li>
+<li>Adds NULLABLE <code>tenant_id</code> to: <code>opportunity_sources</code>, <code>opportunity_categories</code>, <code>opportunities</code>, <code>referral_links</code>, <code>opportunity_events</code>, <code>public.blog_posts</code>.</li>
+<li>Backfills every existing row to <code>default</code>.</li>
+<li><strong>No code reads <code>tenant_id</code> yet</strong> -&gt; live behavior is byte-for-byte unchanged.</li>
+</ul>
+<h2>Apply to STAGING first (recommended)</h2>
+<pre><code>
+# 1) Point at staging Supabase
+$env:SUPABASE_URL=&quot;https://&lt;staging-ref&gt;.supabase.co&quot;
+$env:SUPABASE_SERVICE_ROLE_KEY=&quot;&lt;staging-service-role-key&gt;&quot;
+
+# 2) Apply forward migration (Supabase SQL Editor: paste &amp; run the .sql)
+#    Path: migrations/2026-10-11_add_site_tenants_multitenant.sql
+
+# 3) Validate structure (read-only)
+&amp; 'C:\Program Files\nodejs\node.exe' scripts/validate_site_tenants_phase1.cjs
+
+# 4) Prove isolation (creates + removes its own throwaway rows)
+$env:RUN_ISOLATION_TEST='true'; &amp; 'C:\Program Files\nodejs\node.exe' scripts/validate_site_tenants_phase1.cjs
+</code></pre>
+<p>Expected: all checks PASS, <code>default</code> tenant present, <code>total == scoped</code> on every table.</p>
+<h2>Promote to PRODUCTION</h2>
+<p>Only after staging is green and you've confirmed the live site still renders <code>/ai-jobs</code> and <code>/ai-jobs/mercor/*</code>:</p>
+<ol>
+<li>Open Supabase prod -&gt; SQL Editor.</li>
+<li>Run <code>migrations/2026-10-11_add_site_tenants_multitenant.sql</code>.</li>
+<li>Run the verification SELECTs at the bottom of that file.</li>
+<li>Re-run the validator against prod (read-only).</li>
+</ol>
+<h2>Revert Phase 1 (if ever needed)</h2>
+<ul>
+<li><strong>Code-only instant revert (preferred, Phase 3):</strong> set <code>AI_JOBS_MULTITENANT=false</code>. No DB change.</li>
+<li><strong>Full schema revert:</strong> run <code>..._ROLLBACK.sql</code> (drops only the new columns + <code>site_tenants</code>; content untouched).</li>
+</ul>
+<h2>Phase 3 — Multi-Tenant Traffic Engine (DONE, commit fb15c4f)</h2>
+<p>Generalized the engine beyond jobs: any <code>site_tenant</code> can drive SEO traffic to ANY offer (job, product, service, brand, affiliate, course). All flag-gated + backward compatible.</p>
+<p><strong>Data model (additive):</strong> <code>opportunities</code> gains <code>offer_type</code> (default 'job'), <code>cta_label</code>, <code>destination_url</code>. Existing rows backfill to <code>offer_type='job'</code> → identical behavior.</p>
+<ul>
+<li>Migration: <code>migrations/2026-10-15_phase3_offer_types.sql</code> (run BEFORE deploy).</li>
+</ul>
+<p><strong>Feature flag:</strong> <code>AI_JOBS_MULTITENANT</code> (default OFF). When OFF, <code>/ai-jobs/t/*</code> returns 404 and nothing changes. Set <code>AI_JOBS_MULTITENANT=true</code> in Render env to enable.</p>
+<p><strong>New tenant routes (when flag ON):</strong></p>
+<ul>
+<li><code>GET /ai-jobs/t/:tenantSlug</code> — tenant hub (all offers, type-badged)</li>
+<li><code>GET /ai-jobs/t/:tenantSlug/o/:offerSlug</code> — individual offer (offer-aware CTA)</li>
+<li><code>GET /ai-jobs/t/:tenantSlug/:categorySlug</code> — tenant category</li>
+</ul>
+<p><strong>Offer-aware CTAs:</strong> job→Apply, product→Shop Now, service→Learn More, brand→Explore, affiliate→Get Deal, course→Enroll. Admin <code>/admin/ai-jobs</code> now has Tenant + Source + Offer Type + Destination URL + CTA pickers on the create form.</p>
+<h3>Deploy order (important — migration BEFORE code)</h3>
+<ol>
+<li>Supabase SQL Editor → run <code>migrations/2026-10-15_phase3_offer_types.sql</code> (additive, safe).</li>
+<li>Push branch → <code>main</code>; Render redeploys.</li>
+<li>(Optional) set <code>AI_JOBS_MULTITENANT=true</code> in Render to turn on tenant routes.</li>
+<li>Live-test:</li>
+</ol>
+<ul>
+<li><code>/ai-jobs</code> and <code>/ai-jobs/mercor/*</code> unchanged.</li>
+<li><code>/ai-jobs/s/respondent</code> unchanged.</li>
+<li>With flag ON: <code>/ai-jobs/t/default</code> lists all default-tenant offers.</li>
+<li>Create a <code>product</code> offer in admin (set Destination URL) → it renders with &quot;Shop Now&quot;.</li>
+</ul>
+<h2>Rollback</h2>
+<ul>
+<li>Instant: set <code>AI_JOBS_MULTITENANT=false</code> (tenant routes 404; everything else unchanged).</li>
+<li>Schema: <code>migrations/2026-10-15_..._ROLLBACK</code> not required (columns are nullable/additive);</li>
+<p>to fully revert, drop the 3 columns or redeploy previous commit.</p>
+</ul>
+<h2>Phase A — Tenant-Portal Writer's Flow (Blogger) — commit 11e4f12</h2>
+<p>Exposes a <strong>Writer's Flow</strong> section in the tenant portal (<code>/tenant-dashboard</code>) for founder's-plan clients, with two tabs: <strong>Research &amp; Outreach</strong> (placeholder) and <strong>Blogger</strong> (fully functional, tenant-scoped).</p>
+<ul>
+<li><strong>Nav:</strong> new &quot;Growth → Writer's Flow&quot; item (<code>data-sec=&quot;writers-flow&quot;</code> → <code>renderWritersFlow</code>).</li>
+<li><strong>Migration:</strong> <code>2026-10-16_tenant_blogger.sql</code> adds <code>site_tenants.client_phone</code></li>
+<p>(links a logged-in <code>bot_tenants</code> to its Blogger <code>site_tenants</code> row). <strong>Run BEFORE deploy.</strong></p>
+<li><strong>APIs (tenantSessionAuth, auto-scoped):</strong> <code>GET /tenant/blogger</code> (each offer now</li>
+<p>carries <code>page_count</code>), <code>GET /tenant/blogger/offers/:id/posts</code> (the pages that offer produced: <code>slug</code>, <code>title</code>, <code>angle</code>, <code>status</code>, <code>url</code>), <code>POST /tenant/blogger/offers</code>, <code>POST /tenant/blogger/offers/:id/publish</code>, <code>POST /tenant/blogger/offers/:id/blog</code>, <code>DELETE /tenant/blogger/offers/:id</code>, <code>DELETE /tenant/blogger/posts/:slug</code> (only posts with this tenant's <code>tenant_id</code>; removes the row and the static <code>public/blog/&lt;slug&gt;.html</code>).</p>
+<li><strong>Reaching what was generated (2026-10-22):</strong> the <strong>Blog</strong> button is now</li>
+<p><strong>Optimize</strong>, the offers table has a <strong>Pages</strong> column (<code>page_count</code>), and expanding a row lists every page of that offer with an <strong>Open</strong> link (<code>/blog/&lt;slug&gt;.html</code>) and a per-page <strong>Delete</strong>. A successful run expands the list on its own, so the deliverable is clickable instead of a number in a toast — before this a tenant generated 9/9 pages and had no handle on any of them (the dashboard only re-rendered the table). Verifier check <strong>8d</strong> asserts that every generated slug is listed for the offer and that the first page serves 200 HTML, so &quot;generated but unreachable&quot; fails the suite.</p>
+<li><strong>Share and Review (2026-10-22):</strong> each page row now carries four actions —</li>
+<p><strong>Open</strong>, <strong>Share</strong>, <strong>Review</strong>, <strong>Delete</strong>.</p>
+<li><strong>Share</strong> opens a mini card with the public URL (copy button), the AI-written</li>
+<p><strong>hook</strong> / <strong>summary</strong> / <strong>excerpt</strong>, 3 key points and hashtags, plus <em>Copy caption</em>, WhatsApp, X and LinkedIn targets. Backed by <code>GET /tenant/blogger/posts/:slug/share</code>, which returns <code>{ url, absolute_url, hook, summary, excerpt, bullets, hashtags, mode }</code>. <code>mode='ai'</code> means a model wrote the card; <code>mode='template'</code> means every provider was dry and it was composed from the page's own text by <code>utils/postShare.js</code> (same honesty rule as the page composer). <code>?ai=0</code> forces the deterministic card, which is what the verifier uses. Cards are cached in-process for 30 min keyed by <code>slug|updated_at</code>, so re-opening Share does not buy the same answer twice and a review invalidates it.</p>
+<li><strong>Review</strong> re-runs the polish pass that generation already runs per post</li>
+<p>(<code>reviewBlog</code>), for one page, via <code>POST /tenant/blogger/posts/:slug/review</code>. It rewrites <code>content</code> + <code>html_content</code>, the static file and <code>/blog/</code> index. The response is <code>{ ok, mode:'polished'|'unchanged', ai, changed }</code>; the portal says <em>&quot;no AI provider was available — page left unchanged&quot;</em> rather than claiming a polish that did not happen. The pass is bounded by <code>BLOG_REVIEW_AI_TIMEOUT_MS</code> (default <code>45000</code>) so a dry tier answers instead of holding the button for a multi-minute provider walk. That pass also used to rebuild the page CTA from a bare id (<code>/ai-jobs/apply/undefined</code>); it now loads the offer row, so the CTA and <code>tenant_id</code> survive a review.</p>
+<li>Both routes scope through <code>tenantOwnsPost()</code>: the page's <code>tenant_id</code>, or the</li>
+<p>offer it was generated from when <code>tenant_id</code> is still NULL (phase-1 schema).</p>
+<li>Verifier checks <strong>8e</strong> (card has hook/summary/excerpt + absolute URL) and</li>
+<p><strong>8f</strong> (review runs, then the page still serves 200) cover the two actions; <code>npm run test:share-card</code> proves the composer offline (15 checks).</p>
+<li><strong>Scoping:</strong> on first Blogger access, a <code>site_tenants</code> row is lazily created from the</li>
+<p>tenant's <code>bot_tenants</code> name/phone → public page at <code>/ai-jobs/t/&lt;their-slug&gt;</code>.</p>
+<li><strong>One journey per offer:</strong> <code>generateBlogPostsForOpportunity</code> holds an in-process</li>
+<p>lock keyed by offer id and returns <code>{ success:false, busy:true }</code> for a second concurrent call — the route answers <strong>409</strong> instead of starting a competing walk. Live 2026-10-22 a double click ran two walks on the same offer; they rate-limited each other on the shared free tier and both ran past 14 minutes. Verified live the same day on <code>589d7d0</code>: <code>POST …/blog 409 - 217ms</code> while the first run was still walking (client saw <code>409 busy</code> in 1.05 s). The verifier asserts this on every run (check <strong>8a</strong>), so a regression to &quot;two walks per click&quot; fails the suite rather than just costing minutes.</p>
+<li><strong>Posts outlive their offer:</strong> if the offer row is deleted mid-run, the</li>
+<p><code>blog_posts_opportunity_id_fkey</code> insert is retried without <code>opportunity_id</code> (the page stays on disk, in the tenant's list, and in restore-on-boot) instead of being lost to a logged <code>[DB] Save error</code>.</p>
+<li><strong>Public page requires</strong> <code>AI_JOBS_MULTITENANT=true</code>.</li>
+</ul>
+<h3>Deploy order (migration BEFORE code)</h3>
+<ol>
+<li>SQL Editor → run <code>migrations/2026-10-16_tenant_blogger.sql</code>.</li>
+<li>Push → <code>main</code>; Render redeploys.</li>
+<li>Log into <code>/tenant-dashboard</code> → <strong>Writer's Flow</strong> → <strong>Blogger</strong> tab.</li>
+<li>Create an offer (any type) → Publish → open the public page (flag must be ON).</li>
+</ol>
+<h3>Verify a deployment — <code>npm run verify:writers-flow</code></h3>
+<p>End-to-end check of the live host (<code>scripts/verify_writers_flow.js</code>). It reports PASS / FAIL / WARN per check and always deletes the rows it creates.</p>
+<pre><code>
+BASE_URL=https://alphadome.onrender.com \
+TENANT_TEST_PHONE=&lt;tenant phone&gt; TENANT_DASHBOARD_PASS=&lt;tenant key&gt; \
+npm run verify:writers-flow
+</code></pre>
+<p>Checks: <strong>build identity</strong> (is the served bundle the latest commit?), route registration (401 not 404, plus a 404 control), login, context, offer create, <strong>slug collision</strong> (same title twice must yield two slugs), publish, <strong>blog generation</strong> (must never return 200 with 0 posts), <strong>double click</strong> (a second run on the same offer while the first is live must answer <code>409 {busy:true}</code> immediately — probed 1.5 s into the run, so it costs no extra time), <strong>blog coverage</strong> (warns when fewer than 9 unique angle pages were written, and reports <code>mode=ai|template|mixed</code>), <strong>bounded run</strong> (fails if the generation call exceeds 120 s wall clock, i.e. the <code>BLOG_RUN_BUDGET_MS</code> ceiling stopped being applied), <strong>offer pages</strong> (every slug the run produced must come back from <code>GET /tenant/blogger/offers/:id/posts</code> and the first page must serve 200 HTML — this is the tenant's only handle on what it paid for), public page, cleanup, <strong>blog cleanup</strong> (generated <code>verify-writers-flow-*</code> posts are deleted).</p>
+<p>Live baseline on <code>589d7d0</code> (2026-10-22 13:42 UTC): 18 passed / 0 failed / 0 warnings — <code>409 busy</code> in 1.05 s, 9 posts in 82.8 s, 9/9 unique pages, 9 posts deleted, offers back to 3.</p>
+<p>Re-run on <code>2c5405c</code> (13:53 UTC) with the daily free quota <strong>fully exhausted</strong>: 18 passed / 0 failed / 0 warnings, <code>mode=template</code>, 9/9 pages in <strong>19.1 s</strong> (<code>blog 200 - 18832ms</code>, <code>409 - 379ms</code>). A dry quota is fast, not slow: the first angle fails provider-wide, <code>isAiFailureFatal()</code> stops the walk, and the remaining eight pages are composed from the offer data. So the two worst cases are both bounded — half-dry ≈ the 90 s budget, fully dry ≈ 20 s — and neither can return fewer than nine pages.</p>
+<p><strong>Why a run can still overshoot the budget by seconds (fixed after <code>2c5405c</code>).</strong> A dashboard run on 2026-10-22 13:54 UTC (offer <code>ed024a64</code>, 90 s budget) returned nine pages in <strong>109.3 s</strong> with <code>[GEN] AI budget spent (108s of 90s)</code>. The cause was one call, not the loop: the <code>openrouter/free</code> attempt started with <strong>12.8 s</strong> of budget left and answered <strong>30.7 s</strong> later — almost exactly <code>BLOG_AI_TIMEOUT_MS</code> (30 s). Clamping the axios <code>timeout</code> to the remaining budget was not a bound at all, because in Node that timeout measures <strong>socket inactivity</strong>: an upstream that trickles its response keeps the socket &quot;active&quot; and the value is never reached. <code>ai()</code> now arms an <code>AbortController</code> for <code>min(BLOG_AI_TIMEOUT_MS, remaining)</code> and destroys the socket itself when it fires, so a stalled or trickling provider is cut <strong>at</strong> the deadline (<code>[AI] openrouter &lt;slug&gt; aborted after Ns — time box spent</code>). Regression test: <code>test:ai-providers</code> → <em>&quot;a slow provider is cut at the deadline, not at its own pace&quot;</em> (1500 ms budget against a stub that needs 5000 ms must return in &lt; 3 s, and an abort stays transient, never fatal). <code>[GEN] Done:</code> now ends the run with <code>posts in Ns of Ms budget</code>, so the host log alone proves the ceiling.</p>
+<p><strong>Why a provider that never answered could still spend the whole angle (fixed after <code>d921f7f</code>).</strong> A 90 s run on 2026-10-22 18:03 UTC (offer <code>2442b8c8</code>, 45 s angle budget) returned nine composed pages with this log:</p>
+<pre><code>
+[AI] openrouter model google/gemma-4-31b-it:free unusable (429) — trying minimax…
+[AI] openrouter model minimax/minimax-m3.1-flash:free unusable (404) — trying nvidia…
+… four more 429s …
+[AI] openrouter openrouter/free aborted after 30.0s — run budget spent
+[AI] gemini gemini-flash-latest aborted after 6.3s  — run budget spent
+[AI] hf skipped — run budget spent
+[GEN] AI unavailable for [Awareness] (transient) — composed from the offer data
+</code></pre>
+<p>The deadline was respected but not <strong>shared</strong>: OpenRouter's queue (six <code>429/404</code> answers plus one 30 s stall on the router slug) took 37 s of a 45 s angle, so Gemini — never tried — was cut 6.3 s into its first call, and HF never ran. The tier then looked dry and all nine pages fell back to composed copy. Three fixes:</p>
+<ol>
+<li><strong>Fair share.</strong> Each keyed provider owns an equal slice of whatever is left</li>
+<p>(<code>remaining / providersWithAKeyLeft</code>), and time a provider does not use rolls into the next slice. One keyed provider still owns the whole deadline, so single-key hosts behave as before; three keys on a 45 s angle give ~15 s each.</p>
+<li><strong>Retired slugs are retired.</strong> A <code>404</code> now removes that slug for the life of</li>
+<p>the process (<code>[AI] openrouter retired &lt;slug&gt; (404) — dropped for this process</code>) instead of re-paying the round-trip on all nine angles.</p>
+<li><strong>The router slug is time-boxed.</strong> <code>openrouter/free</code> picks an upstream per</li>
+<p>request and held the full attempt timeout on both 13:55 and 18:03, so it is capped at <code>BLOG_ROUTER_MODEL_CAP_MS</code> (8 s) like the last resort it is.</p>
+</ol>
+<p>Regression tests in <code>test:ai-providers</code>: <em>&quot;a stalled provider cannot spend the next provider's share&quot;</em> (3 s deadline, stalled OpenRouter + healthy Gemini must return Gemini's content in ~1.5 s), <em>&quot;a 404 slug is probed once per process, not once per angle&quot;</em>, and <em>&quot;the last-resort router slug is time-boxed&quot;</em>.</p>
+<p><strong>Why a dead key still cost 16-31 s per Share/Review (fixed after <code>a7eef63</code>).</strong> The fair share above decided <em>who</em> owns the deadline, not <em>whether</em> a provider had earned one. Live 2026-10-23 04:24-04:27 every keyed provider was dead in a different way — OpenRouter's free slugs <code>429/404</code>, <code>gemini-flash-latest</code> <code>429 You exceeded your current quota</code>, <code>hf</code> <code>402 You have no remaining credits</code> — and each walk re-probed all three: <code>POST …/posts/&lt;slug&gt;/review 200 - 31336ms</code>, then another at <code>16896ms</code>, both ending in <em>AI tier unavailable — copy unchanged</em>. Three fixes:</p>
+<ol>
+<li><strong>A dead key is skipped, not re-probed.</strong> Auth/billing (<code>401/402/403</code>, &quot;no</li>
+<p>remaining credits&quot;) retires the provider for the life of the process (<code>[AI] hf retired for this process (402) — no point re-probing every angle</code>); a daily-quota <code>429</code> (&quot;exceeded your current quota&quot;, &quot;plan and billing&quot;) puts it on a <code>BLOG_PROVIDER_QUOTA_COOLDOWN_MS</code> cooldown (default 5 min). A plain <code>429</code> (&quot;temporarily rate-limited upstream&quot;) stays eligible — that one clears in seconds and the slug walk already handles it.</p>
+<li><strong>A cooling key stops claiming a share.</strong> <code>remaining / providersLeft</code> counted</li>
+<p>corpses as candidates, so a healthy key was handed one third of the deadline. Only providers that can still answer are counted now, and time they do not use rolls to the next one.</p>
+<li><strong>One key = one quota.</strong> A billing/quota answer stops that provider's slug walk</li>
+<p>instead of burning its whole share on the remaining six slugs — the <code>429</code> naps alone were 6.9 s of a 5 s Share slice. With nothing eligible the walk answers immediately: <code>[AI] every keyed provider is cooling down — openrouter (402 needs an account fix, not a retry), gemini (quota 429), hf (402 …)</code> in ~1 ms.</p>
+</ol>
+<p>Regression tests in <code>test:ai-providers</code>: <em>&quot;an out-of-credits key is not dialled again on the next angle&quot;</em>, <em>&quot;a cooling provider stops claiming a share of the deadline&quot;</em> (quota-dead OpenRouter asked <strong>once</strong>, healthy Gemini serves both angles), and <em>&quot;a known-dead tier answers immediately instead of holding the button&quot;</em> (zero requests, &lt; 250 ms against a 45 s Review budget). None of this repairs a dead key — it only stops paying for the answer. The fix per status is in the table below.</p>
+<p>Exit <code>0</code> = no failures, <code>1</code> = at least one, <code>2</code> = missing config. A stale <code>build identity</code> FAIL means the host is serving an older commit — redeploy from the Render dashboard (this repo has no CI deploy script).</p>
+<p><strong>Why the first click on the cooldown build still cost 15-32 s (<code>95ef246</code>).</strong> Keys were now skipped, but one <em>slug</em> kept being paid for: live 2026-10-23 05:17-05:18, <code>nvidia/nemotron-3.5-lightning:free</code> accepted the request and sent <strong>zero bytes</strong> — 13.1 s of a Share slice, then 30.0 s alone (gemini and hf were already out of rotation, so it owned the whole deadline), then 13.5 s on the next Share. <code>POST …/review 200 - 16209ms</code> and <code>32230ms</code>, both <em>AI tier unavailable — copy unchanged</em>: 56 s of three clicks re-proving one silence. A <code>404</code> retired the slug; silence retired nothing. Now:</p>
+<ol>
+<li><strong>Silence is evidence.</strong> An attempt that is cut by its box with no byte</li>
+<p>received (axios <code>onDownloadProgress</code>, so a response that merely trickles is <em>not</em> counted) and that got a <em>fair</em> box (≥ <code>min(BLOG_AI_TIMEOUT_MS, 8 s)</code>; a slice cut to 2 s by a neighbour says nothing about the model) counts as a silent box for that slug.</p>
+<li><strong>Two silent boxes retire the slug</strong> for the process, exactly like a <code>404</code>:</li>
+<p><code>[AI] openrouter retired nvidia/nemotron-3.5-lightning:free (no bytes in 2 time boxes) — dropped for this process</code>. Set <code>BLOG_AI_STALL_RETIRE_AFTER=0</code> to disable.</p>
+<li><strong>The second attempt is a probe, not another share.</strong> A slug that already sat</li>
+<p>out a fair box gets <code>min(remaining, 8 s)</code> next time (constant <code>STALL_PROBE_MS</code>), so the live sequence becomes 13.1 s + 8 s once, then nothing on every later click instead of 30 s per click forever.</p>
+</ol>
+<p>Regression test in <code>test:ai-providers</code>: <em>&quot;a slug that answers nothing twice is retired, not re-boxed every click&quot;</em> (silent OpenRouter slug, Gemini serving both clicks, third click answered by the next live slug with <strong>no</strong> further probe of the dead one). Again this only stops paying for a dead thing — a silent free slug is an OpenRouter-side problem, and the fix per provider is to top up or rotate the key, or drop the provider.</p>
+<h3>When blog generation fails — <code>npm run test:ai-providers</code></h3>
+<p>The writer never fabricates posts: if the LLM returns nothing it fails loudly and the 502 body ends with <code>Last AI error: &lt;provider&gt; &lt;status&gt; &lt;body&gt;</code>. That string is the diagnosis — you do not need host logs.</p>
+<p>| <code>Last AI error</code> contains | Meaning | Fix | | --- | --- | --- | | <code>openrouter/hf 402 no remaining credits</code> | key valid, account out of credits | set <code>GEMINI_API_KEY</code> (free, no card) or <code>OPENROUTER_API_KEY</code>, or buy credits | | <code>401</code> / <code>unauthor</code> | key revoked or wrong | rotate the key on Render | | <code>404</code> + <code>unavailable for free</code> | the free model slug was retired (2026-10-22: <code>llama-3.1-8b-instruct:free</code>, <code>minimax/minimax-m3.1-flash:free</code>) | nothing — the writer falls through <code>OPENROUTER_FREE_MODELS</code> on <code>404</code>, including past a retired <code>OPENROUTER_MODEL</code> pin, and drops the dead slug for the rest of the process; clear the pin if the console logs show it leading every run | | <code>404</code> (any other) | model route not available on that account | set <code>OPENROUTER_MODEL</code> / <code>HF_MODEL</code> | | <code>429</code> + <code>rate-limited upstream</code> | that one model's upstream pool is saturated; the key is fine | nothing — the writer advances to the next slug in <code>OPENROUTER_FREE_MODELS</code> (live 2026-10-22: gemma-4-31b was throttled while five siblings were healthy) | | <code>429</code> + <code>You exceeded your current quota</code> | your own free-tier quota (per day) | wait for the reset window, add a second key, or add credits (OpenRouter free tier: 50 req/day, 1000/day after a one-time $10 credit). <strong>Gemini quota belongs to the Google Cloud project, not the key</strong>, and resets at midnight Pacific (10:00 EAT): a freshly created key in the <em>same</em> project pours from the same exhausted daily bucket, so it fixes nothing. A new project, billing on the old one, or another provider does | | only 1 post written, run then stops | fail-fast matched one exhausted provider (e.g. <code>hf 402</code>) in the joined error string | fixed 2026-10-22: only an all-provider auth/billing failure aborts a journey; redeploy and re-run the verifier | | <code>verify-writers-flow-*</code> posts visible on <code>/blog</code> | verifier runs published real posts before the post-delete endpoint existed | <code>npm run prune:verify-posts</code> on the host to list them, <code>npm run prune:verify-posts -- --apply</code> to delete (needs <code>SUPABASE_SERVICE_ROLE_KEY</code>) | | <code>no AI provider key configured</code> | no key at all | set one of the three keys |</p>
+<p>Providers are tried in order — <strong>OpenRouter → Gemini → Groq → Cerebras → Mistral → OpenAI → HuggingFace</strong> — so any single key is enough. The journey only aborts when <strong>every</strong> provider it could try failed on auth/billing (<code>401/402/403</code>, &quot;no remaining credits&quot;). One exhausted provider next to a healthy one, or a <code>429</code> / <code>RESOURCE_EXHAUSTED</code> quota reply, lets the remaining angles continue — otherwise a permanently dead HuggingFace <code>402</code> in the chain caps every run at one post. Within a provider, the models are a list too (OpenRouter's free slugs, Gemini's two flash aliases, Groq's three), and a <code>404</code>/silent alias advances to the next one instead of ending the run.</p>
+<p><strong>Zero-spend recovery.</strong> Google AI Studio issues a <code>GEMINI_API_KEY</code> with a free tier and no credit card (https://aistudio.google.com/apikey). The writer talks to Gemini through its OpenAI-compatible endpoint (<code>https://generativelanguage.googleapis.com/v1beta/openai</code>), so setting only that one var restores generation on the next restart — no code change and no purchase.</p>
+<p><strong>The keys live on the host, not in the repo.</strong> A fresh clone has no <code>.env</code> (it is gitignored; this tier's keys exist only as Render environment variables), so <code>npm run check:ai-key</code> printing <code>(no key)</code> on your machine says nothing about the host — do not &quot;add a key&quot; because the local probe is empty. To test the key the host is <em>actually</em> using, reveal it in Render → <strong>Environment</strong> and pass it in-process:</p>
+<pre><code>
+npm run check:ai-key -- --only=gemini --key GEMINI_API_KEY=AIza...
+</code></pre>
+<p>Nothing is written to a file and only a masked form is printed. The value is read by the same <code>ai()</code> walk the host runs, so <code>SERVED</code> here means the host's key will serve; a <code>429 quota</code> here means the host will not, and no amount of redeploying changes that. <code>scripts/render_env_sync.ps1</code> reads the live set before it PUTs, so it re-asserts whatever key is already there rather than blanking it — but never run it with <code>-DeleteOptional</code>, which deliberately drops <code>GEMINI_API_KEY</code>, <code>OPENROUTER_*</code> and <code>HF_*</code>.</p>
+<h4>Prove a key before you deploy it — <code>npm run check:ai-key</code></h4>
+<p>Rotating a key used to be a guess: the only feedback was the Writers tab, or the host log after the fact. On 2026-10-23 the tier held four keys and served no copy — HF <code>402</code>, Gemini <code>429</code> daily quota, four of five OpenRouter free slugs <code>429</code>/<code>404</code> — and every click still came back <code>200</code> in ~31 s. This check asks the provider directly, through the same <code>ai()</code> walk that serves Writers, Share, Review and replies, so its verdict cannot drift from production:</p>
+<pre><code>
+npm run check:ai-key                       # every provider that has a key
+npm run check:ai-key -- --only=gemini      # just one
+npm run check:ai-key -- --key GEMINI_API_KEY=AIza...   # no file, no .env needed
+</code></pre>
+<p>It prints the masked key it used, then per provider either <code>SERVED in 0.4s — &quot;OK&quot;</code> or the chain's own status/body <em>plus the fix</em> (<code>out of credits</code>, <code>key rejected</code>, <code>daily quota spent</code>, <code>slug retired</code>, <code>no answer inside the time box</code>). Exit code <code>0</code> = at least one provider wrote copy, <code>1</code> = none did — so it can gate a deploy.</p>
+<p>Sequence when the tier is already keyed — the usual case, because the keys are Render variables: reveal the var in Render → <strong>Environment</strong>, then run <code>npm run check:ai-key -- --only=&lt;provider&gt; --key &lt;VAR&gt;=&lt;value&gt;</code> until it says <strong>SERVED</strong> or names the account problem. If it names quota, wait for the reset (Gemini: midnight Pacific, 10:00 EAT) or change project/provider — redeploying does not help. Sequence for a brand-new key: create it → probe it with <code>--key</code> → add the same var on Render → <strong>Manual Deploy</strong> (auto-deploy is off on this host) → boot log must say <code>gemini=true</code> → click Review on the Writers tab and confirm the API body says <code>mode:&quot;polished&quot;</code> → <code>npm run verify:writers-flow</code>.</p>
+<p><strong>A deploy that builds the wrong commit looks exactly like a broken fix.</strong> Live 2026-10-23 14:56: <code>main</code> was two commits ahead of <code>origin/main</code>. Render built <code>origin/main</code> (<code>facc1404</code>), booted with the four-provider line (<code>openai openrouter gemini hf</code> — no <code>groq</code>, <code>cerebras</code>, <code>mistral</code>) and the old <code>OPENROUTER_KEY</code>-only read, and the first Review after &quot;deploy&quot; still ended <code>AI tier unavailable — copy unchanged</code> in 16.4 s. The fix was never wrong, it was never deployed. Before a Manual Deploy:</p>
+<pre><code>
+git status -sb                      # must be &quot;## main...origin/main&quot; with no &quot;ahead&quot;
+git --no-pager log --oneline -1 origin/main
+</code></pre>
+<p>After it, the first <code>[SYSTEM] LLM providers:</code> line is the proof of which code is live — <code>Deployed commit:</code> in the same block names the SHA, so a stale build is one line away from being obvious.</p>
+<p><strong>A visitor and a health check look the same in this log — until you count what they fetch.</strong> Live 2026-10-24 03:55, on a host with no <code>[SYSTEM]</code> block in view:</p>
+<pre><code>
+[PAGE] Landing page loaded by ::1 at 2026-10-24T03:54:36.466Z   GET / 200 - 4ms
+[PAGE] Landing page loaded by ::1 at 2026-10-24T03:55:36.216Z   GET / 200 - 4ms
+POST /api/kassangas/track-visit 200 - 6ms
+GET /media/tmp5_0ryzre.mp4 206 - 95ms   (×10 clips, ~40 MB, inside 13 s)
+</code></pre>
+<p><code>::1</code> is Render's in-instance proxy, not the visitor: <code>app.set('trust proxy', 1)</code> had never been set, so <code>req.ip</code> — and therefore every <code>ip</code> / <code>source_ip</code> column in the analytics and admin-audit logs — was <code>::1</code> for everybody. The fix is one line at the top of <code>server.js</code>; <code>npm run test:site-hygiene</code> proves that a forwarded <code>X-Forwarded-For: 203.0.113.9</code> resolves to the visitor, that a forged prefix cannot move it, and that <code>/favicon.ico</code> no longer 404s twice per demo visit.</p>
+<p>Rules for reading this log:</p>
+<ul>
+<li>A <code>/</code> hit with <strong>no follow-up requests</strong> is a pinger or the Render health check.</li>
+<p>A <code>/</code> hit followed by <code>track-visit</code> + media ranges is a person.</p>
+<li><code>206</code> on <code>/media/*.mp4</code> and <code>CLOSED BEFORE END</code> on the same file is a browser</li>
+<p>swapping <code>src</code> mid-stream, not a server bug — count the clips instead: the landing carousel is set to 24 s per clip, so ten clips inside 13 s means the <code>error</code> / <code>load-timeout</code> path is advancing it, and the visitor never finishes a clip. <code>public/media</code> is 47 MB across 11 files (eight still named <code>tmp*.mp4</code>, plus a byte-identical copy of the same clip under both a dashed and a spaced filename), and every visit pulls most of it.</p>
+<li>A landing page whose payload is 47 MB cannot be shown on a bad connection: it</li>
+<p>is the first thing a prospect sees. Cut the carousel to three clips under 3 MB each before a demo — the server side of the page is fine.</p>
+</ul>
+<p>Relevant env (all optional except one key):</p>
+<p>| Var | Default | | --- | --- | | <code>OPENROUTER_API_KEY</code> | — (preferred; aliases <code>OPENROUTER_KEY</code>, <code>OPEN_ROUTER_API_KEY</code>) | | <code>OPENROUTER_MODEL</code> | unset → tries <code>google/gemma-4-31b-it:free</code>, <code>minimax/minimax-m3.1-flash:free</code>, <code>nvidia/nemotron-3-super-120b-a12b:free</code>, <code>google/gemma-4-26b-a4b-it:free</code>, <code>nvidia/nemotron-3.5-lightning:free</code>, <code>poolside/laguna-s-2.1:free</code>, <code>openrouter/free</code> in order. A pin is tried <strong>first</strong> and the free list still follows it, so a retired pin cannot starve the writer (2026-10-22: the host was pinned to <code>llama-3.1-8b-instruct:free</code>, OpenRouter retired it, and every angle 404'd while three healthy free models sat unused). Retired (<code>404</code>) and throttled (<code>429</code>) slugs advance to the next model; only <code>401/402/403</code> stops the list | | <code>BLOG_ANGLE_DELAY_MS</code> | <code>1200</code> — pause between angles so nine sequential calls stay inside per-minute free limits; set <code>0</code> on a paid key | | <code>BLOG_FALLBACK_MODE</code> | <code>auto</code> — when an angle gets nothing from every provider, compose it from the offer's own fields (<code>public/blog/&lt;slug&gt;.html</code> still gets a full page). <code>off</code> restores the loud 502 for diagnosis | | <code>BLOG_AI_MAX_MISSES</code> | <code>2</code> — consecutive angles that return nothing from any provider before the rest of the run is composed without further AI calls. This is a latency budget, not a quorum rule: per-run only, so the next run tries AI again. <code>0</code> always walks every angle | | <code>BLOG_AI_TIMEOUT_MS</code> | <code>30000</code> per HTTP attempt (was <code>120000</code>). A provider that accepts the connection then stalls must not hold the tenant's request open for two minutes per model slug | | <code>BLOG_RUN_BUDGET_MS</code> | <code>90000</code> — hard wall-clock ceiling for the whole AI walk, counted from the first angle and applied to <strong>every</strong> AI call (compose, duplicate retry, review). When it is spent the remaining angles are composed from the offer data, so a run finishes in roughly this long with all nine pages. Live 2026-10-22: <code>1 of 9 pages in 6 minutes</code> while free slugs answered <code>429</code> and the stall burned the old 120 s per-attempt timeout; later that day a run that answered <strong>one</strong> angle out of nine still held the request <code>166 s</code> (<code>mode=mixed</code>, 8 pages composed anyway) because the ceiling was only applied after a miss. Fixed on <code>589d7d0</code> the same day: the deadline now applies to every call, and the same nine-angle run that previously took <code>166 s</code> returned in <strong><code>82.8 s</code></strong> with <strong>9/9</strong> unique pages (8 composed from the offer data, <code>mode=mixed</code>) — the verifier's <strong>8c</strong> check fails the suite if a run ever exceeds 120 s again. The ceiling is enforced <em>inside</em> each call by an <code>AbortController</code>, not only between calls (see <em>Why a run can still overshoot the budget…</em> above), so an overshoot is at most the page being saved, never a whole provider timeout. Raise the budget (e.g. <code>240000</code>) on a funded key where AI copy matters more than latency. <code>0</code> disables the ceiling | | <code>BLOG_ANGLE_BUDGET_MS</code> | <code>45000</code> — ceiling for <strong>one angle's</strong> provider walk, split equally between the providers that have a key (see <em>Why a provider that never answered…</em>). A single angle tries up to seven candidate model slugs on one key: live 2026-10-22 one angle cost 37 s (5 models, one stalled 23 s before returning <code>429</code>). Effective per-call deadline is <code>min(now + this, run deadline)</code>, and each call in an angle (compose, duplicate retry, review) gets its own slice. Set <code>0</code> to cap only per attempt. The review pass is skipped once 60 % of the run budget is spent, so the tail of the budget buys AI-written pages rather than polish on page three | | <code>BLOG_ROUTER_MODEL_CAP_MS</code> | <code>8000</code> — time box for the <code>openrouter/free</code> router slug, the only candidate with no upstream latency promise (it held a full 30 s attempt on both 2026-10-22 incidents). Every other slug is bounded by <code>BLOG_AI_TIMEOUT_MS</code> and the provider's share of the deadline. <code>0</code> disables the extra cap | | <code>BLOG_PROVIDER_QUOTA_COOLDOWN_MS</code> | <code>300000</code> — how long a provider that answered a <strong>daily-quota</strong> <code>429</code> (&quot;You exceeded your current quota&quot;, &quot;check your plan and billing&quot;) is skipped. Live 2026-10-23: nine angles plus every Share and Review each paid a fresh <code>429</code> to Gemini, and each dead key still claimed a third of the deadline. <code>0</code> re-probes it on the next angle | | <code>BLOG_AI_STALL_RETIRE_AFTER</code> | <code>2</code> — how many <em>fair</em> time boxes a model slug may spend sending <strong>zero bytes</strong> before it is retired for the process (a slug that only trickles is never counted). Live 2026-10-23 05:17-05:18: <code>nvidia/nemotron-3.5-lightning:free</code> was handed 13.1 s, 30.0 s, then 13.5 s across three tenant clicks and answered none. The first retry after a silent box is a probe capped at 8 s. <code>0</code> disables it | | <code>WHATSAPP_AI_BUDGET_MS</code> | <code>12000</code> — wall-clock ceiling for one WhatsApp reply's walk through the same provider chain (<code>scripts/blogManager.js</code>, <code>ai(prompt, deadline, messages)</code>). The reply path used to keep its own copy of the provider list and it drifted: it read <code>OPENROUTER_KEY</code> (the host sets <code>OPENROUTER_API_KEY</code>), posted to <code>api.openrouter.ai</code> (no such host — <code>getaddrinfo ENOTFOUND</code>), pinned <code>meta-llama/llama-3.3-70b-instruct:free</code> (retired), and never tried Gemini at all, so a live Gemini key sat unused while the bot answered &quot;Hello&quot; from the static welcome (live 2026-10-23 06:36). One chain now serves writers, Share, Review and replies; <code>0</code>/unset keeps the 12 s default | | <code>GEMINI_API_KEY</code> | — (free tier, no card) | | <code>GEMINI_MODEL</code> | unset → tries <code>gemini-flash-lite-latest</code> then <code>gemini-flash-latest</code>. A pin is tried <strong>first</strong> and the alias list still follows it (same rule as <code>OPENROUTER_MODEL</code>). Live 2026-10-23 10:40: the daily quota had reset and no request <code>429</code>'d, yet <code>gemini-flash-latest</code> sent <strong>zero bytes for its whole 15 s slice</strong> and the click still ended &quot;AI tier unavailable — copy unchanged&quot; — one alias was a single point of failure, so the light alias now leads | | <code>GROQ_API_KEY</code> / <code>GROQ_MODEL</code> | — / unset → <code>llama-3.3-70b-versatile</code>, <code>llama-3.1-8b-instant</code>, <code>openai/gpt-oss-20b</code>. Free tier, no card (https://console.groq.com/keys). Fastest first token in the chain, and it fails <em>fast</em>: a throttled key answers <code>429</code> in ~100 ms instead of eating the slice. <code>GROK_API_KEY</code> is accepted as an alias (see <em>The variable name is part of the wiring</em>) | | <code>CEREBRAS_API_KEY</code> / <code>CEREBRAS_MODEL</code> | — / unset → <code>llama3.1-8b</code>, <code>gpt-oss-120b</code>. Free tier, no card (https://cloud.cerebras.ai). A different company with a different quota, so a Gemini <em>and</em> Groq dry spell still leaves one answer | | <code>MISTRAL_API_KEY</code> / <code>MISTRAL_MODEL</code> | — / unset → <code>mistral-small-latest</code>, <code>open-mistral-nemo</code>, <code>mistral-large-latest</code>. Free &quot;experiment&quot; tier (https://console.mistral.ai), EU-hosted, OpenAI-compatible. Last free step before paid OpenAI; alias <code>MISTRALAI_API_KEY</code> accepted | | <code>OPENAI_API_KEY</code> / <code>OPENAI_MODEL</code> | — / <code>gpt-4o-mini</code> | | <code>HF_API_KEY</code> / <code>HF_MODEL</code> | — / <code>meta-llama/Llama-3.1-8B-Instruct:novita</code>. <strong>Not a free tier in practice</strong>: a valid key on an unfunded account answers <code>402 &quot;You have no remaining credits&quot;</code> (live 2026-10-23) and is retired for the process. <code>HF_API_KEY_WRITERS_FLOW</code> is an <em>alias name</em> for the same credential, not a second account — if your two HF keys are different accounts, unset the dry one so the alias is actually read (the walk takes the first non-empty var) | | <code>*_BASE_URL</code> | provider default (used by the offline test) |</p>
+<p><strong>The variable name is part of the wiring.</strong> On 2026-10-23 this host was provisioned with <code>GROK_API_KEY</code> (for Groq), <code>OPEN_ROUTER_API_KEY</code> (for OpenRouter) and <code>MISTRAL_API_KEY</code>. All three keys were valid; two of the names were read by nothing, so two tiers were invisible and the only symptom was a boot line saying <code>groq=false openrouter=false</code> while the Render dashboard showed the variable sitting there. A key that exists and is never read is the same outage as no key — the 2026-10-22 incident hid behind exactly that kind of false signal (<code>hf=true</code> on a <code>402</code> account). Two answers are now in the code:</p>
+<ol>
+<li><strong>Canonical name first, dashboard spellings accepted</strong> — <code>OPENROUTER_API_KEY</code></li>
+<p>→ <code>OPENROUTER_KEY</code> → <code>OPEN_ROUTER_API_KEY</code>, <code>GROQ_API_KEY</code> → <code>GROK_API_KEY</code>, <code>MISTRAL_API_KEY</code> → <code>MISTRALAI_API_KEY</code>, <code>HF_API_KEY</code> → <code>HF_API_KEY_WRITERS_FLOW</code> (one <code>keyFrom()</code> helper in <code>scripts/blogManager.js</code>, so the boot log, the probe and the walk cannot disagree).</p>
+<li><strong>The probe prints the var it read</strong> — <code>npm run check:ai-key</code> shows</li>
+<p><code>Groq  gsk_…only (26 chars) via GROK_API_KEY</code>, which is how you see a misspelling in one line instead of guessing why a saved key does nothing.</p>
+</ol>
+<p>Canonical names are still the ones to use on a new service, and <code>render.yaml</code> should carry them. Any <em>other</em> name (<code>OPENROUTER_KEY_ID</code>, <code>GROQ_KEY</code>, …) is still a key nobody reads.</p>
+<p><code>npm run test:ai-providers</code> proves the whole chain offline against a stub server — no keys, no network, no DB. It reproduces the 402 incident and the 2026-10-22 live failures, and verifies fallback order, empty-content handling, model override, retired-slug fallthrough, throttled-slug (<code>429</code>) fallthrough, the 402-still-aborts rule, provider cooldowns, silent-slug retirement and the fast-fail when every key is out of rotation (<strong>33 checks</strong>), plus the no-key message — the newest seven cover Gemini's light→full alias fallback, the <code>GEMINI_MODEL</code> pin, Groq serving when OpenRouter+Gemini are out, Cerebras as the backstop when three earlier keys are <code>402</code>, the two dashboard spellings (<code>GROK_API_KEY</code>, <code>OPEN_ROUTER_API_KEY</code>) reaching their provider, and Mistral answering after four <code>402</code>s.</p>
+<p><strong>Which free tiers to wire (and why this order).</strong> Every provider below speaks the same OpenAI-compatible shape, so support is a key + a URL + a model list in <code>scripts/blogManager.js</code> — no new code path, no adapter. Limits move; check the console before you promise a buyer a number. What matters for a live demo is that a <em>key that answers</em> exists in more than one company.</p>
+<p>| Provider | Get a key | Free tier | Why it is in this chain | Watch out | | --- | --- | --- | --- | --- | | Groq <strong>(wired)</strong> | https://console.groq.com/keys | rate-limited, no card | fastest first token (LPU) and ~100 ms <code>429</code>s, so a dry key costs a fraction of a second instead of a slice | per-minute caps: a 9-angle run can hit one, which is what the slug walk absorbs | | Google AI Studio (Gemini) <strong>(wired)</strong> | https://aistudio.google.com/apikey | daily quota, no card | the zero-spend workhorse; two flash aliases | the quota belongs to the Cloud <strong>project</strong>, resets midnight PT; the heavy alias can send zero bytes for 15 s | | Cerebras <strong>(wired)</strong> | https://cloud.cerebras.ai | small daily quota, no card | a third, independent pool with a different speed profile | smallest free quota of the three — backstop, not workhorse | | Mistral La Plateforme <strong>(wired)</strong> | https://console.mistral.ai | rate-limited experiment tier | EU-hosted, OpenAI-compatible, a fourth independent company | free tier is opt-in and rate-limited; <code>mistral-large-latest</code> is slow | | OpenRouter <code>:free</code> slugs <strong>(wired)</strong> | https://openrouter.ai/keys | ~50 req/day, ~1000/day after a one-time $10 | widest model menu, and <code>openrouter/free</code> routes to whatever is healthy | slugs get retired (<code>404</code>) and throttled (<code>429</code>) with no notice — never the only key (live 2026-10-23: 2×429 + 2×404 in one walk) | | GitHub Models | https://github.com/settings/tokens (PAT) | per-model request caps with a GitHub account | GPT-class copy on a free tier, OpenAI-compatible endpoint | PAT, not an API key; per-model caps are low | | Cloudflare Workers AI | https://dash.cloudflare.com | daily free &quot;neurons&quot; | one more independent pool | <strong>not</strong> OpenAI-compatible — needs an adapter, so it is <em>not</em> a drop-in like the rest | | Together AI | https://api.together.ai | small starter allowance | many open models | not a durable free tier; it becomes paid |</p>
+<p><strong>Do not</strong> plan on HuggingFace Inference Providers as the free tier: an unfunded account answers <code>402 &quot;You have no remaining credits&quot;</code> no matter how valid the key is (live 2026-10-23, twice). Prepaid credits or PRO are required. OpenAI is paid; Anthropic, xAI and DeepSeek have no durable free API tier.</p>
+<p><strong>Free-tier budget.</strong> One journey is 9 sequential generation calls plus one review call per post, so a handful of test runs exhausts a small free tier — a real <code>429</code> from Gemini after repeated runs is expected, not a code bug. Angles are paced by <code>BLOG_ANGLE_DELAY_MS</code> (default 1200 ms) and each throttled slug falls through to the next model, so nine angles can complete on free slugs alone. Keep at least <strong>three keyed providers</strong>: on 2026-10-23 this host had four keys and still served no copy, because all four were the same two failures (a dry HF account and a Gemini project out of quota) plus a free pool that was throttled — and only one of those keys was ever dialled inside a slice.</p>
+<p><strong>When every tier is dry at once</strong> (live 2026-10-22: OpenRouter <code>429</code> on the remaining free slugs, Gemini daily quota spent, HuggingFace <code>402</code>), the journey no longer ends empty. Each angle is composed from the offer's own fields by <code>utils/angleFallback.js</code> — title, type, price, location, skills, CTA — and the run still writes nine pages under nine distinct URLs. The response says so:</p>
+<p>| Field | Meaning | | --- | --- | | <code>result.mode</code> | <code>ai</code> (every angle from a model), <code>template</code> (every angle composed), <code>mixed</code> (the AI tier recovered mid-run) | | <code>result.fallback</code> | how many posts were composed rather than generated | | <code>posts[].fallback</code> | <code>true</code> on a composed post — the dashboard toast says &quot;composed from offer details&quot; |</p>
+<p>Composed copy is deliberately honest: it never invents a price (it asks for one when the offer states none) and it escapes tenant-supplied fields. It is a demo and continuity guarantee, not an AI substitute — the page reads as structured advice, and the flags above make sure nobody claims a model wrote it.</p>
+<p><code>npm run test:blog-fallback</code> covers this path offline (10 checks): a unique slug per angle, 230+ words per composed post, no pair above the duplicate threshold, survival with a title-only offer, HTML escaping, no markdown artefacts, the price never invented, CTA resolution for every offer type, plus both directions of the job/buyer split described below.</p>
+<p><strong>Offers are not all jobs.</strong> The journey was written for the Mercor job catalog, so a tenant's service listing produced &quot;How to Get Hired as a Kassangas Music Shop&quot; and &quot;Remote … Jobs&quot; on its own blog. Every template now branches on <code>offer_type</code>: <code>job</code> (the default, which is what every legacy row and every untyped row resolves to) keeps the career copy, everything else gets buyer copy (&quot;What It Costs and What You Get&quot;, &quot;How to Brief …&quot;, &quot;Taking … Beyond a Single Site&quot;). The prompts branch too, so the AI is not asked to write career advice for a service either.</p>
+<p><strong>One page per angle.</strong> Until 2026-10-22 the two templates inside an angle were slugged <code>&lt;offer&gt;-&lt;angle&gt;</code>, so the second post overwrote the first — a &quot;9 of 9 angles&quot; run wrote five pages. Slugs now carry the stage (<code>&lt;offer&gt;-awareness-1</code>, <code>&lt;offer&gt;-awareness-2</code>, …) and the verifier counts unique slugs, not array entries.</p>
+<p><strong>One theme per page (2026-10-26).</strong> Some models answer the writer's &quot;HTML fragment&quot; request with a whole document: <code>&lt;!DOCTYPE html&gt;</code>, <code>&lt;html&gt;</code>, and a <code>&lt;head&gt;</code> carrying their own <code>&lt;style&gt;</code> with <code>background:#fff</code> / <code>color:#fff</code>. That copy was injected inside <code>&lt;article&gt;</code>, and a <code>&lt;style&gt;</code> element still applies when it sits inside <code>&lt;body&gt;</code>, so the model's palette overrode the template's. A live probe of all 283 published pages (<code>npm run probe:blog-theme</code>, 2026-10-26) found 105 failing at least one rendering rule: 20 carried a second <code>&lt;style&gt;</code> block, 27 had pasted a whole document into the article, 10 declared a white background, 97 repeated the page title as their own <code>&lt;h1&gt;</code> (70 of them failing <em>only</em> that), 8 showed markdown fences and a handful read as literal <code><strong>bold</strong></code> / <code>### heading</code> / <code>* bullet</code>. Several pages were a blank white sheet (light text on the model's own white background), i.e. a tenant opening &quot;its&quot; blog saw nothing. Three smaller variants of the same cause: <code>bgcolor=</code> attributes, <code>color:#fff</code> inline declarations, and answers fenced in ```<code> </code>`<code>html </code>``` (visible backticks).</p>
+<p>Every writer path now funnels copy through <code>sanitizeArticleHTML()</code> (<code>utils/articleHtml.js</code>): unwrap a full document to its body, drop <code>style</code>/<code>script</code>/<code>link</code>/<code>meta</code>/<code>title</code> and document tags, keep layout hints (padding, border, width) but drop <code>color</code>/<code>background</code>/<code>font</code> declarations, strip <code>bgcolor</code>/<code>color</code> attributes, convert leftover markdown to <code>h2</code>/<code>h3</code>/<code>p</code>/ <code>ul</code>/<code>ol</code>/<code>strong</code>/<code>blockquote</code>, and demote the model's <code>h1</code> to <code>h2</code> so the page keeps exactly one. <code>auditBlogHTML()</code> then proves the rendered page has exactly one <code>&lt;style&gt;</code>, one <code>&lt;html&gt;</code>, one <code>&lt;body&gt;</code>, no model CSS in the article, no literal markdown and one <code>h1</code>. <code>restoreFromDB()</code> audits each row on boot and rebuilds anything that fails from its stored article body (and saves the repair), so old pages do not come back broken on every deploy. A rebuilt page keeps the row's <code>created_at</code> as its publish date instead of looking freshly re-written.</p>
+<p>Repair the live rows with:</p>
+<pre><code>
+npm run repair:blog-html            # dry run: list pages that fail the audit
+npm run repair:blog-html -- --apply # rebuild file + html_content
+npm run test:blog-html              # offline checks for the guard + template
+npm run probe:blog-theme            # audit the live pages a reader can open
+</code></pre>
+<p><code>probe:blog-theme</code> fetches every page linked from <code>/blog</code> on the deployed site and runs the same <code>auditBlogHTML()</code> rules, so &quot;the fix is live&quot; is a command and an exit code rather than an eyeball. It prints one <code>FAIL &lt;slug&gt; [issues]</code> line per page and writes the full row set to <code>.blog_probe.json</code>.</p>
+<p>The script needs <code>SUPABASE_URL</code> / <code>SUPABASE_SERVICE_ROLE_KEY</code> in the environment. On a machine without them, the same repair runs inside the deploy: every boot calls <code>restoreFromDB()</code>, and <code>GET /admin/restore-blogs?key=$ADMIN_KEY</code> forces it on a running instance without waiting for a restart.</p>
+<p>Rehearsed against the live site on 2026-10-26 (published page taken as the stored <code>html_content</code>, its <code>&lt;article&gt;</code> body as the stored <code>content</code>): every offending page that still holds a real article body rebuilds to a page that passes every audit rule. The one exception is <code>verify-writers-flow-20261022130935-awareness-2</code>, which holds only 144 characters of article text — there is nothing to restore, so the audit keeps refusing it and it needs a regeneration (Review in the tenant portal, or Generate on its offer), not a repair.</p>
+<p>Proof the boot repair ran: the deploy log line <code>[DB] Restored 283 posts</code> gains a suffix — <code>[DB] Restored 283 posts (105 rebuilt from their article body)</code>. A bare <code>Restored 283 posts</code> means the running build predates the guard; that is how the 2026-10-26 07:11 deploy was caught still serving the old code (<code>Deployed commit: f14217ee</code>, no rebuild suffix, and a probe that still found 105 failing pages). After a deploy that carries the fix, <code>npm run probe:blog-theme</code> should report only the thin page.</p>
+<p><code>scripts/repair_blog_html.js</code> used to pull <code>auditBlogHTML</code> out of <code>scripts/blogManager.js</code>, which never re-exported it, so the first real run would have died on <code>auditBlogHTML is not a function</code>; it now imports the pure module.</p>
+<p><strong>The discovery form never confirmed a submission (2026-10-26).</strong> On <code>/discovery</code>, the &quot;Thank you&quot; panel was a child of <code>&lt;form id=&quot;discoveryForm&quot;&gt;</code>, and the submit handler set <code>form.style.display = 'none'</code> — so the confirmation was hidden together with the form and a client who had just given us their business details saw a blank page. Failures were worse: a raw <code>alert()</code> carrying the exception text, plus an unguarded <code>resp.json()</code> that surfaced &quot;Unexpected token &lt; in JSON&quot; when a proxy answered 502. The panel now lives outside the form, failures render inline with the server's reason (or the HTTP status), the submit button disables and re-labels while in flight, and the confirmation shows the <code>submission_id</code> as a reference. <code>npm run test:discovery-form</code> runs the page's own script against a DOM stub and asserts both branches.</p>
+<p><strong>Tenant campaign creation answered 500 and left no trace (2026-10-26).</strong> The Render log held <code>POST /tenant/wf/campaigns 500 - 961ms</code> and nothing else: one database round trip, so the insert itself was rejected, and the route returned <code>err.message</code> without logging it. The insert also guessed wrong about the table. Two incompatible <code>wf_campaigns</code> shapes exist in this repo: <code>migrations/2026-04-20_writers_flow_tables.sql</code> defines <code>id uuid PRIMARY KEY DEFAULT gen_random_uuid()</code> plus <code>name</code>/<code>keywords</code>, while <code>migrations/2026-05-03_create_writers_flow_tables.sql</code> defines <code>id text PRIMARY KEY</code> with <strong>no default</strong> and no <code>name</code> column at all. Against the second shape the old retry loop dropped <code>name</code>, <code>keywords</code>, <code>channels</code>, … one per attempt and then died on <code>null value in column &quot;id&quot;</code> (or would have stored a nameless campaign that can never be run).</p>
+<p><code>utils/wfCampaigns.js</code> now owns that insert for both the portal (<code>POST /tenant/wf/campaigns</code>) and the owner console (<code>POST /admin/api/wf/campaigns</code>). It sends its own <code>id</code>, which is a valid value for a <code>uuid</code> and a <code>text</code> primary key alike; retries without optional columns the live table lacks; drops a rejected <code>status</code> so the column default decides (the 2026-05-03 shape only allows <code>created|running|completed|failed</code>, the routes send <code>draft</code>); and refuses to drop <code>name</code>, <code>keywords</code> or <code>tenant_id</code> — a campaign without those is unfindable or visible to the wrong client, so that answers 503 naming the migration to run instead of &quot;succeeding&quot;. Every failure now logs <code>[TENANT WF] campaign create failed: code=… &lt;database message&gt;</code> before the response, so the next occurrence is diagnosable from Render alone. <code>npm run test:wf-create</code> replays each shape against a faked Supabase client.</p>
+<h3>Phase B — Research &amp; Outreach (shipped; see the campaign-create note above)</h3>
+<p><code>wf_campaigns.tenant_id</code>, the <code>/tenant/wf/*</code> endpoints, per-tenant SMTP and the Research &amp; Outreach tab all exist. What is left here is not build work: create a campaign from the portal once the deployment carries the insert fix, then confirm the Render log shows no <code>500</code> on the route.</p>
+<h2>Next (Phase 4, optional)</h2>
+<ul>
+<li>Converge tenant resolution onto <code>alphadome-kernel</code> behind parity tests.</li>
+<li>Per-tenant custom domains / branded paths; respondent.io sample offers.</li>
+<li>Founder's-plan gating for Writer's Flow (currently shown to all active tenants).</li>
+</ul>
+<p>---</p>
+<h2>Blog quality: voice, brief and gate (2026-10-25)</h2>
+<p><strong>What was wrong.</strong> Every tenant ran the same one-line prompt — <code>Write an educational blog post explaining what X is … HTML format, NO markdown</code> — and got back the same shape: an <code>&lt;h2&gt;</code>, four <code>&lt;li&gt;</code>, repeat. Of the 283 published pages, 105 broke a rendering rule (see the 2026-10-26 section above) and the thin ones held 144 characters of article text. Nothing in the pipeline measured quality, so <code>9 of 9 generated</code> was always reported as success, and a tenant selling studio time read exactly like a tenant selling pharma supply.</p>
+<p><strong>Three modules now own the difference.</strong> All three are pure (no fs, no network, no database) so they can be proven offline.</p>
+<p>| Module | Responsibility | |---|---| | <code>utils/tenantVoice.js</code> | Resolves one editorial voice per tenant: six profiles (<code>warm-neighbourhood-expert</code>, <code>precise-operator</code>, <code>bold-challenger</code>, <code>measured-advisor</code>, <code>storytelling-guide</code>, <code>practical-teacher</code>). An explicit <code>site_tenants.brand_voice</code> / <code>.voice</code> / <code>.tone</code>, else <code>bot_tenants.tone</code>, else <code>bot_templates.tone</code> wins; a free-text tone that matches no profile is honoured verbatim. With no setting, the profile is chosen by FNV-1a hash of the tenant's id/slug, so it is stable across runs and deploys, and 24 tenants still spread across all six. It also derives the market lens (music retail, health supply, construction …) and the reader (buyer vs candidate). | | <code>utils/blogWriter.js</code> | Builds the article brief that replaced the one-liners: business facts and a fact rule (no invented clients, statistics, guarantees or dates), the voice block, the reader and search intent, one brief per journey angle <strong>and stage</strong> (20 in total: 10 buyer, 10 career), the eight-step shape (scene → decision → five sections of prose before any list → one worked example with real numbers → one honest limitation section → a CTA using the offer's own label), length and rhythm rules, banned phrasing, and the HTML fragment contract. Also exports <code>buildRepairPrompt()</code> and <code>buildReviewPrompt()</code>. | | <code>utils/blogQuality.js</code> | The referee. Scores an article 0–100 on words, substantial paragraphs, headings, list-word ratio, list-only sections, sentences per paragraph, specifics (numbers), CTA presence, stubby paragraphs, repeated openers, duplicate headings and a banned-phrase list. Returns <code>ok</code>, <code>critical[]</code> and named <code>issues[]</code> with weights; <code>qualityBrief()</code> turns them into instructions. Targets live in <code>QUALITY_TARGETS</code> (floor 700 words, 8 paragraphs, 3 headings, ≤32% of words inside lists, ≤1 list-only section, score ≥70). |</p>
+<p><strong>How a journey uses them</strong> (<code>scripts/blogManager.js</code>):</p>
+<ol>
+<li><code>loadTenantVoice(offer)</code> resolves the tenant once per journey (site_tenants →</li>
+<p>bot_tenants by <code>client_phone</code> → bot_templates by <code>bot_tenant_id</code>). Every lookup is best-effort, so a host whose schema predates a column still generates with the house voice. The log line is <code>[GEN] Voice: &lt;id&gt; (&lt;source&gt;) for &lt;brand&gt;</code>.</p>
+<li>Each angle is commissioned with <code>buildArticlePrompt()</code>, including the other</li>
+<p>eight titles in the series so the pages do not repeat each other.</p>
+<li>The draft is scored. If it fails, <strong>one</strong> repair call is made with the measured</li>
+<p>failures; the rewrite is kept only when it scores higher. Log lines: <code>[GEN] Quality &lt;slug&gt;: 62/100, … — below target, published anyway</code> and <code>[GEN] Repaired &lt;slug&gt;: … → …</code>.</p>
+<li>The review pass is now voice-aware and refuses a polish that scores lower, so</li>
+<p>the Review button cannot turn a page into an outline.</p>
+<li>The journey result carries <code>voice</code> (<code>id</code>, <code>label</code>, <code>brand</code>, <code>source</code>) and a</li>
+<p>per-post <code>quality</code> object (<code>score</code>, <code>words</code>, <code>ok</code>, <code>issues</code>). The tenant portal toast shows the average score and the voice instead of a bare page count.</p>
+</ol>
+<p><strong>Choosing the voice in the portal.</strong> <code>GET /tenant/blogger</code> now returns <code>voice</code> (id, label, source, brand, industry) and <code>voiceOptions</code> (all six profiles with a one-line essence), and the Writer's Flow → Blogger tab shows a &quot;Your writing voice&quot; panel with a picker, <strong>Save voice</strong>, and <strong>Use assigned</strong>. <code>POST /tenant/blogger/voice</code> writes the choice to <code>site_tenants.metadata.voice</code>, merging the existing jsonb instead of replacing it, and accepts <code>{ voice: null }</code> to clear. <code>metadata</code> is used deliberately: it already exists on every deployed <code>site_tenants</code> row, so a tenant can pick a tone without waiting for a migration; a host that somehow lacks the column answers <code>503</code> naming <code>migrations/2026-10-11_add_site_tenants_multitenant.sql</code> rather than pretending it saved. Unknown ids are refused with the allowed list, and the full prompt block is never sent to the browser — only the label, source and market. Proof: <code>npm run test:tenant-voice</code> (23 checks).</p>
+<p><strong>Tuning.</strong> <code>QUALITY_TARGETS</code> is the single place to change a threshold; the prompt's banned list lives in <code>BANNED_PHRASES</code> in <code>blogWriter.js</code> and <code>BANNED</code> in <code>blogQuality.js</code> and must stay in sync. A change is either proven by <code>npm run test:blog-quality</code> or it is not shipped.</p>
+<pre><code>
+npm run test:blog-quality   # 15 checks: voices, briefs, gate, repair, review
+npm run test:tenant-voice   # 23 checks: the picker, the route, metadata merge
+npm run test:blog-fallback  # composed copy still passes the fallback contract
+npm run test:blog-html      # one-theme sanitizer and page template
+</code></pre>
+<p>The gate is deliberately a <em>floor</em>, not a style police: a page can score 78 with one weak section and still publish. What it will not accept is the shape that started this work — a heading followed by a bare list, three times over.</p>
+<h2>2025-02-06_add_bot_tenants_schema.sql</h2><p class="meta">migrations/2025-02-06_add_bot_tenants_schema.sql</p><pre><code>-- ============================================================================
+-- ALPHADOME MULTI-TENANT BOT SYSTEM - MIGRATION
+-- ============================================================================
+-- Extends existing Supabase schema to support per-client WhatsApp bot tenants
+-- without redeployment. Maintains alignment with existing tables.
+-- 
+-- Verified existing tables:
+--   • public.users (id, phone, full_name, subscribed, subscription_type, level)
+--   • public.brands (id, is_platform_owner, ...)
+--   • public.conversations (brand_id, user_id, whatsapp_message_id, direction, ...)
+--   • public.subscriptions (user_id, phone, amount, plan_type, level, status, ...)
+--   • public.user_sessions (phone, context, updated_at)
+--   • alphadome.* (portfolio, business profiles, submissions, etc.)
+--
+-- NEW TABLES FOR MULTI-TENANT BOT SUPPORT:
+--   • alphadome.bot_tenants          - per-client bot config &amp; credentials
+--   • alphadome.bot_templates        - prompt templates &amp; conversation rules per tenant
+--   • alphadome.bot_training_data    - FAQ pairs, canned replies, training samples
+--   • alphadome.bot_control_settings - feature toggles, rate limits, on/off switch
+--   • alphadome.bot_message_logs     - separate logging per tenant (optional, encrypted)
+--
+-- ============================================================================
+
+BEGIN;
+
+-- Ensure pgcrypto exists
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+-- Ensure schema exists for alphadome objects
+CREATE SCHEMA IF NOT EXISTS alphadome;
+COMMENT ON SCHEMA alphadome IS 'Alphadome application schema for multi-tenant bot objects';
+
+-- ============================================================================
+-- 1. BOT TENANTS TABLE
+-- ============================================================================
+-- One row per client WhatsApp bot instance
+-- Stores credentials, phone, status, and webhook config per tenant
+--
+CREATE TABLE IF NOT EXISTS alphadome.bot_tenants (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  
+  -- Client identifier
+  client_name text NOT NULL,                    -- &quot;Kassangas Music Shop&quot;
+  client_phone text UNIQUE NOT NULL,            -- &quot;+254702245555&quot; (primary contact)
+  client_email text,
+  
+  -- Brand/Account association
+  brand_id uuid REFERENCES public.brands(id) ON DELETE CASCADE,
+  point_of_contact_name text,                   -- &quot;Gideon&quot;
+  point_of_contact_phone text,                  -- &quot;0702245555&quot;
+  
+  -- WhatsApp credentials (encrypted in transit, stored securely)
+  whatsapp_phone_number_id text NOT NULL,       -- Meta phone ID (e.g., &quot;868405499681303&quot;)
+  whatsapp_business_account_id text,            -- Meta business account ID
+  whatsapp_access_token text NOT NULL,          -- Meta token (MUST BE ENCRYPTED IN PROD)
+  whatsapp_token_expires_at timestamp with time zone,
+  
+  -- LLM &amp; AI config
+  ai_provider text DEFAULT 'openai',            -- 'openai' | 'openrouter' | 'huggingface'
+  ai_api_key text,                              -- ENCRYPTED in production
+  ai_model text DEFAULT 'gpt-4o-mini',
+  
+  -- Tenant status
+  is_active boolean DEFAULT false,              -- not active until fully configured
+  is_verified boolean DEFAULT false,            -- webhook verified with Meta
+  
+  -- Webhook config
+  webhook_verify_token text UNIQUE,             -- per-tenant verify token
+  webhook_url text,                             -- e.g., /webhook/kassangas or /webhook/{tenant_id}
+  
+  -- Metadata &amp; settings
+  metadata jsonb DEFAULT '{}'::jsonb,           -- custom config, branding, etc.
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_bot_tenants_brand ON alphadome.bot_tenants(brand_id);
+CREATE INDEX IF NOT EXISTS idx_bot_tenants_phone ON alphadome.bot_tenants(client_phone);
+CREATE INDEX IF NOT EXISTS idx_bot_tenants_active ON alphadome.bot_tenants(is_active);
+
+-- ============================================================================
+-- 2. BOT TEMPLATES TABLE
+-- ============================================================================
+-- Per-tenant conversation templates and system prompts
+--
+CREATE TABLE IF NOT EXISTS alphadome.bot_templates (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  bot_tenant_id uuid NOT NULL REFERENCES alphadome.bot_tenants(id) ON DELETE CASCADE,
+  
+  -- Template name and description
+  template_name text NOT NULL,                  -- &quot;default&quot;, &quot;product_inquiry&quot;, &quot;support&quot;, etc.
+  description text,
+  
+  -- System prompt and context
+  system_prompt text NOT NULL,                  -- Full system message for LLM
+  conversation_context jsonb DEFAULT '[]'::jsonb, -- Pre-loaded context/history
+  
+  -- Tone and personality
+  tone text DEFAULT 'professional',             -- 'professional', 'friendly', 'casual', etc.
+  max_response_length integer DEFAULT 1000,
+  
+  -- Template status
+  is_active boolean DEFAULT true,
+  is_default boolean DEFAULT false,             -- Which template to use by default
+  
+  metadata jsonb DEFAULT '{}'::jsonb,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_bot_templates_tenant ON alphadome.bot_templates(bot_tenant_id);
+CREATE INDEX IF NOT EXISTS idx_bot_templates_active ON alphadome.bot_templates(is_active);
+
+-- ============================================================================
+-- 3. BOT TRAINING DATA TABLE
+-- ============================================================================
+-- FAQ pairs, canned replies, and training samples per tenant
+--
+CREATE TABLE IF NOT EXISTS alphadome.bot_training_data (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  bot_tenant_id uuid NOT NULL REFERENCES alphadome.bot_tenants(id) ON DELETE CASCADE,
+  
+  -- Data type
+  data_type text NOT NULL,                      -- 'faq' | 'canned_reply' | 'example'
+  
+  -- Content
+  question text,                                -- What the user might ask
+  answer text NOT NULL,                         -- The response to give
+  
+  -- Metadata
+  category text,                                -- For organization (e.g., &quot;Products&quot;, &quot;Support&quot;)
+  priority integer DEFAULT 0,                   -- Higher = searched first
+  confidence_score numeric DEFAULT 1.0,         -- 0.0-1.0, for RAG ranking
+  
+  -- Control
+  is_active boolean DEFAULT true,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_training_tenant ON alphadome.bot_training_data(bot_tenant_id);
+CREATE INDEX IF NOT EXISTS idx_training_active ON alphadome.bot_training_data(is_active);
+CREATE INDEX IF NOT EXISTS idx_training_type ON alphadome.bot_training_data(data_type);
+
+-- ============================================================================
+-- 4. BOT CONTROL SETTINGS TABLE
+-- ============================================================================
+-- Feature toggles, rate limits, and runtime control per tenant
+--
+CREATE TABLE IF NOT EXISTS alphadome.bot_control_settings (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  bot_tenant_id uuid NOT NULL UNIQUE REFERENCES alphadome.bot_tenants(id) ON DELETE CASCADE,
+  
+  -- On/Off switch
+  is_bot_enabled boolean DEFAULT true,
+  
+  -- Rate limiting
+  max_messages_per_hour integer DEFAULT 100,
+  max_messages_per_user_per_day integer DEFAULT 50,
+  
+  -- Feature toggles
+  enable_ai_responses boolean DEFAULT true,
+  enable_payment_flow boolean DEFAULT false,    -- For subscription/Alphadome
+  enable_training_mode boolean DEFAULT false,   -- Accept training input from admin
+  enable_auto_reply boolean DEFAULT true,
+  
+  -- Logging
+  log_conversations boolean DEFAULT true,
+  log_errors boolean DEFAULT true,
+  
+  -- Contact for escalations
+  escalation_phone text,                        -- e.g., admin phone
+  escalation_email text,
+  
+  metadata jsonb DEFAULT '{}'::jsonb,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_control_tenant ON alphadome.bot_control_settings(bot_tenant_id);
+
+-- ============================================================================
+-- 5. BOT MESSAGE LOGS TABLE (Optional, Encrypted)
+-- ============================================================================
+-- Per-tenant conversation logs (alternative to logging to public.conversations)
+-- Use this if you want tenant isolation at the log level
+--
+CREATE TABLE IF NOT EXISTS alphadome.bot_message_logs (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  bot_tenant_id uuid NOT NULL REFERENCES alphadome.bot_tenants(id) ON DELETE CASCADE,
+  
+  -- Message metadata
+  user_phone text NOT NULL,
+  user_id uuid REFERENCES public.users(id) ON DELETE SET NULL,
+  
+  -- Direction and content
+  direction text NOT NULL,                      -- 'incoming' | 'outgoing'
+  message_text text NOT NULL,
+  whatsapp_message_id text,
+  
+  -- Processing status
+  ai_processed boolean DEFAULT false,
+  ai_response text,
+  
+  -- Error tracking
+  error_message text,
+  
+  -- Context
+  template_used text,
+  training_data_id uuid REFERENCES alphadome.bot_training_data(id) ON DELETE SET NULL,
+  
+  metadata jsonb DEFAULT '{}'::jsonb,
+  created_at timestamp with time zone DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_message_logs_tenant ON alphadome.bot_message_logs(bot_tenant_id);
+CREATE INDEX IF NOT EXISTS idx_message_logs_phone ON alphadome.bot_message_logs(user_phone);
+CREATE INDEX IF NOT EXISTS idx_message_logs_created ON alphadome.bot_message_logs(created_at);
+
+-- ============================================================================
+-- GRANTS (Optional - adjust for your Supabase auth setup)
+-- ============================================================================
+-- Uncomment if using authenticated role:
+-- GRANT USAGE ON SCHEMA alphadome TO authenticated;
+-- GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA alphadome TO authenticated;
+
+COMMIT;
+
+-- ============================================================================
+-- END OF MIGRATION
+-- ============================================================================
+--
+-- NEXT STEPS:
+-- 1. Run this migration in your Supabase SQL editor
+-- 2. For each client, insert a row into alphadome.bot_tenants
+-- 3. Insert default templates and control settings for each tenant
+-- 4. Update server.js webhook handler to load tenant config by phone/token
+-- 5. Build dashboard UI to manage tenants, templates, and training data
+-- 6. Implement encryption for sensitive fields (whatsapp_access_token, ai_api_key)
+--
+-- SECURITY NOTES:
+-- - Store whatsapp_access_token and ai_api_key encrypted (use Supabase Vault or
+--   encrypt before storing, decrypt on use)
+-- - Use Row-Level Security (RLS) policies to ensure tenants can only access their own data
+-- - Rotate webhook_verify_token per tenant
+-- - Monitor token expiry and alert on bot_tenants.whatsapp_token_expires_at
+--
+</code></pre>
+<h2>BOT_SCHEMA_RECONCILE_2026-10-25.md</h2><p class="meta">docs/BOT_SCHEMA_RECONCILE_2026-10-25.md</p><h1>Bot schema reconcile — 2026-10-25</h1>
+<h2>What the diagnose proved</h2>
+<p>| schema | what it holds | | --- | --- | | <code>alphadome</code> | all 10 <code>bot_*</code> tables. <code>bot_products</code> 24, <code>bot_product_images</code> 12, <code>bot_product_variants</code> 4, <code>bot_collections</code> 3, <code>bot_collection_items</code> 7, <code>bot_tenants</code> 1 | | <code>public</code> | <code>bot_tenants</code> only (3 rows). The other ten are MISSING | | overlap | <strong>0</strong> tenant uuids exist in both schemas |</p>
+<p>The one tenant that owns the catalogue is <code>2330bdfe-7b4d-476f-ad0d-ba1b2caeed12</code> (Kassangas Music Shop, 0702245555) in <code>alphadome</code>. Section D shows it as invisible through <code>public.bot_tenants</code>.</p>
+<p>The three <code>public</code> rows are portal shells (<code>portal_token</code>, <code>status</code>, <code>description</code>). None of them owns a product — <code>public.bot_products</code> does not exist, so they cannot.</p>
+<h2>Why the dashboard half-works</h2>
+<p>| symptom | cause | | --- | --- | | catalogue looks fine | <code>server.js:3288</code> falls back to <code>get_catalog(phone)</code>, which reads <code>alphadome</code> by phone | | Orders always empty | <code>server.js:3463</code> — no table in <code>public</code>, no RPC fallback, error swallowed | | Training never saves | <code>server.js:2852/2892/2913</code> — insert into a missing table, no fallback | | Templates, settings dead | <code>get_templates_by_tenant(uuid)</code> looks the uuid up in <code>alphadome</code>; the session uuid lives in <code>public</code> | | readiness 0 products, abandoned-cart &quot;not configured&quot; | <code>server.js:1259/3884</code> select <code>whatsapp_access_token</code> / <code>is_active</code>, which <code>public.bot_tenants</code> does not have |</p>
+<h2>The shadow — confirmed by the pre-flight SELECT</h2>
+<p><code>findTenantByPhone()</code> (<code>server.js:2280</code>) reads <code>supabase.from(&quot;bot_tenants&quot;)</code>, and the client at <code>server.js:600</code> is built with <strong>no <code>schema</code> option</strong>, so that is <code>public</code>. The live lookup can only ever see the three public rows:</p>
+<p>| id | name | phone | products it can own | | --- | --- | --- | --- | | <code>cfc89b88…</code> | Coach Dawn 3.0 | +254 748 621563 | none — no <code>alphadome</code> row at all | | <code>62828821…</code> | Kassangas Music Shop | 0702245555 | 0 — <code>public.bot_products</code> does not exist | | <code>84342b47…</code> | Kassangas | 254737245555 | 0 |</p>
+<p><code>62828821…</code> holds <strong>the same phone as the catalogue owner in <code>alphadome</code></strong>, so every phone login resolves to this shell and stops. That is why the portal authenticates, greets Kassangas, and then shows nothing: the session uuid belongs to a row that cannot own a product, while the 24 products sit under a uuid the portal never asks for.</p>
+<p>After step 2 the shell's phone becomes <code>merged:62828821…</code>, the keeper is the only <code>0702245555</code> in <code>public</code>, and the session uuid <em>is</em> the catalogue owner.</p>
+<h2>What the fingerprints proved</h2>
+<p>Run on 2026-10-25 against the three public rows (<code>ecf8427e</code> is the tail of <code>md5('')</code>, i.e. &quot;empty or column absent&quot;):</p>
+<p>| row | <code>is_active</code> | <code>has_portal_token</code> | <code>phone_id_fp</code> | <code>alphadome_twin</code> | | --- | --- | --- | --- | --- | | Coach Dawn 3.0 | absent | <strong>false</strong> | <code>ecf8427e</code> (none) | <strong>0</strong> | | Kassangas Music Shop <code>62828821…</code> | absent | <strong>false</strong> | <code>0f6c6062</code> | 1 | | Kassangas <code>84342b47…</code> | absent | <strong>false</strong> | <code>e98b3f56</code> | <strong>0</strong> |</p>
+<ol>
+<li><strong>No portal token exists anywhere.</strong> All three are <code>false</code>, and</li>
+<p><code>whatsapp_access_token</code> is empty in every row. So the invite middleware at <code>server.js:2414</code> returns 401 for every invite link — the dashboard has been reached through the <strong>phone-session</strong> route at <code>server.js:2487</code>, which is exactly the route the shell shadows. Clearing <code>portal_token</code> in section C is a no-op today, and step 3 (Portal Invite) is mandatory, not cosmetic. It is also what gives the mirror trigger in section H something to carry.</p>
+<li><strong><code>is_active</code> is absent, not false.</strong> <code>is_active: &quot;-&quot;</code> is the fallback for a</li>
+<p>missing column, which confirms section B's column adds and the readiness / abandoned-cart errors at <code>server.js:1259</code> / <code>:3884</code>.</p>
+<li><strong><code>84342b47…</code> holds a different <code>whatsapp_phone_number_id</code></strong> (<code>e98b3f56</code> vs the</li>
+<p>keeper's row <code>0f6c6062</code>). That column does exist in <code>public</code>, and two distinct non-empty ids mean 0737 245 555 was registered as a separate WABA number, not a typo of 0702 245 555. It still has no <code>alphadome</code> twin, so the bot has never answered it — tombstoning it destroys no bot behaviour, and if the line is real it can be re-created as its own tenant later.</p>
+<li><strong>Coach Dawn's orphan is generated, not accidental.</strong> <code>admin/seed_coachdawn3.js</code></li>
+<p>declares <em>&quot;insert into alphadome.bot_tenants&quot;</em> in its header but built the client with no <code>db.schema</code>, so every run wrote to <code>public</code>. Fixed: the client now pins <code>db: { schema: 'alphadome' }</code>, and the error branch names <code>42P10</code> (no unique constraint for the upsert) and <code>PGRST204</code> (column missing) instead of failing silently.</p>
+</ol>
+<p>Section D is inert either way on this data: if the keeper's <code>whatsapp_phone_number_id</code> is set it reports <em>&quot;keeper already has&quot;</em> and refuses to be overwritten; if it is NULL while both shells hold a value it reports <code>D. WARNING ambiguous</code> and writes nothing. No shell value is ever taken over a keeper value.</p>
+<h2>Open decisions</h2>
+<ol>
+<li>~~Is <code>254737245555</code> a live Kassangas line?~~ <strong>Answered:</strong> it carries its own</li>
+<p>distinct <code>whatsapp_phone_number_id</code>, so it is a registered second WABA number. It still has no <code>alphadome</code> row, so the bot has never answered it and the tombstone removes no working behaviour. Keep it in the merge set; if Kassangas still wants that line, create it as a real tenant afterwards — do not un-tombstone <code>84342b47…</code>.</p>
+<li><strong>Coach Dawn 3.0 has no <code>alphadome</code> row.</strong> Sections B/G leave it alone, so it</li>
+<p>keeps behaving exactly as badly as today (nothing). The seed script that created the orphan is fixed, but the existing row still needs a <code>_03</code> that inserts the matching <code>alphadome.bot_tenants</code> row <strong>under the same uuid</strong> <code>cfc89b88-cc67-4655-ab06-b823b93a73e2</code>. Anything else leaves Coach Dawn with two identities and repeats the shadow.</p>
+<li>~~Keeper credentials are unverified.~~ **Answered 2026-10-25: the keeper is</li>
+<p>fully credentialed.** <code>has_phone_id = true</code>, <code>has_token = true</code>, <code>is_active = true</code>. Consequences:</p>
+</ol>
+<ul>
+<li><strong>No credential has to move.</strong> Every public fingerprint was <code>ecf8427e</code></li>
+<p>(empty/absent), so there is nothing for section D to rescue — it will only emit <code>D. keeper already has …</code> lines. Section D exists for future tenants, not for this apply.</p>
+<li><strong>The live WhatsApp path keeps working untouched.</strong> The bot sends with this</li>
+<p>row today and will still send with this row afterwards; the migration adds no second copy of any credential.</p>
+<li><code>E. is_active forced true</code> should <strong>not</strong> appear in the grid: <code>alphadome</code></li>
+<p>already has <code>true</code>, so the override is a no-op that only fires on bad data.</p>
+</ul>
+<p>&lt;details&gt; &lt;summary&gt;Fingerprint query used to produce the table above (read-only) — <code>phone_id_fp</code> / <code>token_fp</code> distinguish <em>absent</em> from <em>a different credential</em> without revealing either&lt;/summary&gt;</p>
+<pre><code>
+-- safe before section B: to_jsonb never fails on a missing column.
+-- Fingerprints only - no raw credential is ever printed.
+SELECT t.id, t.client_name, t.client_phone,
+       coalesce(to_jsonb(t)-&gt;&gt;'status', '')          AS status,
+       coalesce(to_jsonb(t)-&gt;&gt;'is_active', '-')      AS is_active,
+       (to_jsonb(t)-&gt;&gt;'portal_token') IS NOT NULL    AS has_portal_token,
+       right(md5(coalesce(to_jsonb(t)-&gt;&gt;'whatsapp_phone_number_id', '')), 8) AS phone_id_fp,
+       right(md5(coalesce(to_jsonb(t)-&gt;&gt;'whatsapp_access_token', '')), 8)    AS token_fp,
+       (SELECT count(*) FROM alphadome.bot_tenants a
+         WHERE right(regexp_replace(a.client_phone, '\D', '', 'g'), 9)
+             = right(regexp_replace(coalesce(t.client_phone, ''), '\D', '', 'g'), 9))
+         AS alphadome_twin
+  FROM public.bot_tenants t
+ ORDER BY t.client_phone;
+</code></pre>
+<p>&lt;/details&gt;</p>
+<h2>The fix</h2>
+<p><code>migrations/2026-10-25_bot_schema_reconcile_02_apply.sql</code>, one transaction:</p>
+<ol>
+<li><strong>B</strong> — add the columns <code>public.bot_tenants</code> is missing, types/defaults copied from <code>alphadome</code>.</li>
+<li><strong>C</strong> — tombstone the two Kassangas shells (phone → <code>merged:&lt;id&gt;</code>, <code>status=inactive</code>, <code>is_active=false</code>, portal token cleared). No DELETE.</li>
+<li><strong>D</strong> — rescue any credential only one shell still holds into the alphadome keeper when the keeper's value is NULL. Presence reported, values never printed.</li>
+<li><strong>E</strong> — promote the keeper into <code>public.bot_tenants</code> <strong>under the same uuid</strong>, so the portal session uuid and the catalogue owner are the same identity. <code>status</code> and <code>is_active</code> are forced <code>active</code>/<code>true</code> rather than copied: <code>isTenantRecordActive()</code> (<code>server.js:2251</code>) prefers the raw boolean, so a false value from <code>alphadome</code> would promote a row the phone lookup then rejects as &quot;Tenant found but inactive&quot;.</li>
+<li><strong>F</strong> — re-key rows already pointing at the shells, limited to FKs on <code>bot_tenants</code> plus <code>wf_campaigns.tenant_id</code>. <code>site_tenants</code> ids are left alone.</li>
+<li><strong>G</strong> — create one <code>public</code> view per <code>alphadome</code> <code>bot_*</code> table (ten here: every one except <code>bot_tenants</code>, which stays a real table). Single-table <code>select <em></code> views are auto-updatable, so reads <strong>and</strong> writes work with no <code>server.js</code> change. If a real <code>public</code> <strong>table</strong> already owns one of those names it is left untouched and reported with <strong>both row counts</strong>; an </em>empty* public table shadowing a populated <code>alphadome</code> one raises a warning, because that is the exact failure this migration exists to remove.</li>
+<li><strong>H</strong> — mirror future portal credential edits onto the alphadome row, so the token entered in the portal is the token WhatsApp sends with.</li>
+<li><strong>I</strong> — report grid, <code>notify pgrst, 'reload schema'</code>, commit.</li>
+</ol>
+<p>No domain rows move. The 24 products keep <code>bot_tenant_id = 2330bdfe…</code>, so <code>get_catalog</code> and <code>get_tenant_by_wa</code> keep resolving exactly as they do today.</p>
+<h2>Run order</h2>
+<pre><code>
+1. migrations/2026-10-25_bot_schema_reconcile_02_apply.sql   dry_run := true   -&gt; read grid
+2. migrations/2026-10-25_bot_schema_reconcile_02_apply.MERGE.sql               -&gt; commit
+   generated copy of step 1 with dry_run := false, confirm := 'MERGE'; identical
+   SQL otherwise, and the test suite fails if the two ever drift apart
+3. migrations/2026-10-25_bot_schema_reconcile_03_verify.sql     read only      -&gt; read grid
+4. Admin -&gt; Tenants -&gt; Kassangas Music Shop -&gt; Portal Invite  (the keeper has no portal token)
+5. node scripts/verify_writers_flow.js
+6. node scripts/smoke_tenant_onboarding.mjs --issue
+7. Live walk: catalog / orders / training -&gt; Writer's Flow -&gt; Blogger offer -&gt; F5
+8. migrations/2026-10-25_bot_schema_reconcile_04_coachdawn.sql  dry run       -&gt; read grid
+9. same file, dry_run := false, confirm := 'MERGE'                             -&gt; commit
+</code></pre>
+<p>Step 3 is not optional. Step 2 rebuilds <code>public._bot_reconcile_report</code> at the start of every run, so <strong>a re-run destroys the previous grid</strong>. The report proves what a run <em>did</em>; <code>_03_verify.sql</code> proves what the database <em>is</em>. Only the second survives a second click on Run.</p>
+<p>Steps 8 and 9 are about the second tenant, not the Kassangas demo: they can wait until step 7 has been walked end to end.</p>
+<p>The <code>.MERGE.sql</code> copy exists only so nobody hand-edits flags in the SQL Editor under pressure. Delete it once step 3 is green; the parent file stays the audited, dry-run-by-default source of truth.</p>
+<h2>Reading the <code>_03_verify</code> grid</h2>
+<p>One result set, thirteen arms now. Expected, in order:</p>
+<p>| step | healthy value | means | | --- | --- | --- | | <code>V. views</code> | <code>10 views, 0 shadowing base tables</code> | G created every view; a table of the same name would hide one | | <code>V. shadowing table</code> | <strong>no rows</strong> | nothing shadows a view name; only printed when a base table shares a name with an alphadome table | | <code>V. public-only table</code> | <code>bot_outputs</code> | expected: a <code>bot_*</code> table alphadome never had, so it shadows nothing | | <code>V. updatable views</code> | <code>10</code> | single-table <code>select <em></code> views stay writable | | <code>V. products</code> / <code>V. reachable</code> | <code>24</code> / <code>24</code> | catalogue visible </em>and* owned by an active tenant | | <code>V. supporting rows</code> | <code>3</code> | collections 3, images 12, variants 4 (one row per table) | | <code>V. tenant &lt;name&gt;</code> | keeper <code>1</code>, shells <code>0</code> | <code>0</code> on a shell is the tombstone working | | <code>V. token mirror</code> | <code>1</code> | tenants whose WhatsApp token matches across schemas, by <code>md5</code> | | <code>V. mirror trigger</code> | <code>1</code> | the section H trigger is installed and enabled | | <code>V. write targets</code> | <code>0</code> | orders/training/logs empty — nobody has written since the apply | | <code>V. tenant columns</code> | <code>public 30 vs alphadome 26</code> | <strong>informational</strong>: public keeps legacy extras | | <code>V. missing columns</code> | <code>none</code> / <code>0</code> | the assertion that matters: alphadome ⊆ public | | <code>V. orphans</code> | <code>1</code> (Coach Dawn) | live tenants that exist only in <code>public</code> |</p>
+<p><code>bot_outputs</code> is the only <code>bot_*</code> base table in <code>public</code> that alphadome has no counterpart for. It is not in any migration in this repo and no code path in <code>server.js</code> touches it, so it was created outside the repo. It shadows no view and breaks nothing — which is exactly why it gets its own line rather than being folded into the shadow count.</p>
+<p>Three of these were wrong in earlier versions of the file and are worth keeping in mind when reading any grid like this:</p>
+<ol>
+<li><strong>The column counts were compared for equality.</strong> They are not equal and never</li>
+<p>will be: B adds what public lacks, nothing removes what public has extra. The real test is subset direction, so <code>V. missing columns</code> names any alphadome column public cannot supply and expects <code>none</code>.</p>
+<li><strong><code>1 shadowing base table</code> was reported without saying which.</strong> A count cannot</li>
+<p>tell a harmless leftover (<code>bot_settings</code>) from an empty twin that starves the portal (<code>bot_products</code>), so <code>V. shadowing table</code> prints the names.</p>
+<li><strong><code>bot_outputs</code> was counted as shadowing.</strong> A shadow is a base table whose name</li>
+<p>also exists in <code>alphadome</code> — and only for <code>bot_*</code> names, since G creates no other views. The count now requires both, and the complement is listed separately as <code>V. public-only table</code> so it cannot be mistaken for leakage.</p>
+</ol>
+<h2>Step 4: the second tenant has no alphadome row</h2>
+<p><code>V. orphans: 1</code> is Coach Dawn 3.0 (<code>cfc89b88…</code>). She exists in <code>public.bot_tenants</code> and is <strong>absent</strong> from <code>alphadome.bot_tenants</code>. Two consequences:</p>
+<ol>
+<li><strong>Credentials typed for her are thrown away.</strong> The section H trigger is</li>
+<p><code>UPDATE alphadome.bot_tenants SET … WHERE id = $1</code>. With no alphadome row it matches zero rows, raises nothing, and the portal form still shows success. The first time anyone pastes her WhatsApp token into the admin UI it will vanish.</p>
+<li><strong>Phone fallback cannot find her.</strong> <code>get_tenant_by_wa()</code> reads</li>
+<p><code>alphadome.bot_tenants</code> only.</p>
+</ol>
+<p><code>_04_coachdawn.sql</code> fixes both, in the same shape as section E but reversed: same uuid, intersection of both column lists, active flags forced, and it <strong>aborts</strong> rather than clearing a value if an alphadome <code>UNIQUE</code> column would collide. <code>_02</code> cleared duplicates on the dead shells; doing that here would rewrite the credential store.</p>
+<p>It also normalises <code>client_phone</code>. Her stored number is <code>+254 748 621563</code>, but <code>server.js:6206</code> matches <code>client_phone</code> with an exact <code>.in()</code> against <code>254…</code>/<code>0…</code> and <code>get_tenant_by_wa()</code> normalises only its <em>argument</em>, never the stored value — so the formatted value matches neither form. <code>_04</code> rewrites it to <code>0748621563</code>, the local 0-format the keeper already uses, and reports old → new.</p>
+<h2>Reading the <code>_04</code> grid</h2>
+<pre><code>
+A. mode                DRY RUN - nothing written   | 0     (APPLY | 1 when committing)
+A. source              cfc89b88… | Coach Dawn 3.0 | status=active | active=true | 1
+A. phone_number_id     set | MISSING …             | 1|0   (primary lookup key, before phone)
+A. products            catalogue rows she owns     | 0     (she has none seeded yet)
+B. phone normalised    +254 748 621563 -&gt; 0748621563 | 1   (0 when already digits)
+C. collisions          no alphadome unique column taken | 0
+D. fillable            every NOT NULL column supplyable | 1
+E. promote             25 shared columns, forced: is_active | 1  (0 on re-run: skipped)
+E. phone in alphadome  0748621563                  | 1
+</code></pre>
+<p>25 shared columns is the honest number, and it is a schema fact worth understanding: alphadome has 26, one of them is <code>is_active</code>, which is deliberately <strong>not</strong> copied from the public row and is written as <code>true</code> instead. <code>status</code>, <code>description</code> and the two <code>portal_token</code> columns are public-only, so they are not in the intersection at all — the report says <code>forced: is_active</code>, not the <code>status/is_active forced</code> an earlier draft claimed, because a table that has no <code>status</code> column cannot be forced into one.</p>
+<p><code>A. products: 0</code> is a separate gap, not a <code>_04</code> failure. <code>public.bot_products</code> is a view over alphadome, so 0 there means she has <strong>no catalogue anywhere</strong>. Promoting her makes her credentials storable and her phone resolvable; it does not give her anything to sell. If she is meant to demo live, her catalogue has to be seeded in <code>alphadome</code> under the same uuid first — otherwise her bot answers <code>get_catalog</code> with nothing.</p>
+<p><code>A. phone_number_id: MISSING</code> compounds with the phone-format bug: with no id and a <code>+254 …</code> number she is currently unreachable on both lookup paths. <code>B</code> repairs the phone path; the id has to be entered from her WhatsApp Business account.</p>
+<p>Anything that raises instead of printing is a guard doing its job — it names the column or uuid and the whole transaction rolls back, including the phone rewrite.</p>
+<h2>Re-running is safe, and why that matters</h2>
+<p>If the apply grid shows <code>A. note: keeper already in public</code>, <code>B. columns to add: 0</code> and <code>E. promote keeper: already present</code>, you are looking at a <strong>second</strong> run: an earlier run already committed. Every section is written to be re-run, so nothing is damaged — but three things are worth knowing.</p>
+<ol>
+<li><strong>The first grid is gone.</strong> The report table is dropped and recreated per run.</li>
+<p>Verify the end state with <code>_03_verify.sql</code> instead of trusting the surviving grid.</p>
+<li>**<code>C. tombstone</code> prints the phone <em>before</em> the update.** On a re-run it shows</li>
+<p><code>merged:&lt;id&gt;</code> as the incoming value, which looks like the tombstone failed. It did not; it already happened.</p>
+<li><strong>The merge note is appended once only.</strong> It used to append <code> [merged into …]</code></li>
+<p>on every run, stacking the marker (found on the 2026-10-25 re-run). The <code>UPDATE</code> now checks <code>position(marker in description) &gt; 0</code> first.</p>
+</ol>
+<p><strong>Reading the result.</strong> The Results pane keeps only the <strong>last</strong> result set, so the <code>step | detail | rows</code> report is deliberately the last statement in the file and the verification <code>NOTICE</code>s sit just above it (they land in the <strong>Messages</strong> tab). If the pane shows the three-tenant list instead, the run still succeeded — the report is committed to disk, so read it with:</p>
+<pre><code>
+SELECT step, detail, rows FROM public._bot_reconcile_report ORDER BY seq;
+</code></pre>
+<p>If that query errors with <em>relation does not exist</em>, the batch actually aborted and rolled back: read the error above it, not the tenant list.</p>
+<p>If the apply grid contains <code>G. SKIPPED</code>, stop before step 3. A real public table is still shadowing that name, so reads keep returning the shadow and steps 3–6 would be debugging the wrong layer. Read the two counts in the row: a populated <code>alphadome</code> side with zero public rows <strong>is</strong> the catalogue you are trying to expose.</p>
+<p><code>2026-10-25_tenant_merge_02_apply.sql</code> is <strong>superseded</strong> by step 2. It merges <code>62828821…</code> → <code>84342b47…</code>, which are both shells owned by no catalogue; after step 2 its phone guards fail on purpose. Do not run it.</p>
+<h2>Expected grid for this data</h2>
+<p>The grid at section I is ordered by <code>seq</code>. With the keeper verified as <code>phone_id + token + is_active = true</code> and both shells holding no credential, the expected output is:</p>
+<p>| step | dry run (<code>dry_run := true</code>) | apply (<code>false, 'MERGE'</code>) | | --- | --- | --- | | <code>A. mode</code> | <code>DRY RUN - nothing written</code>, 0 | <code>APPLY</code>, 1 | | <code>A. keeper products</code> | <strong>24</strong> | <strong>24</strong> | | <code>A. row</code> ×2 | <code>62828821… Kassangas Music Shop 0702245555</code>, <code>84342b47… Kassangas 254737245555</code> | same | | <code>A. note</code> | <strong>absent</strong> — the keeper is not in <code>public</code> yet, so E will insert | same | | <code>B. add public column</code> ×15 | the 15 columns below, each 0 | each 1 | | <code>B. columns to add</code> | <strong>15</strong> | 15 | | <code>B. is_active normalised</code> | <em>absent</em> (write) | <strong>1</strong> — Coach Dawn set from <code>status</code>, shells excluded | | <code>C. tombstone</code> ×2 | both shells listed, each <strong>0</strong> — a preview writes nothing | same lines, each <strong>1</strong> | | <code>C. tombstoned rows</code> | <strong>0</strong> — nothing written yet, this is correct | <strong>2</strong> | | <code>D. keeper already has</code> ×K | one line per credential column the keeper already holds: <code>whatsapp_phone_number_id</code>, <code>whatsapp_business_account_id</code>, <code>whatsapp_access_token</code>, … | <strong>identical</strong> — D deliberately previews the columns B adds, so the apply grid must not grow here. If it does, D and B have drifted apart | | <code>D. rescued to keeper</code> | absent | absent — nothing to rescue | | <code>E. promote keeper</code> | uuid + <strong>12</strong> column names, <strong>0</strong> | <strong>1</strong>, uuid + <strong>26</strong> column names | | <code>E. is_active forced true</code> | absent | absent — alphadome is already <code>true</code> | | <code>E. cleared duplicate unique value</code> | <strong>appears</strong>, 0 — <code>client_phone on 1 shell row(s)</code>. Dry-run only: <code>public.bot_tenants.client_phone</code> carries a single-column UNIQUE index and the <code>62828821…</code> shell still shares <code>0702245555</code> with the keeper, because C has not rewritten it yet | <em><strong>absent</strong></em> — C runs first and has already moved that phone to <code>merged:62828821…</code>, so there is nothing left to clear | | <code>F. re-key to keeper</code> / <code>F. re-keyed rows</code> | 0 | 0 — nothing points at the shells | | <code>G. view</code> ×10 | 10 lines, each 0 | 10 lines, each 1 | | <code>G. views</code> | <code>10 to create, 0 skipped</code> | <code>10 to create, 0 skipped</code> | | <code>G. SKIPPED</code> | absent | absent — no real <code>public</code> table owns those names. If it <strong>does</strong> appear, read the counts: <code>public rows: 0, alphadome rows: 24</code> means something still shadows the catalogue and reads will stay empty | | <code>H. mirror trigger</code> | <code>skipped in dry run</code>, 0 | <code>… (credentials only)</code>, 1 |</p>
+<p>The two <code>E. promote keeper</code> column lists differ on purpose. A dry run runs against the schema as it is <strong>now</strong>, where <code>public.bot_tenants</code> is missing 15 columns, so E sees only the 12 it can copy. On the write pass B has just added them, so E copies 26 — including the live <code>whatsapp_access_token</code>, <code>whatsapp_token_expires_at</code> and <code>whatsapp_phone_number_id</code>. That is why the portal's WhatsApp readiness turns green immediately after the apply, and why the Portal Invite step that follows is about the <strong>login token</strong> (<code>portal_token</code>, still NULL), not about re-entering WhatsApp credentials.</p>
+<p>The 15 columns B adds, straight from diagnose section F — every one of them <code>only in alphadome</code>:</p>
+<pre><code>
+ai_api_key  ai_model  ai_provider  client_email  is_active  is_verified
+smtp_from_name  smtp_host  smtp_pass  smtp_port  smtp_user
+webhook_url  webhook_verify_token  whatsapp_access_token  whatsapp_token_expires_at
+</code></pre>
+<p><code>whatsapp_phone_number_id</code> is <strong>not</strong> in that list: it exists in both schemas, which is why section E copies it from the keeper. <code>status</code>, <code>portal_token</code>, <code>portal_token_issued_at</code> and <code>description</code> are public-only, so E sets <code>status</code> to <code>active</code> explicitly and lets the portal columns stay NULL.</p>
+<p>Three numbers look like failures in a dry run and are not: <code>C. tombstoned rows = 0</code>, every <code>G. view</code> row at 0, and <code>E. cleared duplicate unique value</code> at 0. Those are write counts, and a dry run writes nothing. Compare B's total (15), 24 keeper products and 10 views; those are the values that must match on both passes.</p>
+<h2>Rollback</h2>
+<p>The whole script is one transaction, so a failed guard rolls back by itself. After a successful apply the reversible pieces are:</p>
+<pre><code>
+DROP VIEW IF EXISTS public.bot_orders, public.bot_products, public.bot_product_images,
+  public.bot_product_variants, public.bot_collections, public.bot_collection_items,
+  public.bot_templates, public.bot_training_data, public.bot_control_settings,
+  public.bot_message_logs;
+DROP TRIGGER IF EXISTS bot_tenants_mirror ON public.bot_tenants;
+DROP TABLE IF EXISTS public._bot_reconcile_report;
+DROP TABLE IF EXISTS public._bot_coachdawn_report;
+DELETE FROM public.bot_tenants WHERE id = '2330bdfe-7b4d-476f-ad0d-ba1b2caeed12';
+DELETE FROM alphadome.bot_tenants WHERE id = 'cfc89b88-cc67-4655-ab06-b823b93a73e2';
+</code></pre>
+<p>The 15 added columns are left in place on purpose: they are additive, nullable and unused by any code path until the portal reads them, so dropping them buys nothing and risks a partial rollback.</p>
+<p>Tombstoned shells stay recoverable from <code>client_phone = 'merged:&lt;id&gt;'</code> and the <code>description</code> suffix; their tokens were cleared, so a re-invite is required.</p>
+<h2>Validation available locally</h2>
+<pre><code>
+node scripts/test_bot_schema_reconcile_sql.mjs   # 94 checks
+node scripts/test_tenant_merge_sql.mjs           # 63 checks
+</code></pre>
+<p>The 86 include the guards that matter after the fact, not just before: the <code>.MERGE.sql</code> copy is byte-compared to the audited file apart from its two flags, <code>_03_verify.sql</code> is proven to contain exactly one statement and no write verb, the tombstone is proven to append its merge note at most once, and <code>_04_coachdawn.sql</code> is proven to write to nothing but <code>alphadome.bot_tenants</code> — the one place where a stray <code>UPDATE</code> would rewrite a live credential.</p>
+<h2>Review checklist</h2>
+<ul><li>I can show evidence that: Stand up bot_tenants, templates and training data without touching an existing schema</li><li>I can show evidence that: Route one webhook to the right tenant by phone number id</li><li>I can show evidence that: Onboard a client in an afternoon with a checklist that does not leak credentials</li><li>I can show evidence that: Add a second client without a redeploy or a second server</li></ul>
+<div class="licence">
+<strong>Licence.</strong> One buyer, one organisation, internal use. You may adapt the material for your own business and quote short excerpts with attribution. Do not resell, redistribute or publish this pack, in whole or in part, as your own product.<br><br>
+<strong>What this is.</strong> One HTML pack with the five sections and the migration and runbook documents it was assembled from. Access for 12 months.<br><br>
+<strong>What it is not.</strong> Not a guarantee of income, employment, acceptance or performance. Figures quoted in this pack are the measurements of the system it describes, with their sources named, not promises about your results.<br><br>
+Sold via Alphadome Digital Drops. Support, resends and extensions: reply to the WhatsApp message that delivered this pack.
+</div>
+</div></body></html>

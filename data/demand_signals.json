@@ -1,0 +1,78 @@
+{
+  "_comment": "Demand signals the drops pipeline scores against. Every entry names where the number came from and when it was checked; a signal without a source is a guess and does not belong here. Scores are 0-100 and relative to each other, not absolute market sizes.",
+  "updated": "2026-11-10",
+  "signals": {
+    "agentic-hiring": {
+      "label": "Open agentic AI roles",
+      "score": 95,
+      "value": "2,401 open roles across 194 companies; 66% of 3,617 tracked AI roles (October 2026)",
+      "source": "Agentic AI Jobs Index, Get Ready for Agents (CC BY 4.0)",
+      "url": "https://www.getreadyforagents.com/jobs/report/2026-10/",
+      "checked": "2026-11-10",
+      "role_mix": {
+        "agent_engineering": 2345,
+        "ai_ml_engineering": 818,
+        "agent_ops_and_infra": 157,
+        "ai_product": 124,
+        "evals_and_quality": 55,
+        "ai_security": 37
+      }
+    },
+    "agent-ops-skills": {
+      "label": "Skills named most often in agentic postings",
+      "score": 90,
+      "value": "Python 1,732 · Cloud 972 · RAG 661 · MCP 649 · Kubernetes 624 · TypeScript 508 · LangChain 402 · multi-agent 373 · LangGraph 348 · evals 301",
+      "source": "Agentic AI Jobs Index, October 2026",
+      "url": "https://www.getreadyforagents.com/jobs/report/2026-10/",
+      "checked": "2026-11-10"
+    },
+    "whatsapp-commerce-kenya": {
+      "label": "WhatsApp share of Kenyan online orders",
+      "score": 88,
+      "value": "More than 20% of Kenya's online shopping orders happen on WhatsApp; 80% of Kenyan SMEs name simple, seamless payments as a top requirement for growth",
+      "source": "Mastercard / Flowcart chat-to-pay announcement; Mastercard 2026 SME Confidence Index",
+      "url": "https://www.examiner.co.ug/business/article/whatsapp-handles-more-than-20-of-kenyas-online-shopping-orders-as-mastercard-launches-chat-to-pay/",
+      "checked": "2026-11-10"
+    },
+    "mpesa-rails": {
+      "label": "M-Pesa collection capability already running in this repo",
+      "score": 85,
+      "value": "Daraja STK push, callback state machine, payment links and merchant-code reconciliation are implemented and exercised by live tenants",
+      "source": "Internal: server.js initiateStkPush, utils/scanPay.js, docs/TENANT_SCAN_TO_PAY.md",
+      "url": null,
+      "checked": "2026-11-10"
+    },
+    "ai-work-applications": {
+      "label": "AI-work application abandonment",
+      "score": 72,
+      "value": "26 signed up, 159 applications started, 22 completed (13.8%), 4 offers, 3 hired, 0 paid — $566.32 referred to date",
+      "source": "Internal referral funnel, rolling window to 2026-10-29 (docs/BLOG_CONVERSION_ENGINE.md)",
+      "url": null,
+      "checked": "2026-11-10"
+    },
+    "build-in-public": {
+      "label": "Proof assets buyers ask for before a deployment call",
+      "score": 70,
+      "value": "Build logs and teardowns are the cheapest credible asset for selling implementation work; the repo already holds the material",
+      "source": "Internal: ALPHADOME_HIGH_TICKET_CONTENT_ENGINE.md, docs/BLOG_CONVERSION_ENGINE.md",
+      "url": null,
+      "checked": "2026-11-10"
+    },
+    "agency-resale": {
+      "label": "Agencies needing a tenant layer to resell conversational commerce",
+      "score": 78,
+      "value": "Agencies sell funnels and WhatsApp commerce but cannot open a second client without tenant isolation; the layer is the blocker to resale",
+      "source": "Internal: docs/CLICKFUNNELS_ZENDROP_PLAY.md (buyer B), docs/PARTNERSTACK_APPLICATION.md",
+      "url": null,
+      "checked": "2026-11-10"
+    }
+  },
+  "price_anchors": {
+    "_comment": "Only used when a catalogue row has no price. Anchored to what the market charges for comparable written packs, not to what a buyer might pay.",
+    "playbook": 1500,
+    "report": 2500,
+    "kit": 4500,
+    "bundle": 6500,
+    "course": 12000
+  }
+}

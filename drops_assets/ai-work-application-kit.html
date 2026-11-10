@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>The AI Work Application Kit · Alphadome</title><style>
+:root{--ink:#0d1320;--paper:#ffffff;--muted:#5b6b85;--line:#e3e8f0;--accent:#b45309;--code:#f5f7fb}
+*{box-sizing:border-box}
+body{margin:0;background:#f1f4f9;color:var(--ink);font:16px/1.65 Georgia,'Times New Roman',serif}
+.sheet{max-width:820px;margin:0 auto;background:var(--paper);padding:56px 60px 72px;box-shadow:0 10px 40px rgba(13,19,32,.08)}
+.brand{font:600 12px/1 ui-sans-serif,system-ui,sans-serif;letter-spacing:.18em;text-transform:uppercase;color:var(--accent)}
+h1{font-size:2.1rem;line-height:1.2;margin:.4rem 0 .6rem}
+h2{font-size:1.35rem;margin:2.2rem 0 .6rem;border-top:1px solid var(--line);padding-top:1.4rem}
+h3{font-size:1.08rem;margin:1.6rem 0 .4rem}
+h4{font-size:.98rem;margin:1.2rem 0 .3rem}
+p,li{color:#22304a}
+.meta{font:14px/1.5 ui-sans-serif,system-ui,sans-serif;color:var(--muted)}
+.lead{font-size:1.05rem;color:#2b3a55}
+.rule{height:3px;background:var(--accent);width:64px;margin:1.2rem 0 1.6rem}
+ul,ol{padding-left:1.3rem}
+li{margin:.3rem 0}
+code{background:var(--code);padding:.1rem .3rem;border-radius:4px;font-size:.9em}
+pre{background:var(--code);padding:14px 16px;border-radius:8px;overflow:auto;border:1px solid var(--line)}
+pre code{background:none;padding:0;font-size:.82rem;line-height:1.5}
+blockquote{margin:1rem 0;padding:.6rem 1rem;border-left:3px solid var(--accent);color:var(--muted);background:#faf7f2}
+.box{border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin:1.2rem 0;background:#fbfcfe}
+.box h4{margin-top:0}
+.licence{font:13px/1.6 ui-sans-serif,system-ui,sans-serif;color:var(--muted);border-top:1px solid var(--line);margin-top:3rem;padding-top:1.2rem}
+.toc a{color:var(--ink);text-decoration:none;border-bottom:1px dotted var(--line)}
+@media print{body{background:#fff}.sheet{box-shadow:none;padding:0}h2{break-after:avoid}pre{white-space:pre-wrap}}
+@media (max-width:640px){.sheet{padding:28px 20px 40px}h1{font-size:1.6rem}}
+</style></head><body><div class="sheet">
+<div class="brand">Alphadome · Digital Drop</div>
+<h1>The AI Work Application Kit</h1>
+<p class="meta">Assembled pack · playbook · edition 2026-11-10</p>
+<div class="rule"></div>
+<p class="lead">The 22-page pack that gets an AI-work application finished instead of abandoned. Built from a measured funnel where 159 people started an application and only 22 finished it.</p>
+<h2>What you can do when you finish</h2><ul><li>Know exactly what a Mercor-style application asks for before you open it</li><li>Have the four artefacts that shortlisters look for ready to paste</li><li>Write a rate and availability line that does not disqualify you</li><li>Recognise the three application shapes and which one your skills fit</li></ul>
+<h2>Contents</h2><ol class="toc"><li>What the form will ask, in order</li><li>The four artefacts</li><li>Rate and availability</li><li>The assessment, taken once</li><li>After you submit</li></ol>
+<h2>1. What the form will ask, in order</h2><p>The seven questions that appear in almost every AI-work application, what each one is really screening for, and the two-sentence answer shape that survives a keyword filter and a human reader.</p>
+<h2>2. The four artefacts</h2><p>A one-page profile, two work samples with a one-line context note, and an availability block. Templates included, written for people whose work is under NDA or not public.</p>
+<h2>3. Rate and availability</h2><p>How to set a floor, when to quote hourly versus per task, and how to state time-zone overlap without promising hours you cannot keep.</p>
+<h2>4. The assessment, taken once</h2><p>How timed skills assessments are usually structured, a 45-minute practice set, and the failure pattern that loses otherwise-qualified candidates.</p>
+<h2>5. After you submit</h2><p>What the matching step looks like, how long silence usually lasts, when a follow-up helps, and the one message that gets a stalled application reopened.</p>
+<h2>Put it to work this week</h2><div class="box"><ol><li>Fill the four artefacts for one real role today, before you look at a second application.</li><li>Time yourself writing the availability block; if it takes more than ten minutes, it is too complicated to keep.</li><li>Take the practice assessment on a phone, not a laptop, because that is how most people actually sit it.</li><li>Send one application and log the date, the role and the stage you reached. The log is what makes the next attempt faster.</li></ol></div>
+<h1 style="page-break-before:always">Source documents</h1><p class="lead">Bundled verbatim from the system this pack describes, so you can read the implementation rather than a summary of it.</p><h2>BLOG_CONVERSION_ENGINE.md</h2><p class="meta">docs/BLOG_CONVERSION_ENGINE.md</p><h1>The conversion engine</h1>
+<p><strong>Status:</strong> shipped 2026-10-29. Files: <code>utils/conversionPlaybook.js</code> (new), <code>utils/ctaBlock.js</code> (new), <code>utils/blogWriter.js</code>, <code>utils/blogQuality.js</code>, <code>utils/contentJourney.js</code>, <code>scripts/blogManager.js</code>, <code>scripts/smartAutomation.js</code>.</p>
+<h2>The problem this fixes</h2>
+<p>The blog was well written and did not convert. Two measurements say why.</p>
+<h3>1. The Mercor referral funnel (rolling window)</h3>
+<p>| Step | Count | Step conversion | |---|---|---| | Signed up | 26 | — | | Applications started | 159 | — | | Applications completed | 22 | <strong>13.8% of started</strong> | | Offers extended | 4 | 18.2% | | Hired | 3 | 75% | | Paid | 0 | — |</p>
+<p>Six of every seven people who wanted the work gave up <strong>inside the application</strong>. Nothing on the page had told them what the form would ask for, so the form was the first time they met the requirements. Total referrals paid to date: $566.32.</p>
+<h3>2. The LinkedIn export (48 articles, 2025-10-27 to 2026-10-26)</h3>
+<p>| Pattern | Posts | Impressions | Median | |---|---|---|---| | Situational story (&quot;the shift towards a digital world&quot;) | 1 | 88,314 | 88,314 | | &quot;Unlock your future as a …&quot; | 1 | 25 | 25 | | &quot;Master the … assessment&quot; | 1 | 13 | 13 | | &quot;Ready to work as a …&quot; | 1 | 2 | 2 | | All 48 posts | 48 | 100,397 | <strong>91</strong> |</p>
+<p>One post took 88% of all impressions and 92% of all link clicks (679 of 741). Every title built as a command or a promise reached between 0 and 25 people.</p>
+<h2>What changed</h2>
+<h3><code>utils/conversionPlaybook.js</code> — one playbook per offer type</h3>
+<p>Six types (<code>job</code>, <code>product</code>, <code>service</code>, <code>brand</code>, <code>affiliate</code>, <code>course</code>). Each has:</p>
+<ul>
+<li><code>reader</code> — who is actually reading</li>
+<li><code>decision</code> — the single action the page sells</li>
+<li><code>blocker</code> — why they hesitate (for jobs: *&quot;they do not know what the</li>
+<p>application will demand, so the form is where they find out and quit&quot;*)</p>
+<li><code>proof</code> — the three things that move them</li>
+<li><code>readiness</code> — what they must have ready <strong>before</strong> they click</li>
+<li><code>afterClick</code> — what happens, in order</li>
+<li><code>askEarly</code> / <code>askMid</code> / <code>askClose</code> — the ask ladder</li>
+</ul>
+<p>Also exports <code>WEAK_TITLE_PATTERNS</code> (the losing title shapes, with the LinkedIn evidence in the reason string), <code>TITLE_SHAPES</code> (what to write instead), <code>conversionBrief()</code> (prompt text) and <code>readinessCard()</code> (deterministic HTML).</p>
+<h3><code>utils/blogWriter.js</code> — the brief now carries the conversion job</h3>
+<p><code>buildArticlePrompt()</code> gains a <code>THE CONVERSION JOB</code> section and <code>shapeRules()</code> gains rules 9-12:</p>
+<ul>
+<li>9. first 100 words: offer, figure, next step</li>
+<li>10. mid-page ask around section four</li>
+<li>11. answer the named hesitation in the body</li>
+<li>12. never invent the middle of the journey (no invented assessment format,</li>
+<p>delivery promise, guarantee or processing time)</p>
+</ul>
+<p><code>buildRepairPrompt()</code> chases the same targets, so the repair pass cannot loop on a page that keeps failing for a reason the repair prompt never mentioned.</p>
+<h3><code>utils/blogQuality.js</code> — the gate measures conversion</h3>
+<p><code>analyzeArticle(html, { offerType, title })</code> now also returns <code>conversion</code>:</p>
+<p>| Field | Meaning | |---|---| | <code>offerInOpening</code> | a figure, price or next step in the first 110 words | | <code>midAsk</code> | a call to action between 30% and 75% of the page | | <code>readinessHeading</code> | a &quot;Before you apply/order/enrol/get in touch&quot; section, matching the type's verb | | <code>firstPerson</code> | how often the business says we/our/us | | <code>distinctNumbers</code> | unique figures on the page | | <code>duplicateParagraphs</code> | paragraphs repeated word for word | | <code>weakTitle</code> | the title is a promise, not a situation |</p>
+<p>New issues: <code>duplicate-paragraph</code> (weight 12, <strong>blocking</strong>), <code>no-readiness</code> (10), <code>no-offer-early</code> (8), <code>no-mid-ask</code> (6), <code>thin-specifics</code> (6), <code>no-first-person</code> (4), <code>weak-title</code> (0, warning). The readiness check is type-aware: a job page saying &quot;Before you get in touch&quot; is a buyer template with the nouns swapped, and it fails.</p>
+<h3><code>utils/ctaBlock.js</code> — the button says something</h3>
+<p>Every page used to end with <code>Ready to Start? / This opportunity is available now. / [Apply Now]</code> — on a job, a product and a course alike — linking to <code>/ai-jobs/apply/&lt;id&gt;</code> even when the offer had no destination, which returns <code>{&quot;error&quot;:&quot;No destination configured for this offer&quot;}</code>.</p>
+<p>Now: the heading names the offer (&quot;Apply for ML Engineer&quot;, &quot;Get Studio Session priced&quot;), the figure and place are printed when the offer has them, the readiness list sits directly above the button, and there is a compact copy <strong>above the article</strong> so a reader who never scrolls still has a way out. Destination order is <code>destination_url → referral_url → application_url → /ai-jobs/apply/&lt;id&gt;</code>. With none of those, no button is rendered — the page asks for a message instead of sending the reader to a 404.</p>
+<p><code>OFFER_CTA</code> no longer maps <code>service → &quot;Learn More&quot;</code>.</p>
+<h3><code>utils/contentJourney.js</code> — titles that earn the click</h3>
+<p>Job titles stopped being commands and stopped carrying a trailing year or a possessive <code>s</code> (which produced &quot;…English &amp; Finnishes&quot; on live pages):</p>
+<p>| Before | After | |---|---| | What is a X? A Complete Guide for 2026 | What a X Actually Does All Day | | X Salary Guide: What You Can Actually Earn | Is $75/hr Really What a X Earns? | | Essential Skills for Xs: Do You Have What It Takes? | The Skills X Work Actually Rewards | | How to Pass the X Assessment: Complete Prep Guide | What the X Assessment Asks For, and How to Prepare | | How to Get Hired as a X: Step-by-Step | Applying for X Work: What Happens, Step by Step | | Remote X Jobs: Work from Anywhere Guide | Where Remote X Jobs Are Actually Listed | | X Career Roadmap: Junior to Senior in 5 Years | What Changes in Five Years of X Work |</p>
+<h3><code>scripts/blogManager.js</code> — publishing hygiene</h3>
+<ul>
+<li><code>verify-writers-flow-*</code> and <code>test-ai-specialist-*</code> rows are written as</li>
+<p><strong>drafts</strong> and get no static page. 36 of them were live in the public index.</p>
+<li>The pipeline passes <code>{ offerType, title }</code> into <code>analyzeArticle()</code>, so the</li>
+<p>conversion gate actually runs.</p>
+</ul>
+<h3>The boot migration (2026-10-29, after the first deploy)</h3>
+<p><code>restoreFromDB()</code> copied <code>html_content</code> byte-for-byte whenever a page passed the readability audit, so the new footer reached only newly written pages. Three changes make the existing corpus migrate itself on boot, with no model calls:</p>
+<ol>
+<li>A page still carrying <code>Ready to Start?</code> or <code>This opportunity is available now.</code></li>
+<p>is rebuilt even though it passes the audit — no code path produces those strings any more, so the page is stale by definition (<code>isStalePage()</code> in <code>utils/ctaBlock.js</code>).</p>
+<li>The offers query the rebuild uses now selects <code>compensation_max</code>,</li>
+<p><code>compensation_currency</code>, <code>location_text</code>, <code>destination_url</code>, <code>referral_url</code> and <code>application_url</code>, so the new footer can print the figure, the place and the real destination.</p>
+<li><code>/blog</code> is built from the files on disk, so any file without a published row</li>
+<p>kept being advertised — and the verifier's own pages were 93 links deep in the index, titled <code>Verify Writers Flow 20261022130935</code>. The restore now demotes existing verifier rows to draft, deletes files with no published post, and rebuilds the index from <strong>real titles</strong> instead of slug-cased filenames.</p>
+</ol>
+<p>First deploy result: <code>Restored 337 posts (240 rebuilt from their article body)</code>. Six sampled pages verified live — no legacy block, offer named in the heading, readiness list present, two buttons.</p>
+<h3>The second gap, and the fixed point (2026-10-29, evening)</h3>
+<p>That migration only knew the <strong>old</strong> footer, so the pages that had never had one were invisible to it: 96 of the 308 live pages carried no closing block at all, and 21 carried one whose only content was a sentence. Neither state fails the readability audit, so <code>restoreFromDB()</code> copied them byte-for-byte on every boot.</p>
+<p><code>pageNeedsRebuild()</code> in <code>utils/ctaBlock.js</code> is now the whole decision — audit failure, old footer, missing block, nothing to press — and the boot restore, the repair script and the tests all call it, so no copy of the rule can drift:</p>
+<pre><code>
+pageNeedsRebuild({ html, auditOk, issues, mayRebuildFooter })
+// → { rebuild: true, reason: 'no closing block' }
+</code></pre>
+<p>The reason is what the boot log prints (<code>[DB] Rebuilt &lt;slug&gt; (no closing block)</code>), so an operator sees which rule fired without cross-referencing the audit.</p>
+<p><strong>The rule this path lives or dies by:</strong> a predicate that disagrees with the template rewrites the same pages on <em>every</em> boot, and nobody notices because the site still looks fine. <code>ctaBlock()</code>'s no-destination branch used to emit a block with nothing to press — exactly what the predicate calls broken — so it now ends with a link to <code>/ai-jobs</code>. <code>npm run test:boot-convergence</code> proves the fixed point offline: it boots a corpus of stored pages (no block, block with no button, old footer, unreadable, no <code>&lt;article&gt;</code>, no <code>content</code>, healthy), asserts boot 1 rebuilds exactly the broken ones, then asserts boots 2–5 rebuild <strong>nothing</strong> — across 30 offer-type × destination combinations, including the kill switch.</p>
+<h3>What a rebuild actually changes (and what it cannot)</h3>
+<p><code>restoreFromDB()</code> re-renders the page <strong>from <code>blog_posts.content</code></strong> and writes the result to <strong><code>html_content</code> only</strong> — that is the single column it updates:</p>
+<pre><code>
+await sb.from('blog_posts').update({ html_content: fixed }).eq('slug', post.slug);
+</code></pre>
+<p>So a rebuild changes the wrapper around the article: <code>&lt;head&gt;</code>/<code>&lt;style&gt;</code>, the meta description, the compact CTA above the article, the closing block, and the &quot;Published … | N min read&quot; line. The article body is passed through <code>sanitizeArticleHTML(content)</code> and embedded verbatim — <code>content</code>, <code>title</code> and <code>slug</code> are never in an UPDATE payload from this path. (This rebuild path predates 2026-10-29; it used to fire only when a page failed the readability audit. Today it also fires on the stale footer, which is why 240 pages moved instead of ~105.)</p>
+<p>To verify that on production rather than trust it:</p>
+<pre><code>
+npm run audit:page-fidelity                 # every published post, read-only
+npm run audit:page-fidelity -- --slug=chief-of-staff-awareness-1
+</code></pre>
+<p>It compares the article inside each stored page against <code>sanitizeArticleHTML(content)</code> and prints how many are identical, which differ, and which are still on the old footer. It issues SELECTs only. <code>test:blog-html</code> pins the comparison itself (including a tampered-page case), so the audit cannot pass by being blind.</p>
+<p><strong>Two guarantees worth stating explicitly:</strong></p>
+<ol>
+<li>No published article's page is ever deleted. The prune keeps a file for every</li>
+<p>published row (<code>written</code> is built from all of them, not only the rebuilt ones) and only removes files that no published post owns.</p>
+<li>The footer rebuild can be switched off entirely with</li>
+<p><code>BLOG_REBUILD_STALE_PAGES=off</code>. With it off, the restore still repairs pages that fail the readability audit — the pre-2026-10-29 behaviour — and leaves every other stored page byte-for-byte as it is.</p>
+</ol>
+<h3>Verifying a deploy</h3>
+<pre><code>
+npm run verify:blog-deploy        # SITE_URL=… to point at staging
+</code></pre>
+<p>Checks what a visitor sees, not what the build log claims: the index responds, advertises no verifier page, still lists the corpus; a sample spread across the list all serve, all carry the current footer, and the closing block names the offer with two buttons; and a verifier URL returns 404.</p>
+<p>Result of the 2026-10-29 deploy:</p>
+<pre><code>
+Index: 200, 169267 bytes, 299 article links
+PASS  index advertises no verifier page — 0 found
+PASS  every sampled article still serves — 14 pages ok
+PASS  every sampled page is on the current footer — 14 pages ok
+PASS  verifier pages are no longer public — status 404
+</code></pre>
+<p>337 published − 38 demoted verifier/smoke pages = 299 listed. The <code>[DB] Demoted N verifier page(s) to draft</code> line in the boot log confirms N.</p>
+<h2>How to use it</h2>
+<pre><code>
+import { playbookFor, conversionBrief, weakTitleReason } from './utils/conversionPlaybook.js';
+import { analyzeArticle, qualityBrief } from './utils/blogQuality.js';
+
+playbookFor({ offer_type: 'job' }).decision;      // what the page sells
+weakTitleReason('Unlock your future as a …');      // why that title loses
+conversionBrief(offer, { price: 'USD 75' });       // prompt lines
+
+const a = analyzeArticle(html, { offerType: 'job', title: post.title });
+a.conversion;                                      // the seven signals
+qualityBrief(a);                                   // what a repair pass must fix
+</code></pre>
+<p>Tests: <code>npm run test:blog-quality</code> (playbook + gate), <code>npm run test:blog-html</code> (CTA block + template), <code>npm run test:blog-fallback</code> (journey titles).</p>
+<h2>What is not done yet</h2>
+<ol>
+<li><strong>The 300 existing pages keep their old prose.</strong> The template fix (CTA block,</li>
+<p>readiness card, top button) reaches them for free via <code>npm run repair:blog-html</code>, which rebuilds HTML from <code>blog_posts.content</code> without a model call.</p>
+<li><strong>The readiness card is generic per offer type</strong>, not per offer. A job that</li>
+<p>needs a specific document should set it on the offer row.</p>
+<li><strong>Clicks through a direct provider link are not measurable.</strong> The measurement</li>
+<p>loop itself exists (<code>GET /tenant/writers-flow/analytics</code> reports views, clicks and CTR per page, and <code>clicks_note</code> says when a zero means &quot;not counted&quot;), but a page whose CTA points straight at the provider is answered by the provider. Closing that gap means routing every CTA through <code>/ai-jobs/apply/&lt;id&gt;</code> — <code>ctaTarget()</code> in <code>utils/ctaBlock.js</code> — which re-renders page frames across the corpus (<code>content</code> untouched, and <code>BLOG_REBUILD_STALE_PAGES=off</code> still applies).</p>
+</ol>
+<h2>Review checklist</h2>
+<ul><li>I can show evidence that: Know exactly what a Mercor-style application asks for before you open it</li><li>I can show evidence that: Have the four artefacts that shortlisters look for ready to paste</li><li>I can show evidence that: Write a rate and availability line that does not disqualify you</li><li>I can show evidence that: Recognise the three application shapes and which one your skills fit</li></ul>
+<div class="licence">
+<strong>Licence.</strong> One buyer, one organisation, internal use. You may adapt the material for your own business and quote short excerpts with attribution. Do not resell, redistribute or publish this pack, in whole or in part, as your own product.<br><br>
+<strong>What this is.</strong> One HTML pack, readable on a phone, with all five sections and the templates. Access for 12 months; re-download any time.<br><br>
+<strong>What it is not.</strong> Not a guarantee of income, employment, acceptance or performance. Figures quoted in this pack are the measurements of the system it describes, with their sources named, not promises about your results.<br><br>
+Sold via Alphadome Digital Drops. Support, resends and extensions: reply to the WhatsApp message that delivered this pack.
+</div>
+</div></body></html>

@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#081421" />
+  <title>Revenue funnel build — WhatsApp, payments and content, deployed | Alphadome</title>
+  <meta name="description" content="A deployed revenue funnel: WhatsApp sales flow, M-Pesa and card payments, and a content engine that answers buyers before they ask. From $3,000, scoped in writing." />
+  <link rel="canonical" href="https://alphadome.onrender.com/build" />
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <style>
+    :root {
+      --bg-1: #081421; --bg-2: #0b1a2b; --panel: rgba(12, 26, 43, .82); --line: #1e3550;
+      --text: #eef5fb; --muted: #a9bccd; --accent: #ff8a00; --accent-2: #ffd166; --mint: #7ef9c8; --err: #ff6b7f;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; color: var(--text); line-height: 1.65; min-height: 100vh;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: radial-gradient(900px 500px at 10% -10%, rgba(255,138,0,.13), transparent 60%),
+                  radial-gradient(800px 480px at 92% 0%, rgba(126,249,200,.07), transparent 62%),
+                  linear-gradient(150deg, var(--bg-1), var(--bg-2));
+      background-attachment: fixed;
+    }
+    a { color: var(--accent-2); }
+    .wrap { max-width: 900px; margin: 0 auto; padding: 0 20px 72px; }
+    nav { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; padding: 18px 0; font-size: .88rem; }
+    nav a { color: var(--muted); text-decoration: none; }
+    nav .brand { color: var(--accent); font-weight: 700; letter-spacing: .04em; }
+    .eyebrow { font-size: .74rem; letter-spacing: .16em; text-transform: uppercase; color: var(--accent-2); }
+    h1 { font-size: clamp(1.9rem, 4vw, 2.8rem); line-height: 1.15; margin: .5rem 0 .8rem; letter-spacing: -.02em; }
+    h2 { font-size: 1.2rem; margin: 30px 0 10px; }
+    .lede { color: var(--muted); max-width: 62ch; font-size: 1.05rem; }
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 4px; }
+    .chip { border: 1px solid var(--line); background: rgba(255,255,255,.03); color: var(--muted);
+      border-radius: 999px; padding: 5px 12px; font-size: .78rem; }
+    .chip b { color: var(--mint); font-weight: 600; }
+    .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 22px; margin-top: 20px; }
+    .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    ul { padding-left: 1.15rem; margin: 8px 0; }
+    li { margin: 7px 0; color: var(--muted); }
+    li b { color: var(--text); font-weight: 600; }
+    .no li { color: #c9b9b9; }
+    label.field { display: block; font-size: .8rem; color: var(--muted); margin: 14px 0 6px; }
+    input, select, textarea {
+      width: 100%; padding: 12px 13px; font: inherit; font-size: .95rem; color: var(--text);
+      background: #0a1725; border: 1px solid var(--line); border-radius: 10px; outline: none;
+    }
+    input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+    textarea { min-height: 92px; resize: vertical; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    button.pay {
+      width: 100%; margin-top: 20px; padding: 14px; font-size: 1rem; font-weight: 700; cursor: pointer;
+      color: #201000; border: 0; border-radius: 10px; background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    }
+    button.pay:disabled { opacity: .6; cursor: progress; }
+    .msg { display: none; margin-top: 14px; padding: 12px; border-radius: 10px; font-size: .9rem; line-height: 1.5; }
+    .msg.on { display: block; }
+    .msg.ok { background: rgba(126,249,200,.1); border: 1px solid rgba(126,249,200,.35); color: var(--mint); }
+    .msg.err { background: rgba(255,107,127,.1); border: 1px solid rgba(255,107,127,.35); color: var(--err); }
+    .note { font-size: .8rem; color: var(--muted); }
+    footer { border-top: 1px solid var(--line); margin-top: 40px; padding-top: 16px; color: var(--muted); font-size: .78rem; }
+    @media (max-width: 640px) { .cols, .row { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <nav>
+      <a class="brand" href="/">Alphadome</a>
+      <a href="/drops">Drops</a>
+      <a href="/ai-jobs">AI Jobs</a>
+      <a href="/portfolio.html">Systems</a>
+    </nav>
+
+    <p class="eyebrow">Done-for-you revenue funnel</p>
+    <h1>We build the funnel, wire the money, and hand you the keys.</h1>
+    <p class="lede">A working sales path from the first message to the money in your account: WhatsApp conversations, M-Pesa and card checkout, and a content engine that answers what buyers are already searching for. Deployed on infrastructure you control.</p>
+    <div class="chips">
+      <span class="chip">From <b>$3,000</b>, scoped in writing</span>
+      <span class="chip"><b>2–3 weeks</b> to a live pilot</span>
+      <span class="chip">M-Pesa <b>and</b> card</span>
+      <span class="chip">You own the accounts</span>
+    </div>
+
+    <div class="panel">
+      <h2 style="margin-top:0">What you get</h2>
+      <ul>
+        <li><b>A funnel that takes money.</b> Landing page, offer ladder, order bump, and a checkout that works on a phone — M-Pesa for Kenya, card for US/UK/CA buyers.</li>
+        <li><b>WhatsApp as a sales channel.</b> Catalogue, order capture, payment handoff, receipts and follow-up, on your own WhatsApp Business number.</li>
+        <li><b>A content engine.</b> Pages written for what your buyers search, each one pointing at the offer, with traffic and conversion measured per page.</li>
+        <li><b>The operations screen.</b> Orders, payments, failures and reconciliations in one place, so an exception is visible the day it happens.</li>
+        <li><b>Handover.</b> A written runbook, a walkthrough of every admin action, and 30 days of support after launch.</li>
+      </ul>
+      <div class="cols">
+        <div>
+          <h2>What it costs</h2>
+          <p class="note">From $3,000 for a single-lane pilot: one offer, one payment lane, one channel. $6,000–15,000 for a multi-tenant or multi-lane build. Half to start, half at launch. Invoiced in USD — bank transfer, Wise or PayPal.</p>
+        </div>
+        <div>
+          <h2>What it is not</h2>
+          <ul class="no">
+            <li>Not a traffic guarantee. We build the path; you bring or buy the audience.</li>
+            <li>Not a revenue promise. Results are measured against your baseline, not ours.</li>
+            <li>Not a subscription you cannot leave. The accounts are yours.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2 style="margin-top:0">Ask for a written scope</h2>
+      <p class="note">Five fields decide whether this is a fit. You will get a scope, a price and a start date — not a calendar link.</p>
+      <form id="reqForm" novalidate>
+        <div class="row">
+          <div>
+            <label class="field" for="name">Your name</label>
+            <input id="name" name="name" autocomplete="name" required>
+          </div>
+          <div>
+            <label class="field" for="company">Company</label>
+            <input id="company" name="company" autocomplete="organization">
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label class="field" for="email">Work email</label>
+            <input id="email" name="email" type="email" autocomplete="email" required>
+          </div>
+          <div>
+            <label class="field" for="country">Country</label>
+            <input id="country" name="country" autocomplete="country-name" placeholder="US, GB, KE…">
+          </div>
+        </div>
+        <label class="field" for="sell">What do you sell, in one sentence?</label>
+        <input id="sell" name="sell" placeholder="e.g. Industrial water pumps to farms and estates" required>
+        <label class="field" for="channel">Where do your buyers already talk to you?</label>
+        <input id="channel" name="channel" placeholder="WhatsApp, Instagram, phone calls, walk-ins…">
+        <label class="field" for="problem">What happens today between the first message and the money?</label>
+        <textarea id="problem" name="problem" placeholder="The manual steps you want removed."></textarea>
+        <div class="row">
+          <div>
+            <label class="field" for="budget">Budget</label>
+            <select id="budget" name="budget" required>
+              <option value="">Choose…</option>
+              <option value="3k-6k">$3,000 – $6,000</option>
+              <option value="6k-12k">$6,000 – $12,000</option>
+              <option value="12k+">$12,000+</option>
+              <option value="unsure">Not sure yet</option>
+            </select>
+          </div>
+          <div>
+            <label class="field" for="timeline">Start</label>
+            <select id="timeline" name="timeline" required>
+              <option value="">Choose…</option>
+              <option value="now">Now</option>
+              <option value="30-days">Within 30 days</option>
+              <option value="quarter">This quarter</option>
+              <option value="exploring">Exploring</option>
+            </select>
+          </div>
+        </div>
+        <button class="pay" id="sendBtn" type="submit">Request the scope and price</button>
+        <div class="msg" id="formMsg"></div>
+        <p class="note">Your details are used to answer this request. No mailing list, no resale.</p>
+      </form>
+    </div>
+
+    <footer>
+      Alphadome · built in Nairobi, deployed for buyers anywhere. Written packs live at <a href="/drops">/drops</a>.
+      A funnel is a delivery system, not an income guarantee.
+    </footer>
+  </div>
+
+  <script>
+    (function () {
+      var form = document.getElementById('reqForm');
+      var btn = document.getElementById('sendBtn');
+      var msg = document.getElementById('formMsg');
+
+      function show(text, kind) {
+        msg.className = 'msg on ' + kind;
+        msg.textContent = text;
+      }
+
+      form.addEventListener('submit', function (ev) {
+        ev.preventDefault();
+        var data = {
+          name: form.name.value,
+          company: form.company.value,
+          email: form.email.value,
+          country: form.country.value,
+          sell: form.sell.value,
+          channel: form.channel.value,
+          problem: form.problem.value,
+          budget: form.budget.value,
+          timeline: form.timeline.value
+        };
+        btn.disabled = true;
+        btn.textContent = 'Sending…';
+
+        fetch('/api/service-requests', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        })
+          .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+          .then(function (res) {
+            btn.disabled = false;
+            btn.textContent = 'Request the scope and price';
+            if (!res.ok || !res.d.ok) {
+              show((res.d && res.d.error) || 'That did not send. Try again in a moment.', 'err');
+              return;
+            }
+            form.reset();
+            show(res.d.message || 'Received. You will get a written scope and price.', 'ok');
+          })
+          .catch(function () {
+            btn.disabled = false;
+            btn.textContent = 'Request the scope and price';
+            show('The request did not reach the server. Try again in a moment.', 'err');
+          });
+      });
+    })();
+  </script>
+</body>
+</html>

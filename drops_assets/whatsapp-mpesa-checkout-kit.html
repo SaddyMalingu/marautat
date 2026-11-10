@@ -1,0 +1,787 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>WhatsApp + M-Pesa Checkout Kit · Alphadome</title><style>
+:root{--ink:#0d1320;--paper:#ffffff;--muted:#5b6b85;--line:#e3e8f0;--accent:#b45309;--code:#f5f7fb}
+*{box-sizing:border-box}
+body{margin:0;background:#f1f4f9;color:var(--ink);font:16px/1.65 Georgia,'Times New Roman',serif}
+.sheet{max-width:820px;margin:0 auto;background:var(--paper);padding:56px 60px 72px;box-shadow:0 10px 40px rgba(13,19,32,.08)}
+.brand{font:600 12px/1 ui-sans-serif,system-ui,sans-serif;letter-spacing:.18em;text-transform:uppercase;color:var(--accent)}
+h1{font-size:2.1rem;line-height:1.2;margin:.4rem 0 .6rem}
+h2{font-size:1.35rem;margin:2.2rem 0 .6rem;border-top:1px solid var(--line);padding-top:1.4rem}
+h3{font-size:1.08rem;margin:1.6rem 0 .4rem}
+h4{font-size:.98rem;margin:1.2rem 0 .3rem}
+p,li{color:#22304a}
+.meta{font:14px/1.5 ui-sans-serif,system-ui,sans-serif;color:var(--muted)}
+.lead{font-size:1.05rem;color:#2b3a55}
+.rule{height:3px;background:var(--accent);width:64px;margin:1.2rem 0 1.6rem}
+ul,ol{padding-left:1.3rem}
+li{margin:.3rem 0}
+code{background:var(--code);padding:.1rem .3rem;border-radius:4px;font-size:.9em}
+pre{background:var(--code);padding:14px 16px;border-radius:8px;overflow:auto;border:1px solid var(--line)}
+pre code{background:none;padding:0;font-size:.82rem;line-height:1.5}
+blockquote{margin:1rem 0;padding:.6rem 1rem;border-left:3px solid var(--accent);color:var(--muted);background:#faf7f2}
+.box{border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin:1.2rem 0;background:#fbfcfe}
+.box h4{margin-top:0}
+.licence{font:13px/1.6 ui-sans-serif,system-ui,sans-serif;color:var(--muted);border-top:1px solid var(--line);margin-top:3rem;padding-top:1.2rem}
+.toc a{color:var(--ink);text-decoration:none;border-bottom:1px dotted var(--line)}
+@media print{body{background:#fff}.sheet{box-shadow:none;padding:0}h2{break-after:avoid}pre{white-space:pre-wrap}}
+@media (max-width:640px){.sheet{padding:28px 20px 40px}h1{font-size:1.6rem}}
+</style></head><body><div class="sheet">
+<div class="brand">Alphadome · Digital Drop</div>
+<h1>WhatsApp + M-Pesa Checkout Kit</h1>
+<p class="meta">Assembled pack · kit · edition 2026-11-10</p>
+<div class="rule"></div>
+<p class="lead">The implementation pack for taking a payment inside a WhatsApp conversation in Kenya: catalogue, STK prompt, callback state machine, receipt and reconciliation. Assembled from a system that runs it.</p>
+<h2>What you can do when you finish</h2><ul><li>Send a real M-Pesa prompt from your own shortcode and read the callback safely</li><li>Write an order row that survives a retried callback without double-delivering</li><li>Give every sale a merchant code that reconciles against your statement</li><li>Handle the failed prompt with a fallback instead of losing the customer</li></ul>
+<h2>Contents</h2><ol class="toc"><li>The money lane, end to end</li><li>The callback as a state machine</li><li>Order rows and reconciliations</li><li>WhatsApp delivery</li><li>The failure path</li></ol>
+<h2>1. The money lane, end to end</h2><p>Daraja OAuth, the STK request body, the password timestamp, and the four environment variables that must agree. Includes the exact failure messages and what each one means.</p>
+<h2>2. The callback as a state machine</h2><p>Pending, prompted, paid, delivered, failed. Why the handler must acknowledge before it works, and how to absorb a duplicate callback.</p>
+<h2>3. Order rows and reconciliations</h2><p>The table shape, the account reference that fits Daraja's 12-character limit, and the merchant code that turns a statement line into a tenant.</p>
+<h2>4. WhatsApp delivery</h2><p>The message that goes out after payment, the 24-hour window constraint, and which templates must be pre-approved before launch.</p>
+<h2>5. The failure path</h2><p>Cancelled prompts, wrong PIN, insufficient funds, timeouts. The fallback sequence that recovers a sale instead of apologising for it.</p>
+<h1 style="page-break-before:always">Source documents</h1><p class="lead">Bundled verbatim from the system this pack describes, so you can read the implementation rather than a summary of it.</p><h2>TENANT_SCAN_TO_PAY.md</h2><p class="meta">docs/TENANT_SCAN_TO_PAY.md</p><h1>Tenant Scan to Pay — merchant wallet + client wallet</h1>
+<p><strong>Surface:</strong> <code>admin/tenant_dashboard.html</code> → <strong>Store → Scan to Pay</strong> <strong>Backend:</strong> <code>utils/scanPay.js</code> (rules) + <code>server.js</code> (routes) <strong>Customer page:</strong> <code>public/pay.html</code> served at <code>/pay/t/&lt;templateId&gt;</code> <strong>Status:</strong> built 2026-10-25 on the QR + STK stack already live for Kassangas.</p>
+<h2>What a tenant can do</h2>
+<p>| Direction | Action | Endpoint | |---|---|---| | Collect | Create a reusable payment link (item + amount) | <code>POST /tenant/scan-pay/links</code> | | Collect | Show the QR / copy the link / download the QR as a PNG | client-side (<code>/vendor/qrcode.min.js</code> + <code>/vendor/qr-poster.js</code>) | | Collect | Prompt a named customer's phone for a link's amount | <code>POST /tenant/scan-pay/charge</code> | | Collect | See links, per-link totals, collections, merchant code | <code>GET /tenant/scan-pay</code> | | Pay | Pay any Alphadome pay link (paste, upload a poster, or live camera) | <code>POST /tenant/scan-pay/pay</code> | | Pay (customer) | Open the link and prompt their own phone | <code>POST /pay/t/:tokenId/intent</code> | | Resell | Sell an airtime/data bundle to a customer's number | <code>POST /api/kassangas/buy-product</code> | | Resell | This tenant's own bundle sales + the catalogue + provider readiness | <code>GET /tenant/scan-pay/bundles</code> |</p>
+<h2>The tools around the wallet</h2>
+<p><strong>QR, both directions.</strong> <code>Create QR + link</code> draws the poster code (<code>public/vendor/qrcode.min.js</code> through <code>public/vendor/qr-poster.js</code>) and <code>Download QR</code> saves that same PNG for printing. On the pay side the same <code>jsQR</code> decoder serves an uploaded screenshot and a live camera (<code>getUserMedia</code>, rear camera). The camera is released on decode, on &quot;Stop camera&quot;, and before the section re-renders, so the light never stays on. With no camera or no permission the section says which of those happened and the paste field still works.</p>
+<p>Both libraries live in <code>public/vendor/</code> and are served from <code>/vendor/...</code> by the same Express app. The first build pointed the generator at <code>https://cdnjs.cloudflare.com/ajax/libs/qrcode.js/1.5.3/qrcode.min.js</code>, which answers <strong>404</strong>, so <code>QRCode</code> was undefined on every load and the panel said &quot;QR library unavailable — share the link instead&quot;. Self-hosting removes that failure mode; a CDN copy only loads if the vendored file is missing.</p>
+<p><strong>Why <code>qr-poster.js</code> exists.</strong> A QR that draws is not a QR that scans. qrcodejs fills its canvas with a fractional tile — a 33-module link asked for at 190px gets 190/33 = 5.76px per module — so every module edge lands on a half pixel and the browser anti-aliases it grey. It also draws edge to edge: <strong>no quiet zone</strong>, on a panel that is dark. A phone camera will not lock onto that, which is what &quot;the QR is missing&quot; actually looked like on 2026-10-27. <code>qr-poster.js</code> takes the module matrix from qrcodejs and redraws it with</p>
+<ul>
+<li>a whole number of pixels per module (17px at the default 720px side),</li>
+<li>four modules of white margin on every side, filled as the canvas ground,</li>
+<li>the same bitmap handed to the screen and to <code>Download QR</code>.</li>
+</ul>
+<p>Verified in the suite by decoding the poster against a near-black surround, the way the panel presents it; a margin-less code fails that test. The merchant portal uses the same helper, with <code>api.qrserver.com</code> still as the last-resort image.</p>
+<p><strong>Money tools.</strong> Two calculators on the same screen:</p>
+<p>| Calculator | Inputs | Outputs | Carried over from | |---|---|---|---| | Sales | monthly target, already collected (prefilled with this tenant's Scan to Pay collections) | remaining gap, per day (30-day month), per week, already in | <code>public/kassangas-merchant-portal.html</code> | | Cash flow | monthly income, monthly expenses | net cash flow, savings rate, suggested 10% reserve, daily spend at that rate | <code>public/kassangas-client-wallet.html</code> |</p>
+<p>The gap for the day/week is rounded up, so &quot;KES 0 left&quot; never ships while a shilling is still outstanding.</p>
+<p><strong>Airtime and data bundles.</strong> The bundle desk lists the same catalogue the Kassangas wallet sells from (data bundles, airtime, KPLC, water, GOtv/DStv, gift cards), shows the customer price, Alphadome's fee and what the tenant keeps <em>before</em> confirming, and sells through <code>POST /api/kassangas/buy-product</code> with <code>merchant_code</code> set to the tenant's own <code>SP&lt;digits&gt;</code>. Reads come from <code>GET /tenant/scan-pay/bundles</code>, which filters <code>logs/digital_sales_transactions.jsonl</code> by that same code, so one tenant never sees another's sales. The response also carries <code>salesMode</code> (<code>sandbox</code> / <code>production</code>) and each provider's readiness, so a &quot;setup needed&quot; provider is visible instead of being silently chosen.</p>
+<h2>The customer page (<code>/pay/t/...</code>)</h2>
+<p>The customer page carries no session: it resolves the link through <code>GET /api/kassangas/template/:tokenId</code>, then posts to the intent endpoint. It is marked <code>noindex,nofollow</code> and is not in <code>sitemap.xml</code>.</p>
+<h2>Reused, not rebuilt</h2>
+<ul>
+<li><code>kassangas_templates</code> — the payment link (created by the live Kassangas portal).</li>
+<li><code>subscriptions</code> — the prompt, with <code>plan_type = 'tenant_scan_pay'</code>.</li>
+<li><code>initiateStkPush()</code> — the single STK implementation in <code>server.js</code>.</li>
+<li><code>qrcodejs 1.0.0</code> and <code>jsQR 1.4.0</code> — vendored in <code>public/vendor/</code> (provenance and</li>
+<p>licences in <code>public/vendor/README.md</code>), served at <code>/vendor/...</code>.</p>
+<li><code>qr-poster.js</code> — our own 60-line renderer over qrcodejs' matrix: whole-pixel</li>
+<p>modules and a quiet zone, so the code scans off a screen and off paper.</p>
+</ul>
+<p>No migration is required to collect: both tables already exist wherever the Kassangas QR checkout runs. If <code>kassangas_templates</code> is missing, the routes answer <strong>503</strong> naming <code>SQL_MIGRATION_KASSANGAS_PHASE1.sql</code> instead of pretending to work.</p>
+<h2>Tenant isolation</h2>
+<ul>
+<li>Every link row carries <code>metadata.tenant_id</code> (the tenant's <code>site_tenants.id</code>) and</li>
+<p><code>metadata.tenant_code</code>.</p>
+<li><code>GET /tenant/scan-pay</code> lists links with a jsonb containment filter on that id and</li>
+<p>collections with <code>account_ref ILIKE '&lt;merchantCode&gt;%'</code>.</p>
+<li><code>POST /tenant/scan-pay/charge</code> refuses a link that is not this tenant's.</li>
+<li><code>POST /tenant/scan-pay/pay</code> may pay <strong>any</strong> link (that is the point) and records</li>
+<p><code>metadata.payer_tenant_id</code>.</p>
+<li>Payer phones are masked in the portal (<code>2547***78</code>).</li>
+<li><code>GET /tenant/scan-pay/bundles</code> filters the sales log by the tenant's own merchant</li>
+<p>code and returns masked recipients only, so the bundle desk cannot read another tenant's sales.</p>
+</ul>
+<h2>Merchant code and reconciliation</h2>
+<p><code>tenantMerchantCode({ phone, slug })</code> = <code>SP</code> + last six digits of the tenant's phone (<code>SP245555</code>). Each prompt's M-Pesa <code>AccountReference</code> starts with that code, so a paybill statement line can be matched to the tenant that requested it.</p>
+<h2>Failure modes the UI shows instead of hiding</h2>
+<p>| Condition | What the tenant sees | |---|---| | <code>MPESA_*</code> incomplete | Red banner listing the missing variables; links and QR codes still work | | <code>kassangas_templates</code> missing | Red banner naming the SQL file to run | | Template id not theirs | <code>404 That payment link is not one of yours.</code> | | Link closed / expired | <code>410</code> on the pay page, with &quot;ask the business for a new link&quot; | | Double tap inside 90 s | The existing prompt is replayed, no second STK | | Vendored QR files missing from a deploy | A CDN copy loads and the section redraws itself | | <code>qr-poster.js</code> missing | <code>showQr</code> falls back to qrcodejs' own 640px canvas on the white card; the QR still draws, one quiet zone thinner |</p>
+<h2>Demo script (5 minutes)</h2>
+<ol>
+<li>Tenant portal → <strong>Scan to Pay</strong> → create &quot;Guitar setup, KES 1,500&quot;.</li>
+<li><strong>Show QR</strong> → <strong>Download QR</strong> (a printable poster) → open <code>/pay/t/TMPL-…</code> on a phone → enter an M-Pesa number.</li>
+<li>Prompt arrives → enter the PIN (sandbox) → refresh the portal → the collection</li>
+<p>appears with the masked payer and the merchant code.</p>
+<li>Paste the same link into <strong>Client wallet → Pay now</strong>, or point <strong>Scan with camera</strong></li>
+<p>at the poster, to show the other direction.</p>
+<li><strong>Money tools</strong> → target 120,000, already in (prefilled) → the gap and the daily</li>
+<p>number; then cash flow → net flow and savings rate.</p>
+<li><strong>Airtime &amp; data bundles</strong> → pick &quot;Safaricom Daily 1GB&quot; → see the fee and what the</li>
+<p>tenant keeps → sell to a test number → the sale appears below with its TXN id.</p>
+</ol>
+<h2>Verification</h2>
+<pre><code>
+npm run test:scan-pay      # 153 checks: rules, routes, bundles, portal wiring, customer page, QR round trip, poster geometry
+</code></pre>
+<p>Live checks after deploy:</p>
+<pre><code>
+curl -s -o /dev/null -w &quot;%{http_code}\n&quot; https://alphadome.onrender.com/pay/t/PROBE   # 200
+curl -s -o /dev/null -w &quot;%{http_code}\n&quot; https://alphadome.onrender.com/tenant/scan-pay # 401
+curl -s -o /dev/null -w &quot;%{http_code}\n&quot; https://alphadome.onrender.com/vendor/qr-poster.js # 200
+</code></pre>
+<p>The <code>401</code> on the API is the isolation proof: the portal section needs a tenant session, and only the customer page is public.</p>
+<h2>CLICKFUNNELS_ZENDROP_PLAY.md</h2><p class="meta">docs/CLICKFUNNELS_ZENDROP_PLAY.md</p><h1>ClickFunnels + Zendrop — the Alphadome revenue play</h1>
+<p><strong>Written:</strong> 2026-11-05 · <strong>Horizon:</strong> first cash inside 7 days</p>
+<p><strong>Verdict up front:</strong> do <strong>not</strong> become a dropshipper. Become the <strong>payment-and-fulfilment layer that makes ClickFunnels + Zendrop usable in Africa</strong>, then sell that layer as a paid pilot to buyers Alphadome can already reach.</p>
+<p>---</p>
+<h2>1. Target buyer</h2>
+<p>Two buyers, in this order.</p>
+<p>| # | Buyer | Why they buy | Where they already are | |---|---|---|---| | A | <strong>Kenyan/African SMB with a product list and a WhatsApp audience, no funnel</strong> | They have demand in WhatsApp and no page that takes money, no upsell, no fulfilment process | <code>ABOSS_READY_TO_CONTACT.csv</code>, <code>ABOSS_TOP10_TODAY.csv</code>, <code>ABOSS_SEND_QUEUE.csv</code>, <code>public.discovery_submissions</code>, live tenants (Kassangas, Coach Dawn) | | B | <strong>The same SMB's overseas/diaspora customers</strong> (card-paying) | Card checkout works for them; they want the product, not a 3-week wait | the client's own audience — Alphadome sells the <em>funnel</em>, not the traffic |</p>
+<p>Buyer A is the revenue. Buyer B is the reason the funnel is worth paying for.</p>
+<p><strong>Not the buyer:</strong> a Kenyan consumer buying a Zendrop gadget. See §7 risk 3.</p>
+<p>---</p>
+<h2>2. Workflow being solved</h2>
+<p>Today a client's sale looks like this: WhatsApp message → manual reply → &quot;send M-Pesa to this number&quot; → screenshot → manual record → manual supplier order. Every step is a human. That is the workflow this play removes.</p>
+<p>Target workflow:</p>
+<pre><code>
+traffic ─▶ ClickFunnels page (offer, order bump, one-click upsell, A/B test)
+             │
+             ├── card buyer ──▶ CF native checkout (Stripe / Payments AI)
+             │                    ├─▶ Zendrop auto-fulfils
+             │                    └─▶ webhook orders/invoice.paid ─▶ Alphadome
+             │                                                       │ order row + WhatsApp receipt
+             │
+             └── M-Pesa buyer ──▶ Alphadome /pay/t/&lt;id&gt; or
+                                  POST /api/kassangas/stk-push
+                                    └─▶ STK prompt ─▶ POST /mpesa/callback
+                                          └─▶ Alphadome writes bot_orders
+                                                ├─▶ Zendrop order (via MCP) or local stock
+                                                └─▶ WhatsApp confirmation + tracking
+</code></pre>
+<p>The funnel raises average order value. Zendrop removes the supplier work. <strong>Alphadome is the only party in that diagram that can take M-Pesa.</strong> That is the whole thesis.</p>
+<p>---</p>
+<h2>3. What the two platforms actually give you (verified 2026-11-05)</h2>
+<h3>ClickFunnels 2.0</h3>
+<p>| Fact | Consequence for us | |---|---| | Plans: Launch <strong>$97/mo</strong>, Scale <strong>$197/mo</strong>, Optimize <strong>$297/mo</strong> | Scale is the floor for this play, not Launch | | <strong>Webhooks + full API access + custom code editor start at Scale</strong> | Any purchase-triggered automation needs $197/mo. No way around it. | | Payments = <strong>Stripe (via Payments AI), PayPal, Apple Pay, Google Pay</strong> | <strong>No mobile money. No M-Pesa. Ever.</strong> | | Payments country support is Stripe's / Payments AI's, not ClickFunnels' | See the Stripe row below | | Feature inventory Alphadome does not have | One-click upsells, order bumps, A/B testing, Smart Checkout, courses, community, MessageHub, discount codes, affiliate center | | Webhook of record | <code>orders/invoice.paid</code> (V1+V2), plus <code>orders/invoice.fulfilled</code>, <code>orders/invoice.refunded</code>, <code>contact.created</code> |</p>
+<h3>Stripe</h3>
+<p>Stripe's own availability page lists <strong>Kenya (and Nigeria, South Africa) only under &quot;Extended network&quot;</strong> — not a standard supported-country account. A Kenyan entity cannot simply switch on ClickFunnels card checkout; it needs a US/EU entity (e.g. Stripe Atlas) or a partner's gateway.</p>
+<blockquote>**This is the hardest constraint in the whole plan, and it is the reason the plan</blockquote>
+<blockquote>works.** Every Kenyan seller who buys ClickFunnels hits it. Alphadome already solved</blockquote>
+<blockquote>it with Daraja.</blockquote>
+<h3>Zendrop</h3>
+<p>| Fact | Consequence for us | |---|---| | Plans: Free <strong>$0</strong>, Pro <strong>$49/mo</strong>, Plus <strong>$79/mo</strong> | Free has <strong>no automated fulfilment</strong> — sell Pro | | <strong>Native ClickFunnels integration</strong> (one-click app, CF 2.0 account required) | Product import + order sync + tracking sync, no code | | <strong>Up to 10 stores per Zendrop account</strong> (Shopify / TikTok US / Wix / ClickFunnels) | One Zendrop account can back many tenants. Maps to <code>site_tenants</code>. | | <strong>MCP server</strong> — Claude, ChatGPT, Cursor, Gemini, OpenClaw | Alphadome's agents can run the store: catalog search, <strong>shipping quotes to any country</strong>, order list/filter, tracking, revenue/profit/refund analytics, fulfilment trigger, address updates | | Automated fulfilment only on paid plans | Budget $49/mo per pilot |</p>
+<p>The MCP server is the lever most people will miss. Alphadome is an agent platform — <strong>Zendrop's fulfilment half can be driven by an Alphadome agent with zero integration code.</strong> That is the automation story to sell.</p>
+<p>---</p>
+<h2>4. Reusable Alphadome assets (do not rebuild these)</h2>
+<p>| Capability | Where | What it does for this play | |---|---|---| | M-Pesa STK engine | <code>server.js:14856</code> <code>initiateStkPush()</code>; <code>POST /api/kassangas/stk-push</code> (public); <code>POST /mpesa/stk-push</code> (tenant) | The money lane. The public endpoint already takes <code>{phone, amount, customerName, itemName}</code> | | Callback state machine | <code>alphadome-kernel/src/billing/payments.ts</code> — <code>processMpesaCallback()</code>, <code>markSubscriptionSuccess()</code>, <code>markSubscriptionFailed()</code> | Payment → order state, already written and tested | | Payment links + QR | <code>POST /api/kassangas/create-template</code>, <code>POST /api/kassangas/payment-intent</code>, <code>/pay/t/:tokenId</code> → <code>public/pay.html</code>, <code>utils/scanPay.js</code> | Order-bump / rep link that works without a card | | Merchant code reconciliation | <code>utils/scanPay.js</code> — <code>tenantMerchantCode()</code>, <code>buildAccountRef()</code> | M-Pesa statement line → tenant. This is what makes the client trust the numbers. | | Failed-payment fallback | <code>FALLBACK_PAYMENT_OPTIONS.md</code> (retry / bank / COD / support) | Recovers STK prompts that fail. Pure margin. | | Tenant orders | <code>GET/POST/PATCH/DELETE /tenant/orders</code> → <code>bot_orders</code> | Order of record | | WhatsApp out | <code>utils/messenger.js</code>, <code>POST /tenant/broadcast</code>, approved templates | Receipts, tracking, abandoned-cart nudges | | Tenant onboarding | <code>GET /discovery</code> → <code>POST /admin/api/discovery/submissions/:id/approve</code> → portal token (<code>docs/TENANT_ONBOARDING_2026-10-25.md</code>) | Client #1 can be signed without new code | | Affiliate router | <code>app.get('/go/:id')</code> (<code>server.js:565</code>), <code>opportunity_sources</code> / <code>referral_links</code> / <code>opportunity_events</code> | Attribution for every funnel click — sell &quot;I can prove where the sale came from&quot; | | Conversion engine | <code>utils/conversionPlaybook.js</code>, <code>utils/ctaBlock.js</code>, <code>docs/BLOG_CONVERSION_ENGINE.md</code> — offer type <code>product</code> already exists | Funnel copy that is gated, not vibes | | Outreach machine | <code>ABOSS_*</code> CSVs, <code>scripts/aboss_*</code>, <code>docs/PARTNERSTACK_APPLICATION.md</code> | 20 warm conversations this week | | Multi-tenant kernel | <code>alphadome-kernel</code> credits/quota/tiers, <code>npm run proof:isolation</code> | One CF workspace per client, provably isolated |</p>
+<p><strong>What genuinely must be built new:</strong> one route, one adapter, one order-writer (~150 lines total). See §5.</p>
+<p>---</p>
+<h2>5. Minimal implementation slice (the thing to ship)</h2>
+<p><strong>Name it the &quot;M-Pesa lane for ClickFunnels&quot;.</strong> It is the only piece here a competitor cannot copy in a week.</p>
+<h3>Files</h3>
+<p>| File | New? | Job | |---|---|---| | <code>utils/clickfunnels.js</code> | new (~70 lines) | verify webhook signature, map <code>orders/invoice.paid</code> → <code>{ tenantId, cfInvoiceId, email, phone, lineItems[], totalCents, currency }</code>, idempotency key | | <code>POST /cf/order</code> in <code>server.js</code> | new (~40 lines) | receives the webhook, resolves the tenant from the funnel id via <code>site_tenants</code>, writes the order, fires the WhatsApp receipt | | <code>POST /cf/pay</code> in <code>server.js</code> | new (~30 lines) | the reverse lane: a ClickFunnels page posts <code>{funnelId, phone, items[]}</code> → resolve amount → <code>initiateStkPush()</code> → return prompt status | | <code>bot_orders</code> write | reuse | one insert path, <code>metadata.cf_invoice_id</code> for idempotency | | M-Pesa callback hook | reuse + ~5 lines | on <code>plan_type = 'cf_order'</code> success → mark order paid, notify, queue Zendrop | | <code>scripts/test_clickfunnels_bridge.mjs</code> | new | event-shape, signature rejection, duplicate-webhook, isolation-refusal checks |</p>
+<h3>Rules the bridge must hold</h3>
+<ul>
+<li><code>/cf/order</code> is authenticated per tenant (shared secret in <code>bot_tenants.metadata</code>), never open.</li>
+<li>Idempotent on <code>cf_invoice_id</code> — CF retries webhooks.</li>
+<li>A funnel id that is not this tenant's is refused <code>404</code>, same as <code>/pay/t</code> does.</li>
+<li>STK double-tap inside 90 s replays the prompt, never sends a second one (<code>utils/scanPay.js</code> already owns that rule).</li>
+</ul>
+<h3>Day by day</h3>
+<p>| Day | Work | Done when | |---|---|---| | 1 | Zendrop → CF 2.0 connect, import <strong>3 SKUs</strong>, run MCP shipping quotes to <strong>Nairobi</strong> and <strong>New York</strong>. Pick <strong>one</strong> offer. | You have two numbers and a decision between the digital lane and the card lane | | 2 | Build the funnel: page → order bump → one-click upsell → thank-you. Use CF <strong>Store products</strong> so Zendrop can match SKUs; use CF's test-order mode | A test order appears with the correct line items | | 3 | <code>utils/clickfunnels.js</code> + <code>POST /cf/order</code> + order write + WhatsApp receipt | A real webhook from CF lands a row in <code>bot_orders</code> | | 4 | <code>POST /cf/pay</code> (M-Pesa lane) wired to a funnel button | KES 1 sandbox prompt arrives on your phone and the order flips to paid | | 5 | Zendrop MCP: the agent creates the fulfilment order from the paid row; tracking written back to WhatsApp | Full loop, one order, no dashboard touched | | 6 | Demo end to end on your own phone. Pitch 5 names from <code>ABOSS_READY_TO_CONTACT.csv</code> | 5 meetings booked | | 7 | Close #1. Take the deposit <strong>through the lane you just built</strong>. | Cash, and a dogfooded proof |</p>
+<p>---</p>
+<h2>6. Revenue impact</h2>
+<h3>Where the week-one money actually comes from</h3>
+<p>Product margin does not pay you in seven days. <strong>Service revenue does.</strong></p>
+<p>| Line | Price | When it lands | |---|---|---| | <strong>Stocked Funnel</strong> setup (funnel + Zendrop store + WhatsApp bot + M-Pesa lane) | <strong>KES 30,000–50,000</strong> one-off, 50% deposit | Day 3–7 | | Monthly run | <strong>KES 7,000–10,000/mo</strong> | Month 2 | | Optional take on collections | <strong>1.5–3%</strong> of M-Pesa collections | ongoing | | Card-lane unlock (client needs a supported-country entity) | pass-through + KES 5,000 setup | as needed |</p>
+<p>One pilot closed in week one = <strong>KES 30–50k (~$230–390)</strong>. Five pilots = <strong>KES 150–250k</strong> cash plus <strong>KES 35–50k/mo</strong> recurring.</p>
+<p>For contrast, the pure dropshipping margin lane: ~$29 AOV, ~$11 landed + ~$6 shipping + 2.9% + $0.30 → <strong>~$9 gross/order</strong>. The same KES 35k needs ~30 orders, which needs paid traffic you do not have this week. That is why the funnel is sold as a service first and only later run as your own store.</p>
+<h3>Why it compounds</h3>
+<ul>
+<li>Each client is a workspace (Scale = 5, Optimize = 10) → the ClickFunnels bill is fixed,</li>
+<p>revenue per workspace is not.</p>
+<li>Each client is a Zendrop store on one account (10 allowed) → same.</li>
+<li>Each client inherits the WhatsApp bot, scan-to-pay and failed-payment recovery → the</li>
+<p>retention story is already built and already test-covered.</p>
+</ul>
+<p>---</p>
+<h2>7. Main technical risks</h2>
+<p>| # | Risk | Reality | Mitigation | |---|---|---|---| | 1 | <strong>Stripe country gate</strong> — Kenya is &quot;Extended network&quot;, not a supported account | Card checkout may be impossible for a Kenyan entity | Lead with the M-Pesa lane. Card lane only via a US/EU entity (Atlas) or a partner gateway. Tell the client this <em>before</em> they buy ClickFunnels. | | 2 | <strong>Webhooks require the Scale plan ($197/mo)</strong> | A $97 Launch account silently never fires <code>orders/invoice.paid</code> | Budget Scale. Fallback: poll the CF API on a timer (worse, but works on cheaper plans) | | 3 | <strong>Zendrop → Kenya is slow and customs-friction heavy</strong> (weeks, not days) | &quot;Sell Zendrop gadgets to Kenyan consumers&quot; fails on the delivery promise | Get the real number from Zendrop MCP <strong>before</strong> picking a product. Prefer digital/AI offers or local stock for KE buyers; keep Zendrop physical for card-paying, diaspora and US buyers | | 4 | <strong>One-click upsells may not map to Zendrop line items</strong> | An upsell can arrive as a separate invoice and be left unfulfilled | Price every upsell as its own <strong>CF Store product</strong>, place one real test order <em>with</em> an upsell, reconcile by <code>cf_invoice_id</code> | | 5 | <strong>Webhook retries create duplicate orders</strong> | CF retries; double-tap sends two prompts | Idempotency on <code>cf_invoice_id</code> + the existing 90 s STK replay guard | | 6 | <strong><code>/cf/order</code> is a public URL that creates orders</strong> | Anyone could POST fake orders | Per-tenant shared secret + signature verification + funnel-to-tenant check, same pattern as <code>/pay/t</code> | | 7 | <strong>WhatsApp 24 h window</strong> | Order/tracking messages outside the window need approved templates | Submit <code>order_confirmed</code>, <code>order_shipped</code>, <code>payment_failed</code> on day 1 | | 8 | <strong>M-Pesa has no refund API</strong> | Refunds are manual and visible | Say so in the client's terms; use Zendrop chargeback management for the card lane | | 9 | <strong>Tenant isolation</strong> | Two clients in one workspace leaks data | One workspace per client; <code>metadata.tenant_id</code> on every row; extend <code>npm run proof:isolation</code> | | 10 | <strong>Account risk from dropship-style funnels</strong> | Stripe/PayPal flag unrealistic shipping claims | Honest delivery times on the page. This protects the client and you. |</p>
+<p>---</p>
+<h2>8. What not to do</h2>
+<ul>
+<li><strong>Do not buy or rent an aged Stripe account.</strong> It ends the processor relationship for every client hanging off it.</li>
+<li><strong>Do not promise 3-day delivery to Nairobi</strong> from a China-warehouse SKU.</li>
+<li><strong>Do not launch 20 SKUs.</strong> One offer, one bump, one upsell. The funnel <em>is</em> the demo.</li>
+<li><strong>Do not use ClickFunnels Classic.</strong> No API, no webhooks, dead end.</li>
+<li><strong>Do not run two clients' funnels in one workspace.</strong> Isolation is the product.</li>
+<li><strong>Do not sell &quot;dropshipping&quot; to a Kenyan client.</strong> Sell &quot;a funnel that takes M-Pesa and a supplier that ships&quot; — which is what you can actually deliver.</li>
+</ul>
+<p>---</p>
+<h2>9. Next validation step — 30 minutes, zero spend</h2>
+<p>Three checks, in this order. Each one can kill a bad assumption before any code exists.</p>
+<ol>
+<li><strong>Event shape.</strong> In CF 2.0 test mode, place an order with an upsell, pointing</li>
+<p><code>orders/invoice.paid</code> at a <code>webhook.site</code> URL. Save the payload. <em>Pass = you know the exact JSON before writing <code>utils/clickfunnels.js</code>.</em></p>
+<li><strong>Economics.</strong> In Zendrop, connect the CF store, import one product, and ask the MCP</li>
+<p>server for shipping cost + delivery window to <strong>Nairobi</strong> and <strong>New York</strong>. <em>Pass = both lanes are priced and one product is chosen. Fail = the KE-consumer physical play is dead — sell the digital/AI funnel instead.</em></p>
+<li><strong>Money lane.</strong> <code>curl -X POST /api/kassangas/stk-push</code> with <strong>KES 1</strong> to your own phone.</li>
+<p><em>Pass = the one thing no competitor has is live.</em></p>
+</ol>
+<p>If 1 and 3 pass, the whole product is a ~150-line bridge, and day 6 becomes a pitch instead of a build.</p>
+<p>---</p>
+<h2>10. One-line pitches to carry into those meetings</h2>
+<ul>
+<li><strong>To the SMB:</strong> &quot;ClickFunnels can't take M-Pesa. I already can. I'll build the page, stock the product, and you get the money on your phone and the orders in your WhatsApp.&quot;</li>
+<li><strong>To an agency/partner:</strong> &quot;You sell funnels. Your Kenyan clients can't get a Stripe account. I'm the M-Pesa lane underneath your checkout — white-label it.&quot;</li>
+<li><strong>To the Zendrop/ClickFunnels partner programs:</strong> &quot;We're the East African system integrator: WhatsApp Cloud API, Daraja STK, Supabase and an affiliate attribution layer — already live.&quot; (see <code>docs/PARTNERSTACK_APPLICATION.md</code>)</li>
+</ul>
+<p>---</p>
+<h2>11. The one-line summary</h2>
+<p>ClickFunnels sells you conversion. Zendrop sells you fulfilment. <strong>Neither can take a shilling from a Kenyan phone.</strong> Alphadome already can, for every tenant, with receipts and reconciliation. Charge for that, put the other two underneath it, and the first KES 35,000 is a signature away — this week.</p>
+<p>| 7 | Close #1. Take the deposit <strong>through the lane you just built</strong>. | Cash, and a dogfooded proof |</p>
+<h2>FALLBACK_PAYMENT_OPTIONS.md</h2><p class="meta">FALLBACK_PAYMENT_OPTIONS.md</p><h1>Fallback Payment Options Feature</h1>
+<h2>Overview</h2>
+<p>When M-Pesa STK push payments fail or refund (while waiting for EPI connection approval from Safaricom), customers are automatically presented with alternative payment methods. This ensures revenue doesn't get blocked due to temporary M-Pesa gateway unavailability.</p>
+<p><strong>Current Status</strong>: Production-ready, enabled by default when M-Pesa ResultCode ≠ 0</p>
+<p>---</p>
+<h2>Payment Flow Architecture</h2>
+<h3>Standard M-Pesa Flow</h3>
+<pre><code>
+Customer → POST /webhook &quot;JOIN ALPHADOME&quot; → initateStkPush() →
+   STK prompt on phone → Customer enters PIN →
+   M-Pesa processes → POST /mpesa/callback (ResultCode = 0) →
+   Payment marked &quot;subscribed&quot; ✅
+</code></pre>
+<h3>Fallback M-Pesa Flow (EPI Pending)</h3>
+<pre><code>
+Customer → POST /webhook &quot;JOIN ALPHADOME&quot; → initiateStkPush() →
+   STK prompt on phone → Refund after ~5 minutes (ResultCode ≠ 0) →
+   POST /mpesa/callback → sendFallbackPaymentOptions() →
+   WhatsApp Interactive List with 4 options → Customer selects
+</code></pre>
+<p>---</p>
+<h2>Fallback Payment Methods</h2>
+<h3>1. 🔄 Retry M-Pesa</h3>
+<p><strong>Trigger</strong>: Customer replies with &quot;RETRY&quot; or taps &quot;Retry M-Pesa&quot; button</p>
+<p><strong>Flow</strong>:</p>
+<ol>
+<li>System retrieves failed amount from session context</li>
+<li>Initiates new STK push with same amount/reference</li>
+<li>Updates user session with <code>retry_checkout_id</code></li>
+<li>Sends confirmation message</li>
+<li>Waits for new callback on <code>/mpesa/callback</code></li>
+</ol>
+<p><strong>User Message</strong>:</p>
+<pre><code>
+💳 Retrying M-Pesa payment for KES 500. Please enter your M-Pesa PIN on your phone...
+</code></pre>
+<p><strong>Code</strong>:</p>
+<ul>
+<li>Triggers: <code>text.toUpperCase().includes(&quot;RETRY&quot;)</code> or <code>text.match(/retry.*mpesa/i)</code></li>
+<li>Calls: <code>initiateStkPush()</code> again with saved context</li>
+</ul>
+<p>---</p>
+<h3>2. 🏦 Bank Transfer</h3>
+<p><strong>Trigger</strong>: Customer replies with &quot;BANK&quot; or taps &quot;Bank Transfer&quot; button</p>
+<p><strong>Flow</strong>:</p>
+<ol>
+<li>System sends bank transfer instructions with:</li>
+</ol>
+<ul>
+<li>KCB Bank details (Account: Alphadome Limited)</li>
+<li>Amount to send</li>
+<li>Reference format: <code>{plan_type}-{checkoutId.slice(-8)}</code></li>
+</ul>
+<ol>
+<li>Prompts customer to reply with receipt</li>
+<li>Customer replies: <code>BANK RECEIPT K2P4A5B6C7</code></li>
+<li>System confirms receipt and marks subscription as <code>manual_pending_verification</code></li>
+</ol>
+<p><strong>Bank Details Sent</strong>:</p>
+<pre><code>
+🏦 Bank Transfer Instructions
+
+Amount to send: KES 500
+
+Bank: KCB Bank Kenya
+Account Name: Alphadome Limited
+Account Number: 1234567890
+Branch Code: 63000
+Swift Code: KCBLKENX
+
+📌 Important:
+• Use Reference: monthly-ABC123DE
+• Reply with the bank deposit receipt number
+• Allow 2-5 minutes for confirmation
+</code></pre>
+<p><strong>Code</strong>:</p>
+<ul>
+<li>Triggers: <code>text.toUpperCase().includes(&quot;BANK&quot;)</code></li>
+<li>Receipt validation: <code>/^BANK\s+RECEIPT\s+([A-Z0-9]+)$/i</code></li>
+<li>Updates subscription to <code>manual_pending_verification</code> status</li>
+</ul>
+<p>---</p>
+<h3>3. 🚚 Cash on Delivery</h3>
+<p><strong>Trigger</strong>: Customer replies with &quot;COD&quot; or taps &quot;Cash on Delivery&quot; button</p>
+<p><strong>Flow</strong>:</p>
+<ol>
+<li>System explains COD terms (2-3 business days, pay on delivery)</li>
+<li>Requests delivery address from customer</li>
+<li>Customer replies with address (e.g., &quot;Nairobi CBD, Tom Mboya Street...&quot;)</li>
+<li>System confirms order with COD reference number</li>
+<li>Marks subscription as <code>cod_pending_delivery</code></li>
+<li>Operations team notifies customer within 24 hours</li>
+</ol>
+<p><strong>User Messages</strong>:</p>
+<pre><code>
+🚚 Cash on Delivery Selected
+
+Plan: MONTHLY
+Amount: KES 500
+
+📍 Estimated Delivery: 2-3 business days
+💰 Payment due on delivery
+
+Please confirm your delivery address:
+&lt;Your address here&gt;
+
+---
+
+✅ COD Order Confirmed
+
+📍 Delivery Address:
+Nairobi CBD, Tom Mboya Street, Building X
+
+Plan: MONTHLY
+Amount: KES 500
+Payment Due: On Delivery
+
+Your order has been registered. Our team will contact you within 24 hours to arrange delivery.
+
+Order Reference: COD-8F6E3P2Q
+</code></pre>
+<p><strong>Code</strong>:</p>
+<ul>
+<li>Triggers: <code>text.toUpperCase().includes(&quot;COD&quot;)</code> or <code>text.match(/cash.*delivery/i)</code></li>
+<li>Address capture: any long text (&gt;10 chars) when <code>selected_fallback_method === &quot;cod&quot;</code></li>
+<li>Updates subscription to <code>cod_pending_delivery</code> status</li>
+</ul>
+<p>---</p>
+<h3>4. 📞 Contact Support</h3>
+<p><strong>Trigger</strong>: Customer replies with &quot;SUPPORT&quot; or taps &quot;Contact Support&quot; button</p>
+<p><strong>Flow</strong>:</p>
+<ol>
+<li>Display support contact information</li>
+<li>Wait for customer issue description</li>
+</ol>
+<p><strong>Support Message</strong>:</p>
+<pre><code>
+📞 Alphadome Support Team
+
+We're here to help!
+
+☎️ Call: +254117604817 or +254743780542
+📧 Email: support@alphadome.com
+⏰ Hours: Mon-Fri, 8AM-6PM EAT
+
+💬 Or continue here - what's your issue?
+</code></pre>
+<p><strong>Code</strong>:</p>
+<ul>
+<li>Triggers: <code>text.toUpperCase().includes(&quot;SUPPORT&quot;)</code></li>
+<li>Simple informational response, no state change</li>
+</ul>
+<p>---</p>
+<h2>Session Context Tracking</h2>
+<h3>Failed Payment Context (Set in POST /mpesa/callback)</h3>
+<p>When payment fails, the system saves to user session:</p>
+<pre><code>
+await mergeUserSessionContext(phone, {
+  failed_subscription_id: subs.id,           // UUID for recovery
+  failed_checkout_id: checkoutId,            // M-Pesa CheckoutRequestID
+  failed_plan_type: subs.plan_type,          // &quot;monthly&quot; | &quot;one&quot; | &quot;product_checkout&quot;
+  failed_level: subs.level,                  // 1, 2, 3, etc.
+  failed_amount: subs.amount,                // KES amount
+  failed_at: new Date().toISOString(),       // ISO timestamp
+  failure_result_code: resultCode,           // Non-zero M-Pesa code
+});
+</code></pre>
+<h3>Fallback Selection Context (Set when customer selects option)</h3>
+<pre><code>
+await mergeUserSessionContext(phone, {
+  selected_fallback_method: &quot;bank_transfer&quot; | &quot;cod&quot; | &quot;retry&quot;,
+  fallback_method_selected_at: new Date().toISOString(),
+  
+  // For bank transfer:
+  bank_receipt_verified: &quot;K2P4A5B6C7&quot;,
+  bank_receipt_verified_at: new Date().toISOString(),
+  
+  // For COD:
+  cod_address: &quot;Nairobi CBD, Tom Mboya Street...&quot;,
+  cod_address_confirmed: true,
+  cod_confirmed_at: new Date().toISOString(),
+});
+</code></pre>
+<p>---</p>
+<h2>Database Updates</h2>
+<h3>Subscriptions Table Status Updates</h3>
+<p><strong>When payment fails initially</strong>:</p>
+<pre><code>
+UPDATE subscriptions 
+SET status = 'failed',
+    metadata = { 
+      callback: {...}, 
+      fallback_offered: true, 
+      failed_at: '2026-04-18T...' 
+    }
+WHERE id = $1;
+</code></pre>
+<p><strong>When customer confirms bank transfer</strong>:</p>
+<pre><code>
+UPDATE subscriptions 
+SET status = 'manual_pending_verification',
+    metadata = { 
+      alternative_payment_method: 'bank_transfer',
+      bank_receipt: 'K2P4A5B6C7',
+      verified_at: '2026-04-18T...' 
+    }
+WHERE id = $1;
+</code></pre>
+<p><strong>When customer confirms COD</strong>:</p>
+<pre><code>
+UPDATE subscriptions 
+SET status = 'cod_pending_delivery',
+    metadata = { 
+      alternative_payment_method: 'cod',
+      delivery_address: 'Nairobi CBD...',
+      confirmed_at: '2026-04-18T...' 
+    }
+WHERE id = $1;
+</code></pre>
+<p><strong>When customer successfully retries M-Pesa</strong>:</p>
+<pre><code>
+-- Handled by existing POST /mpesa/callback logic
+UPDATE subscriptions
+SET status = 'subscribed'  -- when ResultCode = 0 on retry
+WHERE id = $1;
+</code></pre>
+<p>---</p>
+<h2>Testing Scenarios</h2>
+<h3>Scenario 1: M-Pesa Fails → Retry → Success</h3>
+<ol>
+<li>User types: <code>JOIN ALPHADOME</code></li>
+<li>Bot asks for M-Pesa number</li>
+<li>User provides: <code>0712345678</code></li>
+<li>STK push triggered, customer cancels or timeout occurs</li>
+<li>M-Pesa callback returns ResultCode = 1 (user cancelled) or 1032 (timeout)</li>
+<li>Fallback options displayed</li>
+<li>User taps: <code>🔄 Retry M-Pesa</code></li>
+<li>New STK push sent</li>
+<li>Customer completes payment this time</li>
+<li>M-Pesa callback returns ResultCode = 0</li>
+<li>Subscription activated ✅</li>
+</ol>
+<h3>Scenario 2: M-Pesa Fails → Bank Transfer</h3>
+<ol>
+<li>User types: <code>JOIN ALPHADOME</code></li>
+<li>Bot asks for M-Pesa number</li>
+<li>User provides: <code>0712345678</code></li>
+<li>STK push triggered, refunds after 5 minutes</li>
+<li>Fallback options displayed</li>
+<li>User taps: <code>🏦 Bank Transfer</code></li>
+<li>Bank details sent</li>
+<li>User goes to KCB and makes deposit</li>
+<li>User replies: <code>BANK RECEIPT K2P4A5B6C7</code></li>
+<li>System confirms receipt</li>
+<li>Operations verifies and marks as subscribed manually ✅</li>
+</ol>
+<h3>Scenario 3: M-Pesa Fails → COD</h3>
+<ol>
+<li>User types: <code>JOIN ALPHADOME</code></li>
+<li>Bot asks for M-Pesa number</li>
+<li>User provides: <code>0712345678</code></li>
+<li>STK push triggered, refunds after 5 minutes</li>
+<li>Fallback options displayed</li>
+<li>User taps: <code>🚚 Cash on Delivery</code></li>
+<li>Bot asks for delivery address</li>
+<li>User replies: <code>Nairobi, Ngara Estate, Hse 42, Apt 3B</code></li>
+<li>Order confirmed with reference: <code>COD-8F6E3P2Q</code></li>
+<li>Operations team contacts customer within 24 hours</li>
+<li>Goods delivered, payment collected ✅</li>
+</ol>
+<p>---</p>
+<h2>Production Readiness Checklist</h2>
+<ul>
+<li>✅ Fallback options triggered on M-Pesa callback failure (ResultCode ≠ 0)</li>
+<li>✅ Failed payment context saved to user session</li>
+<li>✅ Interactive list UI with 4 payment options</li>
+<li>✅ Retry M-Pesa flow with new STK push</li>
+<li>✅ Bank transfer instructions with KCB details</li>
+<li>✅ Receipt confirmation flow with validation</li>
+<li>✅ COD address capture and order registration</li>
+<li>✅ Support contact display</li>
+<li>✅ Subscription status updates (<code>failed</code> → <code>manual_pending_verification</code> or <code>cod_pending_delivery</code>)</li>
+<li>✅ Session context tracking for recovery flows</li>
+<li>✅ Error handling for all scenarios</li>
+<li>✅ Logging for audit trail (PAYMENT log level)</li>
+</ul>
+<p>---</p>
+<h2>Monitoring &amp; Alerts</h2>
+<h3>Key Metrics</h3>
+<ul>
+<li>Total failed payments (M-Pesa ResultCode ≠ 0)</li>
+<li>% Recovered via alternative methods</li>
+<li>Bank transfer receipts pending verification</li>
+<li>COD orders pending delivery</li>
+<li>Retry success rate</li>
+</ul>
+<h3>Logs to Monitor</h3>
+<pre><code>
+FALLBACK_OPTIONS_SENT: Phone=254712345678, Amount=500, CheckoutID=...
+BANK_TRANSFER_DETAILS_SENT: Phone=254712345678, Amount=500
+ALTERNATIVE_PAYMENT_CONFIRMED: Phone=254712345678, Method=bank_transfer
+COD order confirmed with address: ... for 254712345678
+Subscription {id} payment failed (ResultCode {code}) - Fallback options sent
+</code></pre>
+<p>---</p>
+<h2>Future Enhancements</h2>
+<ol>
+<li><strong>Payment Reminder</strong>: Auto-send reminder if bank transfer not received within 6 hours</li>
+<li><strong>Analytics Dashboard</strong>: Track fallback adoption by method + conversion rates</li>
+<li><strong>SMS Fallback</strong>: If WhatsApp Interactive List fails, send options via SMS</li>
+<li><strong>Mobile Wallet</strong>: Add options for Airtel Money, Equity Bank USSD</li>
+<li><strong>Invoice Generation</strong>: Generate and send PDF invoice for bank transfer</li>
+<li><strong>Auto-Verification</strong>: Integrate with KCB API to auto-verify bank receipts</li>
+<li><strong>Dynamic Support</strong>: Route COD to logistics partner API for auto-delivery scheduling</li>
+</ol>
+<p>---</p>
+<h2>Contact</h2>
+<p>For issues, enhancements, or support: +254117604817</p>
+<h2>scanPay.js</h2><p class="meta">utils/scanPay.js</p><pre><code>/**
+ * Scan to Pay — the rules shared by the tenant merchant wallet and client wallet.
+ *
+ * The platform already runs a QR → M-Pesa STK flow for Kassangas
+ * (`public/kassangas-merchant-portal.html`, `public/kassangas-client-wallet.html`,
+ * `kassangas_templates`, `subscriptions`). Rather than build a second payment
+ * engine, the tenant portal reuses that stack: this module owns the parts that
+ * must agree everywhere (phone normalisation, link validation, the merchant code
+ * a tenant's collections are stamped with, the pay URL, and the &quot;table missing&quot;
+ * message that names the migration).
+ *
+ * Pure functions only: no express, no supabase, no env reads except the optional
+ * `env` argument. `scripts/test_scan_pay.mjs` exercises every export offline.
+ */
+
+/** subscriptions.plan_type for every tenant scan-to-pay collection. */
+export const PLAN_TYPE = 'tenant_scan_pay';
+
+/** The QR-payment table the live Kassangas flow already writes to. */
+export const TEMPLATES_TABLE = 'kassangas_templates';
+
+/** The file a deployment must run once before links can be created. */
+export const TEMPLATES_MIGRATION = 'SQL_MIGRATION_KASSANGAS_PHASE1.sql';
+
+export const LINK_NAME_MIN = 2;
+export const LINK_NAME_MAX = 120;
+export const LINK_MIN_AMOUNT = 1;
+export const LINK_MAX_AMOUNT = 300000;
+
+/** Env vars `initiateStkPush()` needs before it can send a prompt. */
+export const STK_ENV_VARS = [
+  'MPESA_CONSUMER_KEY',
+  'MPESA_CONSUMER_SECRET',
+  'MPESA_PASSKEY',
+  'MPESA_SHORTCODE',
+  'MPESA_CALLBACK_URL',
+];
+
+/**
+ * Kenyan MSISDN → 2547XXXXXXXX. Accepts 07XXXXXXXX, 7XXXXXXXX, +2547XXXXXXXX and
+ * 2547XXXXXXXX. Returns the digits as given when they do not match, so the caller
+ * can reject with one message instead of guessing.
+ */
+export function normalizeMsisdn(raw) {
+  let v = String(raw ?? '').replace(/[^\d+]/g, '').replace(/^\+/, '');
+  if (/^0[17]\d{8}$/.test(v)) v = '254' + v.slice(1);
+  else if (/^[17]\d{8}$/.test(v)) v = '254' + v;
+  return v;
+}
+
+/** Safaricom mobile number in the shape the STK endpoint accepts. */
+export function isValidPayerPhone(raw) {
+  return /^2547\d{8}$/.test(normalizeMsisdn(raw));
+}
+
+/**
+ * The code a tenant's collections are reconciled against. Derived from the
+ * tenant's own phone (the platform's tenant key), so it is stable across
+ * deploys, unique per tenant and safe inside an M-Pesa account reference
+ * (alphanumerics only — the existing Kassangas refs use hyphens, but a paybill
+ * statement reads cleanest without punctuation).
+ */
+export function tenantMerchantCode({ phone, slug } = {}) {
+  const digits = String(phone || '').replace(/\D/g, '');
+  if (digits.length &gt;= 9) return 'SP' + digits.slice(-6);
+  const seed = String(slug || 'tenant').toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 4) || 'tnnt';
+  return 'SP' + seed.toUpperCase() + String(fnv1a(String(slug || phone || ''))).slice(0, 2);
+}
+
+/** FNV-1a, so the fallback code is deterministic and does not need a database. */
+export function fnv1a(value) {
+  let hash = 0x811c9dc5;
+  const text = String(value ?? '');
+  for (let i = 0; i &lt; text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) &gt;&gt;&gt; 0;
+  }
+  return hash.toString(36).toUpperCase();
+}
+
+/** One account reference per collection attempt. */
+export function buildAccountRef(merchantCode, now = Date.now()) {
+  const code = String(merchantCode || 'SP').replace(/[^A-Za-z0-9]/g, '').slice(0, 10) || 'SP';
+  return code + Number(now).toString(36).toUpperCase();
+}
+
+/** The link a customer opens after scanning the poster QR. */
+export function payUrl(baseUrl, templateId) {
+  const base = String(baseUrl || '').replace(/\/+$/, '');
+  return `${base}/pay/t/${encodeURIComponent(String(templateId || ''))}`;
+}
+
+/** A tenant may paste either the full link or the bare token. */
+export function extractTemplateId(raw) {
+  const s = String(raw ?? '').trim();
+  if (!s) return '';
+  const fromPath = s.match(/\/pay\/t\/([A-Za-z0-9_-]{4,120})/);
+  if (fromPath) return fromPath[1];
+  const fromQuery = s.match(/[?&amp;]t=([A-Za-z0-9_-]{4,120})/);
+  if (fromQuery) return fromQuery[1];
+  return /^[A-Za-z0-9_-]{4,120}$/.test(s) ? s : '';
+}
+
+/** Human-readable template id, same shape as the live Kassangas flow. */
+export function buildTemplateId(now = Date.now(), random = Math.random()) {
+  const stamp = String(now).slice(-6);
+  const tail = String(random).replace(/[^0-9a-z]/gi, '').slice(2, 8).toUpperCase().padEnd(6, '0');
+  return `TMPL-${stamp}-${tail}`;
+}
+
+/**
+ * Validate what the merchant typed before anything is written. Returns
+ * `{ ok, error }` on failure and the cleaned values on success.
+ */
+export function validateLinkInput(input = {}) {
+  const itemName = String(input.itemName ?? input.item_name ?? '')
+    .replace(/\s+/g, ' ').trim();
+  const amount = Number(input.amount);
+
+  if (itemName.length &lt; LINK_NAME_MIN) {
+    return { ok: false, error: 'Give the payment link a name (at least 2 characters).' };
+  }
+  if (itemName.length &gt; LINK_NAME_MAX) {
+    return { ok: false, error: `Keep the name under ${LINK_NAME_MAX} characters.` };
+  }
+  if (!Number.isFinite(amount) || amount &lt; LINK_MIN_AMOUNT) {
+    return { ok: false, error: 'Enter an amount of at least KES 1.' };
+  }
+  if (amount &gt; LINK_MAX_AMOUNT) {
+    return { ok: false, error: `Amounts above KES ${LINK_MAX_AMOUNT.toLocaleString('en-KE')} need a bank transfer — contact Alphadome.` };
+  }
+
+  return {
+    ok: true,
+    itemName,
+    // Safaricom accepts whole shillings only, so the amount the prompt carries and
+    // the amount the ledger records have to be the same integer.
+    amount: Math.round(amount),
+    reusable: input.reusable !== false,
+  };
+}
+
+/** Payer phones in the collections table are masked: the portal is not a phone book. */
+export function maskPhone(phone) {
+  const digits = String(phone || '').replace(/\D/g, '');
+  if (digits.length &lt; 6) return '';
+  return digits.slice(0, 4) + '***' + digits.slice(-2);
+}
+
+/** A payment link as the portal renders it. */
+export function shapeLink({ row = {}, baseUrl = '', stats = {} } = {}) {
+  const templateId = String(row.template_id || '');
+  return {
+    templateId,
+    itemName: String(row.item_name || ''),
+    amount: Number(row.amount) || 0,
+    reusable: row.reusable !== false,
+    merchantName: String(row.merchant_name || ''),
+    status: String(row.status || 'active'),
+    createdAt: row.created_at || null,
+    url: templateId ? payUrl(baseUrl, templateId) : '',
+    paidCount: Number(stats.paidCount) || 0,
+    collected: Number(stats.collected) || 0,
+    pending: Number(stats.pending) || 0,
+  };
+}
+
+const PAID_STATUSES = new Set(['completed', 'paid', 'success', 'succeeded']);
+
+/** One collection row as the portal renders it. */
+export function describeCollection(row = {}) {
+  const status = String(row.status || 'pending').toLowerCase();
+  return {
+    id: row.id || null,
+    amount: Number(row.amount) || 0,
+    status,
+    payer: maskPhone(row.phone),
+    accountRef: String(row.account_ref || ''),
+    itemName: String(row?.metadata?.item_name || ''),
+    source: String(row?.metadata?.source || ''),
+    createdAt: row.created_at || null,
+  };
+}
+
+/** Totals for the merchant wallet header. */
+export function summariseCollections(rows = []) {
+  return (rows || []).reduce((acc, row) =&gt; {
+    const amount = Number(row?.amount) || 0;
+    const status = String(row?.status || '').toLowerCase();
+    acc.count++;
+    if (PAID_STATUSES.has(status)) acc.collected += amount;
+    else if (status === 'pending') acc.pending += amount;
+    else acc.failed += amount;
+    return acc;
+  }, { count: 0, collected: 0, pending: 0, failed: 0 });
+}
+
+/** Per-link totals, keyed by template id, from the collections rows. */
+export function statsByTemplate(rows = []) {
+  const out = {};
+  (rows || []).forEach((row) =&gt; {
+    const id = row?.metadata?.template_id;
+    if (!id) return;
+    const bucket = out[id] || (out[id] = { paidCount: 0, collected: 0, pending: 0 });
+    const amount = Number(row?.amount) || 0;
+    const status = String(row?.status || '').toLowerCase();
+    if (PAID_STATUSES.has(status)) { bucket.paidCount++; bucket.collected += amount; }
+    else if (status === 'pending') bucket.pending++;
+  });
+  return out;
+}
+
+/** True when the QR table has not been created in this deployment yet. */
+export function isMissingTableError(err) {
+  const code = String(err?.code || '');
+  const message = String(err?.message || err || '');
+  return code === '42P01' || code === 'PGRST205'
+    || /could not find the table|relation .* does not exist/i.test(message);
+}
+
+export function missingTemplatesMessage() {
+  return `Payment links need the ${TEMPLATES_TABLE} table. Run ${TEMPLATES_MIGRATION} in Supabase, then retry.`;
+}
+
+/**
+ * What is missing before a prompt can be sent. The portal shows this instead of
+ * letting `initiateStkPush()` fail with a generic &quot;Missing required M-Pesa
+ * credentials&quot; after the tenant has already typed the customer's phone number.
+ */
+export function stkReadiness(env = {}) {
+  const missing = STK_ENV_VARS.filter((key) =&gt; !env || !env[key]);
+  return { ready: missing.length === 0, missing };
+}
+
+export function stkReadinessMessage(missing = []) {
+  return `M-Pesa is not configured on this deployment yet (missing: ${missing.join(', ') || 'MPESA_*'}). Add the credentials in Render, then retry.`;
+}
+</code></pre>
+<h2>Review checklist</h2>
+<ul><li>I can show evidence that: Send a real M-Pesa prompt from your own shortcode and read the callback safely</li><li>I can show evidence that: Write an order row that survives a retried callback without double-delivering</li><li>I can show evidence that: Give every sale a merchant code that reconciles against your statement</li><li>I can show evidence that: Handle the failed prompt with a fallback instead of losing the customer</li></ul>
+<div class="licence">
+<strong>Licence.</strong> One buyer, one organisation, internal use. You may adapt the material for your own business and quote short excerpts with attribution. Do not resell, redistribute or publish this pack, in whole or in part, as your own product.<br><br>
+<strong>What this is.</strong> One HTML pack: the five sections plus the source documents it was assembled from (payment links, scan-to-pay, the funnel play). Access for 12 months.<br><br>
+<strong>What it is not.</strong> Not a guarantee of income, employment, acceptance or performance. Figures quoted in this pack are the measurements of the system it describes, with their sources named, not promises about your results.<br><br>
+Sold via Alphadome Digital Drops. Support, resends and extensions: reply to the WhatsApp message that delivered this pack.
+</div>
+</div></body></html>
