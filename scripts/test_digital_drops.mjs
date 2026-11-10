@@ -346,6 +346,17 @@ ok('the card webhook checks the signature before reading an order', (() => {
 })());
 ok('both lanes deliver through one function', (routes.match(/deliverOrder\(/g) || []).length >= 3,
   String((routes.match(/deliverOrder\(/g) || []).length));
+
+// The health endpoint exists because "403 on a key I just pasted" is otherwise
+// indistinguishable from "the variable is not being read". It must never return a
+// value, and must not fingerprint a fallback password.
+ok('a configuration health endpoint exists', routes.includes("router.get('/api/drops/health'"));
+ok('health names the variable that supplies each secret', /token_secret_source/.test(routes) && /admin_key_source/.test(routes));
+ok('health fingerprints only explicitly-set secrets',
+  /tokenSource === 'DROPS_TOKEN_SECRET' \? fingerprintSecret\(secret\) : null/.test(routes)
+  && /adminSource === 'DROPS_ADMIN_KEY' \? fingerprintSecret\(env\.DROPS_ADMIN_KEY\) : null/.test(routes));
+ok('health does not echo any secret value', !/DROPS_TOKEN_SECRET:|\bsecret:\s*secret\b/.test(routes.slice(routes.indexOf("router.get('/api/drops/health'"), routes.indexOf("router.get('/api/drops/stats'"))));
+
 ok('the delivery email is sent in the same path as WhatsApp', /deliveryEmail\(\{ product, order, accessUrl, expiresAt, receipt \}\)/.test(routes));
 ok('the proposal queue is admin-key gated', (() => {
   const at = routes.indexOf("router.get('/api/service-requests'");

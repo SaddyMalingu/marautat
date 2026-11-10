@@ -117,7 +117,13 @@ const ok = (name, cond, extra = '') => {
   if (cond) { pass++; console.log('PASS  ' + name); }
   else { fail++; console.log('FAIL  ' + name + (extra ? ' -> ' + extra : '')); }
 };
-const getJson = async (p) => { const r = await fetch(base + p); return { status: r.status, body: await r.json().catch(() => ({})) }; };
+const getJson = async (p) => {
+  const r = await fetch(base + p);
+  const text = await r.text();
+  let body = {};
+  try { body = JSON.parse(text); } catch (_) {}
+  return { status: r.status, body, text };
+};
 const getText = async (p) => { const r = await fetch(base + p); return { status: r.status, text: await r.text() }; };
 const postJson = async (p, body) => {
   const r = await fetch(base + p, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -131,6 +137,16 @@ ok('GET /drops/<slug> serves the same page', (await getText('/drops/ai-agent-ops
 const catalog = await getJson('/api/drops');
 ok('GET /api/drops lists five published products', catalog.status === 200 && catalog.body.products.length === 5, String(catalog.body.products && catalog.body.products.length));
 ok('the catalogue comes from the database when it is there', catalog.body.source === 'db', catalog.body.source);
+
+const health = await getJson('/api/drops/health');
+ok('the health endpoint answers without a key', health.status === 200);
+ok('health reports where the token secret comes from', health.body.configured.token_secret_source === 'DROPS_TOKEN_SECRET', health.body.configured.token_secret_source);
+ok('health reports the admin key is on the ADMIN_PASS fallback', health.body.configured.admin_key_source === 'ADMIN_PASS', health.body.configured.admin_key_source);
+ok('health fingerprints the explicit token secret', /^sha256:[0-9a-f]{12}$/.test(String(health.body.fingerprints.token_secret)), health.body.fingerprints.token_secret);
+ok('health refuses to fingerprint a fallback password', health.body.fingerprints.admin_key === null);
+ok('health never returns a secret value', !health.text.includes('smoke-secret') && !health.text.includes('smoke-admin'));
+ok('health reports the catalogue source and card lane', health.body.catalogue.source === 'db' && health.body.lanes.card === true);
+
 
 const detail = await getJson('/api/drops/ai-agent-ops-track');
 ok('a product page carries its bump', detail.status === 200 && detail.body.bump && detail.body.bump.slug === 'repo-build-log-2026');

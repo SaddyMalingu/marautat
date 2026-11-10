@@ -67,6 +67,7 @@ import {
   validateServiceRequest,
 } from '../utils/digitalDrops.js';
 import { sendDropsEmail, notifyServiceRequest, mailerConfigured } from '../utils/dropsMailer.js';
+import { fingerprintSecret } from '../utils/tenantAccess.js';
 
 export const CATALOG_FILE = path.join(process.cwd(), 'data', 'drops_catalog.json');
 
@@ -304,6 +305,50 @@ export function createDropsRouter(deps = {}) {
     } catch (err) {
       log('[drops] catalogue error: ' + err.message, 'ERROR');
       return say(res, 500, { error: 'The catalogue could not be loaded.' });
+    }
+  });
+
+  // ---- configuration health (2026-11-11) ------------------------------------
+  // Answers "which variable is this process actually reading?", because a 403 on a
+  // key you just pasted is otherwise indistinguishable from a wrong key. It reports
+  // presence and *fingerprints*, never values — the same rule the repo already uses
+  // for the browser-access sealing key. Fingerprints are only issued for the
+  // explicitly-set variable: a hash prefix of a fallback like ADMIN_PASS would make
+  // offline guessing of a short password cheap.
+  router.get('/api/drops/health', async (req, res) => {
+    try {
+      const catalogue = await loadCatalog();
+      const tokenSource = env.DROPS_TOKEN_SECRET ? 'DROPS_TOKEN_SECRET'
+        : env.TENANT_SESSION_SECRET ? 'TENANT_SESSION_SECRET'
+          : env.ADMIN_PASS ? 'ADMIN_PASS' : null;
+      const adminSource = env.DROPS_ADMIN_KEY ? 'DROPS_ADMIN_KEY'
+        : env.ADMIN_PASS ? 'ADMIN_PASS' : null;
+      const cardLink = Boolean(String(env.DROPS_CARD_LINK || env.DROPS_CARD_LINKS || '').trim());
+
+      return say(res, 200, {
+        ok: true,
+        commit: process.env.RENDER_GIT_COMMIT || null,
+        configured: {
+          token_secret: Boolean(secret),
+          token_secret_source: tokenSource,
+          admin_key: Boolean(adminSource),
+          admin_key_source: adminSource,
+          support_whatsapp: Boolean(supportWhatsAppLink(env)),
+          mailer: mailerConfigured(env),
+          lead_email: Boolean(String(env.DROPS_LEAD_EMAIL || env.ADMIN_EMAIL || '').trim()),
+          card_link: cardLink,
+          card_webhook_secret: Boolean(String(env.DROPS_CARD_WEBHOOK_SECRET || '').trim()),
+        },
+        fingerprints: {
+          token_secret: tokenSource === 'DROPS_TOKEN_SECRET' ? fingerprintSecret(secret) : null,
+          admin_key: adminSource === 'DROPS_ADMIN_KEY' ? fingerprintSecret(env.DROPS_ADMIN_KEY) : null,
+        },
+        catalogue: { source: catalogue.source, products: catalogue.products.length },
+        lanes: { mpesa: true, card: cardLink },
+      });
+    } catch (err) {
+      log('[drops] health error: ' + err.message, 'ERROR');
+      return say(res, 500, { error: 'Health could not be read.' });
     }
   });
 
