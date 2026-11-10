@@ -80,7 +80,9 @@ if (probe) {
   const { error } = await runSql('select 1 as ok');
   if (error) {
     console.log('exec_sql is NOT available: ' + error.message);
-    console.log('Use the Supabase SQL editor and run the two files in order.');
+    console.log('Use the Supabase SQL editor and run the three files in order:');
+    FILES.forEach((f, i) => console.log('  ' + (i + 1) + '. ' + f));
+    console.log('Or paste the bundled migrations/APPLY_ALL_digital_drops.sql once.');
     process.exit(1);
   }
   console.log('exec_sql is available. Applying is possible with: npm run drops:migrate -- --apply');
