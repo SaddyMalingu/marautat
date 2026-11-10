@@ -1,6 +1,6 @@
 {
-  "_comment": "Alphadome digital drops. Prices are KES anchors; price_usd is a display anchor for diaspora buyers and is not charged through M-Pesa. Every published row needs a built asset in drops_assets/ (npm run drops:build) or the access page says so instead of pretending.",
-  "_updated": "2026-11-10",
+  "_comment": "Alphadome digital drops. Prices are KES anchors; price_usd is a display anchor for diaspora buyers and is not charged through M-Pesa. Every published row needs a built asset in drops_assets/ (npm run drops:build) or the access page says so instead of pretending. funnel_step names the rung; next_slug is the rung this one hands the buyer.",
+  "_updated": "2026-11-12",
   "products": [
     {
       "slug": "ai-work-application-kit",
@@ -8,6 +8,8 @@
       "kind": "playbook",
       "status": "published",
       "rank": 10,
+      "funnel_step": "entry",
+      "next_slug": "repo-build-log-2026",
       "summary": "The 22-page pack that gets an AI-work application finished instead of abandoned. Built from a measured funnel where 159 people started an application and only 22 finished it.",
       "outcomes": [
         "Know exactly what a Mercor-style application asks for before you open it",
@@ -68,6 +70,8 @@
       "kind": "report",
       "status": "published",
       "rank": 20,
+      "funnel_step": "core",
+      "next_slug": "whatsapp-mpesa-checkout-kit",
       "summary": "The engineering diary behind a multi-tenant WhatsApp and M-Pesa platform: what broke, what the measurement said, and the fix that shipped. Written from the commit history, not from a content calendar.",
       "outcomes": [
         "See how a conversion engine was rebuilt after the data contradicted the copy",
@@ -125,6 +129,8 @@
       "kind": "kit",
       "status": "published",
       "rank": 30,
+      "funnel_step": "core",
+      "next_slug": "multitenant-whatsapp-bot-starter",
       "summary": "The implementation pack for taking a payment inside a WhatsApp conversation in Kenya: catalogue, STK prompt, callback state machine, receipt and reconciliation. Assembled from a system that runs it.",
       "outcomes": [
         "Send a real M-Pesa prompt from your own shortcode and read the callback safely",
@@ -182,6 +188,8 @@
       "kind": "bundle",
       "status": "published",
       "rank": 40,
+      "funnel_step": "core",
+      "next_slug": "ai-agent-ops-track",
       "summary": "The schema, the tenant middleware and the onboarding runbook for running one WhatsApp bot for many businesses without the data crossing. Taken from a system that onboards tenants for a living.",
       "outcomes": [
         "Stand up bot_tenants, templates and training data without touching an existing schema",
@@ -239,6 +247,8 @@
       "kind": "course",
       "status": "published",
       "rank": 50,
+      "funnel_step": "premium",
+      "next_slug": null,
       "summary": "A self-paced, written track for the job that is actually being hired: agents that run in production, with tool use, evals, cost control and an on-call story. Six modules, six labs, no video you have to sit through.",
       "outcomes": [
         "Build an agent loop with tool use, retries and a hard cost ceiling",
@@ -298,6 +308,76 @@
         "signals": ["agentic-hiring", "agent-ops-skills"],
         "note": "2,401 open agentic roles across 194 companies in October 2026; agent engineering is 65% of the mix and agent ops/infra another 157 roles. Most-requested skills: Python (1,732), RAG (661), MCP (649), TypeScript (508), LangGraph (348), evals (301)."
       }
+    }
+  ],
+  "_lead_magnets_comment": "The free rung. A magnet is not a product: no price, no order, no entitlement. Each one is a real filed pack, captured against an email or WhatsApp number, and hands the visitor to a paid rung. Built by npm run drops:build from the docs it names.",
+  "lead_magnets": [
+    {
+      "slug": "seven-day-launch-sprint",
+      "title": "The 7-Day Launch Sprint",
+      "status": "published",
+      "rank": 10,
+      "summary": "The day-by-day plan this platform was actually launched with: verify the M-Pesa credentials, create the tenant, test the prompt, take the first real shilling. Free, because the hard part is the order of the checks.",
+      "promise": "Seven days, one paid transaction, no new platform.",
+      "outcomes": [
+        "Know which four M-Pesa variables must agree before a prompt can succeed",
+        "Test an STK prompt without charging a customer",
+        "Create a tenant and a WhatsApp number id without leaking a credential",
+        "Have a written go-live check that a non-engineer can run"
+      ],
+      "modules": [
+        {
+          "title": "Days 1-2: credentials and a tenant",
+          "detail": "The Daraja app, the two keys, the shortcode and the callback URL, plus the tenant row and phone number id that make a message route. Includes the exact SQL the launch used."
+        },
+        {
+          "title": "Days 3-4: prove the money lane",
+          "detail": "OAuth, the STK request, and the sandbox shortcode, in the order that turns a failure into one named cause instead of four suspects."
+        },
+        {
+          "title": "Days 5-7: go live and reconcile",
+          "detail": "The first real transaction, the callback that must be acknowledged before it works, and the merchant reference that makes a statement line attributable."
+        }
+      ],
+      "asset_file": "seven-day-launch-sprint.html",
+      "asset_sources": [
+        "7DAY_REVENUE_PLAN.md",
+        "FALLBACK_PAYMENT_OPTIONS.md"
+      ],
+      "next_slug": "whatsapp-mpesa-checkout-kit"
+    },
+    {
+      "slug": "ai-work-application-preflight",
+      "title": "The AI-Work Application Preflight",
+      "status": "published",
+      "rank": 20,
+      "summary": "The four artefacts and the seven questions that decide an AI-work application, as a one-page preflight you fill in before you open the form. Free, because the funnel that produced it lost 86% of its applicants to the same preventable step.",
+      "promise": "Fill this in first and the form takes twenty minutes, not a weekend.",
+      "outcomes": [
+        "See the seven questions the form will ask before you open it",
+        "Draft the four artefacts that shortlisters actually read",
+        "Write an availability line that does not disqualify you",
+        "Time yourself, so the practice attempt is not the first attempt"
+      ],
+      "modules": [
+        {
+          "title": "The seven questions",
+          "detail": "What each question screens for, and the two-sentence answer shape that survives both a keyword filter and a human reader."
+        },
+        {
+          "title": "The four artefacts",
+          "detail": "A one-page profile, two work samples with a context note, and an availability block — written for people whose work is under NDA or not public."
+        },
+        {
+          "title": "The timing check",
+          "detail": "Two timings that predict abandonment: minutes to write the availability block, and minutes to produce one sample. If either is over the line, the pack is not the problem."
+        }
+      ],
+      "asset_file": "ai-work-application-preflight.html",
+      "asset_sources": [
+        "docs/BLOG_CONVERSION_ENGINE.md"
+      ],
+      "next_slug": "ai-work-application-kit"
     }
   ]
 }

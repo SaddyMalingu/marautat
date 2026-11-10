@@ -37,6 +37,23 @@
       border-radius: 999px; padding: 5px 12px; font-size: .78rem; }
     .chip b { color: var(--mint); font-weight: 600; }
     .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; margin-top: 26px; }
+    /* The funnel: free first, then each rung as its own shelf. */
+    .freeShelf { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; margin-top: 26px; }
+    .magnet {
+      background: linear-gradient(180deg, rgba(126,249,200,.07), rgba(255,255,255,.02));
+      border: 1px solid rgba(126,249,200,.28); border-radius: 16px; padding: 18px;
+    }
+    .magnet .kind { font-size: .68rem; letter-spacing: .14em; text-transform: uppercase; color: var(--mint); }
+    .magnet h3 { margin: 8px 0 6px; font-size: 1.02rem; line-height: 1.3; }
+    .magnet p { color: var(--muted); font-size: .88rem; margin: 0 0 10px; }
+    .magnet .promiseLine { color: var(--mint); font-weight: 600; }
+    .magnet input { width: 100%; margin: 4px 0 8px; }
+    .magnet button { width: 100%; }
+    .rung { margin-top: 30px; }
+    .rungHead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-bottom: 1px solid var(--line); padding-bottom: 8px; }
+    .rungLabel { font-size: .72rem; letter-spacing: .16em; text-transform: uppercase; color: var(--accent); font-weight: 700; }
+    .rungNote { font-size: .8rem; color: var(--muted); }
+
     .card {
       display: flex; flex-direction: column; text-align: left; cursor: pointer; color: inherit;
       background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 18px;
@@ -126,6 +143,7 @@
           <span class="chip"><b>12 months</b> of re-downloads</span>
         </div>
       </header>
+      <div id="freeShelf" class="freeShelf" aria-live="polite"></div>
       <div id="grid" class="grid" aria-live="polite"></div>
       <p id="listMsg" class="note"></p>
     </section>
@@ -141,6 +159,7 @@
   <script>
     (function () {
       var grid = document.getElementById('grid');
+      var freeShelf = document.getElementById('freeShelf');
       var listView = document.getElementById('listView');
       var detailView = document.getElementById('detailView');
       var listMsg = document.getElementById('listMsg');
@@ -183,6 +202,83 @@
         }
         grid.innerHTML = products.map(cardHtml).join('');
         grid.querySelectorAll('button.card').forEach(function (b) {
+          b.addEventListener('click', function () { showProduct(b.getAttribute('data-slug')); });
+        });
+      }
+
+      // ---- the funnel: the free rung, then the paid shelves -------------------
+
+      function magnetHtml(m) {
+        return '<div class="magnet" data-magnet="' + esc(m.slug) + '">' +
+          '<span class="kind">Free</span>' +
+          '<h3>' + esc(m.title) + '</h3>' +
+          '<p>' + esc(m.summary) + '</p>' +
+          (m.promise ? '<p class="promiseLine">' + esc(m.promise) + '</p>' : '') +
+          '<label class="field" for="contact-' + esc(m.slug) + '">Email or WhatsApp number</label>' +
+          '<input id="contact-' + esc(m.slug) + '" type="text" autocomplete="email" placeholder="you@company.com or 07XX XXX XXX">' +
+          '<button class="pay" type="button" data-send="' + esc(m.slug) + '">Send the free pack</button>' +
+          '<div class="msg" data-msg="' + esc(m.slug) + '"></div>' +
+          '<p class="note">Free, sent once. Occasional follow-ups after that; reply STOP to end them.</p>' +
+          '</div>';
+      }
+
+      function renderMagnets(magnets) {
+        if (!freeShelf) return;
+        if (!magnets || !magnets.length) { freeShelf.innerHTML = ''; return; }
+        freeShelf.innerHTML = magnets.map(magnetHtml).join('');
+        Array.prototype.forEach.call(freeShelf.querySelectorAll('button[data-send]'), function (btn) {
+          btn.addEventListener('click', function () { sendLead(btn); });
+        });
+      }
+
+      // One field, because a visitor knows whether they are typing an address or a
+      // number; the page should not make them pick a channel first.
+      function sendLead(btn) {
+        var slug = btn.getAttribute('data-send');
+        var card = btn.parentNode;
+        var input = card ? card.querySelector('input') : null;
+        var msg = card ? card.querySelector('.msg') : null;
+        var raw = input ? String(input.value || '').trim() : '';
+        if (!raw) { setMsg(msg, 'Enter an email address or a WhatsApp number.', 'err'); return; }
+        var payload = { magnet_slug: slug, source: 'storefront', consent: true };
+        if (raw.indexOf('@') > 0) payload.email = raw; else payload.phone = raw;
+        btn.disabled = true;
+        setMsg(msg, 'Sending&hellip;', 'wait');
+        fetch('/api/drops/lead', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+          .then(function (res) {
+            btn.disabled = false;
+            if (!res.ok || !res.d.ok) {
+              setMsg(msg, esc((res.d && res.d.error) || 'That did not work. Try again.'), 'err');
+              return;
+            }
+            var html = '<a class="cta" style="display:block;margin-top:8px" href="' + esc(res.d.downloadUrl) + '">Open your free pack</a>';
+            if (res.d.next) {
+              html += '<p class="note">Next, when you need it: <a href="' + esc(res.d.next.url) + '">' +
+                esc(res.d.next.title) + '</a>' + (res.d.next.price_kes ? ' &mdash; ' + esc(kes(res.d.next.price_kes)) : '') + '</p>';
+            }
+            setMsg(msg, html, 'ok');
+          })
+          .catch(function () {
+            btn.disabled = false;
+            setMsg(msg, 'The request did not send. Check your connection.', 'err');
+          });
+      }
+
+      function renderLadder(steps) {
+        var usable = (steps || []).filter(function (s) { return (s.products || []).length; });
+        if (!usable.length) { renderList([]); return; }
+        grid.innerHTML = usable.map(function (s) {
+          return '<div class="rung">' +
+            '<div class="rungHead"><span class="rungLabel">' + esc(s.label || s.step) + '</span>' +
+            '<span class="rungNote">' + esc(s.promise || '') + '</span></div>' +
+            '<div class="grid" style="margin-top:14px">' + (s.products || []).map(cardHtml).join('') + '</div>' +
+            '</div>';
+        }).join('');
+        Array.prototype.forEach.call(grid.querySelectorAll('button.card'), function (b) {
           b.addEventListener('click', function () { showProduct(b.getAttribute('data-slug')); });
         });
       }
@@ -426,24 +522,40 @@
         }, 4000);
       }
 
+      function afterLoad(payload) {
+        if (payload && payload.support) {
+          supportLink.href = payload.support;
+          supportLink.classList.remove('sr');
+        }
+        var slug = slugFromPath();
+        if (slug) renderDetail(slug);
+      }
+
       function boot() {
-        fetch('/api/drops')
+        fetch('/api/drops/ladder')
           .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
           .then(function (res) {
-            if (!res.ok || !res.d.ok) {
-              listMsg.textContent = (res.d && res.d.error) || 'The catalogue could not be loaded.';
-              return;
-            }
-            if (res.d.support) {
-              supportLink.href = res.d.support;
-              supportLink.classList.remove('sr');
-            }
-            renderList(res.d.products || []);
-            var slug = slugFromPath();
-            if (slug) renderDetail(slug);
+            if (!res.ok || !res.d.ok) throw new Error('ladder unavailable');
+            renderMagnets(res.d.magnets || []);
+            renderLadder(res.d.steps || []);
+            afterLoad(res.d);
           })
           .catch(function () {
-            listMsg.textContent = 'The catalogue did not load. Check your connection and try again.';
+            // A deploy that predates the ladder still has /api/drops: show the flat
+            // grid rather than an empty shelf.
+            fetch('/api/drops')
+              .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+              .then(function (res) {
+                if (!res.ok || !res.d.ok) {
+                  listMsg.textContent = (res.d && res.d.error) || 'The catalogue could not be loaded.';
+                  return;
+                }
+                renderList(res.d.products || []);
+                afterLoad(res.d);
+              })
+              .catch(function () {
+                listMsg.textContent = 'The catalogue did not load. Check your connection and try again.';
+              });
           });
       }
 

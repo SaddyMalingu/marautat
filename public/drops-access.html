@@ -61,6 +61,7 @@
           .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
       }
       function day(iso) { return String(iso || '').slice(0, 10); }
+      function kes(n) { return 'KES ' + Number(n || 0).toLocaleString('en-KE'); }
       function fail(message) {
         view.innerHTML = '<div class="panel"><div class="kicker">Access problem</div>' +
           '<h1>That link cannot open a pack</h1><p class="err">' + esc(message) + '</p>' +
@@ -97,6 +98,10 @@
               (outcomes ? '<h2>What you can do now</h2><ul>' + outcomes + '</ul>' : '') +
               (modules ? '<h2>What is inside</h2><ol>' + modules + '</ol>' : '') +
               (d.deliveryNote ? '<h2>Delivery</h2><p>' + esc(d.deliveryNote) + '</p>' : '') +
+              (d.next
+                ? '<h2>Your next step</h2><p>' + esc(d.next.title) + (d.next.price_kes ? ' — ' + esc(kes(d.next.price_kes)) : '') + '</p>' +
+                  '<a class="cta" href="' + esc(d.next.url) + '">' + (d.next.price_kes ? 'See the next pack' : 'Talk about the build') + '</a>'
+                : '') +
               (d.support ? '<a class="ghost" href="' + esc(d.support) + '" rel="noopener">Need a resend? Message us on WhatsApp</a>' : '') +
             '</div>';
         })

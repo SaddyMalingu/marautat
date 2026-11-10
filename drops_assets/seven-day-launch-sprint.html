@@ -1,0 +1,839 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>The 7-Day Launch Sprint · Alphadome</title><style>
+:root{--ink:#0d1320;--paper:#ffffff;--muted:#5b6b85;--line:#e3e8f0;--accent:#b45309;--code:#f5f7fb}
+*{box-sizing:border-box}
+body{margin:0;background:#f1f4f9;color:var(--ink);font:16px/1.65 Georgia,'Times New Roman',serif}
+.sheet{max-width:820px;margin:0 auto;background:var(--paper);padding:56px 60px 72px;box-shadow:0 10px 40px rgba(13,19,32,.08)}
+.brand{font:600 12px/1 ui-sans-serif,system-ui,sans-serif;letter-spacing:.18em;text-transform:uppercase;color:var(--accent)}
+h1{font-size:2.1rem;line-height:1.2;margin:.4rem 0 .6rem}
+h2{font-size:1.35rem;margin:2.2rem 0 .6rem;border-top:1px solid var(--line);padding-top:1.4rem}
+h3{font-size:1.08rem;margin:1.6rem 0 .4rem}
+h4{font-size:.98rem;margin:1.2rem 0 .3rem}
+p,li{color:#22304a}
+.meta{font:14px/1.5 ui-sans-serif,system-ui,sans-serif;color:var(--muted)}
+.lead{font-size:1.05rem;color:#2b3a55}
+.rule{height:3px;background:var(--accent);width:64px;margin:1.2rem 0 1.6rem}
+ul,ol{padding-left:1.3rem}
+li{margin:.3rem 0}
+code{background:var(--code);padding:.1rem .3rem;border-radius:4px;font-size:.9em}
+pre{background:var(--code);padding:14px 16px;border-radius:8px;overflow:auto;border:1px solid var(--line)}
+pre code{background:none;padding:0;font-size:.82rem;line-height:1.5}
+blockquote{margin:1rem 0;padding:.6rem 1rem;border-left:3px solid var(--accent);color:var(--muted);background:#faf7f2}
+.box{border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin:1.2rem 0;background:#fbfcfe}
+.box h4{margin-top:0}
+.licence{font:13px/1.6 ui-sans-serif,system-ui,sans-serif;color:var(--muted);border-top:1px solid var(--line);margin-top:3rem;padding-top:1.2rem}
+.toc a{color:var(--ink);text-decoration:none;border-bottom:1px dotted var(--line)}
+@media print{body{background:#fff}.sheet{box-shadow:none;padding:0}h2{break-after:avoid}pre{white-space:pre-wrap}}
+@media (max-width:640px){.sheet{padding:28px 20px 40px}h1{font-size:1.6rem}}
+</style></head><body><div class="sheet">
+<div class="brand">Alphadome · Digital Drop</div>
+<h1>The 7-Day Launch Sprint</h1>
+<p class="meta">Assembled pack · kit · edition 2026-11-10</p>
+<div class="rule"></div>
+<p class="lead">The day-by-day plan this platform was actually launched with: verify the M-Pesa credentials, create the tenant, test the prompt, take the first real shilling. Free, because the hard part is the order of the checks.</p>
+<h2>What you can do when you finish</h2><ul><li>Know which four M-Pesa variables must agree before a prompt can succeed</li><li>Test an STK prompt without charging a customer</li><li>Create a tenant and a WhatsApp number id without leaking a credential</li><li>Have a written go-live check that a non-engineer can run</li></ul>
+<h2>Contents</h2><ol class="toc"><li>Days 1-2: credentials and a tenant</li><li>Days 3-4: prove the money lane</li><li>Days 5-7: go live and reconcile</li></ol>
+<h2>1. Days 1-2: credentials and a tenant</h2><p>The Daraja app, the two keys, the shortcode and the callback URL, plus the tenant row and phone number id that make a message route. Includes the exact SQL the launch used.</p>
+<h2>2. Days 3-4: prove the money lane</h2><p>OAuth, the STK request, and the sandbox shortcode, in the order that turns a failure into one named cause instead of four suspects.</p>
+<h2>3. Days 5-7: go live and reconcile</h2><p>The first real transaction, the callback that must be acknowledged before it works, and the merchant reference that makes a statement line attributable.</p>
+<h1 style="page-break-before:always">Source documents</h1><p class="lead">Bundled verbatim from the system this pack describes, so you can read the implementation rather than a summary of it.</p><h2>7DAY_REVENUE_PLAN.md</h2><p class="meta">7DAY_REVENUE_PLAN.md</p><h1>🚀 7-Day Revenue Implementation Plan</h1>
+<p><strong>Goal:</strong> Launch first paying tenant (Kassangas Music Shop) and process real transactions within 7 days. <strong>Current Status:</strong> System is 85% ready. M-Pesa integration exists. Need: tenant onboarding, products, testing, go-live.</p>
+<p>---</p>
+<h2>📊 Daily Breakdown</h2>
+<h3><strong>DAY 1: Tenant Onboarding &amp; Verification</strong> (2-3 hours)</h3>
+<h4>Task 1: Configure Telegram Kassangas as Active Tenant</h4>
+<pre><code>
+# 1. Log into Supabase → SQL Editor
+# 2. Run this query to verify tenant exists:
+SELECT id, client_name, client_phone, status FROM alphadome.bot_tenants 
+WHERE client_phone LIKE '%702245555%' OR client_name LIKE '%Kassangas%';
+
+# 3. If not found, create tenant record:
+INSERT INTO alphadome.bot_tenants 
+(client_name, client_phone, client_email, status, is_active, created_at) 
+VALUES 
+('Kassangas Music Shop', '0702245555', 'gideon@kassangas.ke', 'active', true, NOW());
+</code></pre>
+<h4>Task 2: Verify M-Pesa Credentials</h4>
+<ul>
+<li>[ ] Verify <code>MPESA_CONSUMER_KEY</code> is valid (check in .env)</li>
+<li>[ ] Verify <code>MPESA_CONSUMER_SECRET</code> is valid (check in .env)</li>
+<li>[ ] Test with sandbox shortcode: 174379</li>
+<li>[ ] Create test account on Safaricom Daraja: https://developer.safaricom.co.ke</li>
+<li>[ ] Confirm <code>MPESA_CALLBACK_URL</code> points to correct server (currently <code>https://alphadome.onrender.com/mpesa/callback</code>)</li>
+</ul>
+<h4>Task 3: Test M-Pesa Integration</h4>
+<pre><code>
+# Run this test script:
+node -e &quot;
+const axios = require('axios');
+const fetch = require('node-fetch');
+
+// Step 1: Get OAuth token
+const auth = Buffer.from(
+  process.env.MPESA_CONSUMER_KEY + ':' + process.env.MPESA_CONSUMER_SECRET
+).toString('base64');
+
+fetch('https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials', {
+  method: 'GET',
+  headers: { Authorization: 'Basic ' + auth }
+})
+.then(r =&gt; r.json())
+.then(d =&gt; console.log('OAuth Token Valid:', !!d.access_token))
+.catch(e =&gt; console.error('M-Pesa Auth Failed:', e.message));
+&quot;
+</code></pre>
+<h4>Task 4: Update WhatsApp Phone Number ID</h4>
+<pre><code>
+-- Add Kassangas WhatsApp details if not present:
+UPDATE alphadome.bot_tenants 
+SET whatsapp_phone_number_id = 'YOUR_KASSANGAS_PHONE_ID',  -- Get from Meta Business Manager
+    whatsapp_access_token = 'YOUR_WA_TOKEN',  -- Get from Meta Business Manager
+    whatsapp_business_account_id = 'YOUR_BA_ID'
+WHERE client_phone LIKE '%702245555%';
+</code></pre>
+<p><strong>Completion Checklist:</strong></p>
+<ul>
+<li>[ ] Tenant record exists in database</li>
+<li>[ ] Status = 'active' and is_active = true</li>
+<li>[ ] M-Pesa credentials verified</li>
+<li>[ ] WhatsApp phone IDs configured</li>
+<li>[ ] Callback URL is reachable</li>
+</ul>
+<p>---</p>
+<h3><strong>DAY 2: Product Catalog Setup</strong> (2-3 hours)</h3>
+<h4>Task 1: Add Kassangas Sample Products</h4>
+<pre><code>
+-- Insert 5 test products
+INSERT INTO alphadome.bot_products 
+(bot_tenant_id, sku, name, description, price, currency, stock_count, is_active, created_at) 
+VALUES 
+(
+  (SELECT id FROM alphadome.bot_tenants WHERE client_phone LIKE '%702245555%'),
+  'KASS-GTR-001',
+  'Acoustic Guitar - Yamaha',
+  'Professional Yamaha acoustic guitar, perfect for beginners and professionals',
+  8500,
+  'KES',
+  10,
+  true,
+  NOW()
+),
+(
+  (SELECT id FROM alphadome.bot_tenants WHERE client_phone LIKE '%702245555%'),
+  'KASS-MIC-001',
+  'Studio Microphone - Condenser',
+  'High-quality condenser microphone for recording',
+  15000,
+  'KES',
+  5,
+  true,
+  NOW()
+),
+(
+  (SELECT id FROM alphadome.bot_tenants WHERE client_phone LIKE '%702245555%'),
+  'KASS-AMP-001',
+  'Guitar Amplifier - 50W',  
+  'Portable 50W guitar amplifier with effects',
+  12000,
+  'KES',
+  8,
+  true,
+  NOW()
+),
+(
+  (SELECT id FROM alphadome.bot_tenants WHERE client_phone LIKE '%702245555%'),
+  'KASS-DRUM-001',
+  'Drum Kit - 5-Piece',
+  'Complete 5-piece drumkit with stands and hardware',
+  25000,
+  'KES',
+  3,
+  true,
+  NOW()
+),
+(
+  (SELECT id FROM alphadome.bot_tenants WHERE client_phone LIKE '%702245555%'),
+  'KASS-CABLE-001',
+  'Audio Cable Bundle',
+  '6-pack of XLR and 1/4 inch cables',
+  2500,
+  'KES',
+  20,
+  true,
+  NOW()
+);
+</code></pre>
+<h4>Task 2: Upload Product Images (Optional but Recommended)</h4>
+<p>Use dashboard: <code>http://localhost:3000/admin/simple?key=alphadome-admin-2026</code></p>
+<p><strong>Product images needed:</strong></p>
+<ul>
+<li>Guitar photo → KASS-GTR-001.jpg</li>
+<li>Microphone photo → KASS-MIC-001.jpg</li>
+<li>Amplifier photo → KASS-AMP-001.jpg</li>
+<li>Drums photo → KASS-DRUM-001.jpg</li>
+<li>Cables photo → KASS-CABLE-001.jpg</li>
+</ul>
+<h4>Task 3: Verify Catalog is Reachable via API</h4>
+<pre><code>
+curl -X GET &quot;http://localhost:3000/tenant/catalog&quot; \
+  -H &quot;x-tenant-key: 254702245555&quot; \
+  -H &quot;Content-Type: application/json&quot;
+</code></pre>
+<p><strong>Completion Checklist:</strong></p>
+<ul>
+<li>[ ] 5+ products uploaded to Kassangas</li>
+<li>[ ] Each product has valid SKU, name, price, stock</li>
+<li>[ ] Prices are in KES</li>
+<li>[ ] Catalog API returns items via <code>/tenant/catalog</code></li>
+</ul>
+<p>---</p>
+<h3><strong>DAY 3: Payment Flow Testing (Sandbox)</strong> (3-4 hours)</h3>
+<h4>Task 1: Set Up Test Credentials</h4>
+<pre><code>
+M-Pesa Test Account:
+- Phone: 254712345678 (or 0712345678)
+- Test funds: Available in Safaricom Daraja sandbox
+- Shortcode: 174379
+- Passkey: bfb279f9aa9bdbcf158e97dd71a467cd2e0ff47d43249d1c
+</code></pre>
+<h4>Task 2: End-to-End Payment Test</h4>
+<pre><code>
+# 1. Start your server
+npm start
+
+# 2. Send test message to your bot
+# From phone 254712345678 → Bot phone (WhatsApp)
+# Message: &quot;JOIN ALPHADOME&quot; or &quot;BUY KASS-GTR-001&quot;
+
+# 3. Bot should respond asking for payment phone number
+
+# 4. From test phone, reply: &quot;254712345678&quot; (or &quot;same&quot;)
+
+# 5. Check Safaricom Daraja logs for STK push attempt
+# 6. Verify /mpesa/callback processed the response
+# 7. Check subscriptions table for payment record
+</code></pre>
+<h4>Task 3: Monitor Callback Processing</h4>
+<pre><code>
+-- Check if payment was recorded:
+SELECT id, phone, amount, status, mpesa_receipt_no 
+FROM subscriptions 
+WHERE phone LIKE '%712345678%' 
+ORDER BY created_at DESC LIMIT 5;
+
+-- Check conversation logs:
+SELECT direction, message_text, created_at 
+FROM conversations 
+WHERE user_id = (SELECT id FROM users WHERE phone LIKE '%712345678%')
+ORDER BY created_at DESC LIMIT 20;
+</code></pre>
+<h4>Task 4: Test Different Scenarios</h4>
+<ul>
+<li>[ ] User types &quot;JOIN ALPHADOME&quot; → Gets subscription flow</li>
+<li>[ ] User types &quot;BUY KASS-GTR-001&quot; → Gets product checkout</li>
+<li>[ ] Payment success → Subscription marked as &quot;subscribed&quot;</li>
+<li>[ ] Payment failure → User notified to retry</li>
+<li>[ ] User gets confirmation message with receipt</li>
+</ul>
+<p><strong>Completion Checklist:</strong></p>
+<ul>
+<li>[ ] 3+ successful sandbox payments processed</li>
+<li>[ ] M-Pesa callback updates subscriptions table</li>
+<li>[ ] User receives confirmation messages</li>
+<li>[ ] No errors in logs during payment flow</li>
+</ul>
+<p>---</p>
+<h3><strong>DAY 4: Production M-Pesa Setup</strong> (2-3 hours)</h3>
+<h4>Task 1: Switch M-Pesa to Production</h4>
+<pre><code>
+# In .env, change:
+MPESA_ENV=production  # Was: sandbox
+MPESA_SHORTCODE=your_actual_shortcode  # Get from Safaricom (not 174379)
+</code></pre>
+<h4>Task 2: Update Callback URL to Production</h4>
+<pre><code>
+# .env should have:
+MPESA_CALLBACK_URL=https://your-production-domain.com/mpesa/callback
+# OR
+MPESA_CALLBACK_URL=https://alphadome.onrender.com/mpesa/callback  # If hosted here
+</code></pre>
+<h4>Task 3: Register Business with Safaricom</h4>
+<ul>
+<li>[ ] Log into Safaricom Daraja dashboard</li>
+<li>[ ] Switch app to &quot;Production&quot;</li>
+<li>[ ] Whitelist callback URL</li>
+<li>[ ] Test with actual M-Pesa number (not sandbox)</li>
+<li>[ ] Verify response is 200 OK</li>
+</ul>
+<h4>Task 4: Verify Payment Flow in Production</h4>
+<pre><code>
+# Test with real M-Pesa:
+# 1. Send actual payment from real phone
+# 2. Confirm STK prompt appears
+# 3. Enter M-Pesa PIN and complete
+# 4. Verify subscription status changes to &quot;paid&quot;
+</code></pre>
+<p><strong>Completion Checklist:</strong></p>
+<ul>
+<li>[ ] M-Pesa switched to production mode</li>
+<li>[ ] Callback URL updated and verified</li>
+<li>[ ] 1-2 real test payments processed successfully</li>
+<li>[ ] No errors in /mpesa/callback processing</li>
+</ul>
+<p>---</p>
+<h3><strong>DAY 5: Tenant Dashboard &amp; Analytics</strong> (2-3 hours)</h3>
+<h4>Task 1: Access Tenant Dashboard</h4>
+<pre><code>
+URL: http://localhost:3000/tenant-dashboard?key=254702245555
+Password: 254702245555 (from TENANT_DASHBOARD_PASS)
+</code></pre>
+<h4>Task 2: Review Available Metrics</h4>
+<ul>
+<li>[ ] Process <code>/tenant/analytics</code> → See conversation stats</li>
+<li>[ ] Process <code>/tenant/revenue</code> → See payment trends</li>
+<li>[ ] Process <code>/tenant/products/performance</code> → See product views &amp; conversions</li>
+<li>[ ] Process <code>/tenant/customers</code> → See customer list &amp; behavior</li>
+<li>[ ] Process <code>/tenant/orders</code> → See transaction history</li>
+</ul>
+<h4>Task 3: Set Up Auto-Responses (Optional)</h4>
+<pre><code>
+-- Add quick replies for common questions:
+UPDATE alphadome.bot_tenants
+SET metadata = jsonb_set(
+  COALESCE(metadata, '{}'::jsonb),
+  '{auto_responses}',
+  '[
+    {&quot;trigger&quot;: &quot;hello&quot;, &quot;response&quot;: &quot;👋 Welcome to Kassangas! What would you like to know about our instruments?&quot;, &quot;enabled&quot;: true},
+    {&quot;trigger&quot;: &quot;hours&quot;, &quot;response&quot;: &quot;⏰ We are open Mon-Sat, 9 AM - 6 PM&quot;, &quot;enabled&quot;: true},
+    {&quot;trigger&quot;: &quot;warranty&quot;, &quot;response&quot;: &quot;✅ All instruments come with 1-year warranty&quot;, &quot;enabled&quot;: true}
+  ]'::jsonb
+)
+WHERE client_phone LIKE '%702245555%';
+</code></pre>
+<h4>Task 4: Monitor Payment Processing</h4>
+<pre><code>
+# These endpoints show real-time data:
+GET /tenant/payments - All payment attempts
+GET /tenant/revenue - Daily revenue trend
+GET /tenant/orders - Order status
+</code></pre>
+<p><strong>Completion Checklist:</strong></p>
+<ul>
+<li>[ ] Dashboard loads without errors</li>
+<li>[ ] Can see products in catalog</li>
+<li>[ ] Can see payment transactions</li>
+<li>[ ] Auto-responses configured for common queries</li>
+<li>[ ] Revenue report shows sales data</li>
+</ul>
+<p>---</p>
+<h3><strong>DAY 6: Go-Live Preparation &amp; Marketing</strong> (3-4 hours)</h3>
+<h4>Task 1: Final Security Audit</h4>
+<pre><code>
+# Check critical configs:
+echo &quot;WHATSAPP_TOKEN length: ${#WHATSAPP_TOKEN}&quot;  # Should be &gt;100
+echo &quot;MPESA_CONSUMER_KEY set: $([ -z $MPESA_CONSUMER_KEY ] &amp;&amp; echo NO || echo YES)&quot;
+echo &quot;MPESA_CONSUMER_SECRET set: $([ -z $MPESA_CONSUMER_SECRET ] &amp;&amp; echo NO || echo YES)&quot;
+echo &quot;ADMIN_PASS set: $([ -z $ADMIN_PASS ] &amp;&amp; echo NO || echo YES)&quot;
+</code></pre>
+<h4>Task 2: Enable Chat Logging &amp; Monitoring</h4>
+<pre><code>
+-- Create monitoring dashboard:
+SELECT 
+  DATE(created_at) AS date,
+  COUNT(*) AS messages,
+  SUM(CASE WHEN direction = 'incoming' THEN 1 ELSE 0 END) AS inbound,
+  SUM(CASE WHEN direction = 'outgoing' THEN 1 ELSE 0 END) AS outbound
+FROM conversations
+WHERE brand_id = (SELECT brand_id FROM alphadome.bot_tenants WHERE client_phone LIKE '%702245555%')
+GROUP BY DATE(created_at)
+ORDER BY date DESC;
+</code></pre>
+<h4>Task 3: Announce to Customers</h4>
+<p><strong>Message Template for Kassangas:</strong></p>
+<pre><code>
+🎉 Hi! This is Kassangas Music Shop.
+
+We now have a WhatsApp bot that lets you:
+✅ Browse our full instrument catalog
+✅ Check prices &amp; availability
+✅ Buy directly via M-Pesa
+✅ Get instant support
+
+Just message us here to get started! 🎸
+
+Commands:
+- Type &quot;CATALOG&quot; to see all items
+- Type &quot;BUY [product name]&quot; to purchase
+- Type &quot;JOIN ALPHADOME&quot; for membership plans
+</code></pre>
+<h4>Task 4: Set Up Support &amp; Escalation</h4>
+<pre><code>
+-- Configure escalation keywords:
+UPDATE alphadome.bot_tenants
+SET metadata = jsonb_set(
+  COALESCE(metadata, '{}'::jsonb),
+  '{workflows}',
+  '{
+    &quot;escalation_keywords&quot;: [&quot;help&quot;, &quot;human&quot;, &quot;manager&quot;, &quot;complaint&quot;, &quot;urgent&quot;],
+    &quot;auto_assign_enabled&quot;: true,
+    &quot;default_agent&quot;: &quot;gideon&quot;
+  }'::jsonb
+)
+WHERE client_phone LIKE '%702245555%';
+</code></pre>
+<p><strong>Completion Checklist:</strong></p>
+<ul>
+<li>[ ] All credentials verified and secure</li>
+<li>[ ] Payment flow tested with real money</li>
+<li>[ ] Customer announcement message ready</li>
+<li>[ ] Support escalation configured</li>
+<li>[ ] Monitoring queries set up</li>
+<li>[ ] Team trained on how to use dashboard</li>
+</ul>
+<p>---</p>
+<h3><strong>DAY 7: Go-Live &amp; First Sales</strong> (2-3 hours)</h3>
+<h4>Task 1: Deploy to Production</h4>
+<pre><code>
+# If not already deployed:
+git add -A
+git commit -m &quot;feat: activate kassangas revenue stream&quot;
+git push origin main
+
+# Or restart if self-hosted:
+npm stop
+npm start
+</code></pre>
+<h4>Task 2: Send Customer Announcement</h4>
+<ul>
+<li>[ ] Send WhatsApp broadcast to existing Kassangas customers</li>
+<li>[ ] Post on social media channels</li>
+<li>[ ] Email announcement (if you have list)</li>
+<li>[ ] Update website with WhatsApp link</li>
+</ul>
+<h4>Task 3: Monitor Live Transactions</h4>
+<pre><code>
+# Every 30 minutes, check:
+SELECT 
+  DATE_TRUNC('hour', created_at) AS hour,
+  COUNT(*) AS messages,
+  SUM(CASE WHEN direction = 'incoming' THEN 1 ELSE 0 END) AS incoming
+FROM conversations
+WHERE brand_id = (SELECT brand_id FROM alphadome.bot_tenants WHERE client_phone LIKE '%702245555%')
+  AND created_at &gt; NOW() - INTERVAL '24 hours'
+GROUP BY DATE_TRUNC('hour', created_at)
+ORDER BY hour DESC;
+
+-- Check revenue:
+SELECT 
+  DATE(created_at) AS date,
+  COUNT(*) AS sales,
+  SUM(amount) AS revenue,
+  AVG(amount) AS avg_order_value
+FROM subscriptions
+WHERE status IN ('paid', 'subscribed', 'completed', 'active')
+  AND created_at &gt; NOW() - INTERVAL '24 hours'
+GROUP BY DATE(created_at);
+</code></pre>
+<h4>Task 4: Respond to Issues in Real-Time</h4>
+<ul>
+<li>[ ] Monitor <code>/tenant/customers</code> for incoming messages</li>
+<li>[ ] Respond to questions within 1 hour</li>
+<li>[ ] Mark failed payments to retry</li>
+<li>[ ] Escalate technical issues immediately</li>
+</ul>
+<p><strong>Completion Checklist:</strong></p>
+<ul>
+<li>[ ] System deployed and running</li>
+<li>[ ] First customer message received ✓</li>
+<li>[ ] First payment initiated ✓</li>
+<li>[ ] First payment completed ✓</li>
+<li>[ ] Revenue flowing to Kassangas ✓</li>
+</ul>
+<p>---</p>
+<h2>💰 Revenue Model</h2>
+<h3>Pricing Tiers</h3>
+<pre><code>
+Payment Flow Options:
+1. Product Sales (User-controlled)
+   - SKU: KASS-GTR-001 → KES 8,500
+   - Each sale: KES 8,500 - M-Pesa fee (0.99%)
+   
+2. Membership Subscriptions  
+   - Monthly Level 1: KES 900
+   - Monthly Level 2: KES 1,800
+   - Monthly Level 3: KES 3,600
+   - One-time variants available
+
+3. Premium Services (Extensible)
+   - VIP Support: KES 500/month
+   - Product Training: KES 2,000/session
+   - Custom orchestration: KES by negotiation
+</code></pre>
+<h3>M-Pesa Fees</h3>
+<ul>
+<li>Safaricom charges <strong>0.99% per transaction</strong> (Daraja pricing)</li>
+<li>Example: KES 10,000 sale → KES 9,901 to Kassangas</li>
+<li>All fees already built into callback processing</li>
+</ul>
+<p>---</p>
+<h2>🔧 Troubleshooting</h2>
+<p>| Issue | Solution | |-------|----------| | STK not pushing | Check M-Pesa credentials + Daraja account status | | Callback not received | Verify MPESA_CALLBACK_URL is publicly reachable | | Payment shows &quot;pending&quot; forever | Check <code>/mpesa/callback</code> logs for errors | | Customer says &quot;no prompt&quot; | Verify phone number format (2547XXXXXXXX) | | Catalog not showing SKU | Verify product exists in bot_products table + is_active=true |</p>
+<p>---</p>
+<h2>📞 Support Contacts</h2>
+<p><strong>Safaricom Daraja:</strong></p>
+<ul>
+<li>Daraja Portal: https://developer.safaricom.co.ke</li>
+<li>Email: apisupport@safaricom.co.ke</li>
+<li>FAQ: https://daraja.readme.io</li>
+</ul>
+<p><strong>Your Team:</strong></p>
+<ul>
+<li>Gideon (Kassangas): +254702245555</li>
+<li>Support: +254117604817 or +254743780542</li>
+</ul>
+<p>---</p>
+<h2>🎯 Success Metrics</h2>
+<p>By end of Day 7:</p>
+<ul>
+<li>✅ <strong>10+ messages</strong> received from customers</li>
+<li>✅ <strong>3+ payment attempts</strong> made</li>
+<li>✅ <strong>1+ successful transaction</strong> completed</li>
+<li>✅ <strong>Revenue flowing</strong> to Kassangas account</li>
+<li>✅ <strong>Zero critical errors</strong> in logs</li>
+</ul>
+<p>By end of Week 2:</p>
+<ul>
+<li>Revenue: KES 5,000 - 15,000</li>
+<li>Active customers: 10-20</li>
+<li>Repeat purchase rate: 10%+</li>
+</ul>
+<p>---</p>
+<p><strong>Let's make this happen! 🚀</strong></p>
+<h2>FALLBACK_PAYMENT_OPTIONS.md</h2><p class="meta">FALLBACK_PAYMENT_OPTIONS.md</p><h1>Fallback Payment Options Feature</h1>
+<h2>Overview</h2>
+<p>When M-Pesa STK push payments fail or refund (while waiting for EPI connection approval from Safaricom), customers are automatically presented with alternative payment methods. This ensures revenue doesn't get blocked due to temporary M-Pesa gateway unavailability.</p>
+<p><strong>Current Status</strong>: Production-ready, enabled by default when M-Pesa ResultCode ≠ 0</p>
+<p>---</p>
+<h2>Payment Flow Architecture</h2>
+<h3>Standard M-Pesa Flow</h3>
+<pre><code>
+Customer → POST /webhook &quot;JOIN ALPHADOME&quot; → initateStkPush() →
+   STK prompt on phone → Customer enters PIN →
+   M-Pesa processes → POST /mpesa/callback (ResultCode = 0) →
+   Payment marked &quot;subscribed&quot; ✅
+</code></pre>
+<h3>Fallback M-Pesa Flow (EPI Pending)</h3>
+<pre><code>
+Customer → POST /webhook &quot;JOIN ALPHADOME&quot; → initiateStkPush() →
+   STK prompt on phone → Refund after ~5 minutes (ResultCode ≠ 0) →
+   POST /mpesa/callback → sendFallbackPaymentOptions() →
+   WhatsApp Interactive List with 4 options → Customer selects
+</code></pre>
+<p>---</p>
+<h2>Fallback Payment Methods</h2>
+<h3>1. 🔄 Retry M-Pesa</h3>
+<p><strong>Trigger</strong>: Customer replies with &quot;RETRY&quot; or taps &quot;Retry M-Pesa&quot; button</p>
+<p><strong>Flow</strong>:</p>
+<ol>
+<li>System retrieves failed amount from session context</li>
+<li>Initiates new STK push with same amount/reference</li>
+<li>Updates user session with <code>retry_checkout_id</code></li>
+<li>Sends confirmation message</li>
+<li>Waits for new callback on <code>/mpesa/callback</code></li>
+</ol>
+<p><strong>User Message</strong>:</p>
+<pre><code>
+💳 Retrying M-Pesa payment for KES 500. Please enter your M-Pesa PIN on your phone...
+</code></pre>
+<p><strong>Code</strong>:</p>
+<ul>
+<li>Triggers: <code>text.toUpperCase().includes(&quot;RETRY&quot;)</code> or <code>text.match(/retry.*mpesa/i)</code></li>
+<li>Calls: <code>initiateStkPush()</code> again with saved context</li>
+</ul>
+<p>---</p>
+<h3>2. 🏦 Bank Transfer</h3>
+<p><strong>Trigger</strong>: Customer replies with &quot;BANK&quot; or taps &quot;Bank Transfer&quot; button</p>
+<p><strong>Flow</strong>:</p>
+<ol>
+<li>System sends bank transfer instructions with:</li>
+</ol>
+<ul>
+<li>KCB Bank details (Account: Alphadome Limited)</li>
+<li>Amount to send</li>
+<li>Reference format: <code>{plan_type}-{checkoutId.slice(-8)}</code></li>
+</ul>
+<ol>
+<li>Prompts customer to reply with receipt</li>
+<li>Customer replies: <code>BANK RECEIPT K2P4A5B6C7</code></li>
+<li>System confirms receipt and marks subscription as <code>manual_pending_verification</code></li>
+</ol>
+<p><strong>Bank Details Sent</strong>:</p>
+<pre><code>
+🏦 Bank Transfer Instructions
+
+Amount to send: KES 500
+
+Bank: KCB Bank Kenya
+Account Name: Alphadome Limited
+Account Number: 1234567890
+Branch Code: 63000
+Swift Code: KCBLKENX
+
+📌 Important:
+• Use Reference: monthly-ABC123DE
+• Reply with the bank deposit receipt number
+• Allow 2-5 minutes for confirmation
+</code></pre>
+<p><strong>Code</strong>:</p>
+<ul>
+<li>Triggers: <code>text.toUpperCase().includes(&quot;BANK&quot;)</code></li>
+<li>Receipt validation: <code>/^BANK\s+RECEIPT\s+([A-Z0-9]+)$/i</code></li>
+<li>Updates subscription to <code>manual_pending_verification</code> status</li>
+</ul>
+<p>---</p>
+<h3>3. 🚚 Cash on Delivery</h3>
+<p><strong>Trigger</strong>: Customer replies with &quot;COD&quot; or taps &quot;Cash on Delivery&quot; button</p>
+<p><strong>Flow</strong>:</p>
+<ol>
+<li>System explains COD terms (2-3 business days, pay on delivery)</li>
+<li>Requests delivery address from customer</li>
+<li>Customer replies with address (e.g., &quot;Nairobi CBD, Tom Mboya Street...&quot;)</li>
+<li>System confirms order with COD reference number</li>
+<li>Marks subscription as <code>cod_pending_delivery</code></li>
+<li>Operations team notifies customer within 24 hours</li>
+</ol>
+<p><strong>User Messages</strong>:</p>
+<pre><code>
+🚚 Cash on Delivery Selected
+
+Plan: MONTHLY
+Amount: KES 500
+
+📍 Estimated Delivery: 2-3 business days
+💰 Payment due on delivery
+
+Please confirm your delivery address:
+&lt;Your address here&gt;
+
+---
+
+✅ COD Order Confirmed
+
+📍 Delivery Address:
+Nairobi CBD, Tom Mboya Street, Building X
+
+Plan: MONTHLY
+Amount: KES 500
+Payment Due: On Delivery
+
+Your order has been registered. Our team will contact you within 24 hours to arrange delivery.
+
+Order Reference: COD-8F6E3P2Q
+</code></pre>
+<p><strong>Code</strong>:</p>
+<ul>
+<li>Triggers: <code>text.toUpperCase().includes(&quot;COD&quot;)</code> or <code>text.match(/cash.*delivery/i)</code></li>
+<li>Address capture: any long text (&gt;10 chars) when <code>selected_fallback_method === &quot;cod&quot;</code></li>
+<li>Updates subscription to <code>cod_pending_delivery</code> status</li>
+</ul>
+<p>---</p>
+<h3>4. 📞 Contact Support</h3>
+<p><strong>Trigger</strong>: Customer replies with &quot;SUPPORT&quot; or taps &quot;Contact Support&quot; button</p>
+<p><strong>Flow</strong>:</p>
+<ol>
+<li>Display support contact information</li>
+<li>Wait for customer issue description</li>
+</ol>
+<p><strong>Support Message</strong>:</p>
+<pre><code>
+📞 Alphadome Support Team
+
+We're here to help!
+
+☎️ Call: +254117604817 or +254743780542
+📧 Email: support@alphadome.com
+⏰ Hours: Mon-Fri, 8AM-6PM EAT
+
+💬 Or continue here - what's your issue?
+</code></pre>
+<p><strong>Code</strong>:</p>
+<ul>
+<li>Triggers: <code>text.toUpperCase().includes(&quot;SUPPORT&quot;)</code></li>
+<li>Simple informational response, no state change</li>
+</ul>
+<p>---</p>
+<h2>Session Context Tracking</h2>
+<h3>Failed Payment Context (Set in POST /mpesa/callback)</h3>
+<p>When payment fails, the system saves to user session:</p>
+<pre><code>
+await mergeUserSessionContext(phone, {
+  failed_subscription_id: subs.id,           // UUID for recovery
+  failed_checkout_id: checkoutId,            // M-Pesa CheckoutRequestID
+  failed_plan_type: subs.plan_type,          // &quot;monthly&quot; | &quot;one&quot; | &quot;product_checkout&quot;
+  failed_level: subs.level,                  // 1, 2, 3, etc.
+  failed_amount: subs.amount,                // KES amount
+  failed_at: new Date().toISOString(),       // ISO timestamp
+  failure_result_code: resultCode,           // Non-zero M-Pesa code
+});
+</code></pre>
+<h3>Fallback Selection Context (Set when customer selects option)</h3>
+<pre><code>
+await mergeUserSessionContext(phone, {
+  selected_fallback_method: &quot;bank_transfer&quot; | &quot;cod&quot; | &quot;retry&quot;,
+  fallback_method_selected_at: new Date().toISOString(),
+  
+  // For bank transfer:
+  bank_receipt_verified: &quot;K2P4A5B6C7&quot;,
+  bank_receipt_verified_at: new Date().toISOString(),
+  
+  // For COD:
+  cod_address: &quot;Nairobi CBD, Tom Mboya Street...&quot;,
+  cod_address_confirmed: true,
+  cod_confirmed_at: new Date().toISOString(),
+});
+</code></pre>
+<p>---</p>
+<h2>Database Updates</h2>
+<h3>Subscriptions Table Status Updates</h3>
+<p><strong>When payment fails initially</strong>:</p>
+<pre><code>
+UPDATE subscriptions 
+SET status = 'failed',
+    metadata = { 
+      callback: {...}, 
+      fallback_offered: true, 
+      failed_at: '2026-04-18T...' 
+    }
+WHERE id = $1;
+</code></pre>
+<p><strong>When customer confirms bank transfer</strong>:</p>
+<pre><code>
+UPDATE subscriptions 
+SET status = 'manual_pending_verification',
+    metadata = { 
+      alternative_payment_method: 'bank_transfer',
+      bank_receipt: 'K2P4A5B6C7',
+      verified_at: '2026-04-18T...' 
+    }
+WHERE id = $1;
+</code></pre>
+<p><strong>When customer confirms COD</strong>:</p>
+<pre><code>
+UPDATE subscriptions 
+SET status = 'cod_pending_delivery',
+    metadata = { 
+      alternative_payment_method: 'cod',
+      delivery_address: 'Nairobi CBD...',
+      confirmed_at: '2026-04-18T...' 
+    }
+WHERE id = $1;
+</code></pre>
+<p><strong>When customer successfully retries M-Pesa</strong>:</p>
+<pre><code>
+-- Handled by existing POST /mpesa/callback logic
+UPDATE subscriptions
+SET status = 'subscribed'  -- when ResultCode = 0 on retry
+WHERE id = $1;
+</code></pre>
+<p>---</p>
+<h2>Testing Scenarios</h2>
+<h3>Scenario 1: M-Pesa Fails → Retry → Success</h3>
+<ol>
+<li>User types: <code>JOIN ALPHADOME</code></li>
+<li>Bot asks for M-Pesa number</li>
+<li>User provides: <code>0712345678</code></li>
+<li>STK push triggered, customer cancels or timeout occurs</li>
+<li>M-Pesa callback returns ResultCode = 1 (user cancelled) or 1032 (timeout)</li>
+<li>Fallback options displayed</li>
+<li>User taps: <code>🔄 Retry M-Pesa</code></li>
+<li>New STK push sent</li>
+<li>Customer completes payment this time</li>
+<li>M-Pesa callback returns ResultCode = 0</li>
+<li>Subscription activated ✅</li>
+</ol>
+<h3>Scenario 2: M-Pesa Fails → Bank Transfer</h3>
+<ol>
+<li>User types: <code>JOIN ALPHADOME</code></li>
+<li>Bot asks for M-Pesa number</li>
+<li>User provides: <code>0712345678</code></li>
+<li>STK push triggered, refunds after 5 minutes</li>
+<li>Fallback options displayed</li>
+<li>User taps: <code>🏦 Bank Transfer</code></li>
+<li>Bank details sent</li>
+<li>User goes to KCB and makes deposit</li>
+<li>User replies: <code>BANK RECEIPT K2P4A5B6C7</code></li>
+<li>System confirms receipt</li>
+<li>Operations verifies and marks as subscribed manually ✅</li>
+</ol>
+<h3>Scenario 3: M-Pesa Fails → COD</h3>
+<ol>
+<li>User types: <code>JOIN ALPHADOME</code></li>
+<li>Bot asks for M-Pesa number</li>
+<li>User provides: <code>0712345678</code></li>
+<li>STK push triggered, refunds after 5 minutes</li>
+<li>Fallback options displayed</li>
+<li>User taps: <code>🚚 Cash on Delivery</code></li>
+<li>Bot asks for delivery address</li>
+<li>User replies: <code>Nairobi, Ngara Estate, Hse 42, Apt 3B</code></li>
+<li>Order confirmed with reference: <code>COD-8F6E3P2Q</code></li>
+<li>Operations team contacts customer within 24 hours</li>
+<li>Goods delivered, payment collected ✅</li>
+</ol>
+<p>---</p>
+<h2>Production Readiness Checklist</h2>
+<ul>
+<li>✅ Fallback options triggered on M-Pesa callback failure (ResultCode ≠ 0)</li>
+<li>✅ Failed payment context saved to user session</li>
+<li>✅ Interactive list UI with 4 payment options</li>
+<li>✅ Retry M-Pesa flow with new STK push</li>
+<li>✅ Bank transfer instructions with KCB details</li>
+<li>✅ Receipt confirmation flow with validation</li>
+<li>✅ COD address capture and order registration</li>
+<li>✅ Support contact display</li>
+<li>✅ Subscription status updates (<code>failed</code> → <code>manual_pending_verification</code> or <code>cod_pending_delivery</code>)</li>
+<li>✅ Session context tracking for recovery flows</li>
+<li>✅ Error handling for all scenarios</li>
+<li>✅ Logging for audit trail (PAYMENT log level)</li>
+</ul>
+<p>---</p>
+<h2>Monitoring &amp; Alerts</h2>
+<h3>Key Metrics</h3>
+<ul>
+<li>Total failed payments (M-Pesa ResultCode ≠ 0)</li>
+<li>% Recovered via alternative methods</li>
+<li>Bank transfer receipts pending verification</li>
+<li>COD orders pending delivery</li>
+<li>Retry success rate</li>
+</ul>
+<h3>Logs to Monitor</h3>
+<pre><code>
+FALLBACK_OPTIONS_SENT: Phone=254712345678, Amount=500, CheckoutID=...
+BANK_TRANSFER_DETAILS_SENT: Phone=254712345678, Amount=500
+ALTERNATIVE_PAYMENT_CONFIRMED: Phone=254712345678, Method=bank_transfer
+COD order confirmed with address: ... for 254712345678
+Subscription {id} payment failed (ResultCode {code}) - Fallback options sent
+</code></pre>
+<p>---</p>
+<h2>Future Enhancements</h2>
+<ol>
+<li><strong>Payment Reminder</strong>: Auto-send reminder if bank transfer not received within 6 hours</li>
+<li><strong>Analytics Dashboard</strong>: Track fallback adoption by method + conversion rates</li>
+<li><strong>SMS Fallback</strong>: If WhatsApp Interactive List fails, send options via SMS</li>
+<li><strong>Mobile Wallet</strong>: Add options for Airtel Money, Equity Bank USSD</li>
+<li><strong>Invoice Generation</strong>: Generate and send PDF invoice for bank transfer</li>
+<li><strong>Auto-Verification</strong>: Integrate with KCB API to auto-verify bank receipts</li>
+<li><strong>Dynamic Support</strong>: Route COD to logistics partner API for auto-delivery scheduling</li>
+</ol>
+<p>---</p>
+<h2>Contact</h2>
+<p>For issues, enhancements, or support: +254117604817</p>
+<h2>Review checklist</h2>
+<ul><li>I can show evidence that: Know which four M-Pesa variables must agree before a prompt can succeed</li><li>I can show evidence that: Test an STK prompt without charging a customer</li><li>I can show evidence that: Create a tenant and a WhatsApp number id without leaking a credential</li><li>I can show evidence that: Have a written go-live check that a non-engineer can run</li></ul>
+<div class="licence">
+<strong>Licence.</strong> Free pack. Send it to anyone who needs it and quote it with attribution. Do not sell it, and do not present it as your own product.<br><br>
+<strong>What this is.</strong> Written material delivered as a single HTML pack.<br><br>
+<strong>What it is not.</strong> Not a guarantee of income, employment, acceptance or performance. Figures quoted in this pack are the measurements of the system it describes, with their sources named, not promises about your results.<br><br>
+Sold via Alphadome Digital Drops. Support, resends and extensions: reply to the WhatsApp message that delivered this pack.
+</div>
+</div></body></html>

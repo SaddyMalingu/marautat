@@ -24,7 +24,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { validateProduct, ASSET_DIR } from '../utils/digitalDrops.js';
+import { validateProduct, validateLeadMagnet, ASSET_DIR } from '../utils/digitalDrops.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const catalogPath = path.join(root, 'data', 'drops_catalog.json');
@@ -217,7 +217,9 @@ export function renderPack(raw) {
     '<h2>Review checklist</h2>',
     '<ul>' + (product.outcomes || []).map((o) => '<li>I can show evidence that: ' + inline(o) + '</li>').join('') + '</ul>',
     '<div class="licence">',
-    '<strong>Licence.</strong> One buyer, one organisation, internal use. You may adapt the material for your own business and quote short excerpts with attribution. Do not resell, redistribute or publish this pack, in whole or in part, as your own product.<br><br>',
+    '<strong>Licence.</strong> ' + (product.licence
+      ? inline(product.licence)
+      : 'One buyer, one organisation, internal use. You may adapt the material for your own business and quote short excerpts with attribution. Do not resell, redistribute or publish this pack, in whole or in part, as your own product.') + '<br><br>',
     '<strong>What this is.</strong> ' + esc(product.delivery_note || 'Written material delivered as a single HTML pack.') + '<br><br>',
     '<strong>What it is not.</strong> Not a guarantee of income, employment, acceptance or performance. Figures quoted in this pack are the measurements of the system it describes, with their sources named, not promises about your results.<br><br>',
     'Sold via Alphadome Digital Drops. Support, resends and extensions: reply to the WhatsApp message that delivered this pack.',
@@ -232,15 +234,26 @@ export function renderPack(raw) {
     '<style>' + CSS + '</style></head><body>' + body + '</body></html>\n';
 }
 
+/** A free pack is meant to travel; a paid one is not. Same builder, different licence. */
+const FREE_LICENCE = 'Free pack. Send it to anyone who needs it and quote it with attribution. Do not sell it, and do not present it as your own product.';
+
 function main() {
   const raw = JSON.parse(fs.readFileSync(catalogPath, 'utf8'));
   const products = Array.isArray(raw) ? raw : raw.products || [];
-  const wanted = products.filter((p) => includeDrafts || p.status === 'published');
+  const magnets = Array.isArray(raw) ? [] : raw.lead_magnets || [];
+  // Products and magnets render with one function and differ only in what they must
+  // prove before they are allowed to ship: a magnet has no price, and must have a file.
+  const jobs = [
+    ...products.map((p) => ({ raw: p, checked: validateProduct, kind: 'product' })),
+    ...magnets.map((m) => ({ raw: m, checked: validateLeadMagnet, kind: 'free pack' })),
+  ];
+  const wanted = jobs.filter((j) => includeDrafts || j.raw.status === 'published');
   if (!fs.existsSync(outDir) && !checkOnly) fs.mkdirSync(outDir, { recursive: true });
 
   let built = 0, failed = 0, missing = 0;
-  for (const rawProduct of wanted) {
-    const checked = validateProduct(rawProduct);
+  for (const job of wanted) {
+    const rawProduct = job.raw;
+    const checked = job.checked(rawProduct);
     if (!checked.ok) {
       failed++;
       console.log('FAIL  ' + (rawProduct.slug || rawProduct.title) + ' — ' + checked.errors.join('; '));
@@ -253,11 +266,14 @@ function main() {
     if (checkOnly) {
       const exists = fs.existsSync(target);
       if (!exists) missing++;
-      console.log((exists ? 'OK    ' : 'MISS  ') + product.slug + ' -> ' + path.basename(file));
+      console.log((exists ? 'OK    ' : 'MISS  ') + product.slug + ' -> ' + path.basename(file) + ' (' + job.kind + ')');
       continue;
     }
 
-    const html = renderPack(rawProduct);
+    const html = renderPack({
+      ...rawProduct,
+      licence: rawProduct.licence || (job.kind === 'free pack' ? FREE_LICENCE : ''),
+    });
     fs.writeFileSync(target, html, 'utf8');
     built++;
     const sources = Array.isArray(rawProduct.asset_sources) ? rawProduct.asset_sources : [];

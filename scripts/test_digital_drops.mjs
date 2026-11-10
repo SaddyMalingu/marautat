@@ -385,10 +385,14 @@ const combinedMigration = read('migrations/APPLY_ALL_digital_drops.sql');
 const flat = (s) => s.replace(/\r\n/g, '\n').trim();
 ok('the combined migration contains the base file verbatim', flat(combinedMigration).includes(flat(baseMigration)));
 ok('the combined migration contains the lane file verbatim', flat(combinedMigration).includes(flat(laneMigration)));
+const funnelMigration = read('migrations/2026-11-12_drops_funnel.sql');
+ok('the combined migration contains the funnel file verbatim', flat(combinedMigration).includes(flat(funnelMigration)));
 ok('the combined migration runs the base file first',
   flat(combinedMigration).indexOf(flat(baseMigration)) < flat(combinedMigration).indexOf(flat(laneMigration)));
-ok('the combined migration is one paste, two transactions',
-  (combinedMigration.match(/^BEGIN;/gm) || []).length === 2 && (combinedMigration.match(/^COMMIT;/gm) || []).length === 2);
+ok('the combined migration runs the funnel file last',
+  flat(combinedMigration).indexOf(flat(laneMigration)) < flat(combinedMigration).indexOf(flat(funnelMigration)));
+ok('the combined migration is one paste, three transactions',
+  (combinedMigration.match(/^BEGIN;/gm) || []).length === 3 && (combinedMigration.match(/^COMMIT;/gm) || []).length === 3);
 ok('the schema doctor exists', fs.existsSync(path.join(root, 'scripts', 'drops_doctor.mjs')));
 ok('the migration runner exists', fs.existsSync(path.join(root, 'scripts', 'drops_apply_migrations.mjs')));
 
@@ -589,6 +593,269 @@ ok('the draft makes no revenue promise', !/guarantee|you will earn|double your/i
 const anon = outreach.draftMessage({ name: 'Zed' }, { url: 'https://x.test/build' });
 ok('a draft without a business still reads', anon.startsWith('You asked us about getting sales out of WhatsApp'));
 
+
+// ---- 15. the funnel (2026-11-12) ------------------------------------------------
+console.log('\n-- funnel rungs');
+import {
+  FUNNEL_STEPS,
+  FUNNEL_STEP_KEYS,
+  funnelStepOf,
+  funnelStepIndex,
+  sortLadder,
+  nextOfferFor,
+  funnelLadder,
+  isForwardStep,
+  nextActionFor,
+  validateLead,
+  validateLeadMagnet,
+  signLeadToken,
+  verifyLeadToken,
+  magnetDelivery,
+  funnelReport,
+  LEAD_LINK_DAYS,
+} from '../utils/digitalDrops.js';
+
+ok('six rungs are declared', FUNNEL_STEPS.length === 6);
+ok('rungs have a strict order', FUNNEL_STEPS.every((s, i) => s.order === i));
+ok('every rung states the job the buyer is doing', FUNNEL_STEPS.every((s) => s.promise && s.promise.length > 20));
+ok('the free rung is first', FUNNEL_STEPS[0].key === 'lead');
+ok('the done-for-you rung is last', FUNNEL_STEPS[FUNNEL_STEPS.length - 1].key === 'service');
+ok('an unknown rung is -1, not zero', funnelStepIndex('nonsense') === -1);
+ok('a row without a rung reads as core', funnelStepOf({ slug: 'x' }) === 'core');
+ok('a row with an invalid rung reads as core, not a dropped product', funnelStepOf({ funnel_step: 'gold' }) === 'core');
+
+const ladderCatalog = catalogRaw.products.filter((p) => p.status === 'published');
+ok('every published row names a rung', ladderCatalog.every((p) => FUNNEL_STEP_KEYS.includes(String(p.funnel_step))));
+ok('the ladder is ordered free to premium', (() => {
+  const rows = sortLadder(ladderCatalog);
+  return rows.every((p, i) => i === 0 || funnelStepIndex(funnelStepOf(rows[i - 1])) <= funnelStepIndex(funnelStepOf(p)));
+})());
+ok('the paid ladder starts at the entry rung', funnelStepOf(sortLadder(ladderCatalog)[0]) === 'entry');
+ok('the catalogue has a premium rung', ladderCatalog.some((p) => funnelStepOf(p) === 'premium'));
+
+const bySlug = new Map(ladderCatalog.map((p) => [p.slug, p]));
+ok('every next_slug points at a published product', ladderCatalog.every((p) => !p.next_slug || bySlug.has(p.next_slug)));
+ok('every next_slug is a step up in price or rung', ladderCatalog.every((p) => !p.next_slug || isForwardStep(p, bySlug.get(p.next_slug))));
+ok('no product points at itself', ladderCatalog.every((p) => p.next_slug !== p.slug));
+ok('validateProduct refuses a self-referencing next_slug',
+  validateProduct({ ...good, slug: 'loop-test', next_slug: 'loop-test' }).ok === false);
+ok('validateProduct refuses a next_slug that is not a slug', (() => {
+  const checked = validateProduct({ ...good, slug: 'loop-test-2', next_slug: 'Not A Slug!!' });
+  return checked.ok ? checked.value.next_slug === 'not-a-slug' : true;
+})());
+
+const entryProduct = sortLadder(ladderCatalog)[0];
+const entryOffer = nextOfferFor(entryProduct, ladderCatalog);
+ok('the entry pack offers a more expensive pack', Boolean(entryOffer) && Number(entryOffer.price_kes) > Number(entryProduct.price_kes));
+ok('no rung ever offers something cheaper than itself', ladderCatalog.every((p) => {
+  const next = nextOfferFor(p, ladderCatalog);
+  return !next || Number(next.price_kes) > Number(p.price_kes);
+}));
+ok('no rung offers a product on a lower rung', ladderCatalog.every((p) => {
+  const next = nextOfferFor(p, ladderCatalog);
+  return !next || funnelStepIndex(funnelStepOf(next)) >= funnelStepIndex(funnelStepOf(p));
+}));
+ok('an unpublished product is never offered', (() => {
+  const draft = { ...entryProduct, slug: 'draft-higher', price_kes: 99999, status: 'draft' };
+  return nextOfferFor(entryProduct, [...ladderCatalog, draft]).slug !== 'draft-higher';
+})());
+ok('a catalogue with nothing higher offers nothing', nextOfferFor(entryProduct, [entryProduct]) === null);
+ok('the chain from the entry pack reaches the premium rung', (() => {
+  let current = entryProduct;
+  const seen = new Set();
+  for (let i = 0; i < 12 && current; i++) {
+    if (funnelStepOf(current) === 'premium') return true;
+    if (seen.has(current.slug)) return false;
+    seen.add(current.slug);
+    current = nextOfferFor(current, ladderCatalog);
+  }
+  return Boolean(current) && funnelStepOf(current) === 'premium';
+})());
+
+const premiumProduct = ladderCatalog.find((p) => funnelStepOf(p) === 'premium');
+ok('the premium pack stops offering products', nextOfferFor(premiumProduct, ladderCatalog) === null);
+ok('the premium pack offers the build instead', nextActionFor(premiumProduct, ladderCatalog).kind === 'service');
+ok('the service action points at the build page', nextActionFor(premiumProduct, ladderCatalog).url === '/build');
+ok('a pack with a next rung offers a product action', nextActionFor(entryProduct, ladderCatalog).kind === 'product');
+
+const builtRungs = funnelLadder(ladderCatalog);
+ok('the ladder returns every rung, empty or not', builtRungs.length === FUNNEL_STEPS.length);
+ok('the lead rung holds no products, because a magnet is not a product', builtRungs[0].products.length === 0);
+ok('the entry rung holds the entry pack', builtRungs.find((r) => r.step === 'entry').products.length === 1);
+
+console.log('\n-- the free rung');
+const leadEmail = validateLead({ magnet_slug: 'seven-day-launch-sprint', email: 'Buyer@Example.com', source: 'storefront', consent: true });
+ok('a lead with an email validates', leadEmail.ok && leadEmail.value.email === 'buyer@example.com');
+ok('consent is recorded, not assumed', leadEmail.value.consent === true);
+const leadPhone = validateLead({ magnet: 'seven-day-launch-sprint', phone: '0712 345 678' });
+ok('a lead with a number validates without an email', leadPhone.ok && leadPhone.value.phone === '254712345678');
+ok('a lead with neither address nor number is refused', validateLead({ magnet_slug: 'x' }).ok === false);
+ok('the refusal says which two things are acceptable',
+  /email address or a WhatsApp number/i.test(validateLead({ magnet_slug: 'x' }).errors.join(' ')));
+ok('a malformed email is refused', validateLead({ magnet_slug: 'x', email: 'nope@nope' }).ok === false);
+ok('a bad number is refused with an example', /07XX/.test(validateLead({ magnet_slug: 'x', phone: '12345' }).errors.join(' ')));
+ok('a lead must name a magnet', validateLead({ email: 'a@b.co' }).ok === false);
+ok('an unknown source is recorded as unknown, not dropped', validateLead({ magnet_slug: 'x', email: 'a@b.co', source: 'tiktok' }).value.source === 'unknown');
+ok('consent defaults to false', validateLead({ magnet_slug: 'x', email: 'a@b.co' }).value.consent === false);
+
+const freePacks = (catalogRaw.lead_magnets || []);
+ok('the catalogue publishes two free packs', freePacks.filter((m) => m.status === 'published').length === 2);
+ok('every free pack validates', freePacks.every((m) => validateLeadMagnet(m).ok));
+ok('a free pack without a file is refused',
+  validateLeadMagnet({ slug: 'x', title: 'No file', outcomes: ['a', 'b', 'c'], modules: [{}, {}, {}] }).ok === false);
+ok('a free pack with two modules is refused',
+  validateLeadMagnet({ slug: 'x', title: 'Thin pack', asset_file: 'x.html', outcomes: ['a', 'b', 'c'], modules: [{}, {}] }).ok === false);
+ok('a free pack is not a valid paid product', validateProduct(freePacks[0]).ok === false);
+ok('every free pack hands over a published paid rung', freePacks.every((m) => !m.next_slug || bySlug.has(m.next_slug)));
+
+console.log('\n-- lead tokens');
+const leadSecret = 'test-lead-secret';
+const leadToken = signLeadToken({
+  magnetSlug: 'seven-day-launch-sprint',
+  leadId: 'row1',
+  expiresAt: new Date(Date.now() + 86400000).toISOString(),
+}, leadSecret);
+ok('a lead token verifies', verifyLeadToken(leadToken, leadSecret).ok);
+ok('a lead token names its magnet', verifyLeadToken(leadToken, leadSecret).payload.m === 'seven-day-launch-sprint');
+ok('a tampered lead token is refused', verifyLeadToken(leadToken.slice(0, -2) + 'xx', leadSecret).reason === 'bad-signature');
+ok('a lead token signed with another key is refused', verifyLeadToken(leadToken, 'other').reason === 'bad-signature');
+ok('an expired lead token is refused', verifyLeadToken(signLeadToken({
+  magnetSlug: 'm', leadId: 'l', expiresAt: new Date(Date.now() - 1000).toISOString(),
+}, leadSecret), leadSecret).reason === 'expired');
+ok('a token with no secret is unconfigured, not open', verifyLeadToken(leadToken, '').reason === 'unconfigured');
+ok('signing without a secret throws', (() => {
+  try { signLeadToken({ magnetSlug: 'm', leadId: 'l', expiresAt: '2030-01-01' }, ''); return false; } catch (_) { return true; }
+})());
+
+const paidToken = signEntitlement({
+  orderId: 'o1', orderRef: 'DRP-ABC123', productSlug: 'ai-work-application-kit',
+  expiresAt: new Date(Date.now() + 86400000).toISOString(),
+}, leadSecret);
+ok('a purchase link cannot open the free shelf', verifyLeadToken(paidToken, leadSecret).reason === 'wrong-type');
+ok('a free link cannot open a purchase', verifyEntitlement(leadToken, leadSecret).ok === false);
+ok('a free link stays open for a fortnight', LEAD_LINK_DAYS === 14);
+
+const magnetMail = magnetDelivery({
+  magnet: { title: 'The 7-Day Launch Sprint', promise: 'Seven days, one paid transaction.' },
+  downloadUrl: 'https://x.test/drops/free/tok',
+  expiresAt: '2026-11-26T00:00:00.000Z',
+});
+ok('the free pack email names the pack', /7-Day Launch Sprint/.test(magnetMail.subject));
+ok('the free pack email carries the link', magnetMail.text.includes('https://x.test/drops/free/tok'));
+ok('the WhatsApp version is shorter than the email', magnetMail.whatsapp.length < magnetMail.text.length);
+ok('the free pack email promises no income', !/guarantee|you will earn/i.test(magnetMail.text + magnetMail.html));
+
+console.log('\n-- the funnel report');
+const funnel = funnelReport({
+  products: ladderCatalog,
+  magnets: freePacks,
+  orders: [
+    { status: 'delivered', amount: 1500, currency: 'KES', product_slug: 'ai-work-application-kit' },
+    { status: 'delivered', amount: 2500, currency: 'KES', product_slug: 'repo-build-log-2026' },
+    { status: 'failed', amount: 4500, currency: 'KES', product_slug: 'whatsapp-mpesa-checkout-kit' },
+    { status: 'delivered', amount: 99, currency: 'USD', product_slug: 'ai-agent-ops-track' },
+    { status: 'delivered', amount: 100, currency: 'KES', product_slug: 'retired-pack' },
+  ],
+  leads: [
+    { magnet_slug: 'seven-day-launch-sprint' },
+    { magnet_slug: 'seven-day-launch-sprint' },
+    { magnet_slug: 'ai-work-application-preflight' },
+  ],
+  events: [
+    { event: 'view', product_slug: 'ai-work-application-kit' },
+    { event: 'view', product_slug: 'ai-work-application-kit' },
+    { event: 'checkout', product_slug: 'ai-work-application-kit' },
+  ],
+  currency: 'KES',
+});
+const rungOf = (key) => funnel.steps.find((s) => s.step === key);
+ok('leads are counted on the free rung', rungOf('lead').leads === 3);
+ok('a free pack is never counted as a product', rungOf('lead').products.length === 0);
+ok('a paid order is counted on its own rung', rungOf('entry').paid === 1);
+ok('a failed order is not revenue', rungOf('core').gross === 2500 && rungOf('core').paid === 1);
+ok('gross stays in one currency', rungOf('premium').gross === 0 && funnel.other_currency_orders === 1);
+ok('a rate divides by the denominator it names', rungOf('entry').view_to_paid === 50);
+ok('a rung with no leads reports null, not zero', rungOf('entry').lead_to_paid === null);
+ok('totals add the rungs up', funnel.totals.paid === 3 && funnel.totals.leads === 3);
+ok('the funnel names an order it cannot place',
+  funnel.unattributed.paid === 1 && /no longer published/.test(funnel.unattributed.note));
+
+console.log('\n-- the funnel migration');
+ok('the funnel migration preflights the base table', /to_regclass\('public\.digital_products'\)/.test(funnelMigration));
+ok('the funnel migration names the file to run first', /2026-11-10_digital_drops\.sql first/.test(funnelMigration));
+ok('the funnel migration adds the rung columns idempotently',
+  /ADD COLUMN IF NOT EXISTS funnel_step/.test(funnelMigration) && /ADD COLUMN IF NOT EXISTS next_slug/.test(funnelMigration));
+ok('the funnel migration guards its rung constraint',
+  /pg_constraint WHERE conname = 'digital_products_funnel_step_check'/.test(funnelMigration));
+ok('the funnel migration creates the free shelf', /CREATE TABLE IF NOT EXISTS public\.digital_lead_magnets/.test(funnelMigration));
+ok('the funnel migration creates the lead table', /CREATE TABLE IF NOT EXISTS public\.digital_leads/.test(funnelMigration));
+ok('a lead must carry an address or a number in the database too',
+  /CHECK \(email IS NOT NULL OR phone IS NOT NULL\)/.test(funnelMigration));
+ok('one capture per address per magnet', /digital_leads_magnet_email_idx[\s\S]{0,160}WHERE email IS NOT NULL/.test(funnelMigration));
+ok('the funnel tables have row level security',
+  (funnelMigration.match(/ENABLE ROW LEVEL SECURITY/g) || []).length === 2);
+ok('the funnel migration is transactional', /^BEGIN;/m.test(funnelMigration) && /^COMMIT;/m.test(funnelMigration));
+ok('the migration runner applies all three files in order', (() => {
+  // Read the FILES array itself: the runner's header also names the files, and a
+  // naive indexOf finds the comment before the list.
+  const runner = read('scripts/drops_apply_migrations.mjs');
+  const list = runner.slice(runner.indexOf('const FILES = ['), runner.indexOf('];', runner.indexOf('const FILES = [')));
+  return list.indexOf('2026-11-10') < list.indexOf('2026-11-11') && list.indexOf('2026-11-11') < list.indexOf('2026-11-12');
+})());
+ok('the schema doctor knows the funnel objects', /digital_lead_magnets/.test(read('scripts/drops_doctor.mjs')));
+ok('the schema doctor tests for a missing column before a missing table', (() => {
+  // PostgREST's message for a missing column contains "does not exist" too, so the
+  // loose table pattern used to win and misdiagnose a live table as absent.
+  const doctor = read('scripts/drops_doctor.mjs');
+  const col = doctor.indexOf('MISSING_COLUMN.test');
+  const tbl = doctor.indexOf('MISSING_TABLE.test');
+  return col > 0 && tbl > 0 && col < tbl;
+})());
+
+console.log('\n-- funnel routes');
+ok('the ladder route exists', routes.includes("router.get('/api/drops/ladder'"));
+ok('the funnel report route exists', routes.includes("router.get('/api/drops/funnel'"));
+ok('the lead route exists', routes.includes("router.post('/api/drops/lead'"));
+ok('the free download route exists', routes.includes("router.get('/drops/free/:token'"));
+ok('the ladder route is registered before the slug wildcard',
+  routes.indexOf("router.get('/api/drops/ladder'") < routes.indexOf("router.get('/api/drops/:slug'"));
+ok('the funnel route is registered before the slug wildcard',
+  routes.indexOf("router.get('/api/drops/funnel'") < routes.indexOf("router.get('/api/drops/:slug'"));
+ok('the funnel report needs the admin key', /\/api\/drops\/funnel[\s\S]{0,400}Unauthorized/.test(routes));
+ok('the lead route validates before it writes', (() => {
+  const at = routes.indexOf("router.post('/api/drops/lead'");
+  const validated = routes.indexOf('validateLead(body)', at);
+  return validated > at && routes.indexOf('from(TABLES.leads)', at) > validated;
+})());
+ok('a duplicate capture is not an error', /23505/.test(routes));
+ok('the free download verifies the token before touching a file', (() => {
+  const at = routes.indexOf("router.get('/drops/free/:token'");
+  return routes.indexOf('verifyLeadToken(', at) < routes.indexOf('path.basename(', at);
+})());
+ok('the free download records its own event', /lead_download/.test(routes));
+ok('a missing lead table names its own migration', /notInitialisedFunnel[\s\S]{0,220}2026-11-12_drops_funnel\.sql/.test(routes));
+ok('delivery continues after purchase', /nextActionFor\(product, products/.test(routes));
+
+console.log('\n-- funnel pages and builder');
+ok('the storefront reads the ladder', page.includes("fetch('/api/drops/ladder')"));
+ok('the storefront keeps a flat-grid fallback', page.includes("fetch('/api/drops')"));
+ok('the free shelf renders above the paid grid', page.indexOf('id="freeShelf"') < page.indexOf('id="grid"'));
+ok('one field accepts an email or a number', /raw\.indexOf\('@'\) > 0/.test(page));
+ok('the storefront posts the capture', page.includes("fetch('/api/drops/lead'"));
+ok('the capture states what the contact is used for', /reply STOP to end/.test(page));
+ok('the storefront still never sends an amount', !/body\.amount/.test(page));
+ok('the storefront names the rungs, not just prices', /renderLadder/.test(page));
+ok('the delivery page shows the next rung', accessPage.includes('d.next'));
+
+const magnetRaw = freePacks.find((m) => m.status === 'published');
+const freeHtml = renderPack({ ...magnetRaw, licence: 'Free pack. Send it on.' });
+ok('a free pack renders with its own licence', /Free pack\. Send it on\./.test(freeHtml));
+ok('a free pack still refuses to promise income', /Not a guarantee of income/i.test(freeHtml));
+ok('every free pack has a built file', freePacks.every((m) => fs.existsSync(path.join(root, 'drops_assets', m.asset_file))));
+ok('the free pack file is not a stub', fs.statSync(path.join(root, 'drops_assets', magnetRaw.asset_file)).size > 5000);
+ok('the builder builds free packs too', /validateLeadMagnet/.test(read('scripts/build_drop_assets.mjs')));
+ok('the pipeline publishes the funnel rungs', /funnel_step: p\.funnel_step/.test(read('scripts/drops_pipeline.mjs')));
+ok('the pipeline refuses a broken next offer', /badNext/.test(read('scripts/drops_pipeline.mjs')));
 
 // ---- summary --------------------------------------------------------------------
 console.log('\n' + pass + ' passed, ' + fail + ' failed');

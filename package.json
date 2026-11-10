@@ -73,6 +73,7 @@
     "drops:publish": "node scripts/drops_pipeline.mjs --apply",
     "drops:doctor": "node scripts/drops_doctor.mjs",
     "drops:migrate": "node scripts/drops_apply_migrations.mjs",
+    "drops:bundle": "node scripts/drops_apply_migrations.mjs --bundle",
     "drops:outreach": "node scripts/build_page_outreach.mjs",
     "test:drops": "node scripts/test_digital_drops.mjs",
     "test:drops:flow": "node scripts/test_drops_flow.mjs",

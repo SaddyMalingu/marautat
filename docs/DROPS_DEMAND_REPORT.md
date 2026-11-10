@@ -59,9 +59,25 @@ Ten sales is not a target or a promise. It is the smallest number that shows whe
 - multitenant-whatsapp-bot-starter — KES 6,500
 - ai-agent-ops-track — KES 12,000
 
+## The funnel
+
+| # | Rung | Products | Free packs |
+|---:|---|---|---|
+| 0 | lead | — | seven-day-launch-sprint, ai-work-application-preflight |
+| 1 | entry | ai-work-application-kit | — |
+| 2 | core | repo-build-log-2026, whatsapp-mpesa-checkout-kit, multitenant-whatsapp-bot-starter | — |
+| 3 | premium | ai-agent-ops-track | — |
+| 4 | continuity | — | — |
+| 5 | service | — | — |
+
+A buyer enters free and is handed the next rung by the pack they just bought: `next_slug` where the explicit link is better than the arithmetic, otherwise the cheapest product on a higher rung. A rung that is empty is a hole a visitor can fall through, not a formatting issue.
+
 ## Checks
 
 - Every published row validates (`validateProduct`): yes
 - Every published row has a built pack: yes
 - Bumps point at a published product: yes
+- Every free pack validates and has a built file: yes
+- Every next offer points forward at a published rung: yes
+- Rungs with nothing on them: continuity, service (visible to a visitor as a gap)
 

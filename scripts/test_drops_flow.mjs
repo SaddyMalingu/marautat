@@ -34,6 +34,8 @@ const db = {
   digital_entitlements: [],
   digital_events: [],
   service_requests: [],
+  digital_lead_magnets: [],
+  digital_leads: [],
 };
 let seq = 0;
 
@@ -259,6 +261,62 @@ ok('a valid proposal request is accepted', okReq.status === 201, JSON.stringify(
 ok('the proposal request is stored with its country', db.service_requests.length === 1 && db.service_requests[0].country === 'US');
 ok('the proposal queue is admin-gated', (await getJson('/api/service-requests?key=wrong')).status === 403);
 ok('the admin can read the queue', (await getJson('/api/service-requests?key=smoke-admin')).body.requests.length === 1);
+
+console.log('\n-- the funnel, end to end');
+const ladder = await getJson('/api/drops/ladder');
+ok('the ladder answers without a key', ladder.status === 200 && Array.isArray(ladder.body.steps));
+ok('the ladder carries every rung', ladder.body.steps.length === 6);
+ok('the ladder starts free', ladder.body.steps[0].step === 'lead' && ladder.body.steps[0].products.length === 0);
+ok('the ladder carries two free packs', ladder.body.magnets.length === 2, JSON.stringify(ladder.body.magnets && ladder.body.magnets.length));
+ok('the free shelf falls back to the catalogue file before the migration',
+  ladder.body.magnets_source === 'file', ladder.body.magnets_source);
+ok('the paid rungs keep their order', ladder.body.steps.filter((s) => s.products.length).map((s) => s.step).join(',') === 'entry,core,premium',
+  ladder.body.steps.filter((s) => s.products.length).map((s) => s.step).join(','));
+ok('a ladder product carries its rung', ladder.body.steps[1].products[0].funnel_step === 'entry');
+ok('the ladder never leaks a free pack as a price', ladder.body.magnets.every((m) => !('price_kes' in m)));
+
+ok('a capture with no contact is refused', (await postJson('/api/drops/lead', { magnet_slug: 'seven-day-launch-sprint' })).status === 400);
+ok('an unknown free pack is a 404', (await postJson('/api/drops/lead', { magnet_slug: 'no-such-pack', email: 'a@b.co' })).status === 404);
+
+const free = await postJson('/api/drops/lead', {
+  magnet_slug: 'seven-day-launch-sprint', email: 'Grace@Example.com', source: 'storefront', consent: true,
+});
+ok('a free pack capture is accepted', free.status === 201, JSON.stringify(free.body));
+ok('the capture returns a signed download link', /\/drops\/free\//.test(free.body.downloadUrl || ''));
+ok('the capture names the paid rung it hands over', Boolean(free.body.next) && free.body.next.slug === 'whatsapp-mpesa-checkout-kit');
+ok('the lead is stored with its consent and source',
+  db.digital_leads.length === 1 && db.digital_leads[0].email === 'grace@example.com' &&
+  db.digital_leads[0].consent === true && db.digital_leads[0].source === 'storefront');
+ok('the free pack is emailed', emails.some((e) => e.to === 'grace@example.com' && /free pack/i.test(e.subject)));
+
+const freePath = free.body.downloadUrl.replace(base, '');
+const freeFile = await getText(freePath);
+ok('the free pack downloads without a purchase', freeFile.status === 200 && freeFile.text.includes('7-Day Launch Sprint'));
+ok('a tampered free link is refused', (await getText(freePath.slice(0, -2) + 'xx')).status === 403);
+ok('a purchase link cannot be used as a free link',
+  (await getText('/drops/free/' + encodeURIComponent(token))).status === 403);
+ok('a free link cannot open a purchase',
+  (await getJson('/api/drops/access/' + encodeURIComponent(free.body.downloadUrl.split('/drops/free/')[1]))).status === 403);
+
+const freeAgain = await postJson('/api/drops/lead', { magnet_slug: 'seven-day-launch-sprint', email: 'grace@example.com' });
+ok('asking twice is not an error', freeAgain.status === 201 && /\/drops\/free\//.test(freeAgain.body.downloadUrl || ''));
+
+const freePhone = await postJson('/api/drops/lead', { magnet_slug: 'ai-work-application-preflight', phone: '0712345678', source: 'whatsapp' });
+ok('a WhatsApp capture is accepted without an email', freePhone.status === 201, JSON.stringify(freePhone.body));
+ok('the free pack goes out on WhatsApp', messages.some((m) => m.to === '254712345678' && /is ready/.test(m.text)));
+ok('a bad number is refused before anything is written',
+  (await postJson('/api/drops/lead', { magnet_slug: 'ai-work-application-preflight', phone: '12345' })).status === 400);
+
+ok('the premium pack hands the buyer to the build', access.body.next && access.body.next.url === '/build', JSON.stringify(access.body.next));
+
+ok('the funnel report is admin-gated', (await getJson('/api/drops/funnel?key=wrong')).status === 403);
+const funnelReportBody = await getJson('/api/drops/funnel?key=smoke-admin');
+ok('the funnel report answers with the admin key', funnelReportBody.status === 200, JSON.stringify(funnelReportBody.body));
+ok('the funnel counts the free captures', funnelReportBody.body.steps.find((s) => s.step === 'lead').leads === 3,
+  JSON.stringify(funnelReportBody.body.steps.find((s) => s.step === 'lead')));
+ok('the funnel counts both advances of the premium pack', funnelReportBody.body.steps.find((s) => s.step === 'premium').paid === 2);
+ok('the funnel gross stays in shillings', funnelReportBody.body.steps.find((s) => s.step === 'premium').gross === 12000);
+ok('the funnel keeps KES and USD apart', funnelReportBody.body.other_currency_orders === 1);
 
 srv.close();
 console.log('\n' + pass + ' passed, ' + fail + ' failed');

@@ -65,6 +65,19 @@ import {
   parseCardWebhook,
   deliveryEmail,
   validateServiceRequest,
+  funnelStepOf,
+  funnelStepIndex,
+  funnelLadder,
+  nextActionFor,
+  nextOfferFor,
+  sortLadder,
+  validateLead,
+  validateLeadMagnet,
+  signLeadToken,
+  verifyLeadToken,
+  magnetDelivery,
+  funnelReport,
+  LEAD_LINK_DAYS,
 } from '../utils/digitalDrops.js';
 import { sendDropsEmail, notifyServiceRequest, mailerConfigured } from '../utils/dropsMailer.js';
 import { fingerprintSecret } from '../utils/tenantAccess.js';
@@ -82,6 +95,23 @@ export function readCatalogFile(file = CATALOG_FILE) {
     const rows = Array.isArray(raw) ? raw : (raw && raw.products) || [];
     return rows
       .map((r) => validateProduct(r))
+      .filter((r) => r.ok)
+      .map((r) => r.value);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The free shelf, read from disk. Same rule as the catalogue: this is what the
+ * storefront uses when the tables have not been migrated, never a write path.
+ */
+export function readMagnetFile(file = CATALOG_FILE) {
+  try {
+    const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const rows = Array.isArray(raw) ? [] : (raw && raw.lead_magnets) || [];
+    return rows
+      .map((r) => validateLeadMagnet(r))
       .filter((r) => r.ok)
       .map((r) => r.value);
   } catch {
@@ -118,6 +148,14 @@ export function createDropsRouter(deps = {}) {
     return say(res, 503, {
       error: 'Digital drops are not initialised yet. Run ' + MIGRATION_FILE + ' against this database.',
       code: 'drops_not_initialised',
+    });
+  }
+
+  /** The free shelf has its own file, so it must name its own file. */
+  function notInitialisedFunnel(res) {
+    return say(res, 503, {
+      error: 'The free shelf is not initialised yet. Run migrations/2026-11-12_drops_funnel.sql against this database.',
+      code: 'drops_funnel_not_initialised',
     });
   }
 
@@ -165,6 +203,44 @@ export function createDropsRouter(deps = {}) {
     }
     if (error) throw error;
     return data && isPublished(data) ? data : null;
+  }
+
+  /**
+   * The free shelf. A database that has not run the 2026-11-12 file still shows the
+   * magnets from the catalogue file, so the funnel works before the migration does —
+   * and the lead table is the only thing that needs it.
+   */
+  async function loadMagnets() {
+    if (!supabase) return { magnets: readMagnetFile(), source: 'file' };
+    const { data, error } = await supabase
+      .from(TABLES.magnets)
+      .select('*')
+      .eq('status', 'published')
+      .order('rank', { ascending: true });
+    if (!error && Array.isArray(data) && data.length) return { magnets: data, source: 'db' };
+    if (error && !isMissingTable(error)) {
+      log('[drops] free-pack read failed: ' + error.message, 'ERROR');
+      return { magnets: readMagnetFile(), source: 'file' };
+    }
+    return { magnets: readMagnetFile(), source: 'file' };
+  }
+
+  async function loadMagnet(slug) {
+    const clean = normalizeSlug(slug);
+    if (!clean) return null;
+    const { magnets } = await loadMagnets();
+    return magnets.find((m) => String(m.slug) === clean) || null;
+  }
+
+  /** Where a magnet hands the visitor next: its own link, else the cheapest entry. */
+  function magnetNextOffer(magnet, products) {
+    const ladder = sortLadder(products);
+    const explicit = magnet && magnet.next_slug
+      ? ladder.find((p) => String(p.slug) === String(magnet.next_slug))
+      : null;
+    if (explicit) return explicit;
+    const pseudo = { slug: magnet ? magnet.slug : '', funnel_step: 'lead', price_kes: 0 };
+    return nextOfferFor(pseudo, ladder);
   }
 
   /**
@@ -371,6 +447,282 @@ export function createDropsRouter(deps = {}) {
     } catch (err) {
       log('[drops] stats error: ' + err.message, 'ERROR');
       return say(res, 500, { error: 'Revenue could not be read.' });
+    }
+  });
+
+  // ---- the funnel (2026-11-12) ----------------------------------------------
+  // Registered before `/api/drops/:slug` on purpose: a named route that sits after a
+  // wildcard is a route that does not exist. That is exactly how `health` returned
+  // "That product is not on sale" on 2026-11-11.
+
+  /**
+   * The public ladder: every rung, with the products on it and the free packs at the
+   * top. The storefront renders this instead of a flat grid, because a flat grid is
+   * a price list with no order to read it in.
+   */
+  router.get('/api/drops/ladder', async (req, res) => {
+    try {
+      const { products, source } = await loadCatalog();
+      const free = await loadMagnets();
+      return say(res, 200, {
+        ok: true,
+        source,
+        magnets_source: free.source,
+        support: supportWhatsAppLink(env),
+        lanes: {
+          mpesa: true,
+          card: Boolean(String(env.DROPS_CARD_LINK || env.DROPS_CARD_LINKS || '').trim()),
+        },
+        steps: funnelLadder(products).map((rung) => ({
+          ...rung,
+          products: rung.products.map(publicProduct),
+        })),
+        magnets: free.magnets.map((m) => ({
+          slug: m.slug,
+          title: m.title,
+          summary: m.summary || '',
+          promise: m.promise || '',
+          outcomes: Array.isArray(m.outcomes) ? m.outcomes : [],
+          next_slug: m.next_slug || null,
+          has_file: Boolean(m.asset_file),
+        })),
+      });
+    } catch (err) {
+      log('[drops] ladder error: ' + err.message, 'ERROR');
+      return say(res, 500, { error: 'The ladder could not be loaded.' });
+    }
+  });
+
+  /**
+   * Where the funnel leaks, rung by rung, admin key only. Counts come from the four
+   * tables that already exist rather than a new analytics product: leads, checkout
+   * events, paid orders and product views.
+   */
+  router.get('/api/drops/funnel', async (req, res) => {
+    const key = String(req.query.key || req.get('x-admin-key') || '');
+    const expected = String(env.DROPS_ADMIN_KEY || env.ADMIN_PASS || '');
+    if (!expected || key !== expected) return say(res, 403, { error: 'Unauthorized' });
+    try {
+      const { products } = await loadCatalog();
+      const { magnets } = await loadMagnets();
+
+      const { data: orders, error: oErr } = await supabase
+        .from(TABLES.orders)
+        .select('status, amount, currency, product_slug, created_at')
+        .order('created_at', { ascending: false })
+        .limit(5000);
+      if (oErr) {
+        if (isMissingTable(oErr)) return notInitialised(res);
+        throw oErr;
+      }
+
+      // A missing lead table is a migration, not a 500: the paid rungs still report.
+      let leads = [];
+      let leadsAvailable = true;
+      try {
+        const { data, error } = await supabase
+          .from(TABLES.leads)
+          .select('magnet_slug, email, phone, source, created_at')
+          .order('created_at', { ascending: false })
+          .limit(5000);
+        if (error) {
+          leadsAvailable = !isMissingTable(error);
+          if (!isMissingTable(error)) throw error;
+        } else if (Array.isArray(data)) {
+          leads = data;
+        }
+      } catch (leadErr) {
+        log('[drops] funnel leads read failed: ' + leadErr.message, 'WARN');
+      }
+
+      let events = [];
+      try {
+        const { data, error } = await supabase
+          .from(TABLES.events)
+          .select('event, product_slug, created_at')
+          .order('created_at', { ascending: false })
+          .limit(5000);
+        if (!error && Array.isArray(data)) events = data;
+      } catch (_) { /* the funnel report is still useful without views */ }
+
+      const report = funnelReport({
+        products,
+        magnets,
+        orders: orders || [],
+        leads,
+        events,
+        currency: 'KES',
+      });
+
+      return say(res, 200, {
+        ok: true,
+        leads_available: leadsAvailable,
+        ...report,
+      });
+    } catch (err) {
+      log('[drops] funnel report error: ' + err.message, 'ERROR');
+      return say(res, 500, { error: 'The funnel could not be measured.' });
+    }
+  });
+
+  /**
+   * The free rung, captured. An email or a WhatsApp number, one row, one signed
+   * link, and the paid rung this magnet belongs to offered in the same response.
+   *
+   * The link is returned even when delivery fails: a visitor who typed an address
+   * must never read "check your email" for a message SMTP refused. The failure is
+   * logged and the page still works.
+   */
+  router.post('/api/drops/lead', async (req, res) => {
+    const body = req.body || {};
+    const check = validateLead(body);
+    if (!check.ok) return say(res, 400, { error: check.errors[0], errors: check.errors });
+    if (!secret) {
+      return say(res, 503, {
+        error: 'Free packs are not configured yet: set DROPS_TOKEN_SECRET on the service.',
+        code: 'drops_secret_missing',
+      });
+    }
+
+    try {
+      const magnet = await loadMagnet(check.value.magnet_slug);
+      if (!magnet) return say(res, 404, { error: 'That free pack is not available.' });
+
+      const row = {
+        magnet_slug: check.value.magnet_slug,
+        email: check.value.email,
+        phone: check.value.phone,
+        name: check.value.name || null,
+        source: check.value.source,
+        consent: check.value.consent,
+        detail: { user_agent: String(req.get('user-agent') || '').slice(0, 200) },
+      };
+
+      let lead = null;
+      const { data: inserted, error: insErr } = await supabase.from(TABLES.leads).insert([row]);
+      if (insErr) {
+        if (isMissingTable(insErr)) return notInitialisedFunnel(res);
+        // 23505 is the unique index doing its job: this address already has this
+        // pack. Not an error — answer with a fresh link to the same lead.
+        if (String(insErr.code || '') !== '23505') throw insErr;
+        const field = check.value.email ? 'email' : 'phone';
+        const value = check.value.email || check.value.phone;
+        const { data: existing } = await supabase
+          .from(TABLES.leads)
+          .select('id, email, phone')
+          .eq('magnet_slug', check.value.magnet_slug)
+          .eq(field, value)
+          .limit(1);
+        lead = Array.isArray(existing) ? existing[0] : null;
+      } else {
+        lead = Array.isArray(inserted) ? inserted[0] : inserted;
+      }
+
+      // A stable id even if the insert returned no row (a provider quirk must not
+      // produce an unopenable link): the address hash names the same visitor twice.
+      const leadId = (lead && lead.id)
+        ? String(lead.id)
+        : 'h-' + hashLookup(check.value.email || check.value.phone).slice(0, 16);
+      const expiresAt = new Date(Date.now() + LEAD_LINK_DAYS * 86400000).toISOString();
+      const token = signLeadToken({ magnetSlug: magnet.slug, leadId, expiresAt }, secret);
+      const downloadUrl = baseUrl(req) + '/drops/free/' + encodeURIComponent(token);
+
+      const { products } = await loadCatalog();
+      const next = magnetNextOffer(magnet, products);
+      const delivery = magnetDelivery({ magnet, downloadUrl, expiresAt });
+
+      await recordEvent('lead', {
+        product_slug: magnet.slug,
+        detail: { magnet: magnet.slug, source: check.value.source, channel: check.value.email ? 'email' : 'whatsapp' },
+      });
+
+      const sent = { email: false, whatsapp: false };
+      if (check.value.email && typeof sendEmail === 'function') {
+        try {
+          const result = await sendEmail({
+            to: check.value.email,
+            subject: delivery.subject,
+            text: delivery.text,
+            html: delivery.html,
+            env,
+          });
+          sent.email = Boolean(result && result.ok);
+          if (!sent.email) log('[drops] free pack email not sent: ' + ((result && (result.reason || result.error)) || 'unknown'), 'WARN');
+        } catch (mailErr) {
+          log('[drops] free pack email error: ' + mailErr.message, 'WARN');
+        }
+      }
+      if (check.value.phone && typeof sendMessage === 'function') {
+        try {
+          await sendMessage(check.value.phone, delivery.whatsapp);
+          sent.whatsapp = true;
+        } catch (msgErr) {
+          log('[drops] free pack WhatsApp failed: ' + msgErr.message, 'WARN');
+        }
+      }
+      if (lead && lead.id) {
+        try {
+          await supabase.from(TABLES.leads).update({ delivered_at: new Date().toISOString() }).eq('id', lead.id);
+        } catch (_) { /* the link is already in the response */ }
+      }
+
+      return say(res, 201, {
+        ok: true,
+        magnet: { slug: magnet.slug, title: magnet.title, promise: magnet.promise || '' },
+        downloadUrl,
+        expiresAt,
+        sent,
+        next: next ? { slug: next.slug, title: next.title, price_kes: Number(next.price_kes || 0), url: '/drops/' + encodeURIComponent(next.slug) } : null,
+        support: supportWhatsAppLink(env),
+      });
+    } catch (err) {
+      log('[drops] lead error: ' + err.message, 'ERROR');
+      return say(res, 500, { error: 'That free pack could not be sent.' });
+    }
+  });
+
+  /**
+   * The free pack itself. Signed with the same key as a paid entitlement but a
+   * different payload, so an access link cannot be replayed here and a lead token
+   * cannot be replayed there — `verifyLeadToken` refuses the other shape outright.
+   */
+  router.get('/drops/free/:token', async (req, res) => {
+    const check = verifyLeadToken(req.params.token, secret);
+    if (!check.ok) {
+      const messages = {
+        expired: 'This free link has expired. Enter your address again and we will send a fresh one.',
+        malformed: 'This free link is not valid.',
+        'bad-signature': 'This free link is not valid.',
+        'wrong-type': 'That is a purchase link, not a free pack link.',
+        incomplete: 'This free link is not valid.',
+        unconfigured: 'Free packs are not configured on this service yet.',
+      };
+      return say(res, 403, { error: messages[check.reason] || 'This free link cannot be used.', reason: check.reason });
+    }
+    try {
+      const magnet = await loadMagnet(check.payload.m);
+      if (!magnet) return say(res, 404, { error: 'That free pack is no longer available.' });
+
+      const file = path.basename(String(magnet.asset_file || ''));
+      if (!file) return say(res, 404, { error: 'That free pack has no file yet.' });
+      const absolute = path.resolve(assetRoot, file);
+      if (!absolute.startsWith(path.resolve(assetRoot) + path.sep)) {
+        return say(res, 400, { error: 'Invalid pack path.' });
+      }
+      if (!fs.existsSync(absolute)) {
+        log('[drops] missing free asset ' + file + ' (lead ' + check.payload.l + ')', 'ERROR');
+        return say(res, 503, { error: 'This free pack is being rebuilt. Try again in a few minutes.' });
+      }
+
+      await recordEvent('lead_download', { product_slug: magnet.slug, detail: { magnet: magnet.slug } });
+
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.setHeader('Content-Disposition', 'inline; filename="' + file.replace(/"/g, '') + '"');
+      res.setHeader('Cache-Control', 'private, no-store');
+      return res.sendFile(absolute);
+    } catch (err) {
+      log('[drops] free pack error: ' + err.message, 'ERROR');
+      return say(res, 500, { error: 'That free pack could not be opened.' });
     }
   });
 
@@ -946,6 +1298,11 @@ export function createDropsRouter(deps = {}) {
       if (pErr) throw pErr;
       if (!product) return say(res, 404, { error: 'The product behind this link is no longer available.' });
 
+      // The funnel continues after delivery: the buyer has just proved they pay for
+      // packs, so this is the only moment where the next rung is worth offering.
+      const { products } = await loadCatalog();
+      const action = nextActionFor(product, products, { serviceUrl: '/build' });
+
       return say(res, 200, {
         ok: true,
         product: publicProduct(product),
@@ -955,6 +1312,16 @@ export function createDropsRouter(deps = {}) {
         downloadsLeft: Math.max(0, MAX_ACCESS_DOWNLOADS - Number(entitlement.downloads || 0)),
         file: product.asset_file ? '/api/drops/access/' + encodeURIComponent(entitlement.token) + '/file' : null,
         deliveryNote: product.delivery_note || '',
+        next: action.kind === 'product'
+          ? {
+            slug: action.slug,
+            title: action.title,
+            price_kes: Number(action.product.price_kes || 0),
+            url: '/drops/' + encodeURIComponent(action.slug),
+          }
+          : action.kind === 'service'
+            ? { slug: null, title: action.title, url: action.url }
+            : null,
         support: supportWhatsAppLink(env),
       });
     } catch (err) {

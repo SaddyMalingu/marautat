@@ -95,8 +95,8 @@ namespaced. That is now a test, not a promise (`test:drops`):
 
 | Surface | Paths it uses | Touches tenant onboarding? |
 |---|---|---|
-| Drops pages | `/drops`, `/drops/:slug`, `/drops/access/:token` | No |
-| Drops API | `/api/drops`, `/api/drops/:slug`, `/api/drops/stats`, `/api/drops/order/:ref`, `/api/drops/access/*`, `/api/drops/:slug/checkout`, `/api/drops/:slug/checkout-card` | No |
+| Drops pages | `/drops`, `/drops/:slug`, `/drops/access/:token`, `/drops/free/:token` | No |
+| Drops API | `/api/drops`, `/api/drops/ladder`, `/api/drops/funnel`, `/api/drops/lead`, `/api/drops/:slug`, `/api/drops/stats`, `/api/drops/order/:ref`, `/api/drops/access/*`, `/api/drops/:slug/checkout`, `/api/drops/:slug/checkout-card` | No |
 | Money callbacks | `/drops/mpesa/callback`, `/drops/card/webhook` | No — `POST /mpesa/callback` is untouched |
 | Rung 3 | `/build`, `/api/service-requests` | No — a separate `service_requests` queue, **not** `discovery_submissions` |
 | Tenant surfaces | `/discovery`, `/discovery/*`, `/tenant/*`, `/admin/*` | Not declared here at all |
@@ -107,6 +107,12 @@ Guards that make that true and keep it true:
   absent the call is byte-for-byte the old behaviour
   (`CallBackURL: callbackUrl || process.env.MPESA_CALLBACK_URL`). There is still
   exactly one STK implementation in the repo.
+- Named routes are registered **before** the `/api/drops/:slug` wildcard
+  (`health`, `ladder`, `funnel`). A named route after a wildcard is a route that does
+  not exist — that is how `health` answered "That product is not on sale" on 2026-11-11.
+- The funnel rungs, the free shelf and the per-rung measurement are described in
+  `docs/DIGITAL_DROPS_FUNNEL.md`; the rules live in `utils/digitalDrops.js`
+  (`FUNNEL_STEPS`, `isForwardStep`, `nextOfferFor`, `funnelReport`).
 - No catch-all (`app.get('*')`, `app.use('/')` handler, `app.get('/:x')`) exists,
   so a namespaced path cannot be swallowed before it is matched.
 - The migrations only create new tables (`digital_*`, `service_requests`); the one
@@ -202,11 +208,12 @@ No new dependency was added.
 ### Switching the card lane on, in order
 
 ```bash
-# 1. Migrate. One paste, or two files in this order — never the reverse.
+# 1. Migrate. One paste, or three files in this order — never out of order.
 #    Supabase SQL editor: paste migrations/APPLY_ALL_digital_drops.sql and run.
 #    Or, with psql:
 psql "$DATABASE_URL" -f migrations/2026-11-10_digital_drops.sql
 psql "$DATABASE_URL" -f migrations/2026-11-11_digital_drops_card_lane.sql
+psql "$DATABASE_URL" -f migrations/2026-11-12_drops_funnel.sql
 
 # 1b. Check what the database actually has (read-only, no DDL)
 npm run drops:doctor

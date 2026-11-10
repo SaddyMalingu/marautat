@@ -26,7 +26,19 @@ import { fileURLToPath } from 'url';
 // works (it needs no credentials) while publishing claims there are none — which
 // is exactly how it failed on 2026-11-11 with the keys sitting in .env.
 import 'dotenv/config';
-import { validateProduct, quoteCheckout, revenueSummary, formatPrice, ASSET_DIR } from '../utils/digitalDrops.js';
+import {
+  validateProduct,
+  validateLeadMagnet,
+  quoteCheckout,
+  revenueSummary,
+  formatPrice,
+  funnelStepOf,
+  funnelStepIndex,
+  isForwardStep,
+  nextOfferFor,
+  FUNNEL_STEPS,
+  ASSET_DIR,
+} from '../utils/digitalDrops.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const catalogPath = path.join(root, 'data', 'drops_catalog.json');
@@ -125,16 +137,30 @@ function buildReport(rows, signals, meta) {
   lines.push('');
   lines.push(meta.ladder.map((l) => '- ' + l.slug + ' — ' + formatPrice(l.price)).join('\n'));
   lines.push('');
+  lines.push('## The funnel');
+  lines.push('');
+  lines.push('| # | Rung | Products | Free packs |');
+  lines.push('|---:|---|---|---|');
+  for (const r of meta.rungs || []) {
+    lines.push('| ' + r.order + ' | ' + r.step + ' | ' + (r.products.length ? r.products.join(', ') : '—') +
+      ' | ' + (r.magnets.length ? r.magnets.join(', ') : '—') + ' |');
+  }
+  lines.push('');
+  lines.push('A buyer enters free and is handed the next rung by the pack they just bought: `next_slug` where the explicit link is better than the arithmetic, otherwise the cheapest product on a higher rung. A rung that is empty is a hole a visitor can fall through, not a formatting issue.');
+  lines.push('');
   lines.push('## Checks');
   lines.push('');
   lines.push('- Every published row validates (`validateProduct`): ' + (meta.invalid.length ? '**FAILED** — ' + meta.invalid.join('; ') : 'yes'));
   lines.push('- Every published row has a built pack: ' + (meta.missingPacks.length ? '**MISSING** — ' + meta.missingPacks.join(', ') : 'yes'));
   lines.push('- Bumps point at a published product: ' + (meta.badBumps.length ? '**BROKEN** — ' + meta.badBumps.join(', ') : 'yes'));
+  lines.push('- Every free pack validates and has a built file: ' + (meta.badMagnets.length || (meta.missingPacks || []).some((m) => /\(free\)$/.test(m)) ? '**FAILED** — ' + [...meta.badMagnets, ...(meta.missingPacks || []).filter((m) => /\(free\)$/.test(m))].join('; ') : 'yes'));
+  lines.push('- Every next offer points forward at a published rung: ' + (meta.badNext.length ? '**BROKEN** — ' + meta.badNext.join('; ') : 'yes'));
+  lines.push('- Rungs with nothing on them: ' + ((meta.emptyRungs || []).length ? (meta.emptyRungs.join(', ') + ' (visible to a visitor as a gap)') : 'none'));
   lines.push('');
   return lines.join('\n');
 }
 
-async function publish(products) {
+async function connect() {
   const url = process.env.SUPABASE_URL || process.env.SB_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SB_SERVICE_ROLE_KEY;
   if (!url || !key) {
@@ -142,7 +168,11 @@ async function publish(products) {
     process.exit(1);
   }
   const { createClient } = await import('@supabase/supabase-js');
-  const sb = createClient(url, key, { auth: { persistSession: false } });
+  return createClient(url, key, { auth: { persistSession: false } });
+}
+
+async function publish(products) {
+  const sb = await connect();
   const now = new Date().toISOString();
   const payload = products.map((p) => ({
     slug: p.slug,
@@ -159,16 +189,71 @@ async function publish(products) {
     asset_file: p.asset_file,
     delivery_note: p.delivery_note,
     rank: p.rank,
+    funnel_step: p.funnel_step,
+    next_slug: p.next_slug,
     metadata: { seo: p.seo || null, demand: p.demand || null },
     updated_at: now,
   }));
   const { error } = await sb.from('digital_products').upsert(payload, { onConflict: 'slug' });
   if (error) {
+    // Rollout order is a real thing: the code ships before a human pastes the SQL.
+    // A database without the 2026-11-12 columns can still be published to — without
+    // the rungs — instead of failing the whole catalogue.
+    const missingRung = /funnel_step|next_slug/i.test(error.message || '')
+      && /column|does not exist|could not find|PGRST204/i.test(error.message || '');
+    if (missingRung) {
+      const legacy = payload.map(({ funnel_step, next_slug, ...rest }) => rest);
+      const retry = await sb.from('digital_products').upsert(legacy, { onConflict: 'slug' });
+      if (!retry.error) {
+        console.warn('Published without funnel rungs: ' + error.message);
+        console.warn('Run migrations/2026-11-12_drops_funnel.sql, then publish again to attach the rungs.');
+        console.log('Published ' + legacy.length + ' product(s) to digital_products (no rungs).');
+        return;
+      }
+      console.error('Upsert failed on retry: ' + retry.error.message);
+      process.exit(1);
+    }
     console.error('Upsert failed: ' + error.message);
     console.error('If the table is missing, run migrations/2026-11-10_digital_drops.sql first.');
     process.exit(1);
   }
   console.log('Published ' + payload.length + ' product(s) to digital_products.');
+}
+
+/**
+ * The free shelf, published separately and tolerantly: a database that has not run
+ * the 2026-11-12 file yet can still sell paid packs. The magnet table is additive,
+ * so a missing one is a warning that names the file, not a failed publish.
+ */
+async function publishMagnets(magnets) {
+  if (!magnets.length) return;
+  const sb = await connect();
+  const now = new Date().toISOString();
+  const payload = magnets.map((m) => ({
+    slug: m.slug,
+    title: m.title,
+    summary: m.summary,
+    promise: m.promise,
+    modules: m.modules,
+    outcomes: m.outcomes,
+    asset_file: m.asset_file,
+    next_slug: m.next_slug,
+    status: m.status,
+    rank: m.rank,
+    metadata: { asset_sources: (m.raw && m.raw.asset_sources) || [] },
+    updated_at: now,
+  }));
+  const { error } = await sb.from('digital_lead_magnets').upsert(payload, { onConflict: 'slug' });
+  if (error) {
+    const missing = /does not exist|schema cache|could not find the table|42P01|PGRST205/i.test(error.message || '');
+    if (missing) {
+      console.warn('Free packs not published: digital_lead_magnets does not exist yet. Run migrations/2026-11-12_drops_funnel.sql.');
+      return;
+    }
+    console.error('Magnet upsert failed: ' + error.message);
+    process.exit(1);
+  }
+  console.log('Published ' + payload.length + ' free pack(s) to digital_lead_magnets.');
 }
 
 async function main() {
@@ -208,6 +293,49 @@ async function main() {
     };
   });
 
+  // ---- the funnel: rungs, links and the free shelf (2026-11-12) --------------
+  // A catalogue where every row validates can still be a funnel that leads nowhere.
+  // These are the three ways that happens, and each one is reported rather than
+  // silently repaired: a broken upsell is a decision, not a typo.
+  const badNext = [];
+  for (const r of rows) {
+    if (r.status !== 'published') continue;
+    const target = r.next_slug ? rows.find((x) => x.slug === r.next_slug) : null;
+    if (r.next_slug && !target) {
+      badNext.push(r.slug + ' -> ' + r.next_slug + ' (no such product)');
+      continue;
+    }
+    if (target && !isForwardStep(r, target)) {
+      badNext.push(r.slug + ' (' + funnelStepOf(r) + ') -> ' + target.slug + ' (' + funnelStepOf(target) + '): not a step up in price or rung');
+    }
+  }
+
+  const rawMagnets = (Array.isArray(raw) ? [] : raw.lead_magnets || [])
+    .filter((m) => includeDrafts || m.status === 'published');
+  const magnets = [];
+  const badMagnets = [];
+  for (const rm of rawMagnets) {
+    const checked = validateLeadMagnet(rm);
+    if (!checked.ok) {
+      badMagnets.push((rm.slug || rm.title || '(untitled)') + ': ' + checked.errors.join('; '));
+      continue;
+    }
+    const pack = packState(checked.value);
+    if (checked.value.status === 'published' && !pack.ok) missingPacks.push(checked.value.slug + ' (free)');
+    if (checked.value.next_slug && !publishedSlugs.has(checked.value.next_slug)) {
+      badNext.push(checked.value.slug + ' (free) -> ' + checked.value.next_slug + ' (not published)');
+    }
+    magnets.push({ ...checked.value, pack, raw: rm });
+  }
+
+  const rungs = FUNNEL_STEPS.map((step) => ({
+    step: step.key,
+    order: step.order,
+    products: rows.filter((r) => r.status === 'published' && funnelStepOf(r) === step.key).map((r) => r.slug),
+    magnets: step.key === 'lead' ? magnets.filter((m) => m.status === 'published').map((m) => m.slug) : [],
+  }));
+  const emptyRungs = rungs.filter((r) => !r.products.length && !r.magnets.length).map((r) => r.step);
+
   const meta = {
     generated: new Date().toISOString().slice(0, 10),
     scenario: scenario(rows),
@@ -215,6 +343,11 @@ async function main() {
     invalid,
     missingPacks,
     badBumps,
+    badNext,
+    badMagnets,
+    rungs,
+    emptyRungs,
+    magnets: magnets.map((m) => ({ slug: m.slug, title: m.title, next_slug: m.next_slug, pack: m.pack.ok ? m.pack.note : m.pack.note })),
   };
 
   if (asJson) {
@@ -223,9 +356,13 @@ async function main() {
       products: rows.map((r) => ({
         slug: r.slug, title: r.title, kind: r.kind, status: r.status,
         price_kes: r.price_kes, price_usd: r.price_usd, bump_slug: r.bump_slug,
+        funnel_step: funnelStepOf(r), next_slug: r.next_slug,
         demand: r.demand.score, signals: r.demand.signals,
         pack: r.pack.ok ? 'built' : r.pack.note,
       })),
+      magnets: meta.magnets,
+      rungs: meta.rungs,
+      emptyRungs: meta.emptyRungs,
       ...meta,
     }, null, 2));
   } else {
@@ -239,6 +376,14 @@ async function main() {
     if (invalid.length) console.log('\nInvalid rows:\n  - ' + invalid.join('\n  - '));
     if (missingPacks.length) console.log('\nMissing packs (run npm run drops:build): ' + missingPacks.join(', '));
     if (badBumps.length) console.log('\nBroken bumps: ' + badBumps.join(', '));
+    console.log('\nFunnel (free first, then each rung hands the buyer the next)');
+    for (const r of meta.rungs) {
+      const items = [...r.magnets.map((m) => m + ' (free)'), ...r.products];
+      console.log('  ' + r.step.padEnd(12) + (items.length ? items.join(', ') : '(empty)'));
+    }
+    if (meta.badNext.length) console.log('\nBroken next offers: ' + meta.badNext.join('; '));
+    if (meta.badMagnets.length) console.log('\nInvalid free packs: ' + meta.badMagnets.join('; '));
+    if (meta.emptyRungs.length) console.log('Empty rungs (not a failure, but the storefront shows the gap): ' + meta.emptyRungs.join(', '));
   }
 
   const report = buildReport(rows, signals, meta);
@@ -253,9 +398,13 @@ async function main() {
       demand: (r.raw && r.raw.demand) || null,
     }));
     await publish(toPublish);
+    await publishMagnets(magnets.map((m) => ({
+      ...m,
+      raw: (m.raw && m.raw) || null,
+    })));
   }
 
-  process.exit(invalid.length || missingPacks.length || badBumps.length ? 1 : 0);
+  process.exit(invalid.length || missingPacks.length || badBumps.length || badNext.length || badMagnets.length ? 1 : 0);
 }
 
 const invokedDirectly = process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
