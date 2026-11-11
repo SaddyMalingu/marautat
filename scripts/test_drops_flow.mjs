@@ -287,6 +287,7 @@ ok('the capture names the paid rung it hands over', Boolean(free.body.next) && f
 ok('the lead is stored with its consent and source',
   db.digital_leads.length === 1 && db.digital_leads[0].email === 'grace@example.com' &&
   db.digital_leads[0].consent === true && db.digital_leads[0].source === 'storefront');
+ok('a free pack that was actually sent is stamped delivered', Boolean(db.digital_leads[0].delivered_at));
 ok('the free pack is emailed', emails.some((e) => e.to === 'grace@example.com' && /free pack/i.test(e.subject)));
 
 const freePath = free.body.downloadUrl.replace(base, '');

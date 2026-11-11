@@ -660,10 +660,15 @@ export function createDropsRouter(deps = {}) {
           log('[drops] free pack WhatsApp failed: ' + msgErr.message, 'WARN');
         }
       }
-      if (lead && lead.id) {
+      // Only claim delivery when something was actually delivered. A capture whose
+      // email bounced is still a usable lead (the link was in the response), but
+      // `delivered_at` must not say a message went out when none did.
+      if (lead && lead.id && (sent.email || sent.whatsapp)) {
         try {
           await supabase.from(TABLES.leads).update({ delivered_at: new Date().toISOString() }).eq('id', lead.id);
         } catch (_) { /* the link is already in the response */ }
+      } else if (lead && lead.id) {
+        log('[drops] free pack not delivered to lead ' + lead.id + ' — the link is on the page, nothing was sent', 'WARN');
       }
 
       return say(res, 201, {

@@ -833,6 +833,7 @@ ok('the free download verifies the token before touching a file', (() => {
   return routes.indexOf('verifyLeadToken(', at) < routes.indexOf('path.basename(', at);
 })());
 ok('the free download records its own event', /lead_download/.test(routes));
+ok('a capture only claims delivery when a channel succeeded', /sent\.email \|\| sent\.whatsapp/.test(routes));
 ok('a missing lead table names its own migration', /notInitialisedFunnel[\s\S]{0,220}2026-11-12_drops_funnel\.sql/.test(routes));
 ok('delivery continues after purchase', /nextActionFor\(product, products/.test(routes));
 

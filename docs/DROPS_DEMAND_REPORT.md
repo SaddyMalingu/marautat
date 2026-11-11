@@ -1,6 +1,6 @@
 # Digital Drops — demand report
 
-_Generated 2026-11-10 by `npm run drops:report`. Prices are list anchors; demand scores are the mean of the signals each product names. Neither is a forecast._
+_Generated 2026-11-11 by `npm run drops:report`. Prices are list anchors; demand scores are the mean of the signals each product names. Neither is a forecast._
 
 ## Catalogue
 
