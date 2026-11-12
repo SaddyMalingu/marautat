@@ -1,0 +1,71 @@
+name: CI
+
+# Why this exists (2026-11-12): Render was deploying whatever landed on main, or
+# nothing at all, because the only scheduled workflow in this repo is the blog clock.
+# Two commits sat undeployed for twenty minutes while a third got through, and the
+# only way to find out which was live was to ask the server for its commit.
+#
+# So: every push is checked here first, and main is only deployed when the checks
+# pass. Set RENDER_DEPLOY_HOOK to the deploy-hook URL from the Render service
+# (Settings -> Deploy Hook), and turn Render's own Auto-Deploy OFF — this workflow
+# becomes the thing that decides.
+#
+# The suites chosen are the offline ones: no database, no network, no provider key.
+# A test that needs a secret cannot gate a deploy, because it would fail for the
+# wrong reason on a fork and pass for the wrong reason on main.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - name: Install
+        run: npm ci --no-audit --no-fund
+      - name: server.js parses as an ES module
+        run: node --input-type=module --check < server.js
+      - name: Digital Drops rules and routes
+        run: node scripts/test_digital_drops.mjs
+      - name: Digital Drops end to end
+        run: node scripts/test_drops_flow.mjs
+      - name: Blog quality gate
+        run: node scripts/test_blog_quality.mjs
+      - name: Site hygiene
+        run: node scripts/test_site_hygiene.mjs
+      - name: Landing page
+        run: node scripts/test_landing_site.mjs
+      - name: Scan to Pay
+        run: node scripts/test_scan_pay.mjs
+      - name: Blog queue and jobs
+        run: |
+          node scripts/test_blog_queue.mjs
+          node scripts/test_blog_jobs.mjs
+
+  deploy:
+    needs: check
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger the Render deploy
+        env:
+          HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$HOOK" ]; then
+            echo "::error::RENDER_DEPLOY_HOOK is not set. Add it in Settings -> Secrets and variables -> Actions, or deploy from the Render dashboard."
+            exit 1
+          fi
+          # The hook deploys the latest commit on the branch it was created for.
+          curl --fail-with-body --silent --show-error --request POST "$HOOK"
+          echo "Deploy triggered for $GITHUB_SHA"
