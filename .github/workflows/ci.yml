@@ -33,7 +33,11 @@ jobs:
           node-version: '22'
           cache: 'npm'
       - name: Install
-        run: npm ci --no-audit --no-fund
+        # npm install, not npm ci, on purpose: Render's build command is `npm install`,
+        # and its logs already show packages being added and removed against a lockfile
+        # that has drifted. `npm ci` would fail the gate for a reason that has nothing to
+        # do with the commit being tested — which is how a red gate stops being read.
+        run: npm install --no-audit --no-fund
       - name: server.js parses as an ES module
         run: node --input-type=module --check < server.js
       - name: Digital Drops rules and routes
