@@ -60,19 +60,32 @@ services:
     runtime: node
     region: frankfurt
     branch: main
-    # TEST CADENCE. Once confirmed, "0 2 * * *" is one run a day, on time.
-    schedule: "*/30 * * * *"
-    # Nothing to build: the trigger script uses only Node's built-in fetch.
+    # 2026-11-12: daily, 02:00 UTC. GitHub's schedule was removed because it fired hours
+    # late and then not at all; this runs on the same platform as the site it serves.
+    # Raise the frequency only after a week of clean runs.
+    schedule: "0 2 * * *"
     buildCommand: echo "no build required"
-    startCommand: node scripts/trigger_blog_queue.mjs --limit $BLOG_RUN_LIMIT
+    # 2026-11-12: runs the queue directly instead of asking a Render Workflow to do it.
+    # The Workflow service (alphadome-blog) may never have been created — render.yaml
+    # describes it, it does not create it — and a trigger that 404s is silent failure.
+    # This command needs only the web app's own code and database credentials.
+    startCommand: node scripts/blog_queue.mjs --apply --limit $BLOG_RUN_LIMIT
     envVars:
-      # Create at dashboard.render.com/u/settings#api-keys. This is the whole point of moving
-      # the clock here: the key lives in one place, and it is not a CI system.
-      - key: RENDER_API_KEY
+      - key: SUPABASE_URL
         sync: false
-      - key: BLOG_WORKFLOW_TASK
-        value: alphadome-blog/blogQueue
-      # Cheap while testing. Raise to 10–15 for real throughput: 245 offers have no pages yet.
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: SITE_URL
+        value: https://alphadome.onrender.com
+      # Generation normally runs inside a tenant's HTTP request; a cron run has no such
+      # ceiling, so give the writer room instead of truncating angles.
+      - key: BLOG_RUN_BUDGET_MS
+        value: "600000"
+      # How many offers each nightly run writes. 10 is roughly an hour of work.
       - key: BLOG_RUN_LIMIT
-        value: "3"
+        value: "10"
 

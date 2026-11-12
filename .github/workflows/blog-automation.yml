@@ -10,13 +10,19 @@ name: Daily Blog Generation
 #   2. Otherwise it runs the queue directly on the runner, which is enough to get pages written
 #      and needs no Render service at all.
 on:
-  schedule:
-    # TEST CADENCE — every 15 minutes, so a deploy can be watched. Revert to '0 2 * * *'
-    # (daily) once the run is confirmed. GitHub's scheduler is best-effort and this repo has
-    # seen runs land 4–7 hours after their slot, so "every 15 minutes" means "often", not
-    # "on the quarter hour". If a run must happen at a known minute, trigger it by hand
-    # (Actions → Run workflow, or the Render dashboard) instead of waiting for the cron.
-    - cron: '*/15 * * * *'
+  # 2026-11-12: the schedule was removed on purpose. Scheduled runs on this repo have
+  # been 4-7 hours late and, since 7 Nov, did not fire at all — twenty consecutive
+  # `failed` runs in 3 seconds, because RENDER_API_KEY did not exist. A clock that
+  # fires unpredictably is worse than none: the blog silently stops and the failure
+  # looks like a content problem.
+  #
+  # The clock now lives on Render, next to the service it drives: the Cron Job service
+  # `alphadome-blog-cron` runs the queue directly. This workflow is kept as a manual
+  # fallback (Actions -> Run workflow) and for the record of how it used to work.
+  #
+  # If you ever want a second clock, make it a manual dispatch like this one. Two
+  # scheduled clocks walk the same offers, double the model spend, and each one's
+  # success hides the other's failure.
   workflow_dispatch:
     inputs:
       limit:
