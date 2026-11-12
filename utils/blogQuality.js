@@ -35,6 +35,9 @@ export const QUALITY_TARGETS = {
   // produced. One is a legitimate summary block; three is a bullet-point blog.
   maxListOnlySections: 1,
   minAvgSentences: 1.5,
+  // Above this a page stops being generous and starts asking a stranger for their
+  // afternoon. The operator's band is 700-1,100.
+  maxWords: 1100,
   minScore: 70,
 };
 
@@ -42,6 +45,18 @@ export const QUALITY_TARGETS = {
 // capped per phrase so a model that likes a word cannot sink an otherwise good
 // page — except the cliché openers, which are a positioning problem, not style.
 const BANNED = [
+  // 2026-11-12: the role-play and conversational-filler openers. None of these exists
+  // in our prompts, which is the point: they arrive as model drift, and a page that
+  // opens by asking the reader to imagine something reads like a template, not a
+  // business talking about its own work.
+  [/\bimagine (?:you|yourself|being|that|a)\b/gi, 'the "imagine you are" role-play opener', 6, 1],
+  [/\bpicture (?:this|yourself|a)\b/gi, '"picture this"', 5, 1],
+  [/\bin a world where\b/gi, '"in a world where"', 5, 1],
+  [/\bwe'?ve all been there\b/gi, '"we\'ve all been there"', 4, 1],
+  [/\blet'?s face it\b/gi, '"let\'s face it"', 4, 1],
+  [/\bhere'?s the thing\b/gi, '"here\'s the thing"', 3, 1],
+  [/\bthe (?:truth|reality) is\b/gi, '"the truth is" filler', 3, 1],
+  [/\bthink about it\b/gi, '"think about it"', 3, 2],
   [/\bin today'?s (?:fast[- ]paced|digital|modern|competitive|ever[- ]changing)\b/gi, 'opens with "in today\'s fast-paced world"', 8, 1],
   [/\bin the (?:ever[- ]evolving|rapidly changing) (?:world|landscape|realm)\b/gi, 'ever-evolving world/landscape', 6, 1],
   [/\bwhether you'?re an? [^.,;]{3,40} or an? [^.,;]{3,40}/gi, 'the "whether you\'re an X or a Y" scaffold', 5, 1],
@@ -161,6 +176,20 @@ export function analyzeArticle(html, options) {
   }
 
   const numbers = words.filter((w) => /\d/.test(w)).length;
+
+  // --- the two shapes the operator named (2026-11-12) ------------------------
+  // (a) Throat-clearing instead of a fact. If the first 60 words carry no number,
+  // price, date or version, the reader has nothing concrete to hold and the page
+  // reads like a template. This is the "meandering" complaint, measured.
+  const openWords = wordsOf(paragraphs.slice(0, 2).map((p) => p.text).join(' ')).slice(0, 60).join(' ');
+  if (openWords && !/\d/.test(openWords)) {
+    add('slow-open', 'the first 60 words carry no number, price, date or version — the reader has nothing concrete to hold', 6, false);
+  }
+  // (b) A page that continues after it has made its case. Past the ceiling, length
+  // is no longer generosity; it is the reason a busy reader leaves.
+  if (words.length > QUALITY_TARGETS.maxWords) {
+    add('too-long', words.length + ' words — past ' + QUALITY_TARGETS.maxWords + ', length stops being generosity', 5, false);
+  }
   const lower = text.toLowerCase();
   const cta = CTA.test(lower.slice(Math.floor(lower.length * 0.65))) || CTA.test(lower.slice(-400));
 
