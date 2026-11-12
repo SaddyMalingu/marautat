@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Kassangas Merchant Portal | QR Payment</title>
+  <title>Merchant portal | QR payment | Alphadome</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Bebas+Neue&display=swap" rel="stylesheet">
@@ -499,7 +499,7 @@
         const res = await fetch("/api/kassangas/create-template", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ itemName, amount, reusable: true, merchantName: "Kassangas", merchantCode: getMerchantCode() })
+          body: JSON.stringify({ itemName, amount, reusable: true, merchantName: new URLSearchParams(window.location.search).get("merchant") || "Merchant", merchantCode: getMerchantCode() })
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error);
