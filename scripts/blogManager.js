@@ -1007,6 +1007,17 @@ async function generateJourney(oppId, opts) {
       content = await reviewContent(content, post.title, capFor(), { offer: o, post: post, voice: voice, analysis: quality });
       quality = analyzeArticle(content, { offerType: o && o.offer_type, title: post.title });
     }
+    // 2026-11-12: a page that still fails the gate after one repair and one review is
+    // NOT published. The operator's standard is "no thin pages", and the first cron run
+    // proved why this line is needed: an angle scored 13/100, was repaired to 52/100
+    // with `thin-article` still blocking, and went live anyway — the exact shape the
+    // 283-page audit complained about. Nothing is lost: the offer keeps its 0/9 count,
+    // so the next run picks the angle up again and a different provider may do better.
+    if (!quality.ok) {
+      console.warn('[GEN] Held ' + post.slug + ': ' + describeQuality(quality) +
+        ' — not published. The angle stays uncovered so the next run retries it.');
+      continue;
+    }
     var thumb = null;
     if (img) thumb = await genImage(o.title + ' ' + post.angleName, post.slug);
     var postData = { title: post.title, slug: post.slug, content: content, thumb: thumb };
