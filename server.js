@@ -15833,16 +15833,22 @@ function msUntilNextEatRun(hour = 8, minute = 0) {
 }
 
 function scheduleDailyFollowupAutomation() {
-  const enabled = String(process.env.FOLLOWUP_AUTOMATION_ENABLED || "true").toLowerCase() !== "false";
+  // OPT-IN since the 2026-11-12 audit (docs/WHATSAPP_INTENT_AUDIT_2026-11-12.md).
+  // The old default was ON, and in interval mode it sent one message every 13 minutes
+  // to a single contact for three months: 10,157 failures, each written into
+  // `conversations` as though it were a message. Two things must exist before this is
+  // switched back on: a per-contact failure guard, and a 24-hour-window check.
+  const enabled = String(process.env.FOLLOWUP_AUTOMATION_ENABLED || "false").toLowerCase() === "true";
   if (!enabled) {
-    log("Daily follow-up automation is disabled via FOLLOWUP_AUTOMATION_ENABLED=false", "SYSTEM");
+    log("Daily follow-up automation is off. Set FOLLOWUP_AUTOMATION_ENABLED=true to opt in.", "SYSTEM");
     return;
   }
 
   const hour = Math.min(23, Math.max(0, parseInt(process.env.FOLLOWUP_AUTOMATION_HOUR_EAT || "8", 10)));
   const minute = Math.min(59, Math.max(0, parseInt(process.env.FOLLOWUP_AUTOMATION_MINUTE_EAT || "0", 10)));
   const maxToSend = Math.min(300, Math.max(1, parseInt(process.env.FOLLOWUP_AUTOMATION_MAX_TO_SEND || "80", 10)));
-  const dryRun = String(process.env.FOLLOWUP_AUTOMATION_DRY_RUN || "false").toLowerCase() === "true";
+  // Dry-run unless explicitly disabled, for the same reason as the interval scheduler.
+  const dryRun = String(process.env.FOLLOWUP_AUTOMATION_DRY_RUN || "true").toLowerCase() !== "false";
 
   const waitMs = msUntilNextEatRun(hour, minute);
   const nextAt = new Date(Date.now() + waitMs).toISOString();
@@ -15875,15 +15881,17 @@ function scheduleDailyFollowupAutomation() {
 }
 
 function scheduleIntervalFollowupAutomation() {
-  const enabled = String(process.env.FOLLOWUP_AUTOMATION_ENABLED || "true").toLowerCase() !== "false";
+  // Same opt-in rule as the daily scheduler: this is the mode that caused the loop.
+  const enabled = String(process.env.FOLLOWUP_AUTOMATION_ENABLED || "false").toLowerCase() === "true";
   if (!enabled) {
-    log("Interval follow-up automation is disabled via FOLLOWUP_AUTOMATION_ENABLED=false", "SYSTEM");
+    log("Interval follow-up automation is off. Set FOLLOWUP_AUTOMATION_ENABLED=true to opt in.", "SYSTEM");
     return;
   }
 
   const intervalMinutes = Math.max(5, parseInt(process.env.FOLLOWUP_AUTOMATION_INTERVAL_MINUTES || "13", 10));
   const maxToSend = Math.min(30, Math.max(1, parseInt(process.env.FOLLOWUP_AUTOMATION_INTERVAL_BATCH_SIZE || "1", 10)));
-  const dryRun = String(process.env.FOLLOWUP_AUTOMATION_DRY_RUN || "false").toLowerCase() === "true";
+  // Dry-run by default: an opt-in that forgets a second flag must never send live.
+  const dryRun = String(process.env.FOLLOWUP_AUTOMATION_DRY_RUN || "true").toLowerCase() !== "false";
   const minHoursBetweenTouches = Math.max(24, parseInt(process.env.FOLLOWUP_AUTOMATION_MIN_HOURS_BETWEEN_TOUCHES || "24", 10));
   const waitMs = intervalMinutes * 60 * 1000;
 
