@@ -243,18 +243,24 @@ export const GEMINI_MODELS = [
 // slug meanwhile. Added 2026-10-23 10:40 after a live Review spent 15s on a silent
 // Gemini alias and 13s on OpenRouter's throttled free pool with no copy produced.
 export const GROQ_MODELS = [
-  'llama-3.3-70b-versatile',
-  // Smaller and separate pool: a 70B throttle must not take out the whole key.
-  'llama-3.1-8b-instant',
+  // 2026-11-12: the two llama slugs below returned 404 on Groq in the first cron run
+  // ("groq retired llama-3.3-70b-versatile (404)", "…llama-3.1-8b-instant (404)"),
+  // and every page then landed on gpt-oss-20b after two wasted round trips each.
+  // The proven slug leads; the llama slugs stay as fallbacks in case the retirement
+  // was an upstream blip, and a 404 costs one fast probe instead of a slow timeout.
   'openai/gpt-oss-20b',
+  'llama-3.3-70b-versatile',
+  'llama-3.1-8b-instant',
 ];
 
 // Cerebras: free tier, no card, OpenAI-compatible, wafer-scale inference (again
 // very fast). Kept last among the free tiers because its free quota is the
 // smallest of the three, so it is the backstop rather than the workhorse.
 export const CEREBRAS_MODELS = [
-  'llama3.1-8b',
+  // 2026-11-12: `llama3.1-8b` 404s on this account; gpt-oss-120b served every call
+  // in the first cron run. Proven slug first, retired one kept as a fallback.
   'gpt-oss-120b',
+  'llama3.1-8b',
 ];
 
 // Mistral La Plateforme (https://console.mistral.ai): free "experiment" tier, no
