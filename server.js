@@ -416,6 +416,42 @@ app.use((req, res, next) => {
   next();
 });
 
+// ---- tenant-neutral public paths (2026-11-12) --------------------------------
+// Kassangas is a tenant, not the product. The canonical paths below are generic;
+// the old per-tenant paths 301 to them, so every QR code, bookmark and WhatsApp
+// template already in the wild keeps working. Nothing is removed, only redirected.
+//
+// The database table (kassangas_templates) is deliberately NOT renamed yet: 105
+// issued payment links resolve against it, and a table rename is the one step here
+// that cannot be walked back with a redirect. It is exposed behind a
+// `merchant_templates` view when the rest has run clean for a week.
+const TENANT_PAGE_ALIASES = {
+  "/shop": "kassangas-music-shop.html",
+  "/merchant": "kassangas-merchant-portal.html",
+  "/wallet": "kassangas-client-wallet.html",
+};
+const LEGACY_TENANT_PATHS = {
+  "/kassangas-music-shop": "/shop",
+  "/kassangas-merchant-portal": "/merchant",
+  "/kassangas-client-wallet": "/wallet",
+};
+app.use((req, res, next) => {
+  const legacy = LEGACY_TENANT_PATHS[req.path];
+  if (legacy) {
+    const query = req.url.includes("?") ? "?" + req.url.split("?").slice(1).join("?") : "";
+    return res.redirect(301, legacy + query);
+  }
+  // /api/merchant/* is answered by the same handlers as /api/kassangas/*, so a new
+  // integration never has to learn a tenant's name.
+  if (req.url.startsWith("/api/merchant/")) {
+    req.url = "/api/kassangas/" + req.url.slice("/api/merchant/".length);
+  }
+  next();
+});
+for (const [route, file] of Object.entries(TENANT_PAGE_ALIASES)) {
+  app.get(route, (req, res) => res.sendFile(path.join(publicDir, file)));
+}
+
 app.use(express.static(publicDir, { index: false }));
 
 // Google Search Console verification
@@ -12209,7 +12245,9 @@ app.post("/api/kassangas/stk-push", async (req, res) => {
 
 const KASSANGAS_VISITOR_LOG_FILE = path.join(process.cwd(), "logs", "kassangas_visitors.jsonl");
 const KASSANGAS_ONBOARDING_LOG_FILE = path.join(process.cwd(), "logs", "kassangas_onboarding.jsonl");
-const KASSANGAS_REFERRAL_SECRET = process.env.KASSANGAS_REFERRAL_SECRET || process.env.ADMIN_PASS || "alphadome-kassangas-ref";
+// Tenant-neutral first (2026-11-12): Kassangas is one tenant, not the product.
+// The legacy name keeps working so existing deployments do not break on deploy.
+const TENANT_REFERRAL_SECRET = process.env.TENANT_REFERRAL_SECRET || process.env.KASSANGAS_REFERRAL_SECRET || process.env.ADMIN_PASS || "alphadome-kassangas-ref";
 
 async function appendJsonlRecord(filePath, record) {
   try {
@@ -12231,7 +12269,7 @@ function fromBase64Url(value) {
 }
 
 function signReferralPayload(payloadString) {
-  return crypto.createHmac("sha256", KASSANGAS_REFERRAL_SECRET).update(payloadString).digest("hex");
+  return crypto.createHmac("sha256", TENANT_REFERRAL_SECRET).update(payloadString).digest("hex");
 }
 
 function createReferralToken(payload) {
