@@ -13,6 +13,11 @@ name: CI
 # The suites chosen are the offline ones: no database, no network, no provider key.
 # A test that needs a secret cannot gate a deploy, because it would fail for the
 # wrong reason on a fork and pass for the wrong reason on main.
+#
+# 2026-11-12: test_blog_queue and test_blog_jobs were removed from this list for
+# exactly that reason — they reach for Supabase configuration, so on a clean runner
+# they fail on the environment rather than on the change. They still run by hand
+# (`npm run test:blogqueue`, `test:blogjobs`) before a blog-engine change.
 on:
   push:
     branches: [main]
@@ -52,10 +57,6 @@ jobs:
         run: node scripts/test_landing_site.mjs
       - name: Scan to Pay
         run: node scripts/test_scan_pay.mjs
-      - name: Blog queue and jobs
-        run: |
-          node scripts/test_blog_queue.mjs
-          node scripts/test_blog_jobs.mjs
 
   deploy:
     needs: check
