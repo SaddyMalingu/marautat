@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="robots" content="noindex,nofollow" />
+  <meta name="theme-color" content="#081421" />
+  <title>Ready to share | Alphadome</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <style>
+    :root { --bg:#081421; --panel:#0e1e30; --line:#1e3550; --text:#eef5fb; --muted:#a9bccd; --accent:#ff8a00; --accent2:#ffd166; --mint:#7ef9c8; --err:#ff6b7f; }
+    * { box-sizing: border-box; }
+    body { margin:0; min-height:100vh; padding:26px 18px 70px; color:var(--text); line-height:1.6;
+      font-family: system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+      background: radial-gradient(800px 420px at 50% -12%, rgba(255,138,0,.12), transparent 60%), var(--bg); }
+    .wrap { max-width: 860px; margin: 0 auto; }
+    .brand { font-size:.72rem; letter-spacing:.18em; text-transform:uppercase; color:var(--muted); }
+    .brand b { color: var(--accent); }
+    h1 { font-size: clamp(1.5rem,4vw,2rem); margin:.5rem 0 .3rem; line-height:1.2; }
+    .lede { color: var(--muted); margin: 0 0 6px; max-width: 62ch; }
+    .count { color: var(--mint); font-weight: 600; }
+    .card { background: var(--panel); border:1px solid var(--line); border-radius:16px; padding:18px; margin-top:16px; }
+    .card h2 { font-size:1.02rem; margin:0 0 4px; line-height:1.35; }
+    .card .meta { color:var(--muted); font-size:.78rem; margin-bottom:12px; }
+    .cap { background: rgba(255,255,255,.03); border:1px solid var(--line); border-radius:10px; padding:12px;
+      font-size:.86rem; color:var(--muted); white-space:pre-wrap; word-break:break-word; margin-bottom:10px; }
+    .cap b { color: var(--accent2); font-weight:600; display:block; margin-bottom:4px; font-size:.7rem; letter-spacing:.1em; text-transform:uppercase; }
+    .row { display:flex; flex-wrap:wrap; gap:8px; }
+    button, .btn { border:0; border-radius:10px; padding:10px 14px; font:inherit; font-size:.85rem; font-weight:600;
+      cursor:pointer; min-height:42px; text-decoration:none; display:inline-flex; align-items:center; }
+    .primary { background: linear-gradient(90deg, var(--accent), var(--accent2)); color:#201000; }
+    .ghost { background: rgba(255,255,255,.06); color: var(--text); border:1px solid var(--line); }
+    .ghost:hover { border-color: rgba(255,138,0,.45); }
+    .msg { margin-top:8px; font-size:.82rem; }
+    .msg.ok { color: var(--mint); } .msg.err { color: var(--err); }
+    .empty { color: var(--muted); text-align:center; padding:44px 18px; }
+    .note { color: var(--muted); font-size:.78rem; margin-top:22px; }
+    a.link { color: var(--accent2); }
+    .tag { font-size:.68rem; letter-spacing:.1em; text-transform:uppercase; color:var(--accent); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="brand"><b>Alphadome</b> · pages ready to share</div>
+    <h1>Your newest pages, with the words already written</h1>
+    <p class="lede">Each page below was written for one of your offers. Copy the caption into LinkedIn, or send it to X from here. <span id="count" class="count"></span></p>
+    <div id="list"><div class="empty">Loading your pages…</div></div>
+    <p class="note">X posts automatically. LinkedIn requires you to press Post yourself — LinkedIn does not allow an app to post to a member profile, so the caption is prepared and you publish it.</p>
+  </div>
+  <script src="/tenant-share.js"></script>
+</body>
+</html>

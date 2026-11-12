@@ -452,6 +452,13 @@ for (const [route, file] of Object.entries(TENANT_PAGE_ALIASES)) {
   app.get(route, (req, res) => res.sendFile(path.join(publicDir, file)));
 }
 
+// The share queue page (2026-11-12): a tenant-facing list of finished pages with the
+// captions already composed for each network. Its own page on purpose — the dashboard
+// is 5,900 lines, and a bad insertion there would take the portal down with it.
+// The page needs the tenant's session cookie, so it is reachable only from a signed-in
+// browser; an anonymous visitor gets the "open this from your portal" screen.
+app.get("/tenant/share", (req, res) => res.sendFile(path.join(publicDir, "tenant-share.html")));
+
 app.use(express.static(publicDir, { index: false }));
 
 // Google Search Console verification
