@@ -1,6 +1,16 @@
 ALPHADOME WORKER — read this first
 ===============================
 
+EASIEST WAY (Windows)
+  Double-click  "Install Worker.cmd"   once.
+    - It downloads a private copy of Node.js into this folder. Nothing is installed
+      system-wide and nothing is added to PATH.
+    - It puts an "Alphadome Worker" icon on your Desktop.
+  Then start captures with that Desktop icon, not with the file here.
+
+  If you already have Node.js 22 or newer, you can skip the installer and just
+  double-click "Start Worker.cmd" — it uses what you already have.
+
 What this is
   A small program that runs on THIS computer, because your MoreLogin profile
   lives here. When you press "Capture now" in the Alphadome portal, this

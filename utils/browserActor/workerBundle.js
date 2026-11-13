@@ -73,6 +73,19 @@ export function buildWorkerBundle({ apiBase, pairCode = null, repoRoot = REPO_RO
     entries.push({ name, data: read(path.join('worker-bundle', name)) });
   }
 
+  // One-click setup (2026-11-07): fetches Node into runtime\ and puts an Alphadome icon on the
+  // Desktop. Added as optional extras rather than required entries, because a tenant who
+  // already has Node can start the worker without ever opening them — and a zip that refused
+  // to build without an icon would be a worse failure than a bundle missing one.
+  for (const name of ['Install Worker.cmd', 'Alphadome.ico']) {
+    try {
+      entries.push({ name, data: read(path.join('worker-bundle', name)) });
+    } catch (error) {
+      console.warn('[bundle] ' + name + ' is missing from worker-bundle/ — the zip will still work, ' +
+        'but the tenant gets no one-click installer. Run: node scripts/make_worker_icon.mjs');
+    }
+  }
+
   entries.push({
     name: 'package.json',
     data: JSON.stringify({
