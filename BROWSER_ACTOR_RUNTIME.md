@@ -732,6 +732,85 @@ argument for verifying before writing rather than after.
 ```bash
 node scripts/browser_actor_micro1.mjs --tenant <slug> --limit 12            # plan
 node scripts/browser_actor_micro1.mjs --tenant <slug> --limit 12 --apply    # import drafts
+## ChatterApply apply flow (2026-11-13) — fill the form, then hand over the live page
+
+The ask was: run steps 1–12, do the internet speed test at 13, the typing test at 14, then stop so a
+person can take step 15 — **without the page closing or reloading**. That requirement decides the shape
+of this one.
+
+### There is no markup to work from
+
+The saved copy of `chatterapply.com/apply` is 11 KB and contains **no form at all**: it is a shell that
+embeds the application in an iframe pointing at `chatterapply.com/apply/form/`, and that URL is itself a
+2.3 KB JS shell (`<title>Apply</title>` and nothing else). Fetching it gives the same nothing.
+
+So `chatterApply.js` has **no hand-picked CSS selectors**. The reader is generic form introspection: it
+finds the form document (same-origin iframe → `contentDocument`, no CDP frame switching needed), then
+reads every field through `label[for]`, a wrapping `<label>`, `aria-label`, `aria-labelledby`,
+`placeholder`, `name` and `id`. That works on an ordinary form, survives their rebuilds, and — the point
+— reports what it found instead of silently matching nothing.
+
+| what | how |
+|---|---|
+| find the form | `iframe[src*="/apply/form"]` → `contentDocument`; cross-origin is its own failure (`cross_origin_frame`), not "no fields" |
+| read a step | fields with resolved labels, required/disabled, select options, buttons, `Step N of M`, measurement widgets |
+| write a value | the **native value setter** of the frame's window + `input`/`change`/`blur`, then read it back |
+| click Next | by label, never the submit; a disabled button is reported, not forced |
+| verify an advance | poll a cheap fingerprint until the step changes; a click validation swallowed surfaces as `step_not_advanced` |
+
+Writing `el.value` directly is the interesting one: it works on a plain form and **does nothing** on a
+React form, because React reads its tracked value, sees no change, and never updates state — the field
+looks filled while the app knows nothing, so Next stays disabled. The native setter is what makes the
+value real, and the read-back is what proves it.
+
+### Where it stops, and why
+
+```
+step 15            → handoff, always            (it is the applicant's to press)
+step 14 typing     → handoff, by default        (it measures a person; see below)
+step 13 speed      → start it, then wait        (the page measures; we never supply a number)
+required + unknown → needs_values, named        (never guess on an application field)
+```
+
+**The typing test is the one step this deliberately does not take.** The apply page lists "Typing speed
+of 65+ WPM" as a hiring requirement and says "The application includes a short typing test and
+assessment". A machine typing that test reports a competence no human demonstrated, which misrepresents
+the applicant to the employer — the same line `oneForma.js` draws for certifications. `--include-typing`
+exists if a tenant has decided otherwise; it is off unless asked for. If the goal is simply to *record*
+the test, it takes a person about a minute.
+
+The internet speed test is the opposite case: it measures the connection, which really is the machine's,
+so the runner starts it and waits for the page's own verdict (`measurement_timeout` if it never finishes).
+
+### Keeping the page alive
+
+- The script navigates **at most once**, and only when the tab is not already on the form. Every action
+  afterwards is a read or a click on the page that is already there.
+- `chatterApply.js` contains **no navigation call at all**.
+- The profile is **not closed** when the run ends (the opposite of every other script in `scripts/`),
+  because a closed profile is a lost half-finished application. `--close` opts in.
+
+### Running it
+
+```bash
+# 1. What does this form actually ask? Touches nothing, keeps the page open.
+npm run apply:fill -- --tenant <slug> --discover
+#    → prints every field label, its type and whether it is required
+
+# 2. Fill docs/chatterapply-profile.example.json from that output, then plan only:
+npm run apply:fill -- --tenant <slug> --profile ca.json --dry-run
+
+# 3. Drive it for real, stopping in front of the typing test / step 15:
+npm run apply:fill -- --tenant <slug> --profile ca.json
+```
+
+`--set key=value` overrides one value without editing the file; it is repeatable.
+
+Every run writes a transcript to `tmp_chatterapply/step.json`: per step, the heading, the fields, what it
+planned to fill, what it refused to fill and why, and the decision it took. `npm run test:chatterapply` =
+104 assertions against a fake iframe DOM covering all four label styles, the mapper, the stop policy, the
+submit guard, the fill read-back, and the whole walk including a Next that never moves the page.
+
   --only-missing        skip roles this tenant already has (do this by default)
   --no-descriptions     links only (much faster; bodies come from the job-page pass)
   --run-id <uuid>       report progress into browser_actor_runs for the portal

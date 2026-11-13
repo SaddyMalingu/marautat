@@ -1,0 +1,30 @@
+{
+  "_comment": [
+    "ChatterApply profile. Keys must be from PROFILE_FIELDS in utils/browserActor/tasks/chatterApply.js.",
+    "Leave a key out rather than guessing: a required field with no value stops the run and names the",
+    "label, which is safer than a plausible wrong answer the employer reads as the applicant's.",
+    "Find out which labels this form actually uses with:",
+    "  npm run apply:fill -- --tenant <slug> --discover",
+    "then copy the 'fields' it prints into the keys below."
+  ],
+  "firstName": "",
+  "lastName": "",
+  "email": "",
+  "phone": "",
+  "country": "",
+  "city": "",
+  "englishLevel": "",
+  "experience": "",
+  "availability": "",
+  "hoursPerWeek": "",
+  "shift": "",
+  "timezone": "",
+  "device": "",
+  "internet": "",
+  "languages": "",
+  "why": "",
+  "telegram": "",
+  "discord": "",
+  "referrer": "",
+  "expectedPay": ""
+}
