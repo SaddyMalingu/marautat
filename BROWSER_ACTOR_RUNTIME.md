@@ -669,6 +669,54 @@ So, in three rules the code now encodes:
 3. **The job body is client-rendered** — 48 KB of HTML, 57 characters of text, no JSON-LD.
    The description needs the browser, which is exactly what `CONTENT_EXTRACTORS.micro1` is.
 
+### Two saved copies of the same URL, and only one of them can mint a group link (2026-11-13)
+
+Both dumps are `refer.micro1.ai/opportunities` with the same `<title>`, and they are **not the same
+page**:
+
+| | cards | `input[type=checkbox]` | counter / action | can group? |
+|---|---|---|---|---|
+| builder (342 KB) | 48 `[data-testid="job-card"]` | **24** (`label > input.sr-only`) | "0 Roles selected", disabled "Select at least 2 roles" | yes |
+| listing (182 KB) | 24, same hook | **0** | none | no |
+
+So the selector is `[data-testid="job-card"]` (an explicit test hook — better than the `div.grid`
+shape probe, which is kept only as a fallback), and the reader reports which page it is on:
+`mode: 'builder'` or `mode: 'listing'`. A runner that finds `listing` must say so, because the
+"Refer and earn" button there copies **one role's** link and cannot produce a group link.
+
+Three things only the real HTML showed:
+
+- **48 cards, 27 unique titles.** The same role can appear twice, and only one copy has a
+  checkbox. Ticking the copy without one looks like a click and selects nothing, so
+  `parseAffiliateCards` collapses duplicates preferring the selectable copy, and selection
+  prefers a boxed card. Without this a "pair" could be one role twice — two roles counted, one
+  role referred.
+- **`Pay:` bleeds into the reward.** A flat read gives `$100 - $200/hourRefer and earn $500`, so
+  the value is cut at the reward line.
+- **The counter is nested across spans.** A flat read gives `0000 Roles selected`; it has to be
+  read from the element that holds the whole phrase.
+
+The link is *copied*, not rendered, so `installClipboardHookExpr` wraps
+`navigator.clipboard.writeText` and `document.execCommand('copy')` **before** the click and reads
+the value out of the page afterwards. `readGeneratedLinkExpr` prefers that trap and reports which
+strategy matched, so a change on their side shows up as a different strategy rather than a miss.
+
+`runReferralGroups` is the whole capture: clear → tick → verify (`input.checked` plus the page's own
+counter) → confirm → read. A group whose selections are **not** verified fails hard
+(`selection_not_verified`) instead of yielding a link, because an unverified link is exactly how
+months of single-role links produced zero attribution.
+
+```js
+const snapshot = await evaluate(readAffiliateExpr());                 // mode + cards
+const plan = planReferralGroups(parseAffiliateCards(snapshot).cards); // pairs by role family
+const run = await runReferralGroups({ evaluate, groups: plan.groups });
+// run.captures: [{ title, groupId, referralUrl, strategy, sharedWith }] — one URL on both roles
+```
+
+`npm run test:micro1` (78 assertions) runs these expressions against a simulated page built from
+the saved markup, and the planner is fed the **real** 27 titles offline: it plans 4 same-family
+pairs at $2,000 each and leaves nothing unpairable.
+
 ### Two bugs the live run found (both would have shipped wrong links)
 
 | Symptom | Cause | Fix |

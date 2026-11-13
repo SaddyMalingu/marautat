@@ -52,7 +52,15 @@ export const MICRO1_PLATFORM = Object.freeze({
    * finds it by *shape*: a `div.grid` with 3+ children, one of which is `grid-cols-3`.
    * A class-based selector would break on the next deploy and take the adapter with it.
    */
-  gridProbe: "Array.from(document.querySelectorAll('div.grid')).find((el) => /grid-cols-3/.test(typeof el.className === 'string' ? el.className : '') && el.children.length >= 3)",
+  /**
+   * The grid holding the cards.
+   *
+   * 2026-11-13: the live page now marks every card `data-testid="job-card"` (24 of them in the
+   * saved copy), which is an explicit test hook and therefore strictly better than a shape guess.
+   * The old shape probe — a `div.grid` with 3+ children, one of which is `grid-cols-3` — stays as
+   * the fallback, because the older build in the second saved copy has no `data-testid` at all.
+   */
+  gridProbe: "(() => { const card = document.querySelector('[data-testid=\"job-card\"]'); return (card && card.parentElement) || Array.from(document.querySelectorAll('div.grid')).find((el) => /grid-cols-3/.test(typeof el.className === 'string' ? el.className : '') && el.children.length >= 3); })()",
   /** The control that yields the share link, matched by its label rather than a class. */
   referButtonPattern: 'refer and earn',
   wait: { selector: '.animate-pulse', mode: 'absent', maxMs: 20000 }
