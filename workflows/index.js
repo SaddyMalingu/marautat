@@ -26,8 +26,12 @@
 import { createClient } from '@supabase/supabase-js';
 import { task } from '@renderinc/sdk/workflows';
 import { registerBlogWorkflow } from './blogWorkflow.js';
+import { requireSupabaseEnv } from '../utils/supabaseEnv.js';
 
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+// Same guard as scripts/blog_queue.mjs: a misconfigured service should say which variable is
+// wrong, not fail at the socket with "fetch failed" once a task run is already underway.
+const supabaseEnv = requireSupabaseEnv();
+const supabase = createClient(supabaseEnv.url, supabaseEnv.key);
 
 /** The queue reads the same two tables the portal does, so coverage is never guessed. */
 async function load() {

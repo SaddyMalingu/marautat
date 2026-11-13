@@ -36,15 +36,26 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: 'npm'
+      # No `cache: 'npm'` on purpose. It is an optimisation, and when it cannot resolve the
+      # lockfile it fails during setup — before any step of ours runs — which is a red run that
+      # says nothing about the commit. Every CI run in this repo failed in 3-4 s on 2026-11-12/13
+      # and the cause was not visible anywhere in the job log.
+      - name: Environment
+        run: |
+          node --version
+          npm --version
+          if [ -f package-lock.json ]; then echo "lockfile: present ($(wc -c < package-lock.json) bytes)"; else echo "lockfile: MISSING"; fi
+          echo "commit: $GITHUB_SHA"
       - name: Install
-        # npm install, not npm ci, on purpose: Render's build command is `npm install`,
-        # and its logs already show packages being added and removed against a lockfile
-        # that has drifted. `npm ci` would fail the gate for a reason that has nothing to
-        # do with the commit being tested — which is how a red gate stops being read.
-        run: npm install --no-audit --no-fund
+        # npm install, not npm ci, on purpose: Render's build command is `npm install`, and its
+        # logs already show packages being added and removed against a drifted lockfile. `npm ci`
+        # would fail the gate for a reason that has nothing to do with the commit being tested.
+        run: npm install --no-audit --no-fund --loglevel=error
       - name: server.js parses as an ES module
-        run: node --input-type=module --check < server.js
+        # `node --check server.js` is enough: package.json sets "type": "module", so Node parses
+        # it as ESM. The previous form (`--input-type=module --check < server.js`) depended on
+        # stdin behaviour that is not part of --check's contract.
+        run: node --check server.js
       - name: Digital Drops rules and routes
         run: node scripts/test_digital_drops.mjs
       - name: Digital Drops end to end

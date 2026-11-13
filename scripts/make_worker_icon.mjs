@@ -10,15 +10,29 @@ import fs from 'fs';
 import path from 'path';
 import { pngToIco, icoSummary, pngSize } from '../utils/browserActor/workerIcon.js';
 
+const argv = process.argv.slice(2);
+const fromFlag = (() => {
+  const at = argv.findIndex((a) => a === '--from' || a.startsWith('--from='));
+  if (at === -1) return null;
+  const token = argv[at];
+  if (token.includes('=')) return token.slice(token.indexOf('=') + 1);
+  return argv[at + 1] || null;
+})();
+
 const candidates = [
-  path.join(process.cwd(), 'public', 'brand-logo-new.png'),
+  // Produced by scripts/make_worker_icon.ps1 from the supplied artwork: already square and
+  // already 256, so nothing here has to guess at aspect ratios.
+  fromFlag,
+  path.join(process.cwd(), 'worker-bundle', 'Alphadome-256.png'),
   path.join(process.cwd(), 'public', 'favicon.png'),
-  path.join(process.cwd(), 'public', 'favicon.ico')
-];
+  path.join(process.cwd(), 'public', 'brand-logo-new.png')
+].filter(Boolean);
 
 const source = candidates.find((file) => fs.existsSync(file));
 if (!source) {
   console.error('No logo found. Looked for:\n  ' + candidates.join('\n  '));
+  console.error('\nProduce a square source first, on Windows:\n' +
+    '  powershell -NoProfile -ExecutionPolicy Bypass -File scripts\\make_worker_icon.ps1 -Source "<your logo.png>"');
   process.exit(2);
 }
 if (source.endsWith('.ico')) {

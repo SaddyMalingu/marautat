@@ -19,6 +19,7 @@
 import fs from 'fs';
 import path from 'path';
 import { planBlogQueue } from '../utils/blogQueue.js';
+import { requireSupabaseEnv } from '../utils/supabaseEnv.js';
 
 function arg(name, fallback) {
   const argv = process.argv.slice(2);
@@ -46,8 +47,11 @@ async function load() {
     const raw = JSON.parse(fs.readFileSync(path.resolve(String(from)), 'utf8').replace(/^\uFEFF/, ''));
     return { offers: raw.offers || [], posts: raw.posts || [], tenant: raw.tenant || null };
   }
+  // Checked before the client is built, so a misconfigured service says which variable is wrong
+  // instead of failing at the socket with "fetch failed" (2026-11-13, the Render cron job).
+  const { url, key } = requireSupabaseEnv();
   const { createClient } = await import('@supabase/supabase-js');
-  const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+  const sb = createClient(url, key);
   const tenantId = arg('tenant', process.env.BLOG_QUEUE_TENANT_ID || null);
   let offersQuery = sb.from('opportunities')
     .select('id, title, slug, status, referral_url, compensation_max, description, deleted_at, tenant_id, source:opportunity_sources(slug)')
@@ -63,7 +67,15 @@ async function load() {
       .in('opportunity_id', ids);
     // A host without `opportunity_id` on blog_posts cannot report coverage; that is
     // unknown, not "every offer is unwritten", so say so rather than queue everything.
-    if (postErr) throw new Error('reading blog_posts: ' + postErr.message + ' — coverage is unknown, refusing to plan');
+    if (postErr) {
+      throw new Error('reading blog_posts: ' + postErr.message +
+        ' — coverage is unknown, refusing to plan' +
+        // The schema-cache message means the table/column is missing, which is a migration
+        // problem; anything else here is the connection the guard above should have caught.
+        (/schema cache|does not exist/i.test(postErr.message)
+          ? ' (apply the migrations in migrations/ — blog_posts.opportunity_id is missing)'
+          : ' (the request reached Supabase and was refused, so the URL is right and the key or the network is not)'));
+    }
     posts = data || [];
   }
   return { offers: offers || [], posts, tenant: tenantId };
