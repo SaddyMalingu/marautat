@@ -41,7 +41,7 @@
     "test:go-redirect": "node scripts/test_go_redirect.mjs",
     "test:browser-actor": "node scripts/test_browser_actor_runtime.mjs",
     "test:writer-flow": "node scripts/test_writer_flow.mjs",
-    "test:micro1": "node scripts/test_micro1_adapter.mjs",
+    "test:micro1": "node scripts/test_micro1_referrals.mjs",
     "test:browser-access": "node scripts/test_tenant_browser_access.mjs",
     "test:listening": "node scripts/test_social_listening.mjs",
     "test:listener": "node scripts/test_social_listener.mjs",

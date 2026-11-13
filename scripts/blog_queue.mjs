@@ -20,6 +20,7 @@ import fs from 'fs';
 import path from 'path';
 import { planBlogQueue } from '../utils/blogQueue.js';
 import { requireSupabaseEnv } from '../utils/supabaseEnv.js';
+import { withCause } from '../utils/fetchCause.js';
 
 function arg(name, fallback) {
   const argv = process.argv.slice(2);
@@ -57,14 +58,18 @@ async function load() {
     .select('id, title, slug, status, referral_url, compensation_max, description, deleted_at, tenant_id, source:opportunity_sources(slug)')
     .is('deleted_at', null);
   if (tenantId) offersQuery = offersQuery.eq('tenant_id', tenantId);
-  const { data: offers, error } = await offersQuery;
+  // `withCause` matters here: supabase-js turns a transport failure into `TypeError: fetch failed`
+  // and hides the reason on `error.cause`. Without it a Render log says nothing at all, which is
+  // exactly what happened on 2026-11-13.
+  const { data: offers, error } = await withCause(() => offersQuery, 'reading offers');
   if (error) throw new Error('reading offers: ' + error.message);
   const ids = (offers || []).map((o) => o.id);
   let posts = [];
   if (ids.length) {
-    const { data, error: postErr } = await sb.from('blog_posts')
-      .select('opportunity_id, slug, status')
-      .in('opportunity_id', ids);
+    const { data, error: postErr } = await withCause(
+      () => sb.from('blog_posts').select('opportunity_id, slug, status').in('opportunity_id', ids),
+      'reading blog_posts'
+    );
     // A host without `opportunity_id` on blog_posts cannot report coverage; that is
     // unknown, not "every offer is unwritten", so say so rather than queue everything.
     if (postErr) {
