@@ -119,15 +119,25 @@ export async function resolveRunnerIdentity({ supabase, tenantSlug, env = proces
     if (hosted?.envId && String(hosted.envId) !== reported.envId) {
       console.error(`[runner-identity] tenant=${slug} worker reported profile ${reported.envId} but BROWSER_ACTOR_PROFILES maps ${hosted.envId}; hosted wins`);
     }
-    return { envId: reported.envId, runtime: 'local', apiKey: null, label: reported.label, source: 'worker' };
+    return {
+      envId: reported.envId,
+      runtime: 'local',
+      apiKey: null,
+      label: reported.label,
+      // 'tenant' when they typed the id into the portal, 'worker' when a machine discovered it.
+      // Same value either way; the distinction is for logs and support, and it is the honest
+      // record of who claimed this browser.
+      source: reported.origin === 'tenant' ? 'tenant-profile' : 'worker'
+    };
   }
 
   throw new BrowserActorError('profile_unmapped', `No browser is mapped to tenant "${slug}"`, {
     details: {
       tenant: slug,
-      // Three ways out, cheapest first. The middle one is the one a tenant can do alone,
-      // without a key and without an operator: start the worker, it reports the profile.
-      fix: 'Start the worker on the computer that has your MoreLogin profile (it reports the profile automatically), or connect your MoreLogin key in the portal under "Your own browser", or ask Alphadome to add the tenant to BROWSER_ACTOR_PROFILES'
+      // Cheapest first, and the first one needs no download, no key and no operator: paste the
+      // profile id into the portal. Everything else in this list is a fallback for tenants who
+      // already have a key or a CLI installed.
+      fix: 'Paste your MoreLogin profile ID into "Your own browser" in the portal (MoreLogin → the profile → its ID). Or start the worker on the computer that has the profile and it reports it automatically, or connect your MoreLogin key, or ask Alphadome to add the tenant to BROWSER_ACTOR_PROFILES'
     }
   });
 }

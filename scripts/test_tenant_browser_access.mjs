@@ -469,6 +469,45 @@ try { await resolveRunnerIdentity({ supabase: tenantDb(connectedMetadata), tenan
 eq('without the sealing key the run refuses rather than guessing', noSecret?.code, 'not_configured');
 
 // ---------------------------------------------------------------------------
+// A tenant names their own profile, so ml-cli is not a prerequisite (2026-11-07)
+// ---------------------------------------------------------------------------
+// Live failure this prevents: a fresh tenant PC has MoreLogin but not `ml-cli`, so the worker
+// cannot discover the profile, and the first capture dies with
+// `profile_unmapped → 409 agent_context_refused` before any browser opens. Typing the id into
+// the portal is the one step that needs no download, no key and no operator.
+{
+  const typed = writeWorkerBrowser({}, { envId: '2116562908359495680', label: 'Lifeline PC', origin: 'tenant' });
+  const readBack = readWorkerBrowser(typed);
+  eq('a tenant-typed profile is stored like a reported one', readBack.envId, '2116562908359495680');
+  eq('and is marked as theirs, not the worker\'s', readBack.origin, 'tenant');
+
+  const workerTyped = readWorkerBrowser(writeWorkerBrowser({}, { envId: '2116562908359495680' }));
+  eq('a profile the worker found keeps origin=worker', workerTyped.origin, 'worker');
+
+  let refusedMalformed = null;
+  try { writeWorkerBrowser({}, { envId: 'not-a-number', origin: 'tenant' }); } catch (error) { refusedMalformed = error; }
+  ok('a malformed id is refused before it reaches the database', Boolean(refusedMalformed));
+
+  // A run on that machine resolves it.
+  const onMachine = await resolveRunnerIdentity({
+    supabase: tenantDb(typed), tenantSlug: 'lifeline-inc', env: {}, workerRuns: true
+  });
+  eq('a run on the tenant\'s machine uses the profile they typed', onMachine.envId, '2116562908359495680');
+  eq('and says where it came from', onMachine.source, 'tenant-profile');
+  eq('carrying no key, because none was given', onMachine.apiKey, null);
+
+  // A run from the server must still refuse: a desktop profile is not reachable from Render.
+  let serverSide = null;
+  try {
+    await resolveRunnerIdentity({ supabase: tenantDb(typed), tenantSlug: 'lifeline-inc', env: {} });
+  } catch (error) { serverSide = error; }
+  eq('the server still refuses a desktop profile it cannot reach', serverSide?.code, 'profile_unmapped');
+  ok('and the refusal names the portal field as the fix',
+    /profile ID[\s\S]{0,40}Your own browser/i.test(String(serverSide?.details?.fix || '')),
+    serverSide?.details?.fix);
+}
+
+// ---------------------------------------------------------------------------
 // Rotating the sealing key without breaking every tenant
 // ---------------------------------------------------------------------------
 

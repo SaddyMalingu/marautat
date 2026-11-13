@@ -203,11 +203,15 @@ export function readWorkerBrowser(metadata) {
     // kept — it is not a credential and the tenant typed it themselves.
     label: raw.label ? String(raw.label).slice(0, 120) : null,
     machine: raw.machine ? String(raw.machine).slice(0, 120) : null,
-    reportedAt: raw.reportedAt || null
+    reportedAt: raw.reportedAt || null,
+    // Who put this here: the worker (discovered via ml-cli) or the tenant (typed into the
+    // portal because ml-cli was not installed). Same value, different support story — and
+    // without this the panel cannot tell the two apart.
+    origin: raw.origin === 'tenant' ? 'tenant' : 'worker'
   };
 }
 
-export function writeWorkerBrowser(metadata, { envId, label = null, machine = null, reportedAt = null } = {}) {
+export function writeWorkerBrowser(metadata, { envId, label = null, machine = null, reportedAt = null, origin = 'worker' } = {}) {
   const value = String(envId || '').trim();
   if (!isValidEnvId(value)) throw new Error('writeWorkerBrowser needs a decimal MoreLogin envId');
   const base = metadata && typeof metadata === 'object' ? { ...metadata } : {};
@@ -215,7 +219,8 @@ export function writeWorkerBrowser(metadata, { envId, label = null, machine = nu
     envId: value,
     label: label ? String(label).slice(0, 120) : null,
     machine: machine ? String(machine).slice(0, 120) : null,
-    reportedAt: reportedAt || new Date().toISOString()
+    reportedAt: reportedAt || new Date().toISOString(),
+    origin: origin === 'tenant' ? 'tenant' : 'worker'
   };
   return base;
 }

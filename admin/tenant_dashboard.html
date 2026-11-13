@@ -2070,6 +2070,21 @@ function wfAccessHtml(d) {
                  placeholder="MoreLogin API key" style="max-width:280px" ${d.canStore ? '' : 'disabled'}>
            <button class="btn btn-info btn-sm" data-wfact="connect" ${d.canStore ? '' : 'disabled'}>Connect</button>`}
     </div>
+    ${!d.connected && !d.workerBrowser
+      ? `<div style="margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,.08)">
+           <div class="text-muted" style="font-size:.74rem">
+             <strong>No MoreLogin key, and no ml-cli on this computer?</strong>
+             That is the usual case on a fresh machine. Open MoreLogin, find the profile you sign in
+             with, and copy its <strong>ID</strong> — then paste it here. Nothing is installed and
+             nothing is shared.
+           </div>
+           <div class="d-flex gap-2 flex-wrap mt-1 align-items-end">
+             <input class="form-control form-control-sm" id="wfProfileId" inputmode="numeric" autocomplete="off"
+                    placeholder="MoreLogin profile ID, e.g. 1234567" style="max-width:280px">
+             <button class="btn btn-outline-info btn-sm" data-wfact="profile">Use this profile</button>
+           </div>
+         </div>`
+      : ''}
     ${d.workerBrowser
       ? `<div style="color:#22c55e;font-size:.76rem;margin-top:6px">
            Using the browser your worker found on this computer${d.workerBrowser.label ? `: <strong>${esc(d.workerBrowser.label)}</strong>` : ''}
@@ -2338,6 +2353,41 @@ async function wfDisconnectAccess(btn) {
   await wfLoadAccess();
 }
 
+/**
+ * Save the tenant's MoreLogin profile id (2026-11-07).
+ *
+ * The worker can discover this from `ml-cli env list` — but ml-cli is a separate download that a
+ * fresh tenant PC does not have, and without a profile the run is refused with
+ * `profile_unmapped`. Typing the id is something anyone can do from the MoreLogin window, so it
+ * is offered here explicitly rather than left as a `--env-id` flag in a terminal.
+ */
+async function wfSaveProfileId(btn) {
+  const input = document.getElementById('wfProfileId');
+  const raw = String(input?.value || '').trim();
+  if (!raw) { toast('Paste your MoreLogin profile ID first', 'err'); input?.focus(); return; }
+  if (!/^\d{3,}$/.test(raw)) {
+    // Checked here as well as on the server: a typo caught before the round trip is one more
+    // thing the tenant does not have to interpret.
+    toast('That should be a number, like 1234567 — copy it from the MoreLogin profile', 'err');
+    input?.focus();
+    return;
+  }
+  btn.disabled = true;
+  const r = await apiJson('/tenant/blogger/browser-access/profile', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ envId: raw })
+  });
+  btn.disabled = false;
+  if (!r.ok) {
+    toast(r.data?.error || 'Could not save that profile', 'err');
+    return;
+  }
+  toast('Saved — press Capture now and the run will use this profile', 'ok');
+  if (input) input.value = '';
+  await wfLoadAccess();
+}
+
 function wfWireAccess() {
   const panel = document.getElementById('wfAccess');
   if (!panel) return;
@@ -2347,6 +2397,9 @@ function wfWireAccess() {
     const act = btn.dataset.wfact;
     if (act === 'connect') wfConnectAccess(btn);
     else if (act === 'connect-chosen') wfConnectChosen(btn);
+    // Naming the profile instead of installing ml-cli: the one step a tenant can always do
+    // (2026-11-07). See POST /tenant/blogger/browser-access/profile.
+    else if (act === 'profile') wfSaveProfileId(btn);
     else if (act === 'verify') wfVerifyAccess(btn);
     else if (act === 'capture') wfCaptureNow(btn);
     else if (act === 'worker-create') wfCreateWorker(btn);

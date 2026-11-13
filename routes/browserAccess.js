@@ -36,10 +36,11 @@ import {
   resolveAccessIdentity,
   sealSecretWithEnv,
   secretsConfigured,
-  writeAccess
+  writeAccess,
+  writeWorkerBrowser
 } from '../utils/tenantAccess.js';
 import { summarizeSignedIn } from '../utils/browserActor/signedIn.js';
-import { parseProfileMap } from '../utils/browserActor/identity.js';
+import { isValidEnvId, maskEnvId, parseProfileMap } from '../utils/browserActor/identity.js';
 import { redact } from '../utils/browserActor/moreloginClient.js';
 import { canQueue, createRunStore, isActiveStatus, isExpiredQueue, isStalled, runPlatform, MICRO1_RUN_KIND } from '../utils/browserActor/runs.js';
 import { createAgentTokenStore, describeAgentToken } from '../utils/browserActor/agentTokens.js';
@@ -139,6 +140,87 @@ export function createBrowserAccessRouter({
     }
   });
 
+
+  /**
+   * POST /tenant/blogger/browser-access/profile — the tenant names their own profile.
+   *
+   * This is the step that removes `ml-cli` from onboarding (2026-11-07). Before it, the only
+   * ways to tell the server which MoreLogin profile a tenant owns were: install MoreLogin's
+   * command-line tool so the worker could discover it, paste a MoreLogin API key, or ask us to
+   * add them to `BROWSER_ACTOR_PROFILES`. On a fresh tenant PC the first is a separate download
+   * the tenant does not have, and the whole capture then fails with
+   * `profile_unmapped → 409 agent_context_refused` — a wall between a paid pilot and its first run.
+   *
+   * A profile **id** is not a credential: it names a browser, and the browser is only reachable
+   * from the machine running it. So it is stored beside the worker-reported profile
+   * (`metadata.workerBrowser`) with `origin: 'tenant'`, which the resolver already reads for
+   * runs on that machine — no key, nothing sealed, and `BROWSER_ACTOR_PROFILES` still wins for
+   * tenants we host ourselves.
+   *
+   * Deliberately separate from `/connect`: that route stores a *key* and can therefore drive a
+   * cloud profile from the server. This one stores an id and can only ever name the tenant's own
+   * desktop profile.
+   */
+  router.post('/tenant/blogger/browser-access/profile', tenantSessionAuth, async (req, res) => {
+    try {
+      const ctx = await tenantSiteFromSession(req);
+      if (!ctx) return fail(res, 404, 'Tenant not found');
+
+      const envId = String(req.body?.envId || '').trim();
+      if (!envId) {
+        return fail(res, 400, 'Paste your MoreLogin profile ID', {
+          hint: 'MoreLogin → the profile you sign in with → its ID (a number). It is not a password.'
+        });
+      }
+      if (!isValidEnvId(envId)) {
+        return fail(res, 400, 'That does not look like a MoreLogin profile ID', {
+          hint: 'It is a number, e.g. 1234567. In MoreLogin it is shown on the profile as "ID" / "Env ID".'
+        });
+      }
+
+      // A keyed connection is a stronger claim than a typed id, and it may point at a different
+      // profile. Overwriting it here would silently move a working tenant onto another browser.
+      const existing = readAccess(ctx.site.metadata);
+      if (existing && existing.envId && existing.envId !== envId) {
+        return fail(res, 409, 'This account is already connected with a MoreLogin key to a different profile', {
+          hint: 'Press Disconnect first if you want the worker to use this computer instead.',
+          currentProfileMasked: maskEnvId(existing.envId),
+          requestedProfileMasked: maskEnvId(envId)
+        });
+      }
+
+      const label = req.body?.label ? String(req.body.label).slice(0, 120) : null;
+      const metadata = writeWorkerBrowser(ctx.site.metadata, { envId, label, origin: 'tenant' });
+
+      const { error } = await supabase
+        .from('site_tenants')
+        .update({ metadata })
+        .eq('id', ctx.site.id);
+      if (error) throw error;
+
+      res.json({
+        ok: true,
+        profile: { envIdMasked: maskEnvId(envId), label, origin: 'tenant' },
+        next: 'Press Capture now. The run will use this profile on your computer.'
+      });
+    } catch (err) {
+      fail(res, 500, err.message);
+    }
+  });
+
+  /** DELETE — forget the typed profile, so the worker's own discovery takes over again. */
+  router.delete('/tenant/blogger/browser-access/profile', tenantSessionAuth, async (req, res) => {
+    try {
+      const ctx = await tenantSiteFromSession(req);
+      if (!ctx) return fail(res, 404, 'Tenant not found');
+      const metadata = clearWorkerBrowser(ctx.site.metadata);
+      const { error } = await supabase.from('site_tenants').update({ metadata }).eq('id', ctx.site.id);
+      if (error) throw error;
+      res.json({ ok: true, cleared: true });
+    } catch (err) {
+      fail(res, 500, err.message);
+    }
+  });
 
   router.post('/tenant/blogger/browser-access/connect', tenantSessionAuth, async (req, res) => {
     try {
