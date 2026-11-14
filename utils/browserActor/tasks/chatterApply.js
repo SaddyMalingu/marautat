@@ -814,6 +814,15 @@ export function decideStep({ snapshot = {}, plan = null, screen = null, stepNumb
     return { action: 'fill', reason: 'fields_to_fill', step: stepNumber, values: plan.values };
   }
 
+  // A multiple-choice answer rendered as buttons. Only when the page is still blocking: if Next is
+  // already enabled the question is answered or optional, and clicking again could toggle it off.
+  const nextReady = (snapshot.buttons || []).some(
+    (b) => !b.disabled && CHATTER_APPLY.buttons.next.some((word) => b.label.toLowerCase().includes(word))
+  );
+  if (plan?.choices?.length && !nextReady) {
+    return { action: 'choose', reason: 'multiple_choice', step: stepNumber, choices: plan.choices };
+  }
+
   // The typing test, when the tenant has claimed it: type the passage, then let the page score it.
   if (screen?.questions?.some((q) => q.type === 'typing_test') && includeTyping) {
     return { action: 'typing_test', reason: 'typing_claimed', step: stepNumber };
@@ -822,6 +831,32 @@ export function decideStep({ snapshot = {}, plan = null, screen = null, stepNumb
   const next = (snapshot.buttons || []).find(
     (b) => !b.disabled && CHATTER_APPLY.buttons.next.some((word) => b.label.toLowerCase().includes(word))
   );
+
+  /**
+   * Never advance a screen we could not read (2026-11-14).
+   *
+   * The first live run reached an unrecognised screen, read zero fields, found an enabled Next and pressed
+   * it — seven times — skipping the applicant's name, contact details and experience. A screen with no
+   * fields, no choices, no uploads and no known info step is either unknown or not rendered yet, and the
+   * only safe action is to stop and show what is on it.
+   */
+  const readNothing = !(snapshot.fields || []).length
+    && !plan?.values?.length
+    && !plan?.choices?.length
+    && !plan?.uploads?.length;
+  const knownInfo = Boolean(screen && (screen.questions || []).length
+    && (screen.questions || []).every((q) => ['info', 'mcq', 'speed_test', 'typing_test', 'english_test', 'voice', 'proof_of_work'].includes(q.type)));
+  if (readNothing && !screen && next) {
+    return {
+      action: 'stop',
+      reason: 'unrecognised_screen',
+      step: stepNumber,
+      heading: (snapshot.headings || [])[0] || null,
+      buttons: (snapshot.buttons || []).map((b) => b.label),
+      detail: 'Nothing on this screen could be read, so filling it or advancing past it would be a guess.'
+    };
+  }
+
   if (next) return { action: 'advance', reason: 'ready_for_next', step: stepNumber, button: next.label };
   return { action: 'stuck', reason: 'no_next_button', step: stepNumber, buttons: (snapshot.buttons || []).map((b) => b.label) };
 }
@@ -859,6 +894,10 @@ export async function runApplication({ evaluate, attachFile = null, profile = {}
   const steps = [];
   // A screen is read more than once, so an upload must be remembered by what it was, not by "did we".
   const attached = new Set();
+  // Nothing may be repeated indefinitely: earlier, a click that never took looped seven times over the
+  // same option. Three identical attempts on the same step is a bug or a page we cannot drive, not a retry.
+  let lastSignature = null;
+  let repeatCount = 0;
   const note = (entry) => { transcript.push(entry); log(entry); return entry; };
 
   for (let index = 0; index < maxSteps; index += 1) {
@@ -871,8 +910,16 @@ export async function runApplication({ evaluate, attachFile = null, profile = {}
     // Which screen this is, by the app's own title and question ids — never by a counter, because the
     // tenant's "step 12" and the app's twelfth screen are not the same thing.
     const screen = screenFor(snapshot);
-    const stepNumber = snapshot.step || (steps.length ? steps.length + 1 : null);
+    // The page's own "Step 14 of 21" is the identity when it offers one; a derived counter is not, because
+    // it increments on every read and turns one screen into twelve.
+    const stepNumber = snapshot.step ?? null;
+    const stepKey = stepNumber != null
+      ? `step:${stepNumber}`
+      : (screen?.id ? `screen:${screen.id}` : `view:${(snapshot.headings || [])[0] || 'unknown'}`);
     const plan = planScreenValues({ screen, fields: snapshot.fields || [], profile, includeTyping: policy.includeTyping });
+    // A screen's multiple-choice questions may be buttons rather than inputs, so they are planned here
+    // and travel with the plan into the decision.
+    plan.choices = planChoices({ screen, buttons: snapshot.buttons || [], profile }).choices;
     // Drop files this run has already attached to this screen, so a re-read advances instead of
     // attaching the same photo again.
     if (plan.uploads?.length) {
@@ -901,7 +948,7 @@ export async function runApplication({ evaluate, attachFile = null, profile = {}
       unmapped: plan.unmapped,
       attempts: 1
     };
-    const existing = steps.find((s) => s.step !== null && s.step === stepNumber);
+    const existing = steps.find((s) => s.key === stepKey);
     if (existing) {
       existing.attempts += 1;
       existing.fields = record.fields;
@@ -912,7 +959,7 @@ export async function runApplication({ evaluate, attachFile = null, profile = {}
       if (!existing.unresolved.length && record.unresolved.length) existing.unresolved = record.unresolved;
       existing.unmapped = record.unmapped.length ? record.unmapped : existing.unmapped;
     } else {
-      steps.push(record);
+      steps.push({ ...record, key: stepKey });
     }
 
     const decision = decideStep({ snapshot, plan, screen, stepNumber, options: policy });
@@ -931,6 +978,23 @@ export async function runApplication({ evaluate, attachFile = null, profile = {}
     if (decision.action === 'handoff') {
       // The caller must leave the browser exactly as it is.
       return { ok: true, handoff: true, step: stepNumber, reason: decision.reason, keepOpen: true, transcript, steps };
+    }
+
+    // The loop breaker: same step, same action, three times running.
+    const signature = `${stepKey}|${decision.action}`;
+    repeatCount = signature === lastSignature ? repeatCount + 1 : 1;
+    lastSignature = signature;
+    if (repeatCount >= 3) {
+      note({ event: 'no-progress', step: stepNumber, action: decision.action, repeats: repeatCount });
+      return {
+        ok: false,
+        step: stepNumber,
+        reason: 'no_progress',
+        detail: decision,
+        keepOpen: true,
+        transcript,
+        steps
+      };
     }
     if (decision.action === 'needs_values') {
       return {
@@ -966,6 +1030,29 @@ export async function runApplication({ evaluate, attachFile = null, profile = {}
           transcript,
           steps
         };
+      }
+      await new Promise((r) => setTimeout(r, settleMs));
+      continue;
+    }
+
+    if (decision.action === 'choose') {
+      // Click each option, then confirm the page stopped blocking. A click that a re-render swallowed
+      // leaves Next disabled, and that must surface here rather than as a stuck screen three reads later.
+      const picked = [];
+      for (const choice of decision.choices) {
+        const result = await evaluate(chooseOptionExpr({ option: choice.option, question: choice.question }));
+        picked.push({ ...choice, ok: Boolean(result?.ok), label: result?.label || null, reason: result?.reason || null });
+      }
+      note({
+        event: 'choose',
+        step: stepNumber,
+        picked: picked.filter((p) => p.ok).length,
+        total: picked.length,
+        options: picked.map((p) => p.option)
+      });
+      const missed = picked.filter((p) => !p.ok);
+      if (missed.length) {
+        return { ok: false, step: stepNumber, reason: 'choice_failed', failures: missed, keepOpen: true, transcript, steps };
       }
       await new Promise((r) => setTimeout(r, settleMs));
       continue;
@@ -1289,6 +1376,119 @@ export function typeAtWpmExpr({ text = '', wpm = 70, jitterMs = 12 } = {}) {
     effectiveWpm: elapsedMs ? Math.round((typed / 5) / (elapsedMs / 60000)) : null,
     target: { tag: target.tagName.toLowerCase(), name: target.getAttribute('name') || '' }
   });
+})()`;
+}
+
+
+/**
+ * Multiple-choice questions render as **buttons**, not radios (2026-11-14).
+ *
+ * The first live run reached the age screen and stopped there: `A Yes`, `B No`, `← Previous`, `Next →`,
+ * zero `<input>` elements, and `Next →` disabled until an answer is picked. So an MCQ answer has to be
+ * *clicked*, and `A Yes` / `1. Yes` / `Yes` are the same option to us.
+ *
+ * This is the only place this module guesses at a label, so it is narrow: strip a leading option marker,
+ * compare case-insensitively, exact match first and a prefix only when nothing matched exactly.
+ */
+/** Lowercase, collapse whitespace. The neutral form two labels are compared in. */
+export function normaliseOptionLabel(label) {
+  return String(label || '').replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+/**
+ * Does this button offer that option?
+ *
+ * The question's own option list is the authority — `Yes` — while the control may decorate it as
+ * `A Yes`, `1. Yes`, `Yes ✓` or `Yes (recommended)`. So the comparison strips a leading marker and any
+ * punctuation, but only to reach the *known* option, never to invent one. That is why this takes the
+ * option as an argument instead of normalising labels in the abstract.
+ */
+export function buttonOffersOption(buttonLabel, option) {
+  const button = normaliseOptionLabel(buttonLabel);
+  const wanted = normaliseOptionLabel(option);
+  if (!button || !wanted) return false;
+  if (button === wanted) return true;
+  // "A Yes" / "1. Yes" / "a) Yes" — a marker in front of the option itself.
+  if (button.replace(/^(?:[a-z]|\d{1,2})\s*[.)\]:-]?\s+/, '') === wanted) return true;
+  // Decoration after it: "Yes ✓", "Yes (recommended)".
+  const plain = (value) => value.replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+  return plain(button) === plain(wanted);
+}
+
+/**
+ * Which multiple-choice questions can be answered from the profile right now.
+ *
+ * A required MCQ with no answer is left to `planScreenValues` to report as unresolved — this speaks only
+ * for the ones where the profile has an answer and a matching control exists.
+ */
+export function planChoices({ screen = null, buttons = [], profile = {} } = {}) {
+  const choices = [];
+  const notOffered = [];
+  for (const question of screen?.questions || []) {
+    if (question.type !== 'mcq' || !Array.isArray(question.options) || !question.options.length) continue;
+    const raw = profile[question.id];
+    if (raw === undefined || raw === null || String(raw).trim() === '') continue;
+
+    // The profile value has to be one of the offered options; a typo must not become an answer.
+    const option = question.options.find((o) => normaliseOptionLabel(o) === normaliseOptionLabel(raw));
+    if (!option) {
+      notOffered.push({ question: question.id, label: question.label, options: question.options, wanted: String(raw), reason: 'not_an_option' });
+      continue;
+    }
+    const button = (buttons || []).find((b) => !b.disabled && buttonOffersOption(b.label, option));
+    if (!button) {
+      notOffered.push({ question: question.id, label: question.label, options: question.options, wanted: option, reason: 'no_matching_control' });
+      continue;
+    }
+    choices.push({ question: question.id, label: question.label, option, buttonLabel: button.label });
+  }
+  return { choices, notOffered };
+}
+
+/** Click the option a question asks for. */
+export function chooseOptionExpr({ option = '', question = '' } = {}) {
+  return `(() => {
+  const clean = (v) => String(v == null ? '' : v).replace(/\\s+/g, ' ').trim();
+  const normalise = (v) => clean(v).toLowerCase();
+  const stripMarker = (v) => v.replace(/^(?:[a-z]|\\d{1,2})\\s*[.)\\]:-]?\\s+/, '');
+  const plain = (v) => v.replace(/[^a-z0-9 ]/g, ' ').replace(/\\s+/g, ' ').trim();
+  ${FORM_ROOT}
+  const found = findFormDocument();
+  if (!found.doc) return JSON.stringify({ ok: false, reason: 'cross_origin_frame' });
+  const doc = found.doc;
+  const wanted = normalise(${JSON.stringify(String(option || ''))});
+  const question = ${JSON.stringify(String(question || ''))};
+
+  const visible = (el) => {
+    const rect = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+    return Boolean(rect && (rect.width > 0 || rect.height > 0));
+  };
+  const candidates = Array.from(doc.querySelectorAll('button, [role="button"], [role="radio"], label'))
+    .filter(visible)
+    .map((el) => ({ el, label: clean(el.innerText || el.textContent) }))
+    .filter((row) => row.label && row.label.length <= 60);
+
+  // Same rule as buttonOffersOption(): the option list is the authority, the control may decorate it.
+  const offers = (label) => {
+    const value = normalise(label);
+    return value === wanted || stripMarker(value) === wanted || plain(value) === plain(wanted);
+  };
+  const match = candidates.find((row) => normalise(row.label) === wanted)
+    || candidates.find((row) => offers(row.label));
+  if (!match) {
+    return JSON.stringify({
+      ok: false,
+      reason: 'option_not_found',
+      wanted,
+      available: candidates.map((row) => row.label).slice(0, 12)
+    });
+  }
+  if (match.el.disabled === true || match.el.getAttribute('aria-disabled') === 'true') {
+    return JSON.stringify({ ok: false, reason: 'option_disabled', label: match.label });
+  }
+  try { match.el.scrollIntoView({ block: 'center' }); } catch (e) {}
+  match.el.click();
+  return JSON.stringify({ ok: true, label: match.label, question });
 })()`;
 }
 

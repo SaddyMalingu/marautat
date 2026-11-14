@@ -213,18 +213,56 @@ async function attachFile({ host, port, upload }) {
   }
 }
 
-/** Wait until the form document is readable — the frame loads after the shell does. */
-async function waitForForm({ host, port, maxMs = 30_000 }) {
+/**
+ * Wait until the form has actually **rendered**, not merely until a frame exists.
+ *
+ * The first live run (2026-11-14) proved the frame is same-origin and readable — and returned an empty
+ * snapshot, because the iframe's document had a `<body>` but the React app had not mounted yet. "A frame
+ * with a body" is not "a form", so readiness now requires content: fields, headings, or real text.
+ */
+function formRendered(snapshot) {
+  if (!snapshot?.ok) return false;
+  const fields = (snapshot.fields || []).length;
+  const headings = (snapshot.headings || []).length;
+  const text = String(snapshot.text || '').trim().length;
+  return fields > 0 || headings > 0 || text > 20;
+}
+
+/** What the top document's frames look like, for when nothing renders. */
+const FRAME_DIAGNOSTIC_EXPR = `(() => {
+  const clean = (v) => String(v == null ? '' : v).replace(/\\s+/g, ' ').trim();
+  return JSON.stringify({
+    readyState: document.readyState,
+    title: clean(document.title),
+    topText: clean(document.body ? document.body.innerText : '').slice(0, 160),
+    frames: Array.from(document.querySelectorAll('iframe')).map((frame) => {
+      let readable = false;
+      let bodyChars = 0;
+      let title = null;
+      try {
+        const doc = frame.contentDocument;
+        readable = Boolean(doc);
+        bodyChars = doc && doc.body ? String(doc.body.innerText || '').length : 0;
+        title = doc ? doc.title : null;
+      } catch (error) {
+        readable = false;
+      }
+      return { src: String(frame.getAttribute('src') || ''), readable, bodyChars, title };
+    })
+  });
+})()`;
+
+async function waitForForm({ host, port, maxMs = 45_000 }) {
   const startedAt = Date.now();
   let last = null;
   while (Date.now() - startedAt < maxMs) {
     last = await evaluateJson({ host, port, expression: readStepExpr({ includeValues: false }) });
-    if (last?.ok) return { ok: true, waitedMs: Date.now() - startedAt, snapshot: last };
-    // A cross-origin frame will never become readable by waiting: stop early and say why.
+    // Cross-origin will never become readable by waiting: stop at once and say why.
     if (last?.reason === 'cross_origin_frame') return { ok: false, reason: 'cross_origin_frame', snapshot: last };
+    if (formRendered(last)) return { ok: true, waitedMs: Date.now() - startedAt, snapshot: last };
     await new Promise((r) => setTimeout(r, 750));
   }
-  return { ok: false, reason: last?.reason || 'timeout', snapshot: last };
+  return { ok: false, reason: 'form_rendered_nothing', waitedMs: Date.now() - startedAt, snapshot: last };
 }
 
 function writeJson(file, payload) {
@@ -323,11 +361,16 @@ async function main() {
 
     const ready = await waitForForm(connection);
     if (!ready.ok) {
+      // Say what the frames actually look like: "rendered nothing" is not actionable on its own.
+      let diagnostic = null;
+      try { diagnostic = await evaluateJson({ ...connection, expression: FRAME_DIAGNOSTIC_EXPR }); } catch { /* best effort */ }
       outcome = {
         ok: false,
         reason: ready.reason,
+        waitedMs: ready.waitedMs ?? null,
         detail: ready.snapshot?.detail || null,
         frameSrc: ready.snapshot?.frameSrc || null,
+        diagnostic,
         keepOpen: true
       };
       leaveOpen = true;
@@ -335,7 +378,7 @@ async function main() {
       console.log(JSON.stringify({ ...outcome, out: outPath }, null, 2));
       return;
     }
-    console.error(`form readable after ${ready.waitedMs}ms (mode=${ready.snapshot.mode || 'n/a'})`);
+    console.error(`form rendered after ${ready.waitedMs}ms (mode=${ready.snapshot.mode || 'n/a'})`);
 
     if (discover) {
       writeJson(outPath, { when: new Date().toISOString(), url: targetUrl, snapshot: ready.snapshot });
@@ -365,9 +408,12 @@ async function main() {
         typingWpm
       },
       log: (entry) => console.error(
-        `  ${entry.event}${entry.step ? ` step ${entry.step}` : ''}`
+        `  ${entry.event}${entry.step ? ` step ${entry.step}` : ''}${entry.screen ? ` [${entry.screen}]` : ''}`
         + ` — ${entry.action || entry.reason || ''}`
+        + `${entry.button ? ` "${entry.button}"` : ''}`
         + `${entry.applied ? ` (+${entry.applied})` : ''}`
+        + `${entry.picked ? ` (${entry.picked}/${entry.total} chosen)` : ''}`
+        + `${entry.attached ? ` (${entry.attached}/${entry.total} attached)` : ''}`
         + `${entry.moved === false ? ' (did not move)' : ''}`
       )
     });

@@ -14,6 +14,8 @@ import {
   FUNNEL,
   HUMAN_ONLY_TYPES,
   STOP_SCREEN,
+  chooseOptionExpr,
+  buttonOffersOption,
   describeOutcome,
   decideStep,
   fileInputExpr,
@@ -22,6 +24,8 @@ import {
   humanOnlyReason,
   matchFieldKey,
   normaliseLabel,
+  normaliseOptionLabel,
+  planChoices,
   planScreenValues,
   planStepValues,
   readStepExpr,
@@ -118,6 +122,8 @@ function makeFormDoc({ step = 1, total = 15, fields = [], buttons = [], headings
     querySelectorAll(sel) {
       if (sel === 'input, select, textarea') return this.fields;
       if (sel === 'button, [role="button"], input[type="submit"]') return this.visibleButtons();
+      // The option clicker asks for this wider set, because choices are sometimes labels or radios.
+      if (sel === 'button, [role="button"], [role="radio"], label') return this.visibleButtons();
       if (sel === 'h1, h2, h3, legend') return headings.map((h) => ({ innerText: h, textContent: h }));
       if (sel === '[aria-invalid="true"], [role="alert"]') return this.alerts;
       return [];
@@ -535,11 +541,16 @@ function makeScriptedScreens(specs) {
         build();
       }
     };
+    // A spec that lists its own buttons keeps them — their disabled state is the whole point of the
+    // guard tests — and otherwise the page gets one Next.
+    const buttons = spec.buttons
+      ? spec.buttons.map((b) => ({ ...b, onClick: b.onClick || next.onClick }))
+      : [next];
     doc = makeFormDoc({
       step: spec.step,
       total: 11,
       fields: (spec.fields || []).map((f) => f),
-      buttons: [next],
+      buttons,
       headings: spec.headings || [],
       text: spec.text || ''
     });
@@ -656,6 +667,143 @@ const WALK_PROFILE = {
 
 eq('the platform advertises no submit capability', CHATTER_APPLY.capabilities.includes('submit'), false);
 eq('fill is allowed', CHATTER_APPLY.capabilities.includes('fill'), true);
+
+
+// ─── Multiple choice is clicked, not filled (found by the first live run) ─────────────────────
+{
+  // The live age screen rendered: "A Yes" · "B No" · "← Previous" · "Next →", zero inputs,
+  // and Next disabled until an answer was picked.
+  eq('a label normalises to itself', normaliseOptionLabel('A Yes'), 'a yes');
+  eq('the marker is stripped to reach the option', normaliseOptionLabel('A Yes').replace(/^(?:[a-z]|\d{1,2})\s*[.)\]:-]?\s+/, ''), 'yes');
+  eq('a numbered marker too', normaliseOptionLabel('1. No').replace(/^(?:[a-z]|\d{1,2})\s*[.)\]:-]?\s+/, ''), 'no');
+  eq('a bare option is untouched', normaliseOptionLabel(' Yes '), 'yes');
+
+  eq('"A Yes" offers "Yes"', buttonOffersOption('A Yes', 'Yes'), true);
+  eq('"B No" offers "No"', buttonOffersOption('B No', 'No'), true);
+  eq('"A Yes" does not offer "No"', buttonOffersOption('A Yes', 'No'), false);
+  eq('decoration does not break it', buttonOffersOption('Yes ✓', 'Yes'), true);
+  eq('a longer label is not a different option', buttonOffersOption('Not sure', 'No'), false);
+}
+
+{
+  const age = FUNNEL.find((s) => s.id === 'age_verification');
+  const blocked = [{ label: 'A Yes' }, { label: 'B No' }, { label: 'Next →', disabled: true }];
+  const plan = planChoices({ screen: age, buttons: blocked, profile: { ageCheck: 'Yes' } });
+  eq('the answer maps to the option button', plan.choices.length, 1);
+  eq('and names the button', plan.choices[0].buttonLabel, 'A Yes');
+  eq('keyed to the question', plan.choices[0].question, 'ageCheck');
+
+  // The profile value must be one of the offered options.
+  const typo = planChoices({ screen: age, buttons: blocked, profile: { ageCheck: 'Yeah' } });
+  eq('an answer that is not an option is refused', typo.choices.length, 0);
+  eq('and reported', typo.notOffered[0].reason, 'not_an_option');
+
+  // No control for it: say so rather than clicking something else.
+  const missing = planChoices({ screen: age, buttons: [{ label: 'A Maybe' }], profile: { ageCheck: 'Yes' } });
+  eq('a question with no matching control is reported', missing.notOffered[0].reason, 'no_matching_control');
+  eq('and no choice is invented', missing.choices.length, 0);
+}
+
+{
+  const age = FUNNEL.find((s) => s.id === 'age_verification');
+  const base = { ok: true, fields: [], measurements: {} };
+  const plan = { values: [], unresolved: [], uploads: [], choices: [{ question: 'ageCheck', option: 'Yes' }] };
+
+  eq('a pending choice on a blocked screen is chosen',
+    decideStep({ snapshot: { ...base, buttons: [{ label: 'A Yes' }, { label: 'Next →', disabled: true }] }, screen: age, plan }).action,
+    'choose');
+  eq('but an already-answered screen advances instead',
+    decideStep({ snapshot: { ...base, buttons: [{ label: 'A Yes' }, { label: 'Next →' }] }, screen: age, plan }).action,
+    'advance');
+  eq('with no pending choice it advances',
+    decideStep({ snapshot: { ...base, buttons: [{ label: 'Next →' }] }, screen: age, plan: { ...plan, choices: [] } }).action,
+    'advance');
+}
+
+{
+  // Clicking the option: exact label wins over a prefix, and the click is one call.
+  const clicks = [];
+  const buttons = [
+    { label: 'A Yes', clicks: 0 },
+    { label: 'B No', clicks: 0 }
+  ];
+  const doc = makeFormDoc({ fields: [], buttons: buttons.map((b) => ({ ...b, onClick: () => { b.clicks += 1; clicks.push(b.label); } })) });
+  const page = makePage(doc);
+
+  const picked = await evaluateOn(page, chooseOptionExpr({ option: 'Yes', question: 'ageCheck' }));
+  eq('the option is clicked', picked.ok, true);
+  eq('and the button that was clicked is named', picked.label, 'A Yes');
+  eq('exactly one click', clicks.length, 1);
+
+  const missing = await evaluateOn(page, chooseOptionExpr({ option: 'Maybe' }));
+  eq('an option that is not there is refused', missing.ok, false);
+  ok('with the options it did see', (missing.available || []).includes('A Yes'), missing.available);
+}
+
+
+// ─── The guards the first live run proved were missing (2026-11-14) ──────────────────────────
+{
+  // A screen nothing could be read from must stop, not be advanced. On the live form this pressed Next
+  // through the applicant's name, contacts and experience while reporting success.
+  const blind = { ok: true, headings: ['→Some screen'], fields: [], buttons: [{ label: 'Next →' }], measurements: {} };
+  const plan = { values: [], unresolved: [], uploads: [], choices: [] };
+  const decision = decideStep({ snapshot: blind, screen: null, plan });
+  eq('an unreadable screen stops', decision.action, 'stop');
+  eq('with its own reason', decision.reason, 'unrecognised_screen');
+  ok('and says what it saw', /Nothing on this screen/.test(decision.detail), decision.detail);
+
+  // A known info screen may still be advanced with nothing on it.
+  const welcome = FUNNEL.find((s) => s.id === 'welcome');
+  const info = { ok: true, headings: ['Apply to Join The Team'], fields: [], buttons: [{ label: 'Continue ↵' }], measurements: {} };
+  eq('a known info screen still advances',
+    decideStep({ snapshot: info, screen: welcome, plan: { ...plan } }).action, 'advance');
+}
+
+{
+  // The same broken click must not run forever: the live run picked one option seven times.
+  const age = FUNNEL.find((s) => s.id === 'age_verification');
+  const page = makeScriptedScreens([
+    {
+      step: 2,
+      headings: ['→Are you 18+?'],
+      // The live page carries the question text, which is how the screen is recognised.
+      text: 'Are you 18? Yes No',
+      fields: [],
+      buttons: [
+        { label: 'A Yes' },
+        { label: 'Next →', disabled: true }
+      ],
+      nextDoesNothing: true
+    }
+  ]);
+  // The choice is offered, but pressing it changes nothing on this page.
+  const result = await runApplication({
+    evaluate: page.evaluate,
+    profile: { ageCheck: 'Yes' },
+    options: { settleMs: 1, pollMs: 2, advanceTimeoutMs: 20, maxSteps: 10 }
+  });
+  eq('a click that never takes is stopped', result.ok, false);
+  eq('as no progress', result.reason, 'no_progress');
+  eq('after three tries, not ten', result.transcript.filter((t) => t.event === 'decide').length, 3);
+  eq('and the page is left open', result.keepOpen, true);
+}
+
+{
+  // One screen must produce one record, keyed on the page's own step number.
+  const page = makeScriptedScreens([
+    { step: 3, headings: ['Personal Details'], fields: [{ label: 'Full Name', id: 'fullName', name: 'fullName', required: true }] },
+    { step: 4, headings: ['Discovery'], fields: [] }
+  ]);
+  const result = await runApplication({
+    evaluate: page.evaluate,
+    profile: { fullName: 'David Saddy Malingu' },
+    options: { settleMs: 1, pollMs: 2, advanceTimeoutMs: 40, maxSteps: 6 }
+  });
+  eq('each step is recorded once', result.steps.length, 2);
+  eq('keyed by the page number', result.steps[0].key, 'step:3');
+  ok('a step read twice still has one record', result.steps[0].attempts >= 2, result.steps.map((s) => s.attempts));
+  eq('and the fill was recorded on it', result.steps[0].planned.length, 1);
+}
 
 console.log(`\n${pass} passed, ${failures.length} failed`);
 if (failures.length) {
