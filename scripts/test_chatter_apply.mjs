@@ -995,6 +995,104 @@ function makeBackablePage(start = 3, floor = 1) {
 }
 
 {
+  /**
+   * A read taken mid-transition has no step number, and the first live run treated that as "the human
+   * answered" after one second on an unanswered question — then read a half-rendered next screen and stopped.
+   * Only a *later* step, or an enabled Next on the same step, is an answer.
+   */
+  let polls = 0;
+  const evaluate = async () => {
+    polls += 1;
+    if (polls <= 2) {
+      return {
+        ok: true, step: null, progressText: 'Step 3 of 21', headings: [], fields: [], text: '', measurements: {},
+        buttons: [{ label: '← Previous' }, { label: 'Next →', disabled: true }]
+      };
+    }
+    return {
+      ok: true, step: 3, progressText: 'Step 3 of 21', headings: ['→Full Name'], fields: [], text: '', measurements: {},
+      buttons: [{ label: '← Previous' }, { label: 'Next →' }]
+    };
+  };
+  const waited = await waitForHuman({ evaluate, previous: { step: 2 }, timeoutMs: 4000, pollMs: 250 });
+  ok('a null step is not an answer', polls > 2, polls);
+  eq('the wait ends when the step really increases', waited.ok, true);
+  eq('reporting the step it landed on', waited.snapshot.step, 3);
+}
+
+{
+  /**
+   * Step 3 live: one input, no label, no name, only a placeholder (`e.g. John Doe`). Nothing matched, nothing
+   * was filled, Next stayed disabled, and the run stopped at `no_next_button`. The page's own numbering names
+   * the field — step 3 is `fullName` — so it is used when nothing else can.
+   */
+  const personal = FUNNEL.find((s) => s.id === 'personal');
+  const unlabelled = { index: 0, name: '', id: '', label: '', placeholder: 'e.g. John Doe', type: 'text', required: false, value: '' };
+  const profile = { fullName: 'David Saddy Malingu' };
+
+  const blind = planScreenValues({ screen: personal, fields: [unlabelled], profile });
+  eq('without a step number the field cannot be named', blind.values.length, 0);
+  eq('and it is reported, not guessed', blind.unmapped[0].reason, 'unrecognised_field');
+
+  const named = planScreenValues({ screen: personal, fields: [unlabelled], profile, stepNumber: 3 });
+  eq('the step number names it', named.values[0].key, 'fullName');
+  eq('with the profile value', named.values[0].value, 'David Saddy Malingu');
+  eq('and nothing left unrecognised', named.unmapped.length, 0);
+
+  // Two writable fields on one step are ambiguous, so the fallback must refuse rather than write the same
+  // answer into both.
+  const second = { ...unlabelled, index: 1 };
+  const ambiguous = planScreenValues({ screen: personal, fields: [unlabelled, second], profile, stepNumber: 3 });
+  eq('two unnamed fields are not both the step’s question', ambiguous.values.length, 0);
+
+  // A field the page named itself keeps its own answer.
+  const namedField = { ...unlabelled, label: 'Discord Username' };
+  const both = planScreenValues({
+    screen: personal, fields: [namedField], profile: { fullName: 'David', discordUsername: 'SaddyMalingu' }, stepNumber: 3
+  });
+  eq('a labelled field is not overridden by the step', both.values[0].key, 'discordUsername');
+}
+
+{
+  // The stop report has to name what the page is waiting for, not just say the button was disabled.
+  const personal = FUNNEL.find((s) => s.id === 'personal');
+  const snapshot = {
+    ok: true,
+    step: 3,
+    progressText: 'Step 3 of 21',
+    headings: ['→Full Name'],
+    text: 'Full Name',
+    measurements: {},
+    fields: [{ index: 0, name: '', id: '', label: '', placeholder: 'e.g. John Doe', type: 'text', required: false, value: '' }],
+    buttons: [{ label: '← Previous' }, { label: 'Next →', disabled: true }]
+  };
+  const plan = planScreenValues({ screen: personal, fields: snapshot.fields, profile: {}, stepNumber: 3 });
+  const decision = decideStep({ snapshot, plan, screen: personal, stepNumber: 3 });
+  eq('an empty field with Next disabled asks for the value', decision.action, 'needs_values');
+  eq('naming the question', decision.unresolved[0].key, 'fullName');
+  eq('and why it is empty', decision.reason, 'required_field_unmapped');
+
+  // An *optional* question the page still will not pass: the answer is named even though the funnel does not
+  // require it, which is the case that used to report `no_next_button`.
+  const discovery = FUNNEL.find((s) => s.id === 'discovery');
+  const referralOnly = planScreenValues({
+    screen: discovery,
+    fields: [{ index: 0, name: '', id: '', label: '', placeholder: 'Type here…', type: 'text', required: false, value: '' }],
+    profile: {},
+    stepNumber: 11
+  });
+  const optional = decideStep({
+    snapshot: { ...snapshot, step: 11, headings: ['→Referral'], text: 'Referral', fields: [{ index: 0, name: '', id: '', label: '', placeholder: 'Type here…', type: 'text', required: false, value: '' }] },
+    plan: referralOnly,
+    screen: discovery,
+    stepNumber: 11
+  });
+  eq('an optional field the page insists on is still named', optional.action, 'needs_values');
+  eq('with its own reason', optional.reason, 'page_wants_this_field');
+  eq('and the question id', optional.unresolved[0].key, 'referral');
+}
+
+{
   // In the run itself: with a wait budget the blocked question is asked; if nobody answers, the run stops
   // honestly with the page open, naming what it was waiting for.
   const page = makeScriptedScreens([

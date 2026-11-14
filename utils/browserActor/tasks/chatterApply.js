@@ -674,8 +674,22 @@ export function humanOnlyReason(screen, { includeTyping = false } = {}) {
  * falls back to matching a label when the DOM does not expose an id, which is what the generic mapper is
  * for. A required question with no value in the profile is reported, never invented.
  */
-export function planScreenValues({ screen = null, fields = [], profile = {}, includeTyping = false } = {}) {
+export function planScreenValues({ screen = null, fields = [], profile = {}, includeTyping = false, stepNumber = null } = {}) {
   if (!screen) return planStepValues({ fields, profile });
+
+  /**
+   * The step number is the last resort for naming a field (2026-11-14).
+   *
+   * Live, this form renders one question per step with **no label and no name** on the input — the only text
+   * is the placeholder (`e.g. John Doe`) — so matching by label found nothing and the run stopped at step 3
+   * with Next disabled. The page's own numbering does name it: step 3 is `fullName`. Used only when the field
+   * could not be identified any other way and the step shows exactly one writable field, so a value can never
+   * be written twice across fields the page did name.
+   */
+  const onStep = stepNumber != null ? questionByStep(stepNumber) : null;
+  const stepQuestion = onStep && onStep.screen?.id === screen.id ? onStep.question : null;
+  const writable = fields.filter((f) => f.type !== 'file' && !f.disabled);
+  const soleStepQuestion = writable.length === 1 ? stepQuestion : null;
 
   const byId = new Map();
   for (const question of screen.questions || []) byId.set(question.id, question);
@@ -701,7 +715,8 @@ export function planScreenValues({ screen = null, fields = [], profile = {}, inc
     const soleUpload = field.type === 'file' && fileInputs.length === 1 && uploadQuestions.length === 1
       ? uploadQuestions[0]
       : null;
-    const question = direct || labelMatch || soleUpload;
+    const question = direct || labelMatch || soleUpload
+      || (soleStepQuestion && !matchFieldKey(field) ? soleStepQuestion : null);
     const key = question ? question.id : matchFieldKey(field);
     const raw = key ? profile[key] : undefined;
     const hasValue = raw !== undefined && raw !== null && String(raw).trim() !== '';
@@ -900,6 +915,24 @@ export function decideStep({ snapshot = {}, plan = null, screen = null, stepNumb
   }
 
   if (next) return { action: 'advance', reason: 'ready_for_next', step: stepNumber, button: next.label };
+
+  /**
+   * Next disabled with an *optional* field still empty means the page is waiting for that field anyway, not
+   * that the step is unreadable (2026-11-14). The live run stopped at step 3 as `no_next_button` when the
+   * truth was "Full Name is empty" — the input had no label, so it was never planned. (A required field never
+   * reaches here: it is reported as `required_field_unmapped` above.) Naming the question is the difference
+   * between a report a person can act on and one they have to reverse-engineer.
+   */
+  if (plan?.unmapped?.length && !next) {
+    return {
+      action: 'needs_values',
+      reason: 'page_wants_this_field',
+      step: stepNumber,
+      screen: screen?.id || null,
+      unresolved: plan.unmapped
+    };
+  }
+
   return { action: 'stuck', reason: 'no_next_button', step: stepNumber, buttons: (snapshot.buttons || []).map((b) => b.label) };
 }
 
@@ -966,7 +999,13 @@ export async function runApplication({
     const stepKey = stepNumber != null
       ? `step:${stepNumber}`
       : (screen?.id ? `screen:${screen.id}` : `view:${(snapshot.headings || [])[0] || 'unknown'}`);
-    const plan = planScreenValues({ screen, fields: snapshot.fields || [], profile, includeTyping: policy.includeTyping });
+    const plan = planScreenValues({
+      screen,
+      fields: snapshot.fields || [],
+      profile,
+      includeTyping: policy.includeTyping,
+      stepNumber
+    });
     // A screen's multiple-choice questions may be buttons rather than inputs, so they are planned here
     // and travel with the plan into the decision.
     plan.choices = planChoices({ screen, buttons: snapshot.buttons || [], profile }).choices;
@@ -1921,9 +1960,10 @@ export async function waitForHuman({ evaluate, previous = null, timeoutMs = 120_
     const nextReady = (snapshot.buttons || []).some(
       (b) => !b.disabled && CHATTER_APPLY.buttons.next.some((word) => b.label.toLowerCase().includes(word))
     );
-    const moved = previous?.step != null && snapshot.step != null
-      ? snapshot.step !== previous.step
-      : snapshot.progressText !== previous?.progressText;
+    // The step must *increase*. Reading a null step mid-transition as "moved" ended a live wait after one
+    // second on an unanswered question, and the next read caught a half-rendered screen with no Next on it.
+    const nowStep = typeof snapshot.step === 'number' ? snapshot.step : null;
+    const moved = nowStep != null && previous?.step != null && nowStep > previous.step;
     if (nextReady || moved) {
       return { ok: true, waitedMs: Date.now() - startedAt, snapshot };
     }
