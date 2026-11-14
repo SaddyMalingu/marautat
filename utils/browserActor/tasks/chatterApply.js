@@ -306,6 +306,7 @@ export function fillStepExpr({ values = [] } = {}) {
     name: row.name || '',
     id: row.id || '',
     label: row.label || '',
+    index: Number.isInteger(row.index) ? row.index : null,
     value: row.value == null ? '' : String(row.value)
   })));
   return `(() => {
@@ -330,6 +331,25 @@ export function fillStepExpr({ values = [] } = {}) {
   const all = Array.from(doc.querySelectorAll('input, select, textarea'))
     .filter((el) => !['hidden', 'submit', 'button', 'reset', 'image', 'file'].includes(String(el.type || '').toLowerCase()));
 
+  /**
+   * The reader's own order, reproduced so a positional write lands on the field it read (2026-11-14).
+   *
+   * This form renders inputs with **no name, no id and no label** — step 3's Full Name field is anonymous but
+   * for its placeholder — so name/id/label lookup found nothing and the write failed with field_not_found on a
+   * field the reader had just read successfully. The reader's index is the field's position in this exact list:
+   * same selector, same exclusions, same visibility rule. A file input keeps its place (so indices do not
+   * shift) but is never written.
+   */
+  const visible = (el) => {
+    if (!el) return false;
+    if (String(el.type || '').toLowerCase() === 'hidden') return false;
+    const rect = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+    return Boolean(rect && (rect.width > 0 || rect.height > 0));
+  };
+  const readOrder = Array.from(doc.querySelectorAll('input, select, textarea'))
+    .filter((el) => !['hidden', 'submit', 'button', 'reset', 'image'].includes(String(el.type || '').toLowerCase()))
+    .filter(visible);
+
   const locate = (write) => {
     if (write.name) {
       const byName = all.find((el) => el.getAttribute('name') === write.name);
@@ -341,7 +361,12 @@ export function fillStepExpr({ values = [] } = {}) {
     }
     if (write.label) {
       const key = write.label.toLowerCase();
-      return all.find((el) => labelFor(el).toLowerCase() === key) || null;
+      const byLabel = all.find((el) => labelFor(el).toLowerCase() === key);
+      if (byLabel) return byLabel;
+    }
+    if (Number.isInteger(write.index)) {
+      const positional = readOrder[write.index];
+      if (positional && String(positional.type || '').toLowerCase() !== 'file') return positional;
     }
     return null;
   };
@@ -613,6 +638,7 @@ export function planStepValues({ fields = [], profile = {}, alreadyUsed = [] } =
       label: field.label || field.placeholder || '',
       name: field.name || '',
       id: field.id || '',
+      index: field.index,
       type: field.type,
       value: desired
     });
@@ -771,10 +797,10 @@ export function planScreenValues({ screen = null, fields = [], profile = {}, inc
         });
         continue;
       }
-      values.push({ key, label: question.label, name: field.name || '', id: field.id || '', type: field.type, value: hit });
+      values.push({ key, label: question.label, name: field.name || '', id: field.id || '', index: field.index, type: field.type, value: hit });
       continue;
     }
-    values.push({ key, label: question?.label || field.label, name: field.name || '', id: field.id || '', type: field.type, value: desired });
+    values.push({ key, label: question?.label || field.label, name: field.name || '', id: field.id || '', index: field.index, type: field.type, value: desired });
   }
 
   return { values, unresolved, unmapped, skipped, uploads, screen: screen.id };

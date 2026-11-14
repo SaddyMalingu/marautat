@@ -1038,6 +1038,7 @@ function makeBackablePage(start = 3, floor = 1) {
   eq('the step number names it', named.values[0].key, 'fullName');
   eq('with the profile value', named.values[0].value, 'David Saddy Malingu');
   eq('and nothing left unrecognised', named.unmapped.length, 0);
+  eq('carrying the field index, for the write that could not match a name', named.values[0].index, 0);
 
   // Two writable fields on one step are ambiguous, so the fallback must refuse rather than write the same
   // answer into both.
@@ -1051,6 +1052,18 @@ function makeBackablePage(start = 3, floor = 1) {
     screen: personal, fields: [namedField], profile: { fullName: 'David', discordUsername: 'SaddyMalingu' }, stepNumber: 3
   });
   eq('a labelled field is not overridden by the step', both.values[0].key, 'discordUsername');
+}
+
+{
+  // The writer has to be able to address a field the reader could only describe positionally, or the read
+  // succeeds and the write fails on the same element (which is what happened live at step 3).
+  const expr = fillStepExpr({
+    values: [{ key: 'fullName', label: '', name: '', id: '', index: 0, type: 'text', value: 'David' }]
+  });
+  ok('the write carries the field index', /"index":0/.test(expr));
+  ok('and the expression falls back to it last', expr.includes('readOrder[write.index]'));
+  ok('over the reader’s own ordering, visibility included',
+    /const readOrder = Array\.from\(doc\.querySelectorAll\('input, select, textarea'\)\)/.test(expr) && expr.includes('.filter(visible)'));
 }
 
 {
