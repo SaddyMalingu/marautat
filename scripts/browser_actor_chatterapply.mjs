@@ -26,6 +26,10 @@
  *   --set key=value    repeatable; overrides one profile value without editing the file
  *   --list-profiles    print the MoreLogin profiles on this computer, ids masked, and stop
  *   --env-id <id>      drive this profile instead of whatever the portal has mapped to the tenant
+ *   --map              read every screen from step 1 and record it to --map-out, typing nothing
+ *   --map-out <path>   where --map writes (default tmp_chatterapply/funnel.json)
+ *   --map-no-answers   do not even click options; the map stops at the first question that blocks Next
+ *   --rewind           press Previous back to step 1 before doing anything else
  *   --discover         read the step on screen, write it to --out, stop (keeps the page open)
  *   --dry-run          read + plan, never fill or click
  *   --include-typing   let the agent take the typing test too (off by default: see chatterApply.js)
@@ -47,7 +51,10 @@ import {
   CHATTER_APPLY,
   describeOutcome,
   fileInputExpr,
+  mapFunnel,
+  optionPointExpr,
   readStepExpr,
+  rewindToStart,
   runApplication
 } from '../utils/browserActor/tasks/chatterApply.js';
 
@@ -86,6 +93,10 @@ const typingWpm = Number(flag('typing-wpm', 70)) || 70;
 /** Which profile to drive: given, remembered locally, or discovered from MoreLogin on this machine. */
 const explicitEnvId = flag('env-id', process.env.ML_ENV_ID || null);
 const listOnly = flag('list-profiles', null) !== null;
+/** Read-only funnel mapping: walk to step 1, then read every screen forward and record it. */
+const mapOnly = flag('map', null) !== null;
+const dumpOnly = flag('dump', null) !== null;
+const mapOut = path.resolve(String(flag('map-out', 'tmp_chatterapply/funnel.json')));
 
 if (!tenant && !explicitEnvId && !listOnly) {
   console.error('usage: --tenant <slug> [--profile <file>] [--set key=value]… [--dry-run] [--discover]');
@@ -124,9 +135,9 @@ function readProfile() {
  * One CDP round trip. Each call re-resolves the target, which costs a little and buys the thing that
  * matters here: the page surviving a dialog, a frame rebuild or a devtools reconnect mid-form.
  */
-async function evaluateJson({ host, port, expression, awaitPromise = false }) {
-  const target = await resolveDebugTarget({ host, port });
-  const session = await CdpSession.open({ wsUrl: target.pageWsUrl, timeoutMs: 10_000 });
+async function evaluateJson({ wsUrl = null, host, port, expression, awaitPromise = false }) {
+  const target = wsUrl || (await resolveDebugTarget({ host, port })).pageWsUrl;
+  const session = await sessionOn(target);
   try {
     const result = await session.send(
       'Runtime.evaluate',
@@ -145,10 +156,144 @@ async function evaluateJson({ host, port, expression, awaitPromise = false }) {
   }
 }
 
-/** Where is the tab right now? Used to avoid navigating over a half-filled form. */
-async function currentUrl({ host, port }) {
-  const target = await resolveDebugTarget({ host, port });
-  const session = await CdpSession.open({ wsUrl: target.pageWsUrl, timeoutMs: 10_000 });
+/**
+ * Which tab the runner drives, pinned once instead of re-resolved per call.
+ *
+ * The mapping run of 2026-11-14 exposed this: MoreLogin came back with several tabs open, the script
+ * navigated one and then read another, and the "application" it mapped was **Reddit**. Nothing was clicked
+ * that mattered only by luck. So the tab is chosen once, by URL, and every later call uses that same
+ * target — and if it is not on the site we think, the run stops instead of reading something else.
+ */
+async function listPageTargets({ host, port }) {
+  try {
+    const res = await fetch(`http://${host}:${port}/json/list`, { signal: AbortSignal.timeout(5_000) });
+    const list = await res.json();
+    return (Array.isArray(list) ? list : [])
+      .filter((t) => t.type === 'page' && t.webSocketDebuggerUrl)
+      .map((t) => ({ id: t.id, url: String(t.url || ''), wsUrl: t.webSocketDebuggerUrl }));
+  } catch {
+    return [];
+  }
+}
+
+/** Prefer a tab already on the target site; otherwise take the first page. */
+async function pinPage({ host, port, want = /chatterapply\.com/i }) {
+  const pages = await listPageTargets({ host, port });
+  const chosen = pages.find((p) => want.test(p.url)) || pages[0] || null;
+  return chosen ? { ...chosen, pages } : { wsUrl: null, url: '', pages };
+}
+
+async function sessionOn(wsUrl) {
+  return CdpSession.open({ wsUrl, timeoutMs: 10_000 });
+}
+
+async function navigateTarget({ wsUrl, url }) {
+  const session = await sessionOn(wsUrl);
+  try {
+    await session.send('Page.enable', {}, { timeoutMs: 5_000 });
+    await session.send('Page.navigate', { url }, { timeoutMs: 20_000 });
+  } finally {
+    session.close();
+  }
+}
+
+/**
+ * A click the page cannot ignore.
+ *
+ * The age screen proved that a dispatched `click` (and a full synthetic pointer sequence) does nothing here:
+ * `A Yes` was "clicked", `Next` stayed disabled, the same question returned. `Input.dispatchMouseEvent` goes
+ * through the browser's input pipeline, so the page receives the event it would get from a real mouse.
+ */
+async function trustedClick({ wsUrl, x, y }) {
+  const session = await sessionOn(wsUrl);
+  try {
+    const base = { x, y, button: 'left', clickCount: 1, pointerType: 'mouse' };
+    await session.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y, button: 'none' }, { timeoutMs: 5_000 });
+    await session.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...base }, { timeoutMs: 5_000 });
+    await session.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...base }, { timeoutMs: 5_000 });
+  } finally {
+    session.close();
+  }
+}
+
+/** Click one option by trusted input, and report the label the page offered. */
+async function clickOptionTrusted({ wsUrl, choice }) {
+  const point = await evaluateJson({ wsUrl, expression: optionPointExpr({ option: choice.option }) });
+  if (!point?.ok) return { ok: false, reason: point?.reason || 'option_point_not_found', choice };
+  try {
+    await trustedClick({ wsUrl, x: point.x, y: point.y });
+    return { ok: true, label: point.label, trusted: true, at: { x: point.x, y: point.y } };
+  } catch (error) {
+    return { ok: false, reason: error?.message || 'trusted_click_failed', choice };
+  }
+}
+
+/**
+ * Everything the frame actually contains, for when the reader and the page disagree.
+ *
+ * Written after the age screen kept reporting "Are you 18+?" while the step counter advanced: either the app
+ * keeps earlier screens mounted, or the reader is picking the wrong element. This answers that in one run.
+ */
+const DUMP_EXPR = `(() => {
+  const clean = (v) => String(v == null ? '' : v).replace(/\\s+/g, ' ').trim();
+  const frames = Array.from(document.querySelectorAll('iframe'));
+  const frame = frames.find((f) => /apply\\/form|chatterapply/i.test(String(f.getAttribute('src') || '')));
+  const doc = frame ? frame.contentDocument : document;
+  if (!doc) return JSON.stringify({ ok: false, reason: 'no_document' });
+  const vis = (el) => {
+    const rect = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+    const style = (doc.defaultView || window).getComputedStyle(el);
+    return Boolean(rect && rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none');
+  };
+  const headings = Array.from(doc.querySelectorAll('h1, h2, h3, h4, legend'))
+    .map((el, i) => ({ i, text: clean(el.innerText || el.textContent).slice(0, 90), visible: vis(el) }))
+    .filter((h) => h.text);
+  const inputs = Array.from(doc.querySelectorAll('input, select, textarea'))
+    .map((el, i) => ({
+      i,
+      tag: el.tagName.toLowerCase(),
+      type: String(el.getAttribute('type') || ''),
+      name: el.getAttribute('name') || '',
+      id: el.getAttribute('id') || '',
+      value: clean(el.value).slice(0, 40),
+      visible: vis(el)
+    }));
+  const buttons = Array.from(doc.querySelectorAll('button, [role="button"]'))
+    .map((el, i) => ({ i, label: clean(el.innerText || el.textContent).slice(0, 40), visible: vis(el), disabled: el.disabled === true }))
+    .filter((b) => b.label);
+  return JSON.stringify({
+    ok: true,
+    frameSrc: frame ? String(frame.getAttribute('src')) : null,
+    frameRect: frame ? frame.getBoundingClientRect().toJSON() : null,
+    readyState: doc.readyState,
+    bodyChars: String(doc.body ? doc.body.innerText : '').length,
+    headings,
+    inputs,
+    buttons,
+    // What is actually on top at each button's centre — the difference between "the click missed" and
+    // "something is covering the button".
+    buttonHitTest: Array.from(doc.querySelectorAll('button, [role="button"]')).map((el) => {
+      const rect = el.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      const hit = doc.elementFromPoint ? doc.elementFromPoint(cx, cy) : null;
+      return {
+        label: clean(el.innerText || el.textContent).slice(0, 30),
+        rect: { x: Math.round(rect.left), y: Math.round(rect.top), w: Math.round(rect.width), h: Math.round(rect.height) },
+        hitTag: hit ? hit.tagName.toLowerCase() : null,
+        hitText: hit ? clean(hit.innerText || hit.textContent).slice(0, 40) : null,
+        hitIsButton: hit === el,
+        hitInside: Boolean(hit && el.contains && el.contains(hit))
+      };
+    }),
+    stepMarkers: Array.from(doc.querySelectorAll('[class*="step"], [data-step], [aria-current]'))
+      .slice(0, 12)
+      .map((el) => ({ tag: el.tagName.toLowerCase(), text: clean(el.innerText || el.textContent).slice(0, 40) }))
+  });
+})()`;
+
+async function urlOfTarget({ wsUrl }) {
+  const session = await sessionOn(wsUrl);
   try {
     const result = await session.send(
       'Runtime.evaluate',
@@ -163,17 +308,6 @@ async function currentUrl({ host, port }) {
   }
 }
 
-/** The only navigation this script can perform, and only when explicitly asked for it. */
-async function navigateOnce({ host, port, url }) {
-  const target = await resolveDebugTarget({ host, port });
-  const session = await CdpSession.open({ wsUrl: target.pageWsUrl, timeoutMs: 10_000 });
-  try {
-    await session.send('Page.enable', {}, { timeoutMs: 5_000 });
-    await session.send('Page.navigate', { url }, { timeoutMs: 20_000 });
-  } finally {
-    session.close();
-  }
-}
 
 /**
  * Attach a real file to the form's file input.
@@ -183,9 +317,9 @@ async function navigateOnce({ host, port, url }) {
  * browser protocol puts the file into it. `change` then fires exactly as it does for a human, which is
  * what react-dropzone listens for.
  */
-async function attachFile({ host, port, upload }) {
-  const target = await resolveDebugTarget({ host, port });
-  const session = await CdpSession.open({ wsUrl: target.pageWsUrl, timeoutMs: 10_000 });
+async function attachFile({ wsUrl = null, host, port, upload }) {
+  const target = wsUrl || (await resolveDebugTarget({ host, port })).pageWsUrl;
+  const session = await sessionOn(target);
   try {
     const located = await session.send(
       'Runtime.evaluate',
@@ -252,11 +386,11 @@ const FRAME_DIAGNOSTIC_EXPR = `(() => {
   });
 })()`;
 
-async function waitForForm({ host, port, maxMs = 45_000 }) {
+async function waitForForm({ wsUrl, maxMs = 45_000 }) {
   const startedAt = Date.now();
   let last = null;
   while (Date.now() - startedAt < maxMs) {
-    last = await evaluateJson({ host, port, expression: readStepExpr({ includeValues: false }) });
+    last = await evaluateJson({ wsUrl, expression: readStepExpr({ includeValues: false }) });
     // Cross-origin will never become readable by waiting: stop at once and say why.
     if (last?.reason === 'cross_origin_frame') return { ok: false, reason: 'cross_origin_frame', snapshot: last };
     if (formRendered(last)) return { ok: true, waitedMs: Date.now() - startedAt, snapshot: last };
@@ -346,24 +480,60 @@ async function main() {
   let outcome = null;
   let leaveOpen = false;
   try {
-    const before = await currentUrl(connection);
-    const onTarget = /chatterapply\.com/i.test(before);
-    console.error(`current tab: ${before || '(blank)'}`);
+    // Pin the tab first. Re-resolving the target per call is what let the mapping run navigate one tab and
+    // read another — and then report Reddit as the application form.
+    let page = await pinPage(connection);
+    console.error(`tab: ${page.url || '(none)'}${page.pages.length > 1 ? ` (${page.pages.length} tabs open)` : ''}`);
+    if (!page.wsUrl) {
+      outcome = { ok: false, reason: 'no_tab', detail: 'the profile has no page target', keepOpen: true };
+      leaveOpen = true;
+      writeJson(outPath, { outcome });
+      console.log(JSON.stringify({ ...outcome, out: outPath }, null, 2));
+      return;
+    }
+
+    const onTarget = /chatterapply\.com/i.test(page.url);
     if (shouldOpen || !onTarget) {
-      // Navigating destroys a half-filled form, so it happens only when the tab is somewhere else or
-      // the caller asked for it by name.
+      // Navigating destroys a half-filled form, so it happens only when the tab is elsewhere or asked for.
       console.error(`opening ${targetUrl} (the form itself is an iframe inside this page)`);
-      await navigateOnce({ ...connection, url: targetUrl });
+      await navigateTarget({ wsUrl: page.wsUrl, url: targetUrl });
       await new Promise((r) => setTimeout(r, 2500));
+      const again = await pinPage(connection);
+      page = again.wsUrl ? { ...again } : page;
     } else {
       console.error('reusing the tab that is already on the form — no navigation, so nothing is lost');
     }
 
-    const ready = await waitForForm(connection);
+    // Prove it, once, before anything is read or clicked.
+    let liveUrl = await urlOfTarget({ wsUrl: page.wsUrl });
+    if (!/chatterapply\.com/i.test(liveUrl)) {
+      const repinned = await pinPage(connection);
+      if (repinned.wsUrl && repinned.wsUrl !== page.wsUrl) {
+        page = repinned;
+        liveUrl = await urlOfTarget({ wsUrl: page.wsUrl });
+      }
+    }
+    if (!/chatterapply\.com/i.test(liveUrl)) {
+      outcome = {
+        ok: false,
+        reason: 'wrong_tab',
+        detail: 'the pinned tab is not on chatterapply.com, so nothing was read or clicked',
+        liveUrl,
+        tabs: page.pages.map((p) => p.url).slice(0, 8),
+        keepOpen: true
+      };
+      leaveOpen = true;
+      writeJson(outPath, { outcome });
+      console.log(JSON.stringify({ ...outcome, out: outPath }, null, 2));
+      return;
+    }
+    console.error(`driving tab ${liveUrl}`);
+
+    const ready = await waitForForm({ wsUrl: page.wsUrl, maxMs: 45_000 });
     if (!ready.ok) {
       // Say what the frames actually look like: "rendered nothing" is not actionable on its own.
       let diagnostic = null;
-      try { diagnostic = await evaluateJson({ ...connection, expression: FRAME_DIAGNOSTIC_EXPR }); } catch { /* best effort */ }
+      try { diagnostic = await evaluateJson({ wsUrl: page.wsUrl, expression: FRAME_DIAGNOSTIC_EXPR }); } catch { /* best effort */ }
       outcome = {
         ok: false,
         reason: ready.reason,
@@ -397,10 +567,71 @@ async function main() {
       return;
     }
 
+    if (dumpOnly) {
+      // What the page really contains, when the reader and the page disagree.
+      const dump = await evaluateJson({ wsUrl: page.wsUrl, expression: DUMP_EXPR });
+      const domOut = mapOut.replace(/funnel\.json$/i, 'dom.json');
+      writeJson(domOut, { when: new Date().toISOString(), dump });
+      leaveOpen = true;
+      console.log(JSON.stringify({ ok: Boolean(dump?.ok), dom: domOut, dump }, null, 2));
+      return;
+    }
+
+    if (mapOnly) {
+      // Read every screen and record it. Nothing is typed; the only clicks are Next and, where the app
+      // refuses to move without one, the answer already in the profile.
+      const back = await rewindToStart({
+        evaluate: (expression) => evaluateJson({ wsUrl: page.wsUrl, expression }),
+        log: (entry) => console.error(`  rewind ${entry.from ?? '?'} — "${entry.button}"`)
+      });
+      console.error(`rewind: ${back.ok ? (back.pressed ? `back at step ${back.at ?? '?'}` : `already at ${back.at ?? 'the first screen'}`) : back.reason} after ${back.pressed} press(es)`);
+
+      const mapped = await mapFunnel({
+        evaluate: (expression, options = {}) => evaluateJson({ wsUrl: page.wsUrl, expression, ...options }),
+        clickOption: (choice) => clickOptionTrusted({ wsUrl: page.wsUrl, choice }),
+        profile,
+        options: { includeTyping, typingWpm, answerChoices: flag('map-no-answers', null) === null },
+        log: (entry) => console.error(
+          `  map${entry.step ? ` step ${entry.step}` : ''}`
+          + `${entry.heading ? ` "${entry.heading}"` : ''}`
+          + `${entry.fields !== undefined ? ` · ${entry.fields} field(s)` : ''}`
+          + `${entry.buttons ? ` · ${entry.buttons.join(' | ')}` : ''}`
+          + `${entry.options ? ` · chose ${entry.options.join(',')}` : ''}`
+        )
+      });
+
+      writeJson(mapOut, {
+        when: new Date().toISOString(),
+        url: targetUrl,
+        rewind: back,
+        result: { ok: mapped.ok, reason: mapped.reason || null, at: mapped.at ?? null, detail: mapped.detail || null },
+        stepCount: mapped.steps.length,
+        steps: mapped.steps
+      });
+      leaveOpen = true;
+      console.log(JSON.stringify({
+        ok: mapped.ok,
+        mapped: mapOut,
+        stepCount: mapped.steps.length,
+        stopped: { reason: mapped.reason || null, at: mapped.at ?? null, detail: mapped.detail || null },
+        screens: mapped.steps.map((s) => ({
+          step: s.step,
+          heading: s.heading,
+          fields: s.fields.length,
+          fieldLabels: s.fields.map((f) => f.label || f.name || f.type).slice(0, 6),
+          buttons: s.buttons.map((b) => b.label),
+          advancedBy: s.advancedBy
+        })),
+        keepOpen: true
+      }, null, 2));
+      return;
+    }
+
     outcome = await runApplication({
       // `awaitPromise` matters for the typing pass, which paces keystrokes over real time.
-      evaluate: (expression, options = {}) => evaluateJson({ ...connection, expression, ...options }),
-      attachFile: (upload) => attachFile({ ...connection, upload }),
+      evaluate: (expression, options = {}) => evaluateJson({ wsUrl: page.wsUrl, expression, ...options }),
+      attachFile: (upload) => attachFile({ wsUrl: page.wsUrl, upload }),
+      clickOption: (choice) => clickOptionTrusted({ wsUrl: page.wsUrl, choice }),
       profile,
       options: {
         dryRun,

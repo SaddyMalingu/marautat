@@ -877,7 +877,14 @@ export function decideStep({ snapshot = {}, plan = null, screen = null, stepNumb
  *     click a validation rule swallowed looks identical to a successful one at the moment of clicking;
  *     the difference only shows up as a run that silently did nothing.
  */
-export async function runApplication({ evaluate, attachFile = null, profile = {}, options = {}, log = () => {} } = {}) {
+export async function runApplication({
+  evaluate,
+  attachFile = null,
+  clickOption = null,
+  profile = {},
+  options = {},
+  log = () => {}
+} = {}) {
   if (typeof evaluate !== 'function') throw new TypeError('runApplication needs an evaluate() function');
   const {
     maxSteps = 20,
@@ -1040,7 +1047,10 @@ export async function runApplication({ evaluate, attachFile = null, profile = {}
       // leaves Next disabled, and that must surface here rather than as a stuck screen three reads later.
       const picked = [];
       for (const choice of decision.choices) {
-        const result = await evaluate(chooseOptionExpr({ option: choice.option, question: choice.question }));
+        // Trusted click when the caller supplies one; this app ignores dispatched events.
+        const result = typeof clickOption === 'function'
+          ? await clickOption(choice)
+          : await evaluate(chooseOptionExpr({ option: choice.option, question: choice.question }));
         picked.push({ ...choice, ok: Boolean(result?.ok), label: result?.label || null, reason: result?.reason || null });
       }
       note({
@@ -1389,7 +1399,197 @@ export function typeAtWpmExpr({ text = '', wpm = 70, jitterMs = 12 } = {}) {
  *
  * This is the only place this module guesses at a label, so it is narrow: strip a leading option marker,
  * compare case-insensitively, exact match first and a prefix only when nothing matched exactly.
+
+/**
+ * Map the funnel: read every screen, advance, record (2026-11-14).
+ *
+ * The bundle's array described an 11-screen flow; the live application has 21 steps and prints
+ * "Step 14 of 21" in the page. Guessing which was which produced the worst outcome of this exercise — a run
+ * that pressed Next through the applicant's name and contacts because the screens were unfamiliar. So the
+ * funnel is now read from the live app instead of inferred, and this is the reader.
+ *
+ * Boundaries, because mapping must not quietly become applying:
+ *
+ *   - **Nothing is typed.** Text fields are recorded as they are and left alone; the live app does not
+ *     block Next on them, which is why they can wait for the fill pass.
+ *   - **Nothing is uploaded or submitted.** A multiple-choice screen *does* block until answered, so
+ *     `answerChoices` clicks the profile's answer and records that it did — there is no other way forward.
+ *   - **It stops rather than loops**: a screen seen twice, a click that changes nothing, or no way forward.
  */
+export async function mapFunnel({ evaluate, clickOption = null, profile = {}, options = {}, log = () => {} } = {}) {
+  if (typeof evaluate !== 'function') throw new TypeError('mapFunnel needs an evaluate() function');
+  const {
+    maxSteps = 30,
+    settleMs = 900,
+    advanceTimeoutMs = 15_000,
+    pollMs = 500,
+    answerChoices = true,
+    includeTyping = false,
+    typingWpm = 70
+  } = options;
+
+  const steps = [];
+  const seen = new Set();
+  const note = (entry) => log(entry);
+
+  for (let index = 0; index < maxSteps; index += 1) {
+    const snapshot = await evaluate(readStepExpr());
+    if (!snapshot?.ok) {
+      return { ok: false, reason: snapshot?.reason || 'unreadable', detail: snapshot?.detail || null, steps };
+    }
+
+    const screen = screenFor(snapshot);
+    const key = snapshot.step != null
+      ? `step:${snapshot.step}`
+      : `view:${(snapshot.headings || [])[0] || 'unknown'}|${(snapshot.fields || []).length}`;
+
+    const record = {
+      key,
+      step: snapshot.step ?? null,
+      progressText: snapshot.progressText ?? null,
+      heading: (snapshot.headings || [])[0] || null,
+      headings: snapshot.headings || [],
+      screen: screen?.id || null,
+      text: String(snapshot.text || '').slice(0, 400),
+      measurements: snapshot.measurements || {},
+      fields: (snapshot.fields || []).map((f) => ({
+        label: f.label,
+        name: f.name,
+        id: f.id,
+        type: f.type,
+        required: f.required,
+        placeholder: f.placeholder,
+        options: f.options ? f.options.map((o) => o.label) : null
+      })),
+      buttons: (snapshot.buttons || []).map((b) => ({ label: b.label, disabled: Boolean(b.disabled) })),
+      advancedBy: null
+    };
+
+    // A repeated step is not a loop: answering a question re-renders the same screen with Next enabled.
+    // So the identity is the step *and its state* — a screen that comes back unchanged is the loop.
+    const stateHash = `${key}|${record.buttons.map((b) => `${b.label}${b.disabled ? '*' : ''}`).join(',')}|${record.fields.length}`;
+    if (seen.has(stateHash)) {
+      note({ event: 'map-loop', step: record.step, key, state: stateHash });
+      return { ok: true, reason: 'loop', at: record.step, steps };
+    }
+    seen.add(stateHash);
+    // One record per step: the second visit updates the buttons rather than adding a duplicate.
+    const existing = steps.find((s) => s.key === key);
+    if (existing) {
+      existing.buttons = record.buttons;
+      existing.fields = record.fields;
+      existing.text = record.text;
+      existing.visits = (existing.visits || 1) + 1;
+      note({
+        event: 'map-again',
+        step: record.step,
+        heading: record.heading,
+        buttons: record.buttons.map((b) => `${b.label}${b.disabled ? ' (disabled)' : ''}`)
+      });
+    } else {
+      steps.push(record);
+      note({
+        event: 'map',
+        step: record.step,
+        heading: record.heading,
+        fields: record.fields.length,
+        buttons: record.buttons.map((b) => `${b.label}${b.disabled ? ' (disabled)' : ''}`)
+      });
+    }
+
+    const next = (snapshot.buttons || []).find(
+      (b) => !b.disabled && CHATTER_APPLY.buttons.next.some((word) => b.label.toLowerCase().includes(word))
+    );
+
+    if (next) {
+      const before = await evaluate(stepFingerprintExpr());
+      const clicked = await evaluate(clickButtonExpr({ labels: [next.label] }));
+      if (!clicked?.ok) return { ok: false, reason: clicked?.reason || 'click_failed', at: record.step, steps };
+      record.advancedBy = `next:${clicked.label}`;
+      const changed = await waitForStepChange({ evaluate, before, timeoutMs: advanceTimeoutMs, pollMs });
+      if (!changed.moved) {
+        return { ok: true, reason: 'stuck', at: record.step, detail: 'Next did not move the page', steps };
+      }
+      await new Promise((r) => setTimeout(r, settleMs));
+      continue;
+    }
+
+    // Next is blocked: on this app that means a question needs answering — including the typing test,
+    // which is a human's to take and therefore ends the map unless the tenant has claimed it.
+    const plan = planChoices({ screen, buttons: snapshot.buttons || [], profile });
+    if (answerChoices && plan.choices.length) {
+      const picked = [];
+      for (const choice of plan.choices) {
+        // A trusted click (browser protocol) is used when the caller can provide one: this app ignored
+        // synthetic events, and that is not something a page-side expression can fix.
+        const result = typeof clickOption === 'function'
+          ? await clickOption(choice)
+          : await evaluate(chooseOptionExpr({ option: choice.option, question: choice.question }));
+        picked.push({ ...choice, ok: Boolean(result?.ok) });
+      }
+      const chosen = picked.filter((p) => p.ok).map((p) => p.option);
+      record.advancedBy = `choice:${chosen.join(',') || 'none'}`;
+      note({ event: 'map-choice', step: record.step, options: chosen });
+      if (!chosen.length) {
+        return { ok: true, reason: 'blocked', at: record.step, detail: 'no option could be chosen', steps };
+      }
+      await new Promise((r) => setTimeout(r, settleMs));
+      continue;
+    }
+
+    if (includeTyping && (snapshot.measurements?.typing || screen?.questions?.some((q) => q.type === 'typing_test'))) {
+      const prompt = await evaluate(typingPromptExpr());
+      if (!prompt?.ok) return { ok: true, reason: 'typing_prompt_not_found', at: record.step, steps };
+      const typed = await evaluate(typeAtWpmExpr({ text: prompt.prompt, wpm: typingWpm }), { awaitPromise: true });
+      record.advancedBy = `typed:${typed?.typed || 0}`;
+      note({ event: 'map-typing', step: record.step, chars: typed?.typed || 0 });
+      await new Promise((r) => setTimeout(r, settleMs));
+      continue;
+    }
+
+    return {
+      ok: true,
+      reason: 'blocked',
+      at: record.step,
+      detail: 'Next is disabled and no answer of ours unlocks it',
+      buttons: record.buttons.map((b) => b.label),
+      steps
+    };
+  }
+
+  return { ok: false, reason: 'max_steps_reached', steps };
+}
+
+/**
+ * Walk back to the first step by pressing Previous until the page stops moving.
+ *
+ * Mapping starts wherever the browser happens to be; after a partial run that is the middle of the
+ * application. Pressing Previous is the only way back and it changes nothing else — the answers already on
+ * the page stay on it, which is what makes this safe to run on somebody's half-finished application.
+ */
+export async function rewindToStart({ evaluate, maxBack = 30, settleMs = 700, pollMs = 300, log = () => {} } = {}) {
+  if (typeof evaluate !== 'function') throw new TypeError('rewindToStart needs an evaluate() function');
+  let pressed = 0;
+  for (let index = 0; index < maxBack; index += 1) {
+    const snapshot = await evaluate(readStepExpr());
+    if (!snapshot?.ok) return { ok: false, reason: snapshot?.reason || 'unreadable', pressed };
+    if (snapshot.step != null && Number(snapshot.step) <= 1) return { ok: true, pressed, at: snapshot.step };
+
+    const back = (snapshot.buttons || []).find((b) => !b.disabled && /(previous|back|←)/i.test(b.label));
+    if (!back) return { ok: true, reason: 'no_back_button', pressed, at: snapshot.step ?? null };
+
+    const before = await evaluate(stepFingerprintExpr());
+    const clicked = await evaluate(clickButtonExpr({ labels: [back.label] }));
+    if (!clicked?.ok) return { ok: false, reason: clicked?.reason || 'click_failed', pressed, at: snapshot.step };
+    pressed += 1;
+    log({ event: 'rewind', from: snapshot.step ?? null, button: back.label });
+    const changed = await waitForStepChange({ evaluate, before, timeoutMs: 6_000, pollMs });
+    if (!changed.moved) return { ok: true, reason: 'did_not_move', pressed, at: snapshot.step ?? null };
+    await new Promise((r) => setTimeout(r, settleMs));
+  }
+  return { ok: false, reason: 'max_back_reached', pressed };
+}
+
 /** Lowercase, collapse whitespace. The neutral form two labels are compared in. */
 export function normaliseOptionLabel(label) {
   return String(label || '').replace(/\s+/g, ' ').trim().toLowerCase();
@@ -1456,16 +1656,44 @@ export function chooseOptionExpr({ option = '', question = '' } = {}) {
   const found = findFormDocument();
   if (!found.doc) return JSON.stringify({ ok: false, reason: 'cross_origin_frame' });
   const doc = found.doc;
+  const view = doc.defaultView || window;
   const wanted = normalise(${JSON.stringify(String(option || ''))});
   const question = ${JSON.stringify(String(question || ''))};
+
+  // A bare .click() is not enough on this app: the live age screen re-rendered the same question and
+  // bumped the step counter instead of moving on. So the full pointer sequence is dispatched, which is
+  // what a real click sends and what overlay/portal handlers listen for.
+  const clickLikeHuman = (el) => {
+    try { el.scrollIntoView({ block: 'center' }); } catch (e) {}
+    try { el.focus({ preventScroll: true }); } catch (e) {}
+    const fire = (type, Ctor, init) => {
+      try {
+        const Event = view[Ctor] || view.Event;
+        el.dispatchEvent(new Event(type, { bubbles: true, cancelable: true, view, button: 0, ...(init || {}) }));
+      } catch (e) { /* the sequence continues; one unsupported event is not fatal */ }
+    };
+    fire('pointerdown', 'PointerEvent');
+    fire('mousedown', 'MouseEvent');
+    fire('pointerup', 'PointerEvent');
+    fire('mouseup', 'MouseEvent');
+    try { el.click(); } catch (e) {}
+  };
 
   const visible = (el) => {
     const rect = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
     return Boolean(rect && (rect.width > 0 || rect.height > 0));
   };
-  const candidates = Array.from(doc.querySelectorAll('button, [role="button"], [role="radio"], label'))
+  const candidates = Array.from(doc.querySelectorAll('button, [role="button"], [role="radio"], label, input[type="radio"]'))
     .filter(visible)
-    .map((el) => ({ el, label: clean(el.innerText || el.textContent) }))
+    .map((el) => {
+      // A radio input has no text; its label carries the option.
+      let label = clean(el.innerText || el.textContent);
+      if (!label && el.tagName === 'INPUT') {
+        const wrapping = el.closest ? el.closest('label') : null;
+        label = clean(wrapping ? (wrapping.innerText || wrapping.textContent) : (el.getAttribute('aria-label') || el.value || ''));
+      }
+      return { el, label };
+    })
     .filter((row) => row.label && row.label.length <= 60);
 
   // Same rule as buttonOffersOption(): the option list is the authority, the control may decorate it.
@@ -1487,8 +1715,86 @@ export function chooseOptionExpr({ option = '', question = '' } = {}) {
     return JSON.stringify({ ok: false, reason: 'option_disabled', label: match.label });
   }
   try { match.el.scrollIntoView({ block: 'center' }); } catch (e) {}
-  match.el.click();
-  return JSON.stringify({ ok: true, label: match.label, question });
+  clickLikeHuman(match.el);
+  // Read back what the control now says, so a click that did not register is visible to the caller.
+  const state = {
+    checked: match.el.checked === undefined ? null : Boolean(match.el.checked),
+    ariaChecked: match.el.getAttribute('aria-checked'),
+    ariaPressed: match.el.getAttribute('aria-pressed'),
+    dataState: match.el.getAttribute('data-state')
+  };
+  return JSON.stringify({ ok: true, label: match.label, question, state });
 })()`;
 }
+/**
+ * Where on screen an option sits, in top-level viewport coordinates.
+ *
+ * Synthetic events did not move this app: `A Yes` was clicked, `Next` stayed disabled and the same question
+ * came back. React (and anything accepting pointer events) can ignore a dispatched `click`; a *trusted*
+ * click from the browser protocol cannot be ignored. That needs a coordinate, which is what this returns —
+ * adding the iframe's own offset, because the protocol addresses the top viewport while the control lives
+ * inside the frame.
+ */
+export function optionPointExpr({ option = '' } = {}) {
+  return `(() => {
+  const clean = (v) => String(v == null ? '' : v).replace(/\\s+/g, ' ').trim();
+  const normalise = (v) => clean(v).toLowerCase();
+  const stripMarker = (v) => v.replace(/^(?:[a-z]|\\d{1,2})\\s*[.)\\]:-]?\\s+/, '');
+  const plain = (v) => v.replace(/[^a-z0-9 ]/g, ' ').replace(/\\s+/g, ' ').trim();
+  ${FORM_ROOT}
+  const found = findFormDocument();
+  if (!found.doc) return JSON.stringify({ ok: false, reason: 'cross_origin_frame' });
+  const doc = found.doc;
+  const wanted = normalise(${JSON.stringify(String(option || ''))});
+
+  const visible = (el) => {
+    const rect = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+    return Boolean(rect && (rect.width > 0 || rect.height > 0));
+  };
+  const candidates = Array.from(doc.querySelectorAll('button, [role="button"], [role="radio"], label, input[type="radio"]'))
+    .filter(visible)
+    .map((el) => {
+      let label = clean(el.innerText || el.textContent);
+      if (!label && el.tagName === 'INPUT') {
+        const wrapping = el.closest ? el.closest('label') : null;
+        label = clean(wrapping ? (wrapping.innerText || wrapping.textContent) : (el.getAttribute('aria-label') || el.value || ''));
+      }
+      return { el, label };
+    })
+    .filter((row) => row.label && row.label.length <= 60);
+
+  const offers = (label) => {
+    const value = normalise(label);
+    return value === wanted || stripMarker(value) === wanted || plain(value) === plain(wanted);
+  };
+  const match = candidates.find((row) => normalise(row.label) === wanted)
+    || candidates.find((row) => offers(row.label));
+  if (!match) {
+    return JSON.stringify({ ok: false, reason: 'option_not_found', wanted, available: candidates.map((r) => r.label).slice(0, 12) });
+  }
+
+  const rect = match.el.getBoundingClientRect();
+  // The frame's own offset in the top document: the protocol addresses the top viewport.
+  let offsetX = 0;
+  let offsetY = 0;
+  if (found.mode === 'iframe') {
+    const frames = Array.from(document.querySelectorAll('iframe'));
+    const frame = frames.find((f) => String(f.getAttribute('src') || '') === String(found.frameSrc || ''));
+    if (frame) {
+      const box = frame.getBoundingClientRect();
+      offsetX = box.left;
+      offsetY = box.top;
+    }
+  }
+  return JSON.stringify({
+    ok: true,
+    label: match.label,
+    x: Math.round(offsetX + rect.left + rect.width / 2),
+    y: Math.round(offsetY + rect.top + rect.height / 2),
+    width: Math.round(rect.width),
+    height: Math.round(rect.height)
+  });
+})()`;
+}
+
 

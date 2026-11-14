@@ -28,7 +28,9 @@ import {
   planChoices,
   planScreenValues,
   planStepValues,
+  mapFunnel,
   readStepExpr,
+  rewindToStart,
   runApplication,
   screenFor,
   stepFingerprintExpr,
@@ -122,7 +124,8 @@ function makeFormDoc({ step = 1, total = 15, fields = [], buttons = [], headings
     querySelectorAll(sel) {
       if (sel === 'input, select, textarea') return this.fields;
       if (sel === 'button, [role="button"], input[type="submit"]') return this.visibleButtons();
-      // The option clicker asks for this wider set, because choices are sometimes labels or radios.
+      // The option clicker asks for this wider set, because choices are buttons, labels or radios.
+      if (sel === 'button, [role="button"], [role="radio"], label, input[type="radio"]') return this.visibleButtons();
       if (sel === 'button, [role="button"], [role="radio"], label') return this.visibleButtons();
       if (sel === 'h1, h2, h3, legend') return headings.map((h) => ({ innerText: h, textContent: h }));
       if (sel === '[aria-invalid="true"], [role="alert"]') return this.alerts;
@@ -803,6 +806,114 @@ eq('fill is allowed', CHATTER_APPLY.capabilities.includes('fill'), true);
   eq('keyed by the page number', result.steps[0].key, 'step:3');
   ok('a step read twice still has one record', result.steps[0].attempts >= 2, result.steps.map((s) => s.attempts));
   eq('and the fill was recorded on it', result.steps[0].planned.length, 1);
+}
+
+
+// ─── Mapping the live funnel: read everything, type nothing (2026-11-14) ─────────────────────
+/** A page that can go backwards, so rewind can be exercised. */
+function makeBackablePage(start = 3, floor = 1) {
+  let step = start;
+  let doc = null;
+  const build = () => {
+    doc = makeFormDoc({
+      step,
+      total: 21,
+      fields: [],
+      buttons: [
+        { label: '← Previous', onClick: () => { if (step > floor) { step -= 1; build(); } } },
+        { label: 'Next →', onClick: () => { step += 1; build(); } }
+      ],
+      headings: [`Screen ${step}`],
+      text: ''
+    });
+    return doc;
+  };
+  build();
+  return {
+    get step() { return step; },
+    get doc() { return doc; },
+    evaluate: (expression) => evaluateOn(makePage(doc), expression)
+  };
+}
+
+{
+  const page = makeScriptedScreens([
+    { step: 1, headings: ['Apply to Join The Team'], text: 'Apply to Join The Team', fields: [] },
+    { step: 2, headings: ['Personal Details'], text: 'Full Name Email Address', fields: [
+      { label: 'Full Name', id: 'fullName', name: 'fullName', required: true },
+      { label: 'Email Address', id: 'email', name: 'email', required: true }
+    ] },
+    { step: 3, headings: ['Typing Test'], text: 'Typing Test aim for 70 wpm', fields: [
+      { label: '', id: 'typing', name: 'typing', type: 'text' }
+    ] }
+  ]);
+
+  const result = await mapFunnel({
+    evaluate: page.evaluate,
+    profile: WALK_PROFILE,
+    options: { settleMs: 1, pollMs: 2, advanceTimeoutMs: 40, maxSteps: 8 }
+  });
+
+  eq('all three screens are recorded', result.steps.length, 3);
+  eq('with their own step numbers', result.steps.map((s) => s.step), [1, 2, 3]);
+  eq('and their headings', result.steps[1].heading, 'Personal Details');
+  eq('fields are recorded by label', result.steps[1].fields.map((f) => f.label), ['Full Name', 'Email Address']);
+  ok('the page moved by pressing Next', result.steps[0].advancedBy.startsWith('next:'), result.steps[0].advancedBy);
+  // The whole point: mapping reads, it does not apply.
+  eq('nothing was typed into the text field', page.doc.fields[0].value, '');
+  ok('the map stopped rather than running on', result.steps.length < 8, result.steps.length);
+}
+
+{
+  // A blocked multiple-choice screen: clicking the profile's answer is the only way forward, and the map
+  // records that it did it rather than pretending the screen advanced itself.
+  const page = makeScriptedScreens([
+    { step: 2, headings: ['→Are you 18+?'], text: 'Are you 18?', fields: [],
+      buttons: [{ label: 'A Yes' }, { label: 'B No' }, { label: 'Next →', disabled: true }] },
+    { step: 3, headings: ['Personal Details'], text: 'Full Name', fields: [
+      { label: 'Full Name', id: 'fullName', name: 'fullName', required: true }
+    ] }
+  ]);
+  const result = await mapFunnel({
+    evaluate: page.evaluate,
+    profile: { ageCheck: 'Yes' },
+    options: { settleMs: 1, pollMs: 2, advanceTimeoutMs: 40, maxSteps: 5 }
+  });
+  eq('the answered question is recorded', result.steps[0].advancedBy, 'choice:Yes');
+  ok('and the map continued to the next screen', result.steps.length >= 2, result.steps.map((s) => s.step));
+}
+
+{
+  // With answers disallowed, the map must stop at the first screen it cannot pass — not guess.
+  const page = makeScriptedScreens([
+    { step: 2, headings: ['→Are you 18+?'], text: 'Are you 18?', fields: [],
+      buttons: [{ label: 'A Yes' }, { label: 'Next →', disabled: true }] }
+  ]);
+  const result = await mapFunnel({
+    evaluate: page.evaluate,
+    profile: { ageCheck: 'Yes' },
+    options: { settleMs: 1, pollMs: 2, advanceTimeoutMs: 40, maxSteps: 5, answerChoices: false }
+  });
+  eq('it stops at the blocked question', result.reason, 'blocked');
+  eq('on that step', result.at, 2);
+  eq('having recorded it', result.steps.length, 1);
+}
+
+{
+  // Rewind: press Previous until step 1, changing nothing else.
+  const page = makeBackablePage(3, 1);
+  const result = await rewindToStart({ evaluate: page.evaluate, settleMs: 1, pollMs: 2, log: () => {} });
+  eq('it reaches the first step', result.at, 1);
+  eq('pressing twice', result.pressed, 2);
+  eq('and the page really is on step 1', page.step, 1);
+}
+
+{
+  // Already at step 1: no presses, no clicks.
+  const page = makeBackablePage(1, 1);
+  const result = await rewindToStart({ evaluate: page.evaluate, settleMs: 1, pollMs: 2, log: () => {} });
+  eq('it says it is already there', result.pressed, 0);
+  eq('at step 1', result.at, 1);
 }
 
 console.log(`\n${pass} passed, ${failures.length} failed`);
