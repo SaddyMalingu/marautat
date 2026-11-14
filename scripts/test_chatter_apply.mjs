@@ -1060,6 +1060,8 @@ function makeBackablePage(start = 3, floor = 1) {
   ok('the counter is read from visible text only', expr.includes('.filter((el) => el.children.length === 0 && visible(el))'));
   ok('and ranked by how much of it is in the viewport', expr.includes('const w = Math.max(0, Math.min(rect.right, vw) - Math.max(rect.left, 0));'));
   ok('headings are visible-only too', /const onScreenHeadings = Array\.from\(doc\.querySelectorAll\('h1, h2, h3, legend'\)\)\s*\n\s*\.filter\(visible\)/.test(expr));
+  // The writer has its own `view`; the reader must not borrow it (a live run died on that ReferenceError).
+  ok('and it uses its own window for the viewport', !/\bview\./.test(expr) && /const win = doc\.defaultView \|\| window;/.test(expr));
 }
 
 {

@@ -272,8 +272,9 @@ export function readStepExpr({ includeValues = true } = {}) {
   const inView = (el) => {
     const rect = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
     if (!rect) return 0;
-    const vw = view.innerWidth || 0;
-    const vh = view.innerHeight || 0;
+    const win = doc.defaultView || window;
+    const vw = win.innerWidth || 0;
+    const vh = win.innerHeight || 0;
     const w = Math.max(0, Math.min(rect.right, vw) - Math.max(rect.left, 0));
     const h = Math.max(0, Math.min(rect.bottom, vh) - Math.max(rect.top, 0));
     return w * h;
