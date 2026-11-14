@@ -45,6 +45,7 @@ import { extractAgentToken } from '../utils/browserActor/agentTokens.js';
 import { runPlatform, canRunOnWorker } from '../utils/browserActor/runs.js';
 import { extractPairingCode } from '../utils/browserActor/pairing.js';
 import { maskEnvId } from '../utils/browserActor/identity.js';
+import { chooseLocalProfile, describeProfileChoices } from '../utils/browserActor/localProfile.js';
 import { createMoreloginClient } from '../utils/browserActor/moreloginClient.js';
 import { createBrowserRuntime } from '../utils/browserActor/runtime.js';
 import { SOCIAL_LISTENER, absoluteArgv, buildRunArgs } from '../utils/browserActor/runArgs.js';
@@ -268,25 +269,16 @@ async function discoverProfile(tenantSlug) {
     console.error('MoreLogin is running but has no browser profiles on this computer — create one and sign into Micro1 inside it.');
     return null;
   }
-  if (items.length === 1) {
-    return { envId: String(items[0].envId), envName: items[0].envName, why: 'only one profile' };
-  }
 
-  // Several profiles: prefer one that names the tenant, because that is how a recruiter with
-  // two clients will have labelled it.
-  const tokens = String(tenantSlug || '').toLowerCase().split(/[^a-z0-9]+/).filter((part) => part.length > 2);
-  const named = items.filter((item) => {
-    const haystack = `${item.envName || ''} ${item.groupName || ''}`.toLowerCase();
-    return tokens.some((token) => haystack.includes(token));
-  });
-  if (named.length === 1) {
-    return { envId: String(named[0].envId), envName: named[0].envName, why: 'named after the tenant' };
+  // The choice itself lives in `localProfile.js`, so the worker and the task runners cannot drift
+  // into two different opinions about which profile belongs to whom.
+  const choice = chooseLocalProfile({ items, tenantSlug });
+  if (choice.envId) {
+    return { envId: choice.envId, envName: choice.envName, why: choice.why };
   }
 
   console.error(`MoreLogin has ${items.length} profiles on this computer, so I cannot tell which is yours:`);
-  for (const item of items) {
-    console.error(`  · ${item.envName || '(no name)'} — ${maskEnvId(item.envId)}${item.running ? ' (running)' : ''}`);
-  }
+  for (const line of describeProfileChoices(items, maskEnvId)) console.error(line);
   console.error('Run once with the one you use: node scripts/browser_actor_worker.mjs --env-id <profileId>');
   console.error('It is remembered in worker-config.json afterwards, so this is a one-time choice.');
   return null;

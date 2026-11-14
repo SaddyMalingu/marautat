@@ -22,8 +22,10 @@
  *   node scripts/browser_actor_chatterapply.mjs --tenant malingu-ventures --discover
  *
  * Flags:
- *   --profile <file>   json of profile values keyed per PROFILE_FIELDS (firstName, email, country, …)
+ *   --profile <file>   json of profile values keyed by the app's question ids
  *   --set key=value    repeatable; overrides one profile value without editing the file
+ *   --list-profiles    print the MoreLogin profiles on this computer, ids masked, and stop
+ *   --env-id <id>      drive this profile instead of whatever the portal has mapped to the tenant
  *   --discover         read the step on screen, write it to --out, stop (keeps the page open)
  *   --dry-run          read + plan, never fill or click
  *   --include-typing   let the agent take the typing test too (off by default: see chatterApply.js)
@@ -40,6 +42,7 @@ import { createBrowserRuntime } from '../utils/browserActor/runtime.js';
 import { resolveDebugTarget, CdpSession } from '../utils/browserActor/cdp.js';
 import { maskEnvId } from '../utils/browserActor/identity.js';
 import { resolveRunnerIdentity } from '../utils/tenantRunnerIdentity.js';
+import { chooseLocalProfile, describeProfileChoices } from '../utils/browserActor/localProfile.js';
 import {
   CHATTER_APPLY,
   describeOutcome,
@@ -80,9 +83,14 @@ const targetUrl = String(flag('url', CHATTER_APPLY.applyUrl));
 /** The desk photo the application requires. A path, checked here so a typo fails before the browser. */
 const deskPhoto = flag('desk-photo');
 const typingWpm = Number(flag('typing-wpm', 70)) || 70;
+/** Which profile to drive: given, remembered locally, or discovered from MoreLogin on this machine. */
+const explicitEnvId = flag('env-id', process.env.ML_ENV_ID || null);
+const listOnly = flag('list-profiles', null) !== null;
 
-if (!tenant) {
+if (!tenant && !explicitEnvId && !listOnly) {
   console.error('usage: --tenant <slug> [--profile <file>] [--set key=value]… [--dry-run] [--discover]');
+  console.error('       --list-profiles        show the MoreLogin profiles on this computer (ids masked)');
+  console.error('       --env-id <profileId>   drive this profile instead of the portal\'s mapping');
   process.exit(1);
 }
 
@@ -225,10 +233,66 @@ function writeJson(file, payload) {
 }
 
 
+/**
+ * Which browser to drive, answered by the machine when the portal cannot answer.
+ *
+ * `resolveRunnerIdentity` is the right first question — it knows about a sealed key, a hosted map and what
+ * a previous worker reported. But on a laptop where MoreLogin already holds the key, it refuses
+ * (`profile_unmapped`) while the answer is one `ml-cli env list` away. So the fallback is the same policy
+ * the worker uses: explicit id → ask MoreLogin → single/named profile wins → otherwise show the list.
+ */
+async function resolveIdentity() {
+  const explicit = typeof explicitEnvId === 'string' ? explicitEnvId.trim() : '';
+  const localRuntime = () => createBrowserRuntime({ client: createMoreloginClient({}) });
+
+  if (listOnly) {
+    const listed = await localRuntime().listProfiles({ pageNo: 1, pageSize: 50 });
+    const items = (listed.items || []).filter((item) => item.envId);
+    console.log(JSON.stringify({
+      ok: true,
+      count: items.length,
+      profiles: items.map((item) => ({
+        envId: maskEnvId(String(item.envId)),
+        envName: item.envName || null,
+        groupName: item.groupName || null,
+        running: Boolean(item.running)
+      })),
+      note: 'Ids are masked. Use --env-id <id> with the full value from the MoreLogin app; nobody needs to paste it here.'
+    }, null, 2));
+    return null;
+  }
+
+  if (explicit) {
+    return { envId: explicit, runtime: 'local', apiKey: null, label: null, source: 'configured' };
+  }
+
+  try {
+    return await resolveRunnerIdentity({ tenantSlug: tenant });
+  } catch (error) {
+    if (error?.code !== 'profile_unmapped' && error?.type !== 'profile_unmapped') throw error;
+    console.error(`the portal has no browser mapped to "${tenant}" — asking MoreLogin on this computer`);
+  }
+
+  const listed = await localRuntime().listProfiles({ pageNo: 1, pageSize: 50 });
+  const items = (listed.items || []).filter((item) => item.envId);
+  const choice = chooseLocalProfile({ items, tenantSlug: tenant });
+  if (!choice.envId) {
+    console.error(choice.why === 'no_profiles'
+      ? 'MoreLogin is running but has no profiles here — create one and sign in inside it.'
+      : `MoreLogin has ${items.length} profiles here, so I cannot tell which is yours:`);
+    for (const line of describeProfileChoices(items, maskEnvId)) console.error(line);
+    console.error('Re-run with the one you use: --env-id <profileId>');
+    return null;
+  }
+  console.error(`using ${choice.envName ? `"${choice.envName}" ` : ''}${maskEnvId(choice.envId)} (${choice.why})`);
+  return { envId: choice.envId, runtime: 'local', apiKey: null, label: choice.envName, source: 'local-discovery' };
+}
+
 async function main() {
   const profile = readProfile();
-  const identity = await resolveRunnerIdentity({ tenantSlug: tenant });
-  console.error(`tenant=${tenant} profile=${maskEnvId(identity.envId)} source=${identity.source} headless=${headless}`);
+  const identity = await resolveIdentity();
+  if (!identity) return;
+  console.error(`tenant=${tenant || '(none)'} profile=${maskEnvId(identity.envId)} source=${identity.source} headless=${headless}`);
 
   const runtime = createBrowserRuntime({
     client: createMoreloginClient(identity.apiKey ? { apiKey: identity.apiKey } : {})

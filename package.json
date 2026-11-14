@@ -87,6 +87,7 @@
     "probe:blog-theme": "node scripts/probe_blog_theme.mjs",
     "test:share-card": "node scripts/test_post_share.mjs",
     "test:chatterapply": "node scripts/test_chatter_apply.mjs",
+    "test:localprofile": "node scripts/test_local_profile.mjs",
     "apply:fill": "node scripts/browser_actor_chatterapply.mjs",
     "aboss:workbook": "node scripts/aboss_make_workbook.cjs",
     "aboss:workbook:extract": "node scripts/aboss_extract_workbook.cjs",
