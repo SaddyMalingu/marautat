@@ -263,15 +263,44 @@ export function readStepExpr({ includeValues = true } = {}) {
 
   const progressText = (bodyText.match(/(?:step\\s*)?(\\d{1,2})\\s*(?:of|\\/)\\s*(\\d{1,2})/i) || [])[0] || null;
   const current = progressText ? Number(progressText.match(/\\d{1,2}/)[0]) : null;
+  /**
+   * The page keeps every step mounted and slides between them, so the FIRST "Step N of 21" in the document is
+   * not the one on screen (2026-11-14: it read step 8 while the form stood on step 10, and the run then pressed
+   * Next on screens it was not looking at until maxSteps ran out). Only visible text counts, and among visible
+   * candidates the one filling most of the viewport wins.
+   */
+  const inView = (el) => {
+    const rect = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+    if (!rect) return 0;
+    const vw = view.innerWidth || 0;
+    const vh = view.innerHeight || 0;
+    const w = Math.max(0, Math.min(rect.right, vw) - Math.max(rect.left, 0));
+    const h = Math.max(0, Math.min(rect.bottom, vh) - Math.max(rect.top, 0));
+    return w * h;
+  };
+  const counterPattern = new RegExp('^(?:step[ ]*)?([0-9]{1,2})[ ]*(?:of|/)[ ]*([0-9]{1,2})$', 'i');
+  const onScreen = Array.from(doc.querySelectorAll('body *'))
+    .filter((el) => el.children.length === 0 && visible(el))
+    .map((el) => ({ text: clean(el.textContent), area: inView(el) }))
+    .filter((row) => row.text && counterPattern.test(row.text) && row.area > 0)
+    .sort((a, b) => b.area - a.area)[0] || null;
+  const onScreenStep = onScreen ? Number(onScreen.text.match(/[0-9]{1,2}/)[0]) : null;
+  const onScreenHeadings = Array.from(doc.querySelectorAll('h1, h2, h3, legend'))
+    .filter(visible)
+    .map((el) => clean(el.innerText || el.textContent))
+    .filter(Boolean)
+    .slice(0, 6);
+
+
 
   return JSON.stringify({
     ok: true,
     mode: found.mode,
     frameSrc: found.frameSrc,
     url: String(doc.location ? doc.location.href : ''),
-    progressText,
-    step: current,
-    headings,
+    progressText: onScreenStep != null ? onScreen.text : progressText,
+    step: onScreenStep != null ? onScreenStep : current,
+    headings: onScreenHeadings.length ? onScreenHeadings : headings,
     fields,
     buttons,
     text: bodyText.slice(0, 600),
@@ -1007,6 +1036,8 @@ export async function runApplication({
   // same option. Three identical attempts on the same step is a bug or a page we cannot drive, not a retry.
   let lastSignature = null;
   let repeatCount = 0;
+  // The highest step reached, so a read that goes backwards is caught instead of clicked.
+  let lastStepNumber = null;
   const note = (entry) => { transcript.push(entry); log(entry); return entry; };
 
   for (let index = 0; index < maxSteps; index += 1) {
@@ -1022,6 +1053,27 @@ export async function runApplication({
     // The page's own "Step 14 of 21" is the identity when it offers one; a derived counter is not, because
     // it increments on every read and turns one screen into twelve.
     const stepNumber = snapshot.step ?? null;
+
+    /**
+     * Never walk backwards (2026-11-14). Live, a mis-read step number sent this loop to step 8 while the form
+     * stood on 10, and it then pressed Next on 8, 9, 8, 9, 9, 5, 6 until maxSteps ran out — twenty clicks on
+     * screens it was not looking at. A step that decreases is a page this loop does not understand, so it stops
+     * and says so, leaving the browser as it is.
+     */
+    if (stepNumber != null && lastStepNumber != null && stepNumber < lastStepNumber) {
+      note({ event: 'step-went-backwards', from: lastStepNumber, to: stepNumber, heading: (snapshot.headings || [])[0] || null });
+      return {
+        ok: false,
+        handoff: true,
+        step: stepNumber,
+        reason: 'step_went_backwards',
+        detail: { from: lastStepNumber, to: stepNumber },
+        keepOpen: true,
+        transcript,
+        steps
+      };
+    }
+    if (stepNumber != null) lastStepNumber = stepNumber;
     const stepKey = stepNumber != null
       ? `step:${stepNumber}`
       : (screen?.id ? `screen:${screen.id}` : `view:${(snapshot.headings || [])[0] || 'unknown'}`);

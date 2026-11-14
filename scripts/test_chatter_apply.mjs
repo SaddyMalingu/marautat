@@ -1055,6 +1055,36 @@ function makeBackablePage(start = 3, floor = 1) {
 }
 
 {
+  // The page mounts every step and slides between them, so the counter must be read from what is on screen.
+  const expr = readStepExpr();
+  ok('the counter is read from visible text only', expr.includes('.filter((el) => el.children.length === 0 && visible(el))'));
+  ok('and ranked by how much of it is in the viewport', expr.includes('const w = Math.max(0, Math.min(rect.right, vw) - Math.max(rect.left, 0));'));
+  ok('headings are visible-only too', /const onScreenHeadings = Array\.from\(doc\.querySelectorAll\('h1, h2, h3, legend'\)\)\s*\n\s*\.filter\(visible\)/.test(expr));
+}
+
+{
+  /**
+   * Live, a mis-read step number walked this loop backwards through screens it was not on, pressing Next twenty
+   * times. A decreasing step now ends the run with the page left open instead.
+   */
+  const page = makeScriptedScreens([
+    { step: 5, headings: ['→Country'], text: 'Country', fields: [{ label: 'Country', name: 'country', id: 'country', type: 'text', required: true, value: '' }],
+      buttons: [{ label: 'Next →' }] },
+    { step: 7, headings: ['→Contact Number'], text: 'Contact', fields: [{ label: 'Phone', name: 'phone', id: 'phone', type: 'text', required: true, value: '' }], buttons: [{ label: 'Next →' }] },
+    { step: 6, headings: ['→Email Address'], text: 'Email', fields: [], buttons: [{ label: 'Next →' }] }
+  ]);
+  const result = await runApplication({
+    evaluate: page.evaluate,
+    profile: { country: 'Kenya', phone: '+254743780542' },
+    options: { settleMs: 1, pollMs: 1, advanceTimeoutMs: 40, maxSteps: 8 }
+  });
+  eq('a step that goes backwards stops the run', result.ok, false);
+  eq('saying exactly that', result.reason, 'step_went_backwards');
+  eq('with both numbers for the record', `${result.detail?.from}>${result.detail?.to}`, '7>6');
+  ok('and leaves the page open', result.keepOpen === true);
+}
+
+{
   // The writer has to be able to address a field the reader could only describe positionally, or the read
   // succeeds and the write fails on the same element (which is what happened live at step 3).
   const expr = fillStepExpr({
