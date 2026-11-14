@@ -43,6 +43,7 @@ import { resolveRunnerIdentity } from '../utils/tenantRunnerIdentity.js';
 import {
   CHATTER_APPLY,
   describeOutcome,
+  fileInputExpr,
   readStepExpr,
   runApplication
 } from '../utils/browserActor/tasks/chatterApply.js';
@@ -76,13 +77,16 @@ const closeWhenDone = flag('close', null) !== null;
 const headless = flag('headful', null) === null;
 const outPath = path.resolve(String(flag('out', 'tmp_chatterapply/step.json')));
 const targetUrl = String(flag('url', CHATTER_APPLY.applyUrl));
+/** The desk photo the application requires. A path, checked here so a typo fails before the browser. */
+const deskPhoto = flag('desk-photo');
+const typingWpm = Number(flag('typing-wpm', 70)) || 70;
 
 if (!tenant) {
   console.error('usage: --tenant <slug> [--profile <file>] [--set key=value]… [--dry-run] [--discover]');
   process.exit(1);
 }
 
-/** Read the profile: a json file, then `--set` overrides on top. */
+/** Read the profile: a json file, then `--set` overrides on top, then the desk photo if given. */
 function readProfile() {
   const file = flag('profile');
   let base = {};
@@ -95,18 +99,32 @@ function readProfile() {
       process.exit(1);
     }
   }
-  return { ...base, ...collectSets() };
+  const profile = { ...base, ...collectSets() };
+  if (typeof deskPhoto === 'string' && deskPhoto) {
+    const resolved = path.resolve(deskPhoto);
+    if (!fs.existsSync(resolved)) {
+      // Failing here is kinder than failing at the upload screen with the form half done.
+      console.error(`--desk-photo not found: ${resolved}`);
+      process.exit(1);
+    }
+    profile.deskPhoto = resolved;
+  }
+  return profile;
 }
 
 /**
  * One CDP round trip. Each call re-resolves the target, which costs a little and buys the thing that
  * matters here: the page surviving a dialog, a frame rebuild or a devtools reconnect mid-form.
  */
-async function evaluateJson({ host, port, expression }) {
+async function evaluateJson({ host, port, expression, awaitPromise = false }) {
   const target = await resolveDebugTarget({ host, port });
   const session = await CdpSession.open({ wsUrl: target.pageWsUrl, timeoutMs: 10_000 });
   try {
-    const result = await session.send('Runtime.evaluate', { expression, returnByValue: true }, { timeoutMs: 30_000 });
+    const result = await session.send(
+      'Runtime.evaluate',
+      { expression, returnByValue: true, awaitPromise: Boolean(awaitPromise) },
+      { timeoutMs: awaitPromise ? 120_000 : 30_000 }
+    );
     if (result?.exceptionDetails) {
       const message = result.exceptionDetails.text || 'evaluate threw';
       const detail = result.exceptionDetails.exception?.description || '';
@@ -144,6 +162,44 @@ async function navigateOnce({ host, port, url }) {
   try {
     await session.send('Page.enable', {}, { timeoutMs: 5_000 });
     await session.send('Page.navigate', { url }, { timeoutMs: 20_000 });
+  } finally {
+    session.close();
+  }
+}
+
+/**
+ * Attach a real file to the form's file input.
+ *
+ * A file input's value cannot be set from page script at all, so this is the one place the runner needs
+ * more than `Runtime.evaluate`: the element is located by expression, handed over as an objectId, and the
+ * browser protocol puts the file into it. `change` then fires exactly as it does for a human, which is
+ * what react-dropzone listens for.
+ */
+async function attachFile({ host, port, upload }) {
+  const target = await resolveDebugTarget({ host, port });
+  const session = await CdpSession.open({ wsUrl: target.pageWsUrl, timeoutMs: 10_000 });
+  try {
+    const located = await session.send(
+      'Runtime.evaluate',
+      { expression: fileInputExpr({ name: upload.name, id: upload.id }), returnByValue: false },
+      { timeoutMs: 10_000 }
+    );
+    const objectId = located?.result?.objectId;
+    if (!objectId) return { ok: false, detail: 'no_file_input_on_page' };
+
+    await session.send('DOM.setFileInputFiles', { files: [upload.path], objectId }, { timeoutMs: 20_000 });
+
+    // Proven, not assumed: ask the element itself how many files it now holds.
+    const check = await session.send('Runtime.callFunctionOn', {
+      objectId,
+      functionDeclaration: 'function () { return this.files ? this.files.length : 0; }',
+      returnByValue: true
+    }, { timeoutMs: 5_000 });
+    const count = check?.result?.value;
+    console.error(`  attached ${path.basename(upload.path)} -> ${upload.label || upload.name || 'file input'} (${count} file(s))`);
+    return { ok: Number(count) > 0, files: count ?? null, detail: Number(count) > 0 ? null : 'file_not_held' };
+  } catch (error) {
+    return { ok: false, detail: error?.message || String(error) };
   } finally {
     session.close();
   }
@@ -235,14 +291,14 @@ async function main() {
     }
 
     outcome = await runApplication({
-      evaluate: (expression) => evaluateJson({ ...connection, expression }),
+      // `awaitPromise` matters for the typing pass, which paces keystrokes over real time.
+      evaluate: (expression, options = {}) => evaluateJson({ ...connection, expression, ...options }),
+      attachFile: (upload) => attachFile({ ...connection, upload }),
       profile,
       options: {
         dryRun,
         includeTyping,
-        handoffAt: CHATTER_APPLY.steps.handoffAt,
-        typingTest: CHATTER_APPLY.steps.typingTest,
-        speedTest: CHATTER_APPLY.steps.speedTest
+        typingWpm
       },
       log: (entry) => console.error(
         `  ${entry.event}${entry.step ? ` step ${entry.step}` : ''}`

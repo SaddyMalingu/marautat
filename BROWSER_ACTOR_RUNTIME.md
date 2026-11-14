@@ -732,561 +732,82 @@ argument for verifying before writing rather than after.
 ```bash
 node scripts/browser_actor_micro1.mjs --tenant <slug> --limit 12            # plan
 node scripts/browser_actor_micro1.mjs --tenant <slug> --limit 12 --apply    # import drafts
+
 ## ChatterApply apply flow (2026-11-13) — fill the form, then hand over the live page
 
-The ask was: run steps 1–12, do the internet speed test at 13, the typing test at 14, then stop so a
-person can take step 15 — **without the page closing or reloading**. That requirement decides the shape
-of this one.
+The ask: run the form, do the internet speed test, then the typing test, then stop so a person can take
+the English test — **without the page closing or reloading**.
 
-### There is no markup to work from
+### The funnel is known, because it ships in the bundle
 
-The saved copy of `chatterapply.com/apply` is 11 KB and contains **no form at all**: it is a shell that
-embeds the application in an iframe pointing at `chatterapply.com/apply/form/`, and that URL is itself a
-2.3 KB JS shell (`<title>Apply</title>` and nothing else). Fetching it gives the same nothing.
+The saved `/apply` page has no form in it (11 KB shell → iframe → 2.3 KB shell), so there is no markup to
+write selectors against. But the form's bundle `/apply/form/assets/B45XV0Dm.js` contains the whole flow as
+a literal array of screens and questions, and it settles a question the tenant's own list raised:
 
-So `chatterApply.js` has **no hand-picked CSS selectors**. The reader is generic form introspection: it
-finds the form document (same-origin iframe → `contentDocument`, no CDP frame switching needed), then
-reads every field through `label[for]`, a wrapping `<label>`, `aria-label`, `aria-labelledby`,
-`placeholder`, `name` and `id`. That works on an ordinary form, survives their rebuilds, and — the point
-— reports what it found instead of silently matching nothing.
+> "step 2: +18, step 8: No, step 9: Blank" is not a list of screens. It is a list of **questions**.
 
-| what | how |
-|---|---|
-| find the form | `iframe[src*="/apply/form"]` → `contentDocument`; cross-origin is its own failure (`cross_origin_frame`), not "no fields" |
-| read a step | fields with resolved labels, required/disabled, select options, buttons, `Step N of M`, measurement widgets |
-| write a value | the **native value setter** of the frame's window + `input`/`change`/`blur`, then read it back |
-| click Next | by label, never the submit; a disabled button is reported, not forced |
-| verify an advance | poll a cheap fingerprint until the step changes; a click validation swallowed surfaces as `step_not_advanced` |
+Counting questions against the bundle matches, one for one:
 
-Writing `el.value` directly is the interesting one: it works on a plain form and **does nothing** on a
-React form, because React reads its tracked value, sees no change, and never updates state — the field
-looks filled while the app knows nothing, so Next stays disabled. The native setter is what makes the
-value real, and the read-back is what proves it.
+| # | question id | asks | tenant's answer |
+|---|---|---|---|
+| 1 | `intro` | "Apply to Join The Team" — welcome, no input | — |
+| 2 | `ageCheck` | Are you 18+? | Yes |
+| 3–7 | `fullName`, `discordUsername`, `country`, `email`, `phone` | Personal Details | the five values |
+| 8 | `hasExperience` | Have you worked with OnlyFans before? | No |
+| 9 | `experienceDetails` | agency list — **optional** ("leave blank if No") | blank |
+| 10 | `source` | How did you find this recruitment server? | Reddit |
+| 11 | `referral` | Were you referred by someone? — optional | u/Silver-Tax-2158 |
+| 12 | `deskPhoto` | Desk Photo — **upload** | the .jpg |
+| 13 | `speedTest` | Internet Speed Test | the page's own |
+| 14 | `typingTest` | Typing Test (`validation:{min:70}`) | 70 WPM |
+| 15 | `englishTest` | **English Proficiency Test** | the human's |
 
-### Where it stops, and why
+Eleven screens in all: welcome, age, personal, discovery, tech setup, proof of work, speed & typing,
+English, behavioural, writing, final (voice). `FUNNEL` in `chatterApply.js` is that list, verbatim, so the
+runner knows what each screen should contain instead of inferring it.
 
-```
-step 15            → handoff, always            (it is the applicant's to press)
-step 14 typing     → handoff, by default        (it measures a person; see below)
-step 13 speed      → start it, then wait        (the page measures; we never supply a number)
-required + unknown → needs_values, named        (never guess on an application field)
-```
+### Consequences for the runner
 
-**The typing test is the one step this deliberately does not take.** The apply page lists "Typing speed
-of 65+ WPM" as a hiring requirement and says "The application includes a short typing test and
-assessment". A machine typing that test reports a competence no human demonstrated, which misrepresents
-the applicant to the employer — the same line `oneForma.js` draws for certifications. `--include-typing`
-exists if a tenant has decided otherwise; it is off unless asked for. If the goal is simply to *record*
-the test, it takes a person about a minute.
-
-The internet speed test is the opposite case: it measures the connection, which really is the machine's,
-so the runner starts it and waits for the page's own verdict (`measurement_timeout` if it never finishes).
+- **Screen identity comes from question ids, never a counter.** `screenFor()` scores the page on the ids it
+  exposes and the labels it shows. That is what makes "stop at the English test" expressible: the old rule
+  ("stop at step 15") was wrong, because the app's eighth screen is the tenant's twelfth value.
+- **Uploads are attached, not typed.** The desk photo is a react-dropzone input — hidden, clipped to 1px,
+  and impossible to fill from page script. `DOM.setFileInputFiles` takes the element by objectId and puts a
+  real file in it; the runner then asks the element how many files it holds, so "attached" is proven.
+- **Options are validated.** `source: "Twitter"` is refused with the list of real choices rather than typed
+  into a multiple-choice question.
+- **The typing test is human by default.** Its own description is "Touch typing is essential for
+  efficiency. Aim for 70+ WPM", and the result is what the employer hires on. `--include-typing
+  --typing-wpm 70` types the passage at that pace for a tenant who has decided the number is theirs.
+  The passage is read from the page and shown in the transcript first; if it cannot be identified, the run
+  stops rather than typing the wrong words.
+- **Voice and proof-of-work are never automated**: one records the applicant, the other asks for work they
+  have already delivered.
 
 ### Keeping the page alive
 
-- The script navigates **at most once**, and only when the tab is not already on the form. Every action
-  afterwards is a read or a click on the page that is already there.
-- `chatterApply.js` contains **no navigation call at all**.
-- The profile is **not closed** when the run ends (the opposite of every other script in `scripts/`),
-  because a closed profile is a lost half-finished application. `--close` opts in.
+`chatterApply.js` contains no navigation call at all. The script navigates at most once, and only when the
+tab is not already on the form; the profile is **left running** on exit (`--close` opts in), because a
+closed profile is a lost half-finished application.
 
 ### Running it
 
 ```bash
-# 1. What does this form actually ask? Touches nothing, keeps the page open.
+# what does the current screen actually ask?
 npm run apply:fill -- --tenant <slug> --discover
-#    → prints every field label, its type and whether it is required
 
-# 2. Fill docs/chatterapply-profile.example.json from that output, then plan only:
+# plan only: reads, matches, decides — fills nothing
 npm run apply:fill -- --tenant <slug> --profile ca.json --dry-run
 
-# 3. Drive it for real, stopping in front of the typing test / step 15:
-npm run apply:fill -- --tenant <slug> --profile ca.json
+# drive it, stopping at the English test
+npm run apply:fill -- --tenant <slug> --profile ca.json \
+  --desk-photo "C:/Users/HP/Downloads/IMG_20211123_161036_205.jpg"
+
+# …and if the typing test is yours to claim, add:
+#   --include-typing --typing-wpm 70
 ```
 
-`--set key=value` overrides one value without editing the file; it is repeatable.
-
-Every run writes a transcript to `tmp_chatterapply/step.json`: per step, the heading, the fields, what it
-planned to fill, what it refused to fill and why, and the decision it took. `npm run test:chatterapply` =
-104 assertions against a fake iframe DOM covering all four label styles, the mapper, the stop policy, the
-submit guard, the fill read-back, and the whole walk including a Next that never moves the page.
-
-  --only-missing        skip roles this tenant already has (do this by default)
-  --no-descriptions     links only (much faster; bodies come from the job-page pass)
-  --run-id <uuid>       report progress into browser_actor_runs for the portal
-```
-
-### The constraint that shapes the runner: one start is expensive
-
-MoreLogin allows a fixed number of profile **starts per day**, and exceeding it fails the
-start with *"The daily startup limit is exceeded"* — the same `19124` code as a genuine
-start failure, which is why the message is matched rather than the code
-(`classifyProviderFailure`). Two rules follow:
-
-- **A failed start is classified before it is retried.** A quota failure is not
-  retryable, so the run stops with the one instruction that helps rather than spending
-  more of the allowance discovering the same thing.
-- **A successful start must do all the work it can.** One navigation reads all 12 cards;
-  the bodies come from the same session; `--only-missing` skips roles the tenant already
-  owns; the report prints `alreadyImported` so a wasted start is visible.
-
-Measured on the live dashboard: **12 cards, ~350 ms per link, ~2.2 s per body**. A verified
-sample run produced 4/4 links `match` with bodies of 5,391 and 3,168 characters.
-
-
-
-## Tenant-owned browser access (BYO MoreLogin, 2026-11-02)
-
-The tenant brings their own MoreLogin account and profile, signs into Micro1/Turing **on
-their own machine**, and hands Alphadome an API key. We never see a password or an OTP, so
-"could an Alphadome employee log in as me?" is answered by architecture rather than policy.
-
-### Why this shape
-
-| | Hosted (operator's profiles) | BYO (this) |
-|---|---|---|
-| Custody of the session | ours | the tenant's |
-| Password/OTP visible to us | during a remote login | never |
-| Daily start quota | ours (OPEN_FLAGS #16) | theirs |
-| Fingerprint / IP a marketplace sees | our proxies | their own machine |
-| What we store | nothing | one sealed API key per tenant |
-
-### The flow
-
-```
-tenant (5 min, their machine)     portal
-  create MoreLogin account   →    Writer's Flow → Your own browser
-  create one profile         →    paste the MoreLogin API key → Connect
-  sign into Micro1/Turing         (profile list is read live from their account)
-  inside that profile
-                             →    Verify sessions  → "connected · micro1 + turing"
-```
-
-Endpoints (all tenant-session scoped):
-
-```
-GET  /tenant/blogger/browser-access            status + which profile a run would use
-POST /tenant/blogger/browser-access/connect    { apiKey, envId?, label?, runtime? }
-POST /tenant/blogger/browser-access/verify     start once, read each marketplace listing
-POST /tenant/blogger/browser-access/disconnect
-```
-
-### What is stored, and what is never returned
-
-`site_tenants.metadata.browserAccess`:
-
-```json
-{ "envId": "2116…", "runtime": "cloud", "label": "Acme Studio",
-  "keySealed": "v1.<iv>.<tag>.<ct>", "keyFingerprint": "sha256:ab12…",
-  "connectedAt": "...", "verifiedAt": "...", "verifiedPlatforms": ["micro1"],
-  "reauthRequired": false, "reauthPlatforms": [], "lastCheckedAt": "..." }
-```
-
-- The key is **AES-256-GCM** sealed under `TENANT_SECRET_KEY`. Missing that env var ⇒
-  connecting is refused with the variable named; nothing is stored in the clear.
-- `publicAccessStatus` is the only shape a tenant sees: **no key, no ciphertext, no
-  fingerprint**, and the profile id is masked.
-- `disconnect` deletes the record and leaves the tenant's MoreLogin account untouched.
-
-### Three rules the endpoints enforce
-
-1. **A key may only bind a profile it owns.** `connect` reads the profile list live from the
-   tenant's account; an `envId` outside that list is a 403, and an account with several
-   profiles must choose (409 with the list).
-2. **Runs prefer the tenant's own profile.** `resolveRunnerIdentity` order is
-   tenant → hosted → default → refuse. A seal that will not open stops the run with
-   `reconnect_required`; it never falls back to the operator's profile, because running as
-   the wrong account is worse than stopping.
-3. **"Verified" is evidence.** `verify` starts the profile once and reads each listing:
-   cards ⇒ `signed_in`, a sign-in affordance and no cards ⇒ `login_wall` ⇒ written as
-   `reauthRequired`. A check that could not run is a 502 and **never** becomes "signed out".
-
-### Not yet verified live
-
-The cloud attach path (`cdpUrl` → websocket) in `utils/tenantBrowserProvider.js` is written
-against the documented contract but has not been exercised end-to-end: this host's plan is
-out of daily starts (OPEN_FLAGS #16) and malingu-ventures runs a hosted **local** profile.
-The first BYO tenant run is the test — everything pure is covered by
-`npm run test:browser-access` (100 assertions), including the sealing, the masking, the
-refusals, the resolution order and key rotation.
-
-### The sealing key, operationally
-
-`TENANT_SECRET_KEY` is the only secret this feature needs, and it has one rule that is easy
-to get wrong: **the portal seals, the runner opens, so both must hold the same value.** A
-mismatch is silent until a run starts and then reports `reconnect_required`, which looks
-like the tenant's fault.
-
-```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"   # generate
-npm run secrets:check                                                     # verify this host
-```
-
-`secrets:check` prints the `sha256:` fingerprint of the configured key(s) and, per tenant,
-whether their stored key opens — with `current`, with the **retiring** key, or not at all.
-Compare the fingerprint in the Render log with the one on the operator machine; equal
-fingerprints mean equal secrets, and neither side has to reveal it. Exit code is 1 if any
-tenant cannot be opened, so it can gate a deploy.
-
-Rotation is a three-step move, supported by `TENANT_SECRET_KEY_PREVIOUS`:
-
-1. `TENANT_SECRET_KEY_PREVIOUS=<old>` and `TENANT_SECRET_KEY=<new>`, on the portal **and**
-   every runner host.
-2. Deploy. Old seals keep opening (the runner logs that the tenant is on the retiring key);
-   new connects seal with the new key.
-3. Once `secrets:check` reports zero on the retiring key, remove
-   `TENANT_SECRET_KEY_PREVIOUS`.
-
-Without step 3 the old key stays valid forever, which defeats the point of rotating.
-
-
-### The tenant can start the capture themselves
-
-Because a BYO profile is **cloud**, the browser is reachable from Render — so a tenant can
-press a button instead of waiting for an operator:
-
-```
-POST /tenant/blogger/browser-access/capture   { platform: 'micro1', limit?: 12 }
-  → 409 not_connected     no profile connected
-  → 409 local_runtime     their profile runs on the operator machine, not in the cloud
-  → 400 unsupported       only micro1 has a verified adapter
-  → 409 already_running   one run at a time, enforced by browser_actor_runs
-  → 202 { run }           a queued row + a spawned runner; the portal polls the row
-```
-
-The route does not run the capture inline: it queues a run, spawns the **same** script an
-operator would run (`--tenant … --apply --only-missing --run-id …`), and answers 202. The
-child's stdout goes to `tmp/run-<id>.log`, its report to `tmp/run-<id>.json`, and progress
-lands in the run row the portal already polls.
-
-Two consequences worth stating: the run costs one of the **tenant's** daily starts, and a
-Render redeploy during a run kills the child — which is why the row records what happened
-rather than leaving the tenant guessing. A durable job runner is the next step if this
-becomes the normal path.
-
-
-
-Every script that starts a browser now goes through `resolveRunnerIdentity({ supabase, tenantSlug })`:
-`browser_actor_micro1.mjs`, `browser_actor_referrals.mjs` (Turing), `browser_actor_collect.mjs`, and
-`browser_actor_inspect.mjs` (so an operator can debug a BYO tenant's profile). One resolver, one
-order — tenant → hosted → default → refuse — instead of five copies that could drift.
-
-Two deliberate exceptions:
-- `browser_actor_probe.mjs` (the host doctor) keeps the env map: it tests *this machine's*
-  MoreLogin install, not a tenant's account.
-- `browser_actor_inspect.mjs` writes its debugging artifact by hand rather than spreading the
-  identity object, because that object now carries the tenant's decrypted key and the artifact
-  is a file on disk.
-
-
-
-### When cloud browsing is not available: the tenant's own worker
-
-A desktop MoreLogin profile can only be driven from the machine that started it, and its
-debug port has no authentication — exposing it would hand anyone who finds the URL remote
-control of a logged-in marketplace account. So there are exactly two ways a profile gets
-used, and both are honest about where the browser is:
-
-| Profile runtime | Who runs the capture | What the tenant sees |
-|---|---|---|
-| `cloud` | the portal (spawns the runner) | progress immediately |
-| `local` | **the tenant's own machine** | `202 queuedForWorker`, then progress when their worker picks it up |
-
-The local path, end to end — and note that the tenant never leaves the portal except to paste one line:
-
-```
-portal:  Capture now  → POST /browser-access/capture
-                       → 202 { run, queuedForWorker: true, needsWorkerToken }   (no spawn; nothing to fake)
-         "Queued for your worker — it starts as soon as your computer picks it up."
-         (first time, no worker yet: "create a worker token below and start the worker there")
-
-portal:  Create worker token → POST /browser-access/worker-token
-                             → 201 { token, command, note: "not shown again" }
-         the panel prints the command under a Copy button and warns once
-
-tenant:  paste it into a terminal on the MoreLogin machine, leave it running:
-         node scripts/browser_actor_worker.mjs --api https://… --token wkr_…
-worker:  GET  /api/agent/runs              this tenant's queued/running rows
-         POST /api/agent/runs/:id/claim    atomic: update … where status = 'queued'
-         spawn scripts/browser_actor_micro1.mjs --run-id <id>   (the same path an operator uses)
-         POST /api/agent/runs/:id/finish   counters → succeeded | partial | failed
-
-portal:  "Run captures on your computer. last seen 2/11/2026, 14:02"     (or "never connected")
-         Revoke wkr_ab12… (my computer)   ← one click, effective immediately
-```
-
-The panel states three things a tenant needs and nothing else: whether a worker exists, whether it
-has ever checked in, and how to switch one off. "Last seen" is the field that separates "queued and
-waiting for my machine" from "queued and nobody is listening" — the difference between patience and
-a support ticket.
-
-#### What the tenant actually downloads
-
-`GET /tenant/blogger/browser-access/worker-bundle` streams a zip built **on demand from this repo's
-own source files** (`utils/browserActor/workerBundle.js`), so a pilot never runs a stale artifact.
-Thirty files, ~229 kb, and what is *not* in it is the point:
-
-| Not in the zip | Why it matters |
-|---|---|
-| `.env`, service-role key, JWT | A tenant laptop must never hold a key that can write for **every** tenant |
-| `TENANT_SECRET_KEY` | That key unseals *any* tenant's MoreLogin key; it cannot leave the server |
-| a worker token | Typed by the tenant on their machine, saved as `worker-token.txt`, never transmitted to us |
-| `node_modules`, any npm package | The browser layer is CDP + `ml-cli` directly, so there is nothing to install and no supply chain to audit |
-| anything tenant-specific | The same zip is served to everyone |
-
-The tenant's experience is three steps in the panel: *Download* → *Create a token* → double-click
-`Start Worker.cmd` and paste it. `Start Worker.cmd` checks for Node.js and, if it is missing, says so
-and gives the link rather than printing a stack trace. `worker-bundle/README.txt` is written for
-someone who has never opened a terminal.
-
-#### Agent mode: why the tenant machine never touches the database
-
-Handing out a bundle that required `SUPABASE_SERVICE_ROLE_KEY` would have been the largest security
-regression in this repo — one careless tenant screenshot and every tenant's data is writable. So the
-privileged half of the capture moved to the server, behind the worker token:
-
-```
-tenant machine                                    portal
-  GET  /api/agent/runs/:id/context     ───────►   resolves the tenant from the token, resolves the
-                                                  profile, returns envId + the roles they already own
-                                                  (never the MoreLogin key)
-  POST /api/agent/runs/:id/progress   ───────►    counters + heartbeat
-  spawns the same capture script,
-  drives the local profile, reads pages
-  POST /api/agent/runs/:id/result     ───────►   sanitises the payload, re-verifies every link,
-                                                  plans + writes offers, **leaves the run open**
-  POST /api/agent/runs/:id/finish     ───────►   counters + status, closes the run once
-```
-
-`/result` is called **repeatedly**: the runner banks what it has every 20 roles and sends only the
-captures the portal has not seen yet, so a long run never grows into one giant request.
-
-`scripts/browser_actor_micro1.mjs` runs both ways from one file: with Supabase for an operator, and
-with `--agent-api/--agent-token` for a tenant. `dotenv` and `@supabase/supabase-js` are imported
-lazily so the bundled copy needs neither.
-
-Rules that keep the new endpoints safe rather than merely convenient:
-
-- **The tenant comes from the token**, never from the body — same as the claim path.
-- **The context refuses anything but the tenant's own local profile.** A tenant worker cannot be
-  pointed at the operator's hosted browser, and a cloud profile is refused with "press Capture again".
-- **The result payload is untrusted input.** Titles and bodies are bounded, unknown fields dropped,
-  and a `javascript:`/`file:` URL is discarded rather than stored and rendered later.
-- **Every link is re-verified server-side** before it is attached, so a compromised worker cannot
-  inject a link that pays somebody else.
-- **A closed run cannot be written to** (409), so a retry cannot double-insert.
-- **A batch is bounded, and a 413 is split, not swallowed.** On 2026-11-04 a 120-role Turing run
-  re-sent everything it had on every flush: the last post was ~400 KB, Express answered
-  `PayloadTooLargeError`, and the run closed `120/120 · failed` with **no** links written. So
-  `/api/agent` carries its own 12 MB parser (mounted *before* the global one — every other route
-  still refuses >100 KB), the runner advances a `postedCount` cursor instead of re-sending, and a
-  chunk that is refused with 413 is halved and retried before it is treated as a failure.
-- **A run ends on `/finish`, and only there.** If some batches landed and the last did not, the run
-  closes as `partial` — neither success nor failure, because either word would hide the number that
-  matters: how many links actually reached the portal.
-- **No MoreLogin key in the context.** A stolen `wkr_` token therefore buys the ability to burn that
-  tenant's own daily starts — not control of their marketplace accounts.
-
-Verified mechanically: the extracted zip runs in a temp folder with an **empty environment** (no
-`SUPABASE_*`, no `TENANT_SECRET_KEY`, no `node_modules`) and stops with
-`the portal refused this run (404)` — proving it loads, starts, and reaches the portal without ever
-looking for a database.
-
-Rules that make it safe rather than merely convenient:
-
-- **The token is the tenant.** The tenant comes from the token row, never from the request,
-  so a worker cannot claim another tenant's run however it shapes its body.
-- **Hash-only storage.** A database leak yields no working credential; a lost token is
-  revoked and reissued, not recovered.
-- **Revocation is immediate**, and revoked tokens are refused even though the row stays for
-  the audit trail.
-- **Claim is a compare-and-set**, so two workers on two machines race safely: one wins, the
-  other gets a 409.
-- **Nothing runs on the tenant's machine they did not ask for**: the worker acts only on rows
-  already queued in *their own* portal.
-
-The worker adds an install step, so it is the fallback — not the default. Cloud tenants get
-the button with no setup; a tenant whose plan has no cloud browser installs one command and
-gets the same button.
-
-### Source attribution (why the funnel said "Unattributed")
-
-`migrations/2026-10-31_seed_micro1_turing_sources.sql` was **never applied**, so
-`opportunity_sources` held only mercor and respondent and all 96 offers had
-`source_id = NULL`. `scripts/backfill_offer_sources.mjs` fixes that as **data** (no DDL):
-it creates the missing source rows and attributes offers only on concrete evidence —
-the importer's own slug convention, or a referral link on the marketplace's own host.
-Result: 83 attributed (78 Turing, 5 Micro1), **13 left alone** because they are hand-made
-offers with no evidence. A guess there would have attributed somebody's own product to
-Micro1.
-
-
-### Zero-config browser on the tenant's machine (2026-11-03)
-
-The first BYO design asked the tenant to paste a MoreLogin **API key** so the server could
-learn an envId. Production answered: `claim 200 → context 409 "No browser is mapped to tenant
-malingu-ventures" → finish 200`. The tenant had a working worker on the machine that holds the
-profile; the server simply had no idea which browser it was, because the only path to telling
-it was a key the tenant had to go and find.
-
-Two questions were being asked in the wrong place:
-
-| The question | Where it was asked | Where it belongs |
-|---|---|---|
-| Which MoreLogin account? | the server, with a pasted key | nowhere — the worker is already signed in locally |
-| Which profile? | the portal, as an id to pick | the machine: `ml-cli env list` needs no key |
-
-So the worker now answers both, once, at startup:
-
-```
-browser: "P-4" 21********80 (only one profile) — the portal will use it
-```
-
-`POST /api/agent/browser` `{ envId, label, machine }` (worker token, not a session) stores
-`site_tenants.metadata.workerBrowser`. Three deliberate properties:
-
-- **No credential is involved.** Nothing is sealed, nothing is opened, and the worker holds
-  the same `wkr_` token it already had. It is stored apart from `browserAccess` precisely so
-  it can never be mistaken for a connection the tenant made with a key.
-- **It only resolves runs on that machine.** `resolveRunnerIdentity({ workerRuns: true })` —
-  which only the worker's `/context` call passes — consults it **last**, after `tenant`,
-  `hosted` and `default`. Server-side verify and portal capture deliberately ignore it: a
-  desktop profile is not reachable from Render, and pretending otherwise is how you get a run
-  that claims to be capturing and is not. Adding a fallback in the empty case also means no
-  existing tenant's resolution changed, so no pilot had to be re-tested.
-- **It is masked to the tenant** (`publicWorkerBrowser`), like every other id in this
-  subsystem, and `Disconnect` clears it along with the key.
-
-One trade-off, stated rather than hidden: if an operator has mapped a **different** profile
-for that tenant in `BROWSER_ACTOR_PROFILES`, hosted wins and the run will fail on that
-machine. It is logged (`[runner-identity] … hosted wins`) because the operator is the only
-person who can fix it, and the tenant cannot see either id in full.
-
-Several profiles and no obvious match? The worker prints them and stops, and the choice is
-kept in `worker-config.json` — a data file with no secret in it — so it is asked once.
-
-
-
-### One card per marketplace (2026-11-03)
-
-Collection control used to be one button row — `Verify links`, `Capture Turing links`,
-`Fill Turing descriptions` — with a line underneath explaining that Micro1 lived somewhere
-else. A tenant could not answer three questions that decide what to click:
-
-| Question | Why the row could not answer it |
-|---|---|
-| Which button needs my worker running? | Only Micro1 does, and that was in a note, not on the button |
-| Which one spends a MoreLogin start? | Only Micro1 spends one — it is their plan's daily limit |
-| Which one failed last night? | `runs.headline` named a single run, whichever was newest |
-
-So the panel renders one card per marketplace, each with its own buttons, its own
-last-or-current run and age, its own counters from the funnel, and one line saying where it
-runs:
-
-```
-Turing   [done] · last 2h ago · 78/78       Micro1  [running] · 3/12 · started 40s ago
-78 captured · 74 linked · 70 verified       12 captured · 12 linked · 12 verified
-[Capture links] [Fill descriptions]         [Capture Micro1 links]
-A runner reads Turing for you.              Reads Micro1 through your own browser — your
-                                            worker has to be running.
-```
-
-`runs.byPlatform` is a **grouping**, not a query: the writer-flow payload already loads the
-rows, and `runsByPlatform` buckets them with the same `runPlatform()` the runner uses to
-decide what to capture. That shared function is the whole point — a card cannot claim a run
-belongs to a marketplace the worker would disagree with. Legacy rows with no
-`detail.platform` and `kind: 'referrals'` stay Turing, which is what they were.
-
-The Micro1 card is disabled with an amber explanation when no browser is connected yet, so it
-cannot be a click that quietly does nothing — the same rule as everywhere else in this
-
-### Turing on the tenant worker, and a run worth starting (2026-11-03)
-
-Two limits, hit in the same week.
-
-**1. Turing could not run on the tenant's machine.** The runner needed a checkout of this repo and
-a database key, so a Turing run waited for an operator while the tenant watched a queue. It now
-has the same agent mode Micro1 has: `--agent-api/--agent-token`, context from
-`/api/agent/runs/:id/context` (the profile id and the offers the tenant already owns — never the
-MoreLogin key), progress posted to `/progress`, and the result posted to `/result`.
-`WORKER_PLATFORMS` is now `micro1` + `turing`, and the worker chooses the script **by the run's
-platform** — a Turing run executed by the Micro1 script would capture the wrong marketplace and
-still look like it worked.
-
-One thing had to be built for it. `applyCaptures` **inserts** offers, which is the Micro1 shape:
-its roles are new to the tenant. A Turing capture **updates** 78 roles that are already imported —
-inserting them would duplicate the catalogue. So `applyCaptureUpdates` was added. It plans with the
-same pure helpers the operator runner uses (`planReferralBackfill`, `planDescriptionUpdates`),
-verifies every link, and writes with `.is('referral_url', null)` so a slow capture cannot clobber a
-link someone attached in the meantime.
-
-**2. A run captured twelve roles.** The Micro1 grid renders twelve cards, and the runner read one
-page then stopped — so a scarce MoreLogin start bought twelve offers, which is exactly what the
-tenant reported ("micro1 run picked up 17 opportunities, I believe we can improve that"). It now
-pages: `MICRO1_ADVANCE_EXPR` tries an explicit next control, then a load-more control, then the
-document bottom, and reports which one it used; `mergeMicro1Pages` accumulates without duplicates,
-keyed on the title because a card carries no id until its share link is opened. The default limit
-is 70 and the cap is 150. When the listing offers fewer, the run says how many pages it read
-rather than implying that twelve was the request.
-
-subsystem: name the cause before spending the tenant's attention.
-
-### Social listening: five networks, and a zero that explains itself (2026-11-04)
-
-The intents, the phrases and the scorer have been in this repo since the ABOSS work. What was
-missing was always the same thing: **nothing read the posts**, so
-`data/ABOSS_SOCIAL_SIGNALS_RAW.csv` was a header row and the whole pipeline was a well-tested
-hypothesis. The tenant's own browser is the only actor that can close that gap without an account
-of ours and a legal risk.
-
-```
-tenant machine                                          portal
-  GET  /api/agent/runs/:id/context    ───────►  the searches to run, from the taxonomy
-  --platform <network> chooses the description
-  POST /api/agent/runs/:id/signals    ───────►  sanitises, **scores**, stores in social_signals
-  POST /api/agent/runs/:id/finish     ───────►  closes the run
-```
-
-**One script, five networks.** `tasks/socialPlatforms.js` describes each site and nothing else:
-where to search, how to tell signed-in from walled (and from a cookie sheet), the **ordered
-selector lists** for container / text / author / link, the reading budget and the pace. Adding a
-sixth network is a description, not a copy of the runner.
-
-| Network | Where it looks | What a signal is | First line limit |
-|---|---|---|---|
-| LinkedIn | content search, last week, newest first | the post body | 1900 |
-| X | live search, `-filter:replies` | the tweet | 260 |
-| Facebook | public post search | the post | 8000 |
-| Reddit | search by week, newest | the **title** (weaker evidence, stated) | 10000 |
-| YouTube | search results | the **video title** (weaker: it is publication, not a question) | 10000 |
-
-**The lesson this file keeps relearning, now enforced.** On 2026-11-04 the LinkedIn-only version
-ran three searches and printed `0 post(s) on the page` three times, then finished `succeeded` —
-identical, from the outside, to a quiet week. Every query now reports:
-
-- **which selector strategy matched** (or that none did → the markup moved),
-- how many **candidate cards** were on the page,
-- the page **title** and the first 240 characters of its text,
-- the **session** answer: `signed_in` / `login_wall` / `consent_wall` / `unknown`.
-
-That goes into the run's `detail.diagnostics`, so the portal can say *why* a search came back
-empty instead of implying nobody is talking. A page whose selectors match nothing is a fix we can
-make in an hour; a page reported as "0 posts" is a bug that hides for a month.
-
-Two smaller decisions worth stating:
-
-- **Tracking parameters are stripped** from permalinks (except Facebook, whose id lives in the
-  query), so the same post cannot arrive twice under two URLs and defeat the
-  `(tenant, post_url)` uniqueness.
-- **A cookie sheet is not a login wall**, and neither is clicked on the tenant's behalf: the run
-  stops with "accept it once in MoreLogin, then run again". Consenting for someone is a decision
-  about their account, not ours to make.
-
-Nothing in this path sends. The panel offers *copy first line* and *open post*, plus the per
-network action ("Reply in the thread", "Comment under the video"), and the tenant records what
-they did (`sent` / `ignored`). The suite asserts that no module here can message anyone.
-
-Apply `migrations/2026-11-04_social_signals.sql` before pressing a *Start on …* button: until then
-the panel says "Not set up yet", which is deliberately different from "nothing matched".
-
-
+Every run writes `tmp_chatterapply/step.json`: per screen, the heading, the fields, what was planned, what
+was refused and why, uploads, and the decision taken. `npm run test:chatterapply` = 123 assertions over the
+real funnel data, the screen matcher, the id-based planner, option validation, the upload path, paced
+typing, and a scripted walk that stops at the English screen.

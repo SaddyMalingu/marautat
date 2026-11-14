@@ -41,13 +41,6 @@ export const CHATTER_APPLY = Object.freeze({
    * presses it claims an application was made by someone who has not read it.
    */
   capabilities: Object.freeze(['read', 'fill']),
-  steps: Object.freeze({
-    /** The flow the tenant described: 12 form steps, 13 speed, 14 typing, 15 the human's. */
-    formSteps: 12,
-    speedTest: 13,
-    typingTest: 14,
-    handoffAt: 15
-  }),
   buttons: Object.freeze({
     next: ['next', 'continue', 'save and continue', 'proceed'],
     start: ['start', 'start test', 'begin', 'begin test', 'start typing'],
@@ -55,6 +48,94 @@ export const CHATTER_APPLY = Object.freeze({
     forbidden: ['submit', 'send application', 'apply now', 'finish application']
   })
 });
+
+/**
+ * The funnel, as data — extracted from the app's own bundle on 2026-11-13.
+ *
+ * The saved `/apply` page carries no markup, but the form's bundle (`/apply/form/assets/B45XV0Dm.js`)
+ * ships the whole flow as a literal array of screens and questions. Two funnels are bundled (the second
+ * is another tenant's, "Apex Hiring"); this is the live one, and it matches the tenant's own values
+ * question for question — including "No" for OnlyFans experience and a blank referral.
+ *
+ * It matters that this is a *list of questions*, not of screens: "step 8 = No" only makes sense once you
+ * know question 8 is "Have you worked with OnlyFans before?". The runner now checks ids, so it can tell
+ * it is on the screen it thinks it is on instead of trusting a counter.
+ */
+export const FUNNEL = Object.freeze([
+  { id: 'welcome', title: 'Welcome', questions: [{ id: 'intro', type: 'info', label: 'Apply to Join The Team' }] },
+  {
+    id: 'age_verification',
+    title: 'Age Verification',
+    questions: [{ id: 'ageCheck', type: 'mcq', label: 'Are you 18+?', required: true, options: ['Yes', 'No'] }]
+  },
+  {
+    id: 'personal',
+    title: 'Personal Details',
+    questions: [
+      { id: 'fullName', type: 'text', label: 'Full Name', required: true },
+      // Their "SaddyMalingu" is the Discord handle, not a website username.
+      { id: 'discordUsername', type: 'text', label: 'Discord Username', required: true },
+      { id: 'country', type: 'text', label: 'Country', required: true },
+      { id: 'email', type: 'email', label: 'Email Address', required: true },
+      { id: 'phone', type: 'phone', label: 'Contact Number', required: true }
+    ]
+  },
+  {
+    id: 'discovery',
+    title: 'Discovery',
+    questions: [
+      { id: 'hasExperience', type: 'mcq', label: 'Have you worked with OnlyFans before?', required: true, options: ['Yes', 'No'] },
+      // Optional: "Leave blank if No" — so a blank is a valid answer, not a missing one.
+      { id: 'experienceDetails', type: 'long_text', label: 'If yes, please list the agencies and describe your experience.', required: false },
+      { id: 'source', type: 'mcq', label: 'How did you find this recruitment server?', required: true, options: ['Discord', 'Telegram', 'Reddit', 'Google', 'Facebook', 'Friend'] },
+      { id: 'referral', type: 'text', label: 'Were you referred by someone? (If yes, include their name)', required: false }
+    ]
+  },
+  { id: 'setup', title: 'Tech Setup', questions: [{ id: 'deskPhoto', type: 'upload', label: 'Desk Photo', required: true }] },
+  { id: 'proof', title: 'Proof of Work', questions: [{ id: 'proofOfWork', type: 'proof_of_work', label: 'Proof of work', required: true }] },
+  {
+    id: 'speed_typing',
+    title: 'Speed & Typing',
+    questions: [
+      { id: 'speedTest', type: 'speed_test', label: 'Internet Speed Test', required: true, validation: { min: 70 } },
+      { id: 'typingTest', type: 'typing_test', label: 'Typing Test', required: true, validation: { min: 70 } }
+    ]
+  },
+  { id: 'english_test', title: 'English Proficiency', questions: [{ id: 'englishTest', type: 'english_test', label: 'English Proficiency Test', required: true }] },
+  { id: 'behavioural', title: 'Behavioural & Analytical', questions: [] },
+  {
+    id: 'creativity',
+    title: 'Writing + Creativity + Sales',
+    questions: [
+      { id: 'salesProcess', type: 'long_text', label: 'Describe your step by step process for how you lead a new fan to a sale.', required: true },
+      { id: 'captionShower', type: 'long_text', label: 'Write the caption for this PPV content: Shower Video', required: true },
+      { id: 'captionStrip', type: 'long_text', label: 'Write the caption for this PPV content: Strip Video', required: true },
+      { id: 'captionExplicit', type: 'long_text', label: 'Write the caption for this PPV message: Explicit Video', required: true }
+    ]
+  },
+  { id: 'final', title: 'Final Step', questions: [{ id: 'voiceIntro', type: 'voice', label: 'Voice Introduction', required: false }] }
+]);
+
+/**
+ * Question types no agent should ever answer, whatever the config says.
+ *
+ * - `typing_test` / `english_test` / `voice` measure the applicant. A machine taking them reports a
+ *   competence nobody demonstrated, to an employer who then hires on it.
+ * - `proof_of_work` asks for results previously delivered; there is nothing to fill in, and inventing
+ *   something would be fabrication.
+ * - `upload` needs a file the human chose.
+ *
+ * `--include-typing` lifts the typing test only. Nothing lifts the rest.
+ */
+export const HUMAN_ONLY_TYPES = Object.freeze({
+  typing_test: 'measures your typing speed',
+  english_test: 'measures your English',
+  voice: 'records your voice',
+  proof_of_work: 'asks for work you have already delivered'
+});
+
+/** The screen the runner stops in front of: the one after the typing test. */
+export const STOP_SCREEN = 'english_test';
 
 /**
  * Finds the document the form is actually in.
@@ -134,7 +215,9 @@ export function readStepExpr({ includeValues = true } = {}) {
   };
 
   const fields = Array.from(doc.querySelectorAll('input, select, textarea'))
-    .filter((el) => !['hidden', 'submit', 'button', 'reset', 'image', 'file'].includes(String(el.type || '').toLowerCase()))
+    // File inputs are kept deliberately: the desk photo is a required upload and has to be reported as
+    // one. They are never written as text — the caller attaches a real file through the browser protocol.
+    .filter((el) => !['hidden', 'submit', 'button', 'reset', 'image'].includes(String(el.type || '').toLowerCase()))
     .filter(visible)
     .map((el, index) => ({
       index,
@@ -529,50 +612,218 @@ export function planStepValues({ fields = [], profile = {}, alreadyUsed = [] } =
 }
 
 /**
- * What to do with the step that is on screen. Pure, so the policy is testable without a browser.
+ * Which screen is on display?
  *
- * The ordering encodes the safety rules: the human boundary is checked before anything else, the
- * typing test is a human step unless explicitly claimed, and a required field it cannot map stops the
- * run instead of being filled with a guess.
+ * Matched on the page's own title/heading first, then on the question ids the DOM exposes — never on a
+ * counter, because the tenant's "step 12" and the app's twelve are not the same twelve. Returns null
+ * when it does not recognise the screen, which is a fact the caller has to handle rather than assume.
  */
-export function decideStep({ snapshot = {}, plan = null, stepNumber = null, options = {} } = {}) {
-  const {
-    handoffAt = CHATTER_APPLY.steps.handoffAt,
-    typingTest = CHATTER_APPLY.steps.typingTest,
-    includeTyping = false,
-    speedTest = CHATTER_APPLY.steps.speedTest
-  } = options;
+export function screenFor(snapshot = {}) {
+  const headings = (snapshot.headings || []).map((h) => normaliseLabel(h));
+  const bodyStart = normaliseLabel(snapshot.text || '');
+  const fieldNames = new Set(
+    (snapshot.fields || []).flatMap((f) => [f.name, f.id]).filter(Boolean).map((v) => String(v))
+  );
+  // A question id in the DOM is the strongest signal: these names are the app's own.
+  let best = null;
+  let bestScore = 0;
+  for (const screen of FUNNEL) {
+    let score = 0;
+    for (const question of screen.questions) {
+      if (fieldNames.has(question.id)) score += 3;
+      if (normaliseLabel(question.label) && bodyStart.includes(normaliseLabel(question.label))) score += 2;
+    }
+    if (headings.some((h) => h && normaliseLabel(screen.title).includes(h))) score += 2;
+    if (score > bestScore) { best = screen; bestScore = score; }
+  }
+  return bestScore > 0 ? { ...best, score: bestScore } : null;
+}
+
+/**
+ * The reason a screen must be left to a human, or null.
+ *
+ * Only the typing test can be lifted (`includeTyping`), and only because a tenant may decide the number
+ * is theirs to own. Everything else here stays human.
+ */
+export function humanOnlyReason(screen, { includeTyping = false } = {}) {
+  if (!screen) return null;
+  for (const question of screen.questions || []) {
+    const type = question.type;
+    if (!HUMAN_ONLY_TYPES[type]) continue;
+    if (type === 'typing_test' && includeTyping) continue;
+    if (type === 'upload') continue; // an upload is a file the human picked; handled separately
+    return { screen: screen.id, question: question.id, type, why: HUMAN_ONLY_TYPES[type] };
+  }
+  return null;
+}
+
+/**
+ * Pick the values to write on this screen.
+ *
+ * Prefers the question **id** the app uses (`fullName`, `hasExperience`, …) because that is exact; only
+ * falls back to matching a label when the DOM does not expose an id, which is what the generic mapper is
+ * for. A required question with no value in the profile is reported, never invented.
+ */
+export function planScreenValues({ screen = null, fields = [], profile = {}, includeTyping = false } = {}) {
+  if (!screen) return planStepValues({ fields, profile });
+
+  const byId = new Map();
+  for (const question of screen.questions || []) byId.set(question.id, question);
+
+  const values = [];
+  const unresolved = [];
+  const unmapped = [];
+  const skipped = [];
+  const uploads = [];
+
+  for (const field of fields) {
+    if (field.disabled) { skipped.push({ label: field.label, reason: 'disabled' }); continue; }
+
+    // The app names its inputs after the question id; that is the exact answer to "which field is this".
+    const direct = byId.get(field.name) || byId.get(field.id);
+    const labelMatch = (screen.questions || []).find(
+      (q) => normaliseLabel(q.label) && normaliseLabel(q.label) === normaliseLabel(field.label)
+    );
+    const fileInputs = fields.filter((f) => f.type === 'file');
+    const uploadQuestions = (screen.questions || []).filter((q) => q.type === 'upload');
+    // react-dropzone's input is invisible and often unnamed, so one file field on a screen with one
+    // upload question can only be that question.
+    const soleUpload = field.type === 'file' && fileInputs.length === 1 && uploadQuestions.length === 1
+      ? uploadQuestions[0]
+      : null;
+    const question = direct || labelMatch || soleUpload;
+    const key = question ? question.id : matchFieldKey(field);
+    const raw = key ? profile[key] : undefined;
+    const hasValue = raw !== undefined && raw !== null && String(raw).trim() !== '';
+
+    // A file is attached, never typed: a path written into a text box is a broken application.
+    if (field.type === 'file' || question?.type === 'upload') {
+      const entry = {
+        label: question?.label || field.label || 'Upload',
+        name: field.name || '',
+        id: field.id || '',
+        key: key || null
+      };
+      if (hasValue) uploads.push({ ...entry, path: String(raw) });
+      else (question?.required === false ? unmapped : unresolved).push({
+        ...entry,
+        reason: key ? 'upload_file_missing' : 'unrecognised_upload'
+      });
+      continue;
+    }
+
+    if (question && HUMAN_ONLY_TYPES[question.type]) {
+      // Never answered by the agent, so it is not "missing" either.
+      skipped.push({ label: question.label, reason: 'human_only', type: question.type });
+      continue;
+    }
+    if (!hasValue) {
+      const entry = {
+        label: question?.label || field.label || field.placeholder || field.name || `field #${field.index}`,
+        name: field.name || '',
+        id: field.id || '',
+        type: field.type,
+        key: key || null,
+        reason: key ? 'profile_value_missing' : 'unrecognised_field'
+      };
+      (question ? question.required : field.required) ? unresolved.push(entry) : unmapped.push(entry);
+      continue;
+    }
+
+    const desired = Array.isArray(raw) ? raw.join(', ') : String(raw);
+    const already = String(field.value == null ? '' : field.value).trim() === desired.trim()
+      || (field.type === 'checkbox' && String(Boolean(field.checked)) === String(/^(true|yes|on|1)$/i.test(desired)));
+    if (already) { skipped.push({ label: question?.label || field.label, reason: 'already_set', key }); continue; }
+
+    // An option list means the value has to be one of those options; a typo must not become an answer.
+    if (Array.isArray(question?.options) && question.options.length) {
+      const hit = question.options.find((o) => o.toLowerCase() === desired.toLowerCase())
+        || question.options.find((o) => o.toLowerCase().startsWith(desired.toLowerCase()));
+      if (!hit) {
+        unresolved.push({
+          label: question.label, name: field.name || '', id: field.id || '', key,
+          reason: 'not_an_option', options: question.options, wanted: desired
+        });
+        continue;
+      }
+      values.push({ key, label: question.label, name: field.name || '', id: field.id || '', type: field.type, value: hit });
+      continue;
+    }
+    values.push({ key, label: question?.label || field.label, name: field.name || '', id: field.id || '', type: field.type, value: desired });
+  }
+
+  return { values, unresolved, unmapped, skipped, uploads, screen: screen.id };
+}
+/**
+ * What to do with the screen that is on display. Pure, so the policy is testable without a browser.
+ *
+ * The ordering encodes the safety rules: the stop screen and the human-only questions are checked before
+ * anything is written, the speed test is started and waited for rather than answered, and a required
+ * question with no value in the profile stops the run instead of being filled with a guess.
+ */
+export function decideStep({ snapshot = {}, plan = null, screen = null, stepNumber = null, options = {} } = {}) {
+  const { includeTyping = false, stopScreen = STOP_SCREEN, speedScreen = 'speed_typing' } = options;
 
   if (!snapshot.ok) {
     return { action: 'stop', reason: snapshot.reason || 'unreadable', detail: snapshot.detail || null };
   }
-  const step = stepNumber || snapshot.step || null;
 
-  // The human's step, whatever else is on screen.
-  if (step && step >= handoffAt) {
-    return { action: 'handoff', reason: 'human_boundary', step };
+  // The screen the tenant keeps: reached, so stop with the page exactly as it is.
+  if (screen?.id === stopScreen) {
+    return { action: 'handoff', reason: 'human_boundary', screen: screen.id, step: stepNumber ?? snapshot.step ?? null };
   }
-  if (snapshot.measurements?.typing && !includeTyping) {
-    return { action: 'handoff', reason: 'typing_test_is_human', step };
-  }
-  // A measurement is the page's own; it is waited for, never produced.
-  if (step && step === speedTest && snapshot.measurements?.speed) {
+
+  // A question that measures the applicant, or asks for work already delivered.
+  const humanOnly = humanOnlyReason(screen, { includeTyping });
+
+  // The page's own measurement comes first, because it is work the page does rather than a question:
+  // start it if it is offered, wait while there is no way forward, and fall through once it is done.
+  const measuring = (screen?.id === speedScreen) || snapshot.measurements?.speed;
+  if (measuring && !plan?.values?.length) {
     const start = (snapshot.buttons || []).find((b) => /^(start|begin)/i.test(b.label) && !b.disabled);
-    return start
-      ? { action: 'start_measurement', reason: 'speed_test_offered', step, button: start.label }
-      : { action: 'wait_measurement', reason: 'speed_test_running', step };
+    if (start) return { action: 'start_measurement', reason: 'speed_test_offered', step: stepNumber, button: start.label };
+    const canMoveOn = (snapshot.buttons || []).some(
+      (b) => !b.disabled && CHATTER_APPLY.buttons.next.some((word) => b.label.toLowerCase().includes(word))
+    );
+    // Only wait while the page offers no way forward; otherwise the measurement has finished and the
+    // screen's remaining question (usually the typing test) decides what happens next.
+    if (!canMoveOn && snapshot.measurements?.speed) {
+      return { action: 'wait_measurement', reason: 'speed_test_running', step: stepNumber };
+    }
   }
-  if (plan && plan.unresolved?.length) {
-    return { action: 'needs_values', reason: 'required_field_unmapped', step, unresolved: plan.unresolved };
+
+  if (humanOnly) {
+    return {
+      action: 'handoff',
+      reason: 'human_only_question',
+      screen: humanOnly.screen,
+      question: humanOnly.question,
+      why: humanOnly.why,
+      step: stepNumber ?? snapshot.step ?? null
+    };
   }
-  if (plan && plan.values?.length) {
-    return { action: 'fill', reason: 'fields_to_fill', step, values: plan.values };
+
+  if (plan?.unresolved?.length) {
+    return { action: 'needs_values', reason: 'required_field_unmapped', step: stepNumber, unresolved: plan.unresolved };
   }
+  // A chosen file is attached through the browser protocol, not typed into a field.
+  if (plan?.uploads?.length) {
+    return { action: 'upload', reason: 'file_to_attach', step: stepNumber, uploads: plan.uploads };
+  }
+  if (plan?.values?.length) {
+    return { action: 'fill', reason: 'fields_to_fill', step: stepNumber, values: plan.values };
+  }
+
+  // The typing test, when the tenant has claimed it: type the passage, then let the page score it.
+  if (screen?.questions?.some((q) => q.type === 'typing_test') && includeTyping) {
+    return { action: 'typing_test', reason: 'typing_claimed', step: stepNumber };
+  }
+
   const next = (snapshot.buttons || []).find(
     (b) => !b.disabled && CHATTER_APPLY.buttons.next.some((word) => b.label.toLowerCase().includes(word))
   );
-  if (next) return { action: 'advance', reason: 'ready_for_next', step, button: next.label };
-  return { action: 'stuck', reason: 'no_next_button', step, buttons: (snapshot.buttons || []).map((b) => b.label) };
+  if (next) return { action: 'advance', reason: 'ready_for_next', step: stepNumber, button: next.label };
+  return { action: 'stuck', reason: 'no_next_button', step: stepNumber, buttons: (snapshot.buttons || []).map((b) => b.label) };
 }
 
 
@@ -591,7 +842,7 @@ export function decideStep({ snapshot = {}, plan = null, stepNumber = null, opti
  *     click a validation rule swallowed looks identical to a successful one at the moment of clicking;
  *     the difference only shows up as a run that silently did nothing.
  */
-export async function runApplication({ evaluate, profile = {}, options = {}, log = () => {} } = {}) {
+export async function runApplication({ evaluate, attachFile = null, profile = {}, options = {}, log = () => {} } = {}) {
   if (typeof evaluate !== 'function') throw new TypeError('runApplication needs an evaluate() function');
   const {
     maxSteps = 20,
@@ -600,11 +851,14 @@ export async function runApplication({ evaluate, profile = {}, options = {}, log
     measureTimeoutMs = 60_000,
     pollMs = 500,
     dryRun = false,
+    typingWpm = 70,
     ...policy
   } = options;
 
   const transcript = [];
   const steps = [];
+  // A screen is read more than once, so an upload must be remembered by what it was, not by "did we".
+  const attached = new Set();
   const note = (entry) => { transcript.push(entry); log(entry); return entry; };
 
   for (let index = 0; index < maxSteps; index += 1) {
@@ -614,13 +868,26 @@ export async function runApplication({ evaluate, profile = {}, options = {}, log
       return { ok: false, reason: snapshot?.reason || 'unreadable', transcript, steps, keepOpen: true };
     }
 
+    // Which screen this is, by the app's own title and question ids — never by a counter, because the
+    // tenant's "step 12" and the app's twelfth screen are not the same thing.
+    const screen = screenFor(snapshot);
     const stepNumber = snapshot.step || (steps.length ? steps.length + 1 : null);
-    const plan = planStepValues({ fields: snapshot.fields || [], profile });
+    const plan = planScreenValues({ screen, fields: snapshot.fields || [], profile, includeTyping: policy.includeTyping });
+    // Drop files this run has already attached to this screen, so a re-read advances instead of
+    // attaching the same photo again.
+    if (plan.uploads?.length) {
+      plan.uploads = plan.uploads.filter((upload) => {
+        const key = `${screen?.id || ''}:${upload.key || upload.name || upload.label}:${upload.path}`;
+        return !attached.has(key);
+      });
+    }
     // One record per step, not per read. A step is read more than once — before filling and again
     // before advancing — and appending each read would make a five-iteration run look like five
     // different steps to the person reading the summary. The first non-empty plan is what was filled.
     const record = {
       step: stepNumber,
+      screen: screen?.id || null,
+      screenTitle: screen?.title || null,
       headings: snapshot.headings,
       progressText: snapshot.progressText,
       fields: (snapshot.fields || []).map((f) => ({
@@ -629,6 +896,7 @@ export async function runApplication({ evaluate, profile = {}, options = {}, log
       buttons: (snapshot.buttons || []).map((b) => b.label),
       measurements: snapshot.measurements,
       planned: plan.values.map((v) => ({ key: v.key, label: v.label, value: v.value })),
+      uploads: plan.uploads || [],
       unresolved: plan.unresolved,
       unmapped: plan.unmapped,
       attempts: 1
@@ -638,17 +906,20 @@ export async function runApplication({ evaluate, profile = {}, options = {}, log
       existing.attempts += 1;
       existing.fields = record.fields;
       existing.buttons = record.buttons;
+      existing.screen = record.screen || existing.screen;
       if (!existing.planned.length && record.planned.length) existing.planned = record.planned;
+      if (!existing.uploads.length && record.uploads.length) existing.uploads = record.uploads;
       if (!existing.unresolved.length && record.unresolved.length) existing.unresolved = record.unresolved;
       existing.unmapped = record.unmapped.length ? record.unmapped : existing.unmapped;
     } else {
       steps.push(record);
     }
 
-    const decision = decideStep({ snapshot, plan, stepNumber, options: policy });
+    const decision = decideStep({ snapshot, plan, screen, stepNumber, options: policy });
     note({
       event: 'decide',
       step: stepNumber,
+      screen: screen?.id || null,
       heading: snapshot.headings?.[0] || null,
       action: decision.action,
       reason: decision.reason,
@@ -695,6 +966,58 @@ export async function runApplication({ evaluate, profile = {}, options = {}, log
           transcript,
           steps
         };
+      }
+      await new Promise((r) => setTimeout(r, settleMs));
+      continue;
+    }
+
+    if (decision.action === 'upload') {
+      // A file input cannot be given a value by script; the caller attaches it through the protocol.
+      if (typeof attachFile !== 'function') {
+        return {
+          ok: false,
+          step: stepNumber,
+          reason: 'upload_not_supported',
+          uploads: decision.uploads,
+          keepOpen: true,
+          transcript,
+          steps
+        };
+      }
+      const attachedResults = [];
+      for (const upload of decision.uploads) {
+        const result = await attachFile(upload);
+        attachedResults.push({ ...upload, ok: Boolean(result?.ok), detail: result?.detail || null });
+        if (result?.ok) attached.add(`${screen?.id || ''}:${upload.key || upload.name || upload.label}:${upload.path}`);
+      }
+      note({ event: 'upload', step: stepNumber, attached: attachedResults.filter((a) => a.ok).length, total: attachedResults.length });
+      const failed = attachedResults.filter((a) => !a.ok);
+      if (failed.length) {
+        return { ok: false, step: stepNumber, reason: 'upload_failed', failures: failed, keepOpen: true, transcript, steps };
+      }
+      await new Promise((r) => setTimeout(r, settleMs));
+      continue;
+    }
+
+    if (decision.action === 'typing_test') {
+      // Only reachable with includeTyping, and only after the passage has been read and shown.
+      const prompt = await evaluate(typingPromptExpr());
+      if (!prompt?.ok) {
+        return {
+          ok: false,
+          step: stepNumber,
+          reason: prompt?.reason || 'typing_prompt_not_found',
+          detail: prompt,
+          keepOpen: true,
+          transcript,
+          steps
+        };
+      }
+      note({ event: 'typing-start', step: stepNumber, chars: prompt.promptLength, wpm: typingWpm, passage: String(prompt.prompt).slice(0, 120) });
+      const typed = await evaluate(typeAtWpmExpr({ text: prompt.prompt, wpm: typingWpm }), { awaitPromise: true });
+      note({ event: 'typing-done', step: stepNumber, typed: typed?.typed || 0, wpm: typed?.effectiveWpm ?? null });
+      if (!typed?.ok) {
+        return { ok: false, step: stepNumber, reason: 'typing_failed', detail: typed, keepOpen: true, transcript, steps };
       }
       await new Promise((r) => setTimeout(r, settleMs));
       continue;
@@ -793,14 +1116,22 @@ export async function waitForStepChange({ evaluate, before = null, timeoutMs = 1
 /** One line a human can act on, for the transcript's last entry. */
 export function describeOutcome(result = {}) {
   if (result.handoff && result.reason === 'human_boundary') {
-    return `Stopped at step ${result.step} — that one is yours. The page is open and untouched.`;
+    return `Stopped at the English Proficiency screen — that one is yours. The page is open and untouched.`;
   }
-  if (result.reason === 'typing_test_is_human') {
-    return `Stopped at the typing test (step ${result.step}). It measures you, so it is yours to type. The page is open.`;
+  if (result.reason === 'human_only_question') {
+    return `Stopped: the next question ${result.why || 'is not one an agent should answer'}`
+      + ` (${result.question || 'unspecified'}). The page is open.`;
   }
   if (result.reason === 'required_field_unmapped') {
     const names = (result.needsValues || []).map((f) => f.label).join(', ');
     return `Needs values for: ${names}. Nothing was guessed and the page is still open.`;
+  }
+  if (result.reason === 'upload_not_supported') {
+    const names = (result.uploads || []).map((u) => u.label).join(', ');
+    return `A file is required (${names}) and no file channel was provided; re-run with --desk-photo.`;
+  }
+  if (result.reason === 'upload_failed') {
+    return `The file could not be attached: ${(result.failures || []).map((f) => f.detail || f.reason).join(' / ')}`;
   }
   if (result.reason === 'step_not_advanced') {
     const errors = (result.errors || []).join(' / ');
@@ -809,5 +1140,155 @@ export function describeOutcome(result = {}) {
   if (result.ok && result.handoff) return `Stopped at step ${result.step}. The page is open.`;
   if (result.ok) return 'Finished without needing a human.';
   return `Stopped: ${result.reason || 'unknown'}`;
+}
+
+
+/*
+ * ─── The two mechanics that are not form writing ────────────────────────────────────────────────
+ *
+ * The desk photo is a react-dropzone input: hidden, clipped to 1px, and driven by `onChange`. A file
+ * input's value cannot be assigned from script at all, so the only way in is the browser protocol
+ * (`DOM.setFileInputFiles`), which takes an element reference. `fileInputExpr` therefore returns the
+ * element itself rather than JSON.
+ */
+
+/**
+ * The element a file should be attached to. Evaluated with `returnByValue: false` so the caller gets an
+ * objectId it can hand to `DOM.setFileInputFiles`.
+ */
+export function fileInputExpr({ name = '', id = '' } = {}) {
+  return `(() => {
+  ${FORM_ROOT}
+  const found = findFormDocument();
+  if (!found.doc) return null;
+  const inputs = Array.from(found.doc.querySelectorAll('input[type="file"]'));
+  if (!inputs.length) return null;
+  const wanted = ${JSON.stringify({ name: String(name || ''), id: String(id || '') })};
+  return (wanted.name && inputs.find((el) => el.getAttribute('name') === wanted.name))
+    || (wanted.id && inputs.find((el) => el.getAttribute('id') === wanted.id))
+    || inputs[0]
+    || null;
+})()`;
+}
+
+/**
+ * Find the passage to type and the box to type it into.
+ *
+ * Both are inferences about an unknown widget, so both are reported rather than assumed: the caller sees
+ * the passage it found, its length and the field it will use. If no passage can be identified with
+ * confidence the run stops — typing the wrong words scores zero and looks like a slow applicant.
+ */
+export function typingPromptExpr() {
+  return `(() => {
+  const clean = (v) => String(v == null ? '' : v).replace(/\\s+/g, ' ').trim();
+  ${FORM_ROOT}
+  const found = findFormDocument();
+  if (!found.doc) return JSON.stringify({ ok: false, reason: 'cross_origin_frame' });
+  const doc = found.doc;
+
+  const visible = (el) => {
+    const rect = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+    return Boolean(rect && (rect.width > 0 || rect.height > 0));
+  };
+
+  // Where the typing goes: an empty, visible textarea first, then an empty text input.
+  const boxes = Array.from(doc.querySelectorAll('textarea, input[type="text"]'))
+    .filter(visible)
+    .filter((el) => !el.disabled && !el.readOnly);
+  const target = boxes.find((el) => el.tagName === 'TEXTAREA' && !clean(el.value))
+    || boxes.find((el) => !clean(el.value))
+    || null;
+  if (!target) return JSON.stringify({ ok: false, reason: 'typing_box_not_found' });
+
+  // The passage: long text that is not the box and is not the page's own instructions.
+  const candidates = Array.from(doc.querySelectorAll('p, div, span, pre, blockquote, h4, h5'))
+    // Anything that wraps the box is not the passage. Guarded because a detached or exotic node may
+    // not implement contains, and one bad node must not abort the search.
+    .filter((el) => {
+      try { return !el.contains(target) && !target.contains(el); } catch (e) { return true; }
+    })
+    .filter(visible)
+    .map((el) => clean(el.innerText || el.textContent))
+    .filter((text) => text.length >= 80 && text.split(' ').length >= 12)
+    .filter((text) => !/apply to join|this application process|upload|wpm|good luck/i.test(text));
+  // The shortest candidate that is still a passage is usually the passage, not its wrapper.
+  candidates.sort((a, b) => a.length - b.length);
+  const prompt = candidates[0] || null;
+
+  return JSON.stringify({
+    ok: Boolean(prompt),
+    reason: prompt ? null : 'typing_prompt_not_found',
+    prompt,
+    promptLength: prompt ? prompt.length : 0,
+    candidateCount: candidates.length,
+    target: { tag: target.tagName.toLowerCase(), name: target.getAttribute('name') || '', id: target.getAttribute('id') || '' }
+  });
+})()`;
+}
+
+
+/**
+ * Type a passage at a given words-per-minute pace — only when a tenant has claimed the typing test.
+ *
+ * Five characters to a word, so the per-character delay is `60000 / (wpm * 5)` ms. Each character goes
+ * through the native setter with a real `input` event, because one bulk assignment would register an
+ * impossible speed and score nothing.
+ *
+ * This is the only place a machine produces a number a person is judged on. It exists because the tenant
+ * asked for it by name, and the number is theirs to stand behind.
+ */
+export function typeAtWpmExpr({ text = '', wpm = 70, jitterMs = 12 } = {}) {
+  const safeWpm = Math.max(10, Math.min(300, Number(wpm) || 70));
+  const delay = Math.round(60000 / (safeWpm * 5));
+  const jitter = Math.max(0, Number(jitterMs) || 0);
+  return `(async () => {
+  const clean = (v) => String(v == null ? '' : v).replace(/\\s+/g, ' ').trim();
+  ${FORM_ROOT}
+  const found = findFormDocument();
+  if (!found.doc) return JSON.stringify({ ok: false, reason: 'cross_origin_frame' });
+  const doc = found.doc;
+  const view = doc.defaultView || window;
+  const text = ${JSON.stringify(String(text))};
+  if (!text) return JSON.stringify({ ok: false, reason: 'no_text' });
+
+  const visible = (el) => {
+    const rect = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+    return Boolean(rect && (rect.width > 0 || rect.height > 0));
+  };
+  const target = Array.from(doc.querySelectorAll('textarea, input[type="text"]'))
+    .filter(visible)
+    .find((el) => !el.disabled && !el.readOnly && !clean(el.value));
+  if (!target) return JSON.stringify({ ok: false, reason: 'typing_box_not_found' });
+
+  try { target.focus(); } catch (e) {}
+  const proto = target.tagName === 'TEXTAREA' ? view.HTMLTextAreaElement.prototype : view.HTMLInputElement.prototype;
+  const descriptor = Object.getOwnPropertyDescriptor(proto, 'value');
+  const setValue = (value) => {
+    if (descriptor && descriptor.set) descriptor.set.call(target, value);
+    else target.value = value;
+  };
+
+  const startedAt = Date.now();
+  let typed = 0;
+  for (const ch of text) {
+    setValue(text.slice(0, typed + 1));
+    const keyInit = { key: ch, bubbles: true };
+    target.dispatchEvent(view.KeyboardEvent ? new view.KeyboardEvent('keydown', keyInit) : new view.Event('keydown', { bubbles: true }));
+    target.dispatchEvent(new view.Event('input', { bubbles: true }));
+    typed += 1;
+    // A little variance, so the pace reads as a person's rhythm rather than a metronome.
+    const wait = Math.max(4, ${delay} + Math.round((Math.random() - 0.5) * 2 * ${jitter}));
+    await new Promise((resolve) => setTimeout(resolve, wait));
+  }
+  target.dispatchEvent(new view.Event('change', { bubbles: true }));
+  const elapsedMs = Date.now() - startedAt;
+  return JSON.stringify({
+    ok: clean(target.value).length > 0,
+    typed,
+    elapsedMs,
+    effectiveWpm: elapsedMs ? Math.round((typed / 5) / (elapsedMs / 60000)) : null,
+    target: { tag: target.tagName.toLowerCase(), name: target.getAttribute('name') || '' }
+  });
+})()`;
 }
 

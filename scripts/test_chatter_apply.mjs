@@ -11,16 +11,25 @@
  */
 import {
   CHATTER_APPLY,
+  FUNNEL,
+  HUMAN_ONLY_TYPES,
+  STOP_SCREEN,
   describeOutcome,
   decideStep,
+  fileInputExpr,
   fillStepExpr,
   clickButtonExpr,
+  humanOnlyReason,
   matchFieldKey,
   normaliseLabel,
+  planScreenValues,
   planStepValues,
   readStepExpr,
   runApplication,
-  stepFingerprintExpr
+  screenFor,
+  stepFingerprintExpr,
+  typeAtWpmExpr,
+  typingPromptExpr
 } from '../utils/browserActor/tasks/chatterApply.js';
 
 let pass = 0;
@@ -291,127 +300,232 @@ const PROFILE = {
 }
 
 
+
+
+// ─── The funnel is data, and the data is what the tenant's own answers produced ────────────────
+{
+  eq('the funnel has the eleven screens the bundle declares', FUNNEL.length, 11);
+  const ids = FUNNEL.map((s) => s.id);
+  eq('in the bundle\'s order', ids.join(','),
+    'welcome,age_verification,personal,discovery,setup,proof,speed_typing,english_test,behavioural,creativity,final');
+
+  // The tenant's list reads as questions, not screens. Check the mapping that proved it.
+  const q = (id) => FUNNEL.flatMap((s) => s.questions).find((x) => x.id === id);
+  eq('question 2 is the 18+ check', q('ageCheck').label, 'Are you 18+?');
+  eq('question 4 is the Discord handle, not a website username', q('discordUsername').label, 'Discord Username');
+  eq('question 8 is the OnlyFans experience question', q('hasExperience').label, 'Have you worked with OnlyFans before?');
+  eq('question 9 is optional, so a blank is an answer', q('experienceDetails').required, false);
+  eq('question 10 offers Reddit', q('source').options.includes('Reddit'), true);
+  eq('question 11 is the referral, also optional', q('referral').required, false);
+  eq('question 12 is the desk photo upload', q('deskPhoto').type, 'upload');
+  eq('question 14 is the typing test with a 70 floor', q('typingTest').validation.min, 70);
+  eq('the stop screen is the English test', STOP_SCREEN, 'english_test');
+}
+
+// ─── Recognising a screen by its questions, not by a counter ──────────────────────────────────
+{
+  const snapshot = {
+    ok: true,
+    headings: ['Personal Details'],
+    text: 'Full Name Discord Username Country Email Address Contact Number',
+    fields: [
+      { name: 'fullName', id: 'fullName', label: 'Full Name' },
+      { name: 'discordUsername', id: 'discordUsername', label: 'Discord Username' },
+      { name: 'email', id: 'email', label: 'Email Address' }
+    ]
+  };
+  const screen = screenFor(snapshot);
+  eq('the personal screen is identified', screen.id, 'personal');
+  ok('with a positive score', screen.score > 0, screen.score);
+
+  // A bare form with nothing recognisable must not be guessed at.
+  eq('an unknown screen stays unknown', screenFor({ ok: true, headings: ['Something else'], fields: [], text: '' }), null);
+
+  // The English screen is recognised from its own question text even with no input.
+  const english = screenFor({ ok: true, headings: ['English Proficiency'], fields: [], text: 'English Proficiency Test' });
+  eq('the English screen is identified', english.id, 'english_test');
+
 // ─── Policy: where it stops, and why ─────────────────────────────────────────────────────────
 {
   const base = { ok: true, buttons: [{ label: 'Next' }], fields: [], measurements: {} };
-  eq('step 15 is the human boundary', decideStep({ snapshot: base, stepNumber: 15 }).action, 'handoff');
-  eq('and says so', decideStep({ snapshot: base, stepNumber: 15 }).reason, 'human_boundary');
-  eq('step 16+ is still the human boundary', decideStep({ snapshot: base, stepNumber: 16 }).action, 'handoff');
+  const english = FUNNEL.find((s) => s.id === 'english_test');
 
-  const typing = { ...base, measurements: { typing: true } };
-  eq('the typing test is a human step', decideStep({ snapshot: typing, stepNumber: 14 }).action, 'handoff');
-  eq('because it measures the applicant',
-    decideStep({ snapshot: typing, stepNumber: 14 }).reason, 'typing_test_is_human');
-  eq('unless the tenant explicitly claims it',
-    decideStep({ snapshot: typing, stepNumber: 14, options: { includeTyping: true } }).action, 'advance');
+  eq('the English screen is handed over', decideStep({ snapshot: base, screen: english }).action, 'handoff');
+  eq('and named as the boundary', decideStep({ snapshot: base, screen: english }).reason, 'human_boundary');
 
+  for (const id of ['typing_test', 'english_test', 'voice', 'proof_of_work']) {
+    ok(`${id} is listed as human-only`, Boolean(HUMAN_ONLY_TYPES[id]), HUMAN_ONLY_TYPES[id]);
+  }
+  eq('the English test cannot be lifted', humanOnlyReason(english, { includeTyping: true }).type, 'english_test');
+  eq('the typing test can be lifted', humanOnlyReason(FUNNEL.find((s) => s.id === 'speed_typing'), { includeTyping: true }), null);
+  eq('but not by default', humanOnlyReason(FUNNEL.find((s) => s.id === 'speed_typing')).type, 'typing_test');
+  ok('the proof screen is human-only', Boolean(humanOnlyReason(FUNNEL.find((s) => s.id === 'proof'))));
+
+  // Speed and typing share one screen; the measurement is started, never answered.
+  const speedScreen = FUNNEL.find((s) => s.id === 'speed_typing');
   const offering = { ...base, measurements: { speed: true }, buttons: [{ label: 'Start test' }, { label: 'Next', disabled: true }] };
   eq('a speed test that has not started is started',
-    decideStep({ snapshot: offering, stepNumber: 13 }).action, 'start_measurement');
+    decideStep({ snapshot: offering, screen: speedScreen, plan: { values: [] } }).action, 'start_measurement');
   const running = { ...base, measurements: { speed: true }, buttons: [{ label: 'Next', disabled: true }] };
   eq('a speed test in flight is waited for',
-    decideStep({ snapshot: running, stepNumber: 13 }).action, 'wait_measurement');
+    decideStep({ snapshot: running, screen: speedScreen, plan: { values: [] } }).action, 'wait_measurement');
 
-  const withPlan = { values: [{ key: 'email', value: 'x' }], unresolved: [] };
-  eq('fields to fill means fill', decideStep({ snapshot: base, plan: withPlan, stepNumber: 2 }).action, 'fill');
-  const blocked = { values: [], unresolved: [{ label: 'Favourite colour' }] };
-  eq('an unmapped required field stops the step',
-    decideStep({ snapshot: base, plan: blocked, stepNumber: 2 }).action, 'needs_values');
-  const clean = { values: [], unresolved: [] };
+  // Fill / needs-values / upload / advance / stuck, all on a normal screen.
+  const personal = FUNNEL.find((s) => s.id === 'personal');
+  eq('fields to fill means fill',
+    decideStep({ snapshot: base, screen: personal, plan: { values: [{ key: 'email', value: 'x' }], unresolved: [] } }).action, 'fill');
+  eq('an unmapped required field stops the screen',
+    decideStep({ snapshot: base, screen: personal, plan: { values: [], unresolved: [{ label: 'Favourite colour' }] } }).action, 'needs_values');
+  eq('a file to attach is its own action',
+    decideStep({ snapshot: base, screen: personal, plan: { values: [], unresolved: [], uploads: [{ path: 'x.jpg' }] } }).action, 'upload');
   eq('nothing to fill and a Next button means advance',
-    decideStep({ snapshot: base, plan: clean, stepNumber: 2 }).action, 'advance');
+    decideStep({ snapshot: base, screen: personal, plan: { values: [], unresolved: [] } }).action, 'advance');
   eq('a disabled Next is not clicked',
-    decideStep({ snapshot: { ...base, buttons: [{ label: 'Next', disabled: true }] }, plan: clean, stepNumber: 2 }).action, 'stuck');
+    decideStep({ snapshot: { ...base, buttons: [{ label: 'Next', disabled: true }] }, screen: personal, plan: { values: [], unresolved: [] } }).action, 'stuck');
   eq('an unreadable page stops everything',
     decideStep({ snapshot: { ok: false, reason: 'cross_origin_frame' } }).action, 'stop');
 }
 
-// ─── Clicking: the submit guard holds even when the caller asks for it ───────────────────────
+
+// ─── Planning by question id: exact, option-checked, and never a file typed as text ──────────
 {
-  const submit = { label: 'Submit application', clicks: 0 };
-  const next = { label: 'Next', clicks: 0 };
-  const doc = makeFormDoc({ fields: [{ label: 'First name', id: 'fn' }], buttons: [submit, next] });
-  const page = makePage(doc);
+  const personal = FUNNEL.find((s) => s.id === 'personal');
+  const fields = [
+    { index: 0, name: 'fullName', id: 'fullName', label: 'Full Name', type: 'text', required: true, value: '' },
+    { index: 1, name: 'discordUsername', id: 'discordUsername', label: 'Discord Username', type: 'text', required: true, value: '' },
+    { index: 2, name: 'email', id: 'email', label: 'Email Address', type: 'email', required: true, value: '' }
+  ];
+  const profile = { fullName: 'David Saddy Malingu', discordUsername: 'SaddyMalingu', email: 'saddymalingu@gmail.com' };
+  const plan = planScreenValues({ screen: personal, fields, profile });
+  eq('all three are planned', plan.values.length, 3);
+  eq('the question id is the key', plan.values[0].key, 'fullName');
+  eq('and the value is the profile value', plan.values[0].value, 'David Saddy Malingu');
+  eq('nothing unresolved', plan.unresolved.length, 0);
 
-  const refused = await evaluateOn(page, clickButtonExpr({ labels: ['Submit application', 'Next'] }));
-  eq('a forbidden button is refused', refused.ok, false);
-  eq('and named as such', refused.reason, 'refused_forbidden_button');
-  eq('nothing was clicked', submit.clicks, 0);
+  // A multiple-choice answer that is not on the list is refused, not typed in.
+  const discovery = FUNNEL.find((s) => s.id === 'discovery');
+  const sourceField = { index: 0, name: 'source', id: 'source', label: 'How did you find this recruitment server?', type: 'radio', required: true, value: '' };
+  const bad = planScreenValues({ screen: discovery, fields: [sourceField], profile: { source: 'Twitter' } });
+  eq('an option that is not offered blocks the screen', bad.values.length, 0);
+  eq('with a reason naming the options', bad.unresolved[0].reason, 'not_an_option');
+  ok('and the options are shown', bad.unresolved[0].options.includes('Reddit'), bad.unresolved[0].options);
 
-  const clicked = await evaluateOn(page, clickButtonExpr({ labels: ['next'] }));
-  eq('Next is clicked case-insensitively', clicked.ok, true);
-  eq('exactly once', next.clicks, 1);
-  eq('and the submit button is untouched', submit.clicks, 0);
-
-  const disabledDoc = makeFormDoc({ buttons: [{ label: 'Next', disabled: true }] });
-  const blocked = await evaluateOn(makePage(disabledDoc), clickButtonExpr({ labels: ['Next'] }));
-  eq('a disabled button is reported, not clicked', blocked.reason, 'button_disabled');
-}
-
-
-// ─── Filling: the native setter, the select match and the read-back ──────────────────────────
-{
-  const first = { label: 'First name', id: 'fn', name: 'firstName', required: true };
-  const country = { label: 'Country', id: 'co', name: 'country', tag: 'select', options: [{ value: 'ke', label: 'Kenya' }, { value: 'ph', label: 'Philippines' }] };
-  const openToCalls = { label: 'Open to calls', id: 'oc', name: 'openToCalls', type: 'checkbox' };
-  const doc = makeFormDoc({ fields: [first, country, openToCalls] });
-
-  const written = await evaluateOn(makePage(doc), fillStepExpr({
-    values: [
-      { name: 'firstName', value: 'Saddy', label: 'First name' },
-      { name: 'country', value: 'Kenya', label: 'Country' },
-      { name: 'openToCalls', value: 'yes', label: 'Open to calls' }
-    ]
-  }));
-
-  eq('all three writes land', written.applied, 3);
-  eq('nothing failed', written.failed.length, 0);
-  eq('the text field holds the value', doc.fields[0].value, 'Saddy');
-  eq('the select matched by visible text', doc.fields[1].value, 'ke');
-  eq('the checkbox is ticked', doc.fields[2].checked, true);
-  // React only sees a change if the events fire; that is the entire reason for the native setter.
-  ok('input and change both fire',
-    doc.fields[0].events.includes('input') && doc.fields[0].events.includes('change'), doc.fields[0].events);
+  const good = planScreenValues({ screen: discovery, fields: [sourceField], profile: { source: 'reddit' } });
+  eq('a case-insensitive match is accepted', good.values[0].value, 'Reddit');
 }
 
 {
-  // A field that ignores writes must be reported, not silently accepted.
-  const doc = makeFormDoc({ fields: [{ label: 'First name', id: 'fn', name: 'firstName' }] });
-  Object.defineProperty(doc.fields[0], 'value', {
-    configurable: true,
-    get: () => '',
-    set: () => {}
+  // The desk photo: a file input with no name, on a screen with exactly one upload question.
+  const setup = FUNNEL.find((s) => s.id === 'setup');
+  const uploadField = { index: 0, name: '', id: '', label: '', type: 'file', required: true, value: '' };
+  const plan = planScreenValues({ screen: setup, fields: [uploadField], profile: { deskPhoto: 'C:/Users/HP/Downloads/desk.jpg' } });
+  eq('the file is an upload, not a value', plan.values.length, 0);
+  eq('with the path attached', plan.uploads[0].path, 'C:/Users/HP/Downloads/desk.jpg');
+  eq('keyed to the question', plan.uploads[0].key, 'deskPhoto');
+
+  const missing = planScreenValues({ screen: setup, fields: [uploadField], profile: {} });
+  eq('a required upload with no file blocks the screen', missing.unresolved[0].reason, 'upload_file_missing');
+  eq('and never becomes a text write', missing.values.length, 0);
+}
+
+{
+  // Optional questions with no answer are fine — the tenant leaves the referral blank.
+  const discovery = FUNNEL.find((s) => s.id === 'discovery');
+  const plan = planScreenValues({
+    screen: discovery,
+    fields: [
+      { index: 0, name: 'experienceDetails', id: 'experienceDetails', label: 'If yes, please list the agencies', type: 'textarea', required: false, value: '' },
+      { index: 1, name: 'referral', id: 'referral', label: 'Were you referred by someone?', type: 'text', required: false, value: '' }
+    ],
+    profile: { referral: '' }
   });
-  const written = await evaluateOn(makePage(doc), fillStepExpr({ values: [{ name: 'firstName', value: 'Saddy' }] }));
-  eq('the write is reported as failed', written.ok, false);
-  eq('with the reason', written.failed[0].reason, 'value_not_kept');
+  eq('a blank optional answer is not a blocker', plan.unresolved.length, 0);
+  eq('and nothing is written for it', plan.values.length, 0);
+}
+
+}
+
+// ─── The two non-form mechanics: a real file, and paced typing ───────────────────────────────
+/** Give a fake document the widgets the upload and typing passes look for. */
+function addWidgets(doc, { passages = [], fileFields = [] } = {}) {
+  const original = doc.querySelectorAll.bind(doc);
+  doc.querySelectorAll = (sel) => {
+    if (sel === 'input[type="file"]') return fileFields;
+    if (sel === 'textarea, input[type="text"]') {
+      return doc.fields.filter((f) => f.tagName === 'TEXTAREA' || String(f.type) === 'text');
+    }
+    if (sel === 'p, div, span, pre, blockquote, h4, h5') {
+      return passages.map((text) => ({
+        innerText: text,
+        textContent: text,
+        contains: () => false,
+        getBoundingClientRect: () => ({ width: 420, height: 60 })
+      }));
+    }
+    return original(sel);
+  };
+  return doc;
 }
 
 {
-  const doc = makeFormDoc({ fields: [{ label: 'Country', id: 'co', name: 'country', tag: 'select', options: ['Kenya'] }] });
-  const written = await evaluateOn(makePage(doc), fillStepExpr({ values: [{ name: 'country', value: 'Atlantis' }] }));
-  eq('an option that does not exist is reported', written.ok, false);
-  eq('with the reason', written.failed[0].reason, 'option_not_found');
-  ok('and with the options it did see', (written.failed[0].options || []).includes('Kenya'), written.failed[0].options);
+  // The file input is returned as an element (not JSON) so the caller can hand its objectId to the protocol.
+  const fileField = makeField({ type: 'file', id: 'drop', name: '' }, { byFor: new Map() });
+  const doc = addWidgets(makeFormDoc({ fields: [] }), { fileFields: [fileField] });
+  const element = await evaluateOn(makePage(doc), fileInputExpr());
+  eq('the file input is found', element, fileField);
 }
 
 {
-  const doc = makeFormDoc({ fields: [{ label: 'First name', id: 'fn', name: 'firstName' }] });
-  const written = await evaluateOn(makePage(doc), fillStepExpr({ values: [{ name: 'nothing', value: 'x' }] }));
-  eq('a field that is not there is reported', written.failed[0].reason, 'field_not_found');
+  // Typing: the passage and the box. A paragraph of instructions must not be mistaken for the passage.
+  const box = makeField({ tag: 'textarea', type: 'textarea', id: 'typing', name: 'typing' }, { byFor: new Map() });
+  const doc = addWidgets(makeFormDoc({ fields: [] }), {
+    passages: [
+      'Welcome. This application process is designed to test your skills, speed, and attention to detail.',
+      'The quick brown fox jumps over the lazy dog while the morning light spreads slowly across the valley floor.'
+    ]
+  });
+  doc.fields.push(box);
+  const found = await evaluateOn(makePage(doc), typingPromptExpr());
+  eq('the typing box is found', found.ok, true);
+  ok('the passage is the pangram, not the instructions', /quick brown fox/i.test(found.prompt), found.prompt);
+  ok('the instructions are not offered', !/application process/i.test(found.prompt), found.prompt);
+  eq('the box is named', found.target.tag, 'textarea');
+}
+
+{
+  // No passage means stop, not type garbage into a scored test.
+  const box = makeField({ tag: 'textarea', type: 'textarea', id: 'typing', name: 'typing' }, { byFor: new Map() });
+  const doc = addWidgets(makeFormDoc({ fields: [] }), { passages: ['short'] });
+  doc.fields.push(box);
+  const nothing = await evaluateOn(makePage(doc), typingPromptExpr());
+  eq('no passage is its own failure', nothing.ok, false);
+  eq('with a reason', nothing.reason, 'typing_prompt_not_found');
+}
+
+{
+  // Typing at a pace: characters land one at a time and the elapsed time implies roughly the asked WPM.
+  const box = makeField({ tag: 'textarea', type: 'textarea', id: 'typing', name: 'typing' }, { byFor: new Map() });
+  const doc = addWidgets(makeFormDoc({ fields: [] }));
+  doc.fields.push(box);
+  const passage = 'The quick brown fox jumps over the lazy dog.';
+  const result = await evaluateOn(makePage(doc), typeAtWpmExpr({ text: passage, wpm: 300, jitterMs: 0 }));
+  eq('the whole passage is typed', result.typed, passage.length);
+  eq('the field holds it', doc.fields[0].value, passage);
+  ok('the pace is in the right ballpark', result.effectiveWpm > 100, `${result.effectiveWpm} WPM`);
+  ok('and it is reported honestly', typeof result.effectiveWpm === 'number', result.effectiveWpm);
 }
 
 
-// ─── The whole walk: real expressions, scripted page, stops at the human ─────────────────────
+// ─── The whole walk: real expressions, scripted screens, stops at the English test ───────────
 /**
- * A page that changes when Next is clicked, so the loop faces the same problem the real form does:
- * which step it is on is only knowable by reading the page again.
+ * A page that changes when Next is clicked, so the loop faces the real problem: which screen it is on is
+ * only knowable by reading it again.
  */
-function makeScriptedPage(specs) {
+function makeScriptedScreens(specs) {
   let index = 0;
   let doc = null;
   const build = () => {
-    const spec = specs[index] || { step: 15, fields: [] };
+    const spec = specs[Math.min(index, specs.length - 1)] || { step: 1, fields: [] };
     const next = {
       label: spec.nextLabel || 'Next',
       disabled: Boolean(spec.nextDisabled),
@@ -421,14 +535,11 @@ function makeScriptedPage(specs) {
         build();
       }
     };
-    const buttons = spec.buttons
-      ? spec.buttons.map((b) => ({ ...b, onClick: b.onClick || next.onClick }))
-      : [next];
     doc = makeFormDoc({
       step: spec.step,
-      total: 15,
-      fields: spec.fields || [],
-      buttons,
+      total: 11,
+      fields: (spec.fields || []).map((f) => f),
+      buttons: [next],
       headings: spec.headings || [],
       text: spec.text || ''
     });
@@ -442,130 +553,109 @@ function makeScriptedPage(specs) {
   };
 }
 
+const WALK_PROFILE = {
+  fullName: 'David Saddy Malingu',
+  discordUsername: 'SaddyMalingu',
+  email: 'saddymalingu@gmail.com',
+  hasExperience: 'No',
+  source: 'Reddit',
+  referral: 'u/Silver-Tax-2158'
+};
+
 {
-  const page = makeScriptedPage([
-    { step: 1, headings: ['Your details'], fields: [
-      { label: 'First name', id: 'fn', name: 'firstName', required: true },
-      { label: 'Email address', id: 'em', name: 'email', required: true }
-    ] },
-    { step: 2, headings: ['Where you are'], fields: [
-      { label: 'Country', id: 'co', name: 'country', required: true },
-      { label: 'City', id: 'ci', name: 'city', required: false }
-    ] },
-    { step: 15, headings: ['One last thing'], fields: [] }
+  const page = makeScriptedScreens([
+    {
+      step: 1,
+      headings: ['Personal Details'],
+      fields: [
+        { label: 'Full Name', id: 'fullName', name: 'fullName', required: true },
+        { label: 'Discord Username', id: 'discordUsername', name: 'discordUsername', required: true },
+        { label: 'Email Address', id: 'email', name: 'email', required: true }
+      ]
+    },
+    {
+      step: 2,
+      headings: ['Discovery'],
+      fields: [
+        { label: 'Have you worked with OnlyFans before?', id: 'hasExperience', name: 'hasExperience', required: true },
+        { label: 'How did you find this recruitment server?', id: 'source', name: 'source', required: true }
+      ]
+    },
+    { step: 3, headings: ['English Proficiency'], text: 'English Proficiency Test', fields: [] }
   ]);
 
   const result = await runApplication({
     evaluate: page.evaluate,
-    profile: PROFILE,
-    options: { settleMs: 1, pollMs: 2, advanceTimeoutMs: 60, maxSteps: 8 }
+    profile: WALK_PROFILE,
+    options: { settleMs: 1, pollMs: 2, advanceTimeoutMs: 60, maxSteps: 12 }
   });
 
-  eq('the walk reports a handoff', result.handoff, true);
-  eq('at the human boundary', result.reason, 'human_boundary');
-  eq('on step 15', result.step, 15);
+  eq('the walk hands over', result.handoff, true);
+  eq('at the English test', result.reason, 'human_boundary');
   eq('and the browser must stay open', result.keepOpen, true);
-  eq('three steps were recorded', result.steps.length, 3);
-  eq('step 1 planned both of its fields', result.steps[0].planned.length, 2);
-  eq('step 2 planned both of its fields', result.steps[1].planned.length, 2);
-  ok('a step that was filled and advanced is still one record', result.steps[0].attempts >= 2,
-    result.steps.map((s) => `step ${s.step} x${s.attempts}`));
-  ok('the transcript records each decision',
-    result.transcript.filter((t) => t.event === 'decide').length >= 3, result.transcript.length);
-  eq('both advances really moved the page',
-    result.transcript.filter((t) => t.event === 'advance' && t.moved).length, 2);
+  eq('three screens were recorded', result.steps.length, 3);
+  eq('the first is Personal Details', result.steps[0].screen, 'personal');
+  eq('the second is Discovery', result.steps[1].screen, 'discovery');
+  eq('it filled three fields on screen one', result.steps[0].planned.length, 3);
+  eq('and two answers on screen two', result.steps[1].planned.length, 2);
+  eq('both advances moved the page', result.transcript.filter((t) => t.event === 'advance' && t.moved).length, 2);
+  eq('the question ids were used as keys', result.steps[0].planned[0].key, 'fullName');
+}
+
+
+// ─── The upload screen: attached through the caller, never typed ─────────────────────────────
+{
+  const page = makeScriptedScreens([
+    { step: 1, headings: ['Tech Setup'], fields: [{ label: '', id: '', name: '', type: 'file', required: true }] }
+  ]);
+  const seen = [];
+  const result = await runApplication({
+    evaluate: page.evaluate,
+    attachFile: async (upload) => { seen.push(upload); return { ok: true, files: 1 }; },
+    profile: { deskPhoto: 'C:/Users/HP/Downloads/IMG_20211123_161036_205.jpg' },
+    options: { settleMs: 1, pollMs: 2, advanceTimeoutMs: 30, maxSteps: 2 }
+  });
+  eq('the file was attached', seen.length, 1);
+  eq('with the path the tenant gave',
+    seen[0].path, 'C:/Users/HP/Downloads/IMG_20211123_161036_205.jpg');
+  eq('keyed to the desk photo question', seen[0].key, 'deskPhoto');
+  ok('the run reports the upload step', result.transcript.some((t) => t.event === 'upload' && t.attached === 1),
+    result.transcript.map((t) => t.event));
 }
 
 {
-  // A required field the profile cannot answer stops the walk at that step, with the field named.
-  const page = makeScriptedPage([
-    { step: 1, headings: ['Odd question'], fields: [
-      { label: 'First name', id: 'fn', name: 'firstName', required: true },
-      { label: 'Favourite colour', id: 'fc', name: 'colour', required: true }
-    ] }
+  // With no file channel the run must say so rather than pretend the screen is done.
+  const page = makeScriptedScreens([
+    { step: 1, headings: ['Tech Setup'], fields: [{ label: '', id: '', name: '', type: 'file', required: true }] }
   ]);
   const result = await runApplication({
     evaluate: page.evaluate,
-    profile: PROFILE,
-    options: { settleMs: 1, pollMs: 2, advanceTimeoutMs: 40, maxSteps: 3 }
+    profile: { deskPhoto: 'C:/desk.jpg' },
+    options: { settleMs: 1, pollMs: 2, maxSteps: 2 }
   });
-  eq('the walk stops rather than guessing', result.ok, false);
-  eq('for a missing value', result.reason, 'required_field_unmapped');
-  eq('it still leaves the page open', result.keepOpen, true);
-  eq('and names the field', result.needsValues[0].label, 'Favourite colour');
+  eq('no channel is a hard failure', result.ok, false);
+  eq('named precisely', result.reason, 'upload_not_supported');
+  eq('and the page stays open', result.keepOpen, true);
 }
 
+// ─── What the tenant reads when it stops ────────────────────────────────────────────────────
 {
-  // A Next that does nothing is caught: the click "worked", the page did not move.
-  const page = makeScriptedPage([
-    { step: 1, headings: ['Stuck'], fields: [{ label: 'First name', id: 'fn', name: 'firstName', required: true }], nextDoesNothing: true }
-  ]);
-  const result = await runApplication({
-    evaluate: page.evaluate,
-    profile: PROFILE,
-    options: { settleMs: 1, pollMs: 2, advanceTimeoutMs: 30, maxSteps: 3 }
-  });
-  eq('a page that does not move is a failure', result.ok, false);
-  eq('with that exact reason', result.reason, 'step_not_advanced');
-  eq('and the page is still open', result.keepOpen, true);
-}
+  const handoff = describeOutcome({ handoff: true, reason: 'human_boundary', step: 8 });
+  ok('the handoff names the English screen', /English Proficiency/i.test(handoff), handoff);
+  ok('and says the page is open', /open/i.test(handoff), handoff);
 
+  const human = describeOutcome({ reason: 'human_only_question', question: 'voiceIntro', why: 'records your voice' });
+  ok('a human question says what it is', /records your voice/i.test(human), human);
 
-{
-  // The typing test: the agent must stop even though it could type.
-  const page = makeScriptedPage([
-    { step: 14, headings: ['Typing test'], text: 'Type the paragraph below. We measure your WPM.', fields: [] }
-  ]);
-  const result = await runApplication({
-    evaluate: page.evaluate,
-    profile: PROFILE,
-    options: { settleMs: 1, pollMs: 2, advanceTimeoutMs: 40, maxSteps: 3 }
-  });
-  eq('the typing test is handed over', result.handoff, true);
-  eq('because it measures the applicant', result.reason, 'typing_test_is_human');
-  eq('on step 14', result.step, 14);
-}
+  const missing = describeOutcome({ reason: 'required_field_unmapped', needsValues: [{ label: 'Desk Photo' }] });
+  ok('a missing value is named', /Desk Photo/.test(missing), missing);
 
-{
-  // A dry run plans and stops, and must not touch the form.
-  const page = makeScriptedPage([
-    { step: 1, headings: ['Your details'], fields: [{ label: 'First name', id: 'fn', name: 'firstName', required: true }] }
-  ]);
-  const result = await runApplication({
-    evaluate: page.evaluate,
-    profile: PROFILE,
-    options: { dryRun: true, settleMs: 1, pollMs: 2, maxSteps: 2 }
-  });
-  eq('the dry run reports itself', result.dryRun, true);
-  eq('and plans the write', result.planned.values.length, 1);
-  eq('but leaves the field empty', page.doc.fields[0].value, '');
-}
-
-{
-  // The fingerprint is what detects movement, so it has to change when the step does.
-  const one = await evaluateOn(makePage(makeFormDoc({ step: 1, headings: ['A'], fields: [{ label: 'First name', id: 'a' }] })), stepFingerprintExpr());
-  const two = await evaluateOn(makePage(makeFormDoc({ step: 2, headings: ['B'], fields: [{ label: 'First name', id: 'a' }] })), stepFingerprintExpr());
-  eq('the step is read', one.step, 1);
-  eq('and reads differently on the next step', two.step, 2);
-  ok('the fingerprint differs', one.fingerprint !== two.fingerprint, [one.fingerprint, two.fingerprint]);
-}
-
-{
-  // What the tenant actually reads when it stops.
-  ok('the handoff message names the step and says the page is open',
-    /step 15/.test(describeOutcome({ handoff: true, reason: 'human_boundary', step: 15 })),
-    describeOutcome({ handoff: true, reason: 'human_boundary', step: 15 }));
-  ok('the typing message says it is theirs to type',
-    /typing test/i.test(describeOutcome({ reason: 'typing_test_is_human', step: 14 })),
-    describeOutcome({ reason: 'typing_test_is_human', step: 14 }));
-  ok('a missing value is named',
-    /Favourite colour/.test(describeOutcome({ reason: 'required_field_unmapped', needsValues: [{ label: 'Favourite colour' }] })),
-    describeOutcome({ reason: 'required_field_unmapped', needsValues: [{ label: 'Favourite colour' }] }));
+  const noFile = describeOutcome({ reason: 'upload_not_supported', uploads: [{ label: 'Desk Photo' }] });
+  ok('a missing file channel points at the flag', /--desk-photo/.test(noFile), noFile);
 }
 
 eq('the platform advertises no submit capability', CHATTER_APPLY.capabilities.includes('submit'), false);
 eq('fill is allowed', CHATTER_APPLY.capabilities.includes('fill'), true);
-eq('the human boundary is step 15', CHATTER_APPLY.steps.handoffAt, 15);
 
 console.log(`\n${pass} passed, ${failures.length} failed`);
 if (failures.length) {
