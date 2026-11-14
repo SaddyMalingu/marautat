@@ -96,6 +96,7 @@ const listOnly = flag('list-profiles', null) !== null;
 /** Read-only funnel mapping: walk to step 1, then read every screen forward and record it. */
 const mapOnly = flag('map', null) !== null;
 const dumpOnly = flag('dump', null) !== null;
+const captureOnly = flag('capture', null) !== null;
 const mapOut = path.resolve(String(flag('map-out', 'tmp_chatterapply/funnel.json')));
 
 if (!tenant && !explicitEnvId && !listOnly) {
@@ -291,6 +292,51 @@ const DUMP_EXPR = `(() => {
       .map((el) => ({ tag: el.tagName.toLowerCase(), text: clean(el.innerText || el.textContent).slice(0, 40) }))
   });
 })()`;
+
+/**
+ * Read the funnel from the app's own network traffic.
+ *
+ * The step list is not in any bundle (checked: two step arrays ship, neither is the live 21), so it must be
+ * fetched. Rather than clicking through 21 screens to discover them, this reloads the form once with the
+ * protocol's network domain enabled and keeps any JSON whose body mentions a question id we know.
+ */
+async function captureApi({ wsUrl, waitMs = 12_000, match = /"(ageCheck|hasExperience|typingTest|fullName|steps)"\s*:/ }) {
+  const session = await sessionOn(wsUrl);
+  const candidates = [];
+  const seen = new Set();
+  const off = session.on('Network.responseReceived', (params) => {
+    const response = params?.response || {};
+    const requestId = params?.requestId;
+    if (!requestId || seen.has(requestId)) return;
+    const url = String(response.url || '');
+    const mime = String(response.mimeType || '');
+    // Skip images/fonts outright; keep anything that could be JSON.
+    if (/^(image|font|media|stylesheet)\//.test(mime)) return;
+    seen.add(requestId);
+    candidates.push({ requestId, url, mime, status: response.status ?? null });
+  });
+
+  try {
+    await session.send('Network.enable', {}, { timeoutMs: 5_000 });
+    await session.send('Page.reload', { ignoreCache: false }, { timeoutMs: 20_000 });
+    await new Promise((r) => setTimeout(r, waitMs));
+
+    const matches = [];
+    for (const candidate of candidates.slice(0, 60)) {
+      try {
+        const body = await session.send('Network.getResponseBody', { requestId: candidate.requestId }, { timeoutMs: 5_000 });
+        const text = String(body?.body || '');
+        if (!text || text.length > 400_000) continue;
+        if (!match.test(text)) continue;
+        matches.push({ ...candidate, bytes: text.length, text });
+      } catch { /* body already evicted, or not a document — nothing to add */ }
+    }
+    return { ok: matches.length > 0, considered: candidates.length, matches };
+  } finally {
+    off();
+    session.close();
+  }
+}
 
 async function urlOfTarget({ wsUrl }) {
   const session = await sessionOn(wsUrl);
@@ -563,6 +609,26 @@ async function main() {
         })),
         buttons: (ready.snapshot.buttons || []).map((b) => b.label),
         keepOpen: true
+      }, null, 2));
+      return;
+    }
+
+    if (captureOnly) {
+      // The step list is fetched, not bundled: read it from the app's own network traffic.
+      console.error('capturing the form\'s API traffic (this reloads the page once)');
+      const captured = await captureApi({ wsUrl: page.wsUrl, waitMs: Number(flag('capture-wait', 12000)) || 12000 });
+      const capOut = mapOut.replace(/funnel\.json$/i, 'api.json');
+      writeJson(capOut, {
+        when: new Date().toISOString(),
+        considered: captured.considered,
+        matches: captured.matches.map((m) => ({ url: m.url, mime: m.mime, status: m.status, bytes: m.bytes, text: m.text }))
+      });
+      leaveOpen = true;
+      console.log(JSON.stringify({
+        ok: captured.ok,
+        captured: capOut,
+        considered: captured.considered,
+        matches: captured.matches.map((m) => ({ url: m.url, mime: m.mime, bytes: m.bytes }))
       }, null, 2));
       return;
     }

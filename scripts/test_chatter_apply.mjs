@@ -13,6 +13,7 @@ import {
   CHATTER_APPLY,
   FUNNEL,
   HUMAN_ONLY_TYPES,
+  LIVE_STEP_COUNT,
   STOP_SCREEN,
   chooseOptionExpr,
   buttonOffersOption,
@@ -29,9 +30,11 @@ import {
   planScreenValues,
   planStepValues,
   mapFunnel,
+  questionByStep,
   readStepExpr,
   rewindToStart,
   runApplication,
+  liveQuestions,
   screenFor,
   stepFingerprintExpr,
   typeAtWpmExpr,
@@ -914,6 +917,44 @@ function makeBackablePage(start = 3, floor = 1) {
   const result = await rewindToStart({ evaluate: page.evaluate, settleMs: 1, pollMs: 2, log: () => {} });
   eq('it says it is already there', result.pressed, 0);
   eq('at step 1', result.at, 1);
+}
+
+
+// ─── The live 21 steps, and the handoff they make exact (2026-11-14) ─────────────────────────
+{
+  eq('the live funnel has 21 displayed steps', LIVE_STEP_COUNT, 21);
+  eq('every question is listed', liveQuestions().length, 21);
+  eq('step 2 is the age check', questionByStep(2).question.id, 'ageCheck');
+  eq('step 4 is the Discord handle', questionByStep(4).question.id, 'discordUsername');
+  eq('step 8 is the OnlyFans experience question', questionByStep(8).question.id, 'hasExperience');
+  eq('step 9 is optional', questionByStep(9).question.required, false);
+  eq('step 12 is the desk photo', questionByStep(12).question.type, 'upload');
+  eq('step 13 is the speed test', questionByStep(13).question.id, 'speedTest');
+  eq('step 14 is the typing test — what the live page showed', questionByStep(14).question.id, 'typingTest');
+  eq('step 15 is the English test', questionByStep(15).question.id, 'englishTest');
+  eq('step 21 is the voice intro', questionByStep(21).question.id, 'voiceIntro');
+  eq('a step beyond the funnel is null', questionByStep(99), null);
+  ok('the skipped question keeps no number', questionByStep(13).question.id !== 'proofOfWork');
+}
+
+{
+  const base = { ok: true, buttons: [{ label: 'Next' }], fields: [], measurements: {} };
+  // The step alone is enough: no screen recognition needed.
+  const english = decideStep({ snapshot: base, stepNumber: 15 });
+  eq('step 15 is the handoff', english.action, 'handoff');
+  eq('named as the boundary', english.reason, 'human_boundary');
+  eq('and identified by question', english.question, 'englishTest');
+
+  const typing = decideStep({ snapshot: base, stepNumber: 14 });
+  eq('step 14 stops for the human', typing.action, 'handoff');
+  eq('because it measures them', typing.reason, 'human_only_question');
+
+  const claimed = decideStep({ snapshot: base, stepNumber: 14, options: { includeTyping: true } });
+  eq('when claimed, the typing test is typed', claimed.action, 'typing_test');
+  eq('and says why', claimed.reason, 'typing_claimed');
+
+  // A normal question is still filled, not handed over.
+  eq('step 3 is filled', decideStep({ snapshot: base, stepNumber: 3, plan: { values: [{ key: 'fullName', value: 'x' }], unresolved: [] } }).action, 'fill');
 }
 
 console.log(`\n${pass} passed, ${failures.length} failed`);

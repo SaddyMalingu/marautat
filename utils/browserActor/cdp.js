@@ -78,6 +78,12 @@ export class CdpSession {
     this.nextId = 1;
     this.pending = new Map();
     this.waiters = new Map();
+    /**
+     * Persistent subscribers, which `waiters` cannot be: that list hands an event to the first waiter and
+     * drops it, which is fine for "wait for this one navigation" and useless for `Network.responseReceived`,
+     * where every response matters. Added for reading a form's own API (2026-11-14).
+     */
+    this.listeners = new Map();
     this.closed = false;
   }
 
@@ -140,9 +146,27 @@ export class CdpSession {
       return;
     }
     if (message.method) {
+      const persistent = this.listeners.get(message.method);
+      if (persistent && persistent.length) {
+        for (const handler of [...persistent]) {
+          // A subscriber's own bug must not stop the protocol loop.
+          try { handler(message.params); } catch { /* ignore */ }
+        }
+      }
       const list = this.waiters.get(message.method);
       if (list && list.length) list.shift()(message.params);
     }
+  }
+
+  /** Subscribe to every event of a method. Returns an unsubscribe function. */
+  on(method, handler) {
+    const list = this.listeners.get(method) || [];
+    list.push(handler);
+    this.listeners.set(method, list);
+    return () => {
+      const current = this.listeners.get(method) || [];
+      this.listeners.set(method, current.filter((item) => item !== handler));
+    };
   }
 
   send(method, params = {}, { timeoutMs = CDP_CAPTURE_TIMEOUT_MS } = {}) {

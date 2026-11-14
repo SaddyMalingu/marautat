@@ -138,6 +138,16 @@ export const HUMAN_ONLY_TYPES = Object.freeze({
 export const STOP_SCREEN = 'english_test';
 
 /**
+ * The live funnel's numbering, generated from the app's own bundle.
+ *
+ * The page prints "Step 14 of 21", so `stepNumber` is not a guess — it identifies the question exactly, and
+ * this maps it. `questionByStep(15)` is the English test, `(14)` the typing test. Regenerate with
+ * `npm run chatterapply:funnel` when their flow changes.
+ */
+import { LIVE_FUNNEL, LIVE_STEP_COUNT, liveQuestions, questionByStep } from './chatterApplyFunnel.js';
+export { LIVE_FUNNEL, LIVE_STEP_COUNT, liveQuestions, questionByStep };
+
+/**
  * Finds the document the form is actually in.
  *
  * Same-origin frames are reachable directly, which is the case here (`/apply` and `/apply/form/` share
@@ -766,6 +776,38 @@ export function decideStep({ snapshot = {}, plan = null, screen = null, stepNumb
 
   if (!snapshot.ok) {
     return { action: 'stop', reason: snapshot.reason || 'unreadable', detail: snapshot.detail || null };
+  }
+
+  // The page numbers its questions, so the step identifies the question exactly — the most precise signal
+  // available and the one the applicant reads on screen. Checked first, because a human-only question must
+  // stop the run even if the screen could not be recognised from its headings.
+  const atStep = stepNumber != null ? questionByStep(stepNumber) : null;
+  if (atStep?.question?.type) {
+    const type = atStep.question.type;
+    const liftable = type === 'typing_test' && includeTyping;
+    if (HUMAN_ONLY_TYPES[type] && !liftable) {
+      return {
+        action: 'handoff',
+        reason: type === 'english_test' ? 'human_boundary' : 'human_only_question',
+        step: stepNumber,
+        question: atStep.question.id,
+        screen: atStep.screen?.id || null,
+        why: HUMAN_ONLY_TYPES[type]
+      };
+    }
+    // The page's own measurements. Waiting is the only correct action: the number is theirs, not ours.
+    if (type === 'speed_test') {
+      const start = (snapshot.buttons || []).find((b) => /^(start|begin)/i.test(b.label) && !b.disabled);
+      if (start) return { action: 'start_measurement', reason: 'speed_test_offered', step: stepNumber, button: start.label };
+      const canMoveOn = (snapshot.buttons || []).some(
+        (b) => !b.disabled && CHATTER_APPLY.buttons.next.some((word) => b.label.toLowerCase().includes(word))
+      );
+      if (!canMoveOn) return { action: 'wait_measurement', reason: 'speed_test_running', step: stepNumber };
+    }
+    // A typing test the tenant has claimed: type the passage the page shows, then let it score.
+    if (liftable) {
+      return { action: 'typing_test', reason: 'typing_claimed', step: stepNumber, question: atStep.question.id };
+    }
   }
 
   // The screen the tenant keeps: reached, so stop with the page exactly as it is.
