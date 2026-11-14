@@ -84,7 +84,16 @@ const dryRun = flag('dry-run', null) !== null;
 const includeTyping = flag('include-typing', null) !== null;
 const shouldOpen = flag('open', null) !== null;
 const closeWhenDone = flag('close', null) !== null;
-const headless = flag('headful', null) === null;
+/**
+ * How long to wait for a person to answer a question the app will not let us click.
+ *
+ * The age question ignores a dispatched click, a synthetic pointer sequence *and* a protocol-trusted mouse
+ * event, so the only reliable way past it is to ask. Waiting implies a visible window; there is no point
+ * waiting for someone who cannot see the page.
+ */
+const waitHumanSeconds = Number(flag('wait-human', 0)) || 0;
+const waitForHumanMs = waitHumanSeconds > 0 ? waitHumanSeconds * 1000 : 0;
+const headless = flag('headful', null) === null && waitForHumanMs === 0;
 const outPath = path.resolve(String(flag('out', 'tmp_chatterapply/step.json')));
 const targetUrl = String(flag('url', CHATTER_APPLY.applyUrl));
 /** The desk photo the application requires. A path, checked here so a typo fails before the browser. */
@@ -656,13 +665,14 @@ async function main() {
         evaluate: (expression, options = {}) => evaluateJson({ wsUrl: page.wsUrl, expression, ...options }),
         clickOption: (choice) => clickOptionTrusted({ wsUrl: page.wsUrl, choice }),
         profile,
-        options: { includeTyping, typingWpm, answerChoices: flag('map-no-answers', null) === null },
+        options: { includeTyping, typingWpm, waitForHumanMs, answerChoices: flag('map-no-answers', null) === null },
         log: (entry) => console.error(
           `  map${entry.step ? ` step ${entry.step}` : ''}`
           + `${entry.heading ? ` "${entry.heading}"` : ''}`
           + `${entry.fields !== undefined ? ` · ${entry.fields} field(s)` : ''}`
           + `${entry.buttons ? ` · ${entry.buttons.join(' | ')}` : ''}`
           + `${entry.options ? ` · chose ${entry.options.join(',')}` : ''}`
+          + `${entry.event === 'map-human-needed' ? ` · ** ANSWER THIS: ${entry.question || 'the question'} → ${(entry.options || []).join(' / ')} **` : ''}`
         )
       });
 
@@ -702,7 +712,8 @@ async function main() {
       options: {
         dryRun,
         includeTyping,
-        typingWpm
+        typingWpm,
+        waitForHumanMs
       },
       log: (entry) => console.error(
         `  ${entry.event}${entry.step ? ` step ${entry.step}` : ''}${entry.screen ? ` [${entry.screen}]` : ''}`
@@ -711,6 +722,8 @@ async function main() {
         + `${entry.applied ? ` (+${entry.applied})` : ''}`
         + `${entry.picked ? ` (${entry.picked}/${entry.total} chosen)` : ''}`
         + `${entry.attached ? ` (${entry.attached}/${entry.total} attached)` : ''}`
+        + `${entry.event === 'human-needed' ? ` ** YOU: ${entry.label || entry.question || 'answer the question'} → ${(entry.options || []).join(' / ')} (waiting ${Math.round((entry.waitingMs || 0) / 1000)}s) **` : ''}`
+        + `${entry.event === 'human-answered' ? ` (you answered, ${Math.round((entry.waitedMs || 0) / 1000)}s)` : ''}`
         + `${entry.moved === false ? ' (did not move)' : ''}`
       )
     });

@@ -936,6 +936,7 @@ export async function runApplication({
     pollMs = 500,
     dryRun = false,
     typingWpm = 70,
+    waitForHumanMs = 0,
     ...policy
   } = options;
 
@@ -1085,6 +1086,41 @@ export async function runApplication({
     }
 
     if (decision.action === 'choose') {
+      // With --wait-human, a blocked question is handed to the person at the keyboard: this app ignores
+      // programmatic clicks, so asking is the only reliable way past it — and asking beats failing.
+      if (waitForHumanMs > 0) {
+        note({
+          event: 'human-needed',
+          step: stepNumber,
+          question: decision.choices[0]?.question || null,
+          label: decision.choices[0]?.label || null,
+          options: decision.choices.map((c) => c.option),
+          waitingMs: waitForHumanMs
+        });
+        const waited = await waitForHuman({
+          evaluate,
+          previous: { step: stepNumber, progressText: snapshot.progressText },
+          timeoutMs: waitForHumanMs,
+          pollMs: Math.max(500, pollMs)
+        });
+        if (waited.ok) {
+          note({ event: 'human-answered', step: stepNumber, waitedMs: waited.waitedMs });
+          await new Promise((r) => setTimeout(r, settleMs));
+          continue;
+        }
+        return {
+          ok: false,
+          handoff: true,
+          step: stepNumber,
+          reason: 'human_timeout',
+          needsHuman: { question: decision.choices[0]?.question || null, options: decision.choices.map((c) => c.option) },
+          waitedMs: waited.waitedMs,
+          keepOpen: true,
+          transcript,
+          steps
+        };
+      }
+
       // Click each option, then confirm the page stopped blocking. A click that a re-render swallowed
       // leaves Next disabled, and that must surface here rather than as a stuck screen three reads later.
       const picked = [];
@@ -1467,7 +1503,8 @@ export async function mapFunnel({ evaluate, clickOption = null, profile = {}, op
     pollMs = 500,
     answerChoices = true,
     includeTyping = false,
-    typingWpm = 70
+    typingWpm = 70,
+    waitForHumanMs = 0
   } = options;
 
   const steps = [];
@@ -1560,6 +1597,26 @@ export async function mapFunnel({ evaluate, clickOption = null, profile = {}, op
     // which is a human's to take and therefore ends the map unless the tenant has claimed it.
     const plan = planChoices({ screen, buttons: snapshot.buttons || [], profile });
     if (answerChoices && plan.choices.length) {
+      // When the page will not take a click, the map asks the person and waits — otherwise it stalls here
+      // and every step after this one goes unmapped.
+      if (waitForHumanMs > 0) {
+        const options = plan.choices.map((c) => c.option);
+        note({ event: 'map-human-needed', step: record.step, question: plan.choices[0]?.question || null, options });
+        const waited = await waitForHuman({
+          evaluate,
+          previous: { step: record.step, progressText: snapshot.progressText },
+          timeoutMs: waitForHumanMs,
+          pollMs: Math.max(500, pollMs)
+        });
+        record.advancedBy = waited.ok ? 'human' : 'human_timeout';
+        if (waited.ok) {
+          note({ event: 'map-human-answered', step: record.step, waitedMs: waited.waitedMs });
+          await new Promise((r) => setTimeout(r, settleMs));
+          continue;
+        }
+        return { ok: true, reason: 'human_timeout', at: record.step, options, steps };
+      }
+
       const picked = [];
       for (const choice of plan.choices) {
         // A trusted click (browser protocol) is used when the caller can provide one: this app ignored
@@ -1712,6 +1769,8 @@ export function chooseOptionExpr({ option = '', question = '' } = {}) {
       try {
         const Event = view[Ctor] || view.Event;
         el.dispatchEvent(new Event(type, { bubbles: true, cancelable: true, view, button: 0, ...(init || {}) }));
+
+
       } catch (e) { /* the sequence continues; one unsupported event is not fatal */ }
     };
     fire('pointerdown', 'PointerEvent');
@@ -1840,3 +1899,34 @@ export function optionPointExpr({ option = '' } = {}) {
 }
 
 
+
+/**
+ * Pause for a person, then carry on (2026-11-14).
+ *
+ * Some of this form's controls ignore programmatic clicks entirely: a dispatched click, a full synthetic
+ * pointer sequence and a protocol-trusted mouse event all left Next disabled on the age question. That is not
+ * something a page expression can fix, and it is not a reason to give up on the other twenty steps.
+ *
+ * So: say what is needed, wait for the page to move, and continue. "Moved" means the page's own step number
+ * changed or its Next control became enabled — both are things only a real answer produces.
+ */
+export async function waitForHuman({ evaluate, previous = null, timeoutMs = 120_000, pollMs = 1_000 } = {}) {
+  if (typeof evaluate !== 'function') throw new TypeError('waitForHuman needs an evaluate() function');
+  const startedAt = Date.now();
+  const deadline = startedAt + Math.max(0, Number(timeoutMs) || 0);
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, Math.max(250, Number(pollMs) || 1000)));
+    const snapshot = await evaluate(readStepExpr());
+    if (!snapshot?.ok) continue;
+    const nextReady = (snapshot.buttons || []).some(
+      (b) => !b.disabled && CHATTER_APPLY.buttons.next.some((word) => b.label.toLowerCase().includes(word))
+    );
+    const moved = previous?.step != null && snapshot.step != null
+      ? snapshot.step !== previous.step
+      : snapshot.progressText !== previous?.progressText;
+    if (nextReady || moved) {
+      return { ok: true, waitedMs: Date.now() - startedAt, snapshot };
+    }
+  }
+  return { ok: false, reason: 'human_timeout', waitedMs: Date.now() - startedAt };
+}

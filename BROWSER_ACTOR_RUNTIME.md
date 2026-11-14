@@ -811,3 +811,77 @@ Every run writes `tmp_chatterapply/step.json`: per screen, the heading, the fiel
 was refused and why, uploads, and the decision taken. `npm run test:chatterapply` = 123 assertions over the
 real funnel data, the screen matcher, the id-based planner, option validation, the upload path, paced
 typing, and a scripted walk that stops at the English screen.
+
+## ChatterApply: the 21 live steps, and the one control the page will not let us click (2026-11-14)
+
+The page prints **"Step 14 of 21"** while sitting on the Typing Test. The bundle's step array holds 11
+screens carrying 22 questions — so the counter is counting **questions**, and one of them (Proof of Work) is
+skipped for this applicant. 22 − 1 = 21, and the numbering then lands where both the page and the tenant said
+it was.
+
+That is also why the tenant's own list read oddly at first: "step 8: No" is not a screen, it is the answer to
+question 8, *"Have you worked with OnlyFans before?"*.
+
+| # | question | # | question |
+|---|---|---|---|
+| 1 | intro (welcome) | 12 | deskPhoto *(upload)* |
+| 2 | ageCheck — Are you 18+? | 13 | speedTest |
+| 3 | fullName | 14 | typingTest (`min: 70`) |
+| 4 | discordUsername | 15 | englishTest |
+| 5 | country | 16 | subscriberAgency |
+| 6 | email | 17 | salesProcess |
+| 7 | phone | 18 | captionShower |
+| 8 | hasExperience | 19 | captionStrip |
+| 9 | experienceDetails *(optional)* | 20 | captionExplicit |
+| 10 | source | 21 | voiceIntro |
+| 11 | referral *(optional)* | — | *proofOfWork: skipped* |
+
+`npm run chatterapply:funnel` regenerates this from the live bundle (`--print` shows the numbering), writing
+`utils/browserActor/tasks/chatterApplyFunnel.js`. `decideStep` reads the step number first, so the handoff at
+15 does not depend on recognising a screen from its headings — which is what failed live.
+
+### What the page refuses
+
+The age question renders as **buttons** (`A Yes`, `B No`) with `Next` disabled until answered. It ignores:
+
+- `el.click()`
+- a full synthetic pointer sequence (`pointerdown` → `mousedown` → `pointerup` → `mouseup` → `click`)
+- a **protocol-trusted** `Input.dispatchMouseEvent` at the button's computed coordinates
+
+while an `elementFromPoint` hit test shows the button is topmost with no overlay. So this is not a selector
+problem, and not a z-index problem: the control does not accept programmatic activation in this environment.
+
+### The answer: ask, and wait
+
+`--wait-human <seconds>` turns a blocked question into a prompt:
+
+```
+** YOU: Are you 18+? → Yes / No (waiting 180s) **
+```
+
+The run polls the page until its step number changes or `Next` becomes enabled — both only happen when a
+person really answers — then continues. `--wait-human` implies a visible window (there is no point waiting for
+someone who cannot see the page). If nobody answers it stops with `human_timeout`, the question id, the
+options, and the page left open.
+
+```bash
+node scripts/browser_actor_chatterapply.mjs --tenant <slug> \
+  --profile docs/chatterapply-profile.example.json --wait-human 180
+```
+
+### Reading tools that came out of this
+
+| flag | what it answers |
+|---|---|
+| `--discover` | what is on screen right now: headings, fields, buttons |
+| `--dump` | the frame's real DOM plus an `elementFromPoint` hit test per button |
+| `--capture` | the page's own JSON traffic, when the data is fetched rather than bundled |
+| `--map` | read every screen forward and record it to `funnel.json` (types nothing) |
+
+`--capture` also forced one fix in the protocol client: `CdpSession.waitFor` is one-shot, which is useless for
+`Network.responseReceived`; persistent listeners (`session.on`) were added for it.
+
+**One bug from this round is worth remembering:** the runner used to re-resolve the CDP target on every call,
+so on a profile that starts with fourteen tabs it navigated one tab and read another — and reported **Reddit**
+as the application form. The tab is now pinned once by URL, verified before anything is read, and the run
+refuses with `wrong_tab` rather than touching a page it did not choose.

@@ -38,7 +38,8 @@ import {
   screenFor,
   stepFingerprintExpr,
   typeAtWpmExpr,
-  typingPromptExpr
+  typingPromptExpr,
+  waitForHuman
 } from '../utils/browserActor/tasks/chatterApply.js';
 
 let pass = 0;
@@ -957,7 +958,65 @@ function makeBackablePage(start = 3, floor = 1) {
   eq('step 3 is filled', decideStep({ snapshot: base, stepNumber: 3, plan: { values: [{ key: 'fullName', value: 'x' }], unresolved: [] } }).action, 'fill');
 }
 
+
+// ─── Waiting for a person, when the page will not take a click (2026-11-14) ─────────────────
+{
+  // A page that answers only when the human does: Next stays disabled for the first two polls.
+  let polls = 0;
+  const evaluate = async () => {
+    polls += 1;
+    const enabled = polls > 2;
+    return {
+      ok: true,
+      step: 2,
+      progressText: 'Step 2 of 21',
+      headings: ['→Are you 18+?'],
+      fields: [],
+      text: 'Are you 18?',
+      measurements: {},
+      buttons: [{ label: 'A Yes' }, { label: 'Next →', disabled: !enabled }]
+    };
+  };
+  const waited = await waitForHuman({ evaluate, previous: { step: 2 }, timeoutMs: 3000, pollMs: 250 });
+  eq('the wait ends when the page moves', waited.ok, true);
+  ok('and it says how long it waited', waited.waitedMs >= 250, waited.waitedMs);
+  ok('it polled more than once', polls > 2, polls);
+}
+
+{
+  // Nobody answers: the wait gives up and says so, rather than pretending success.
+  const evaluate = async () => ({
+    ok: true, step: 2, progressText: 'Step 2 of 21', headings: [], fields: [], text: '', measurements: {},
+    buttons: [{ label: 'A Yes' }, { label: 'Next →', disabled: true }]
+  });
+  const waited = await waitForHuman({ evaluate, previous: { step: 2 }, timeoutMs: 700, pollMs: 250 });
+  eq('a silent human times out', waited.ok, false);
+  eq('with its own reason', waited.reason, 'human_timeout');
+}
+
+{
+  // In the run itself: with a wait budget the blocked question is asked; if nobody answers, the run stops
+  // honestly with the page open, naming what it was waiting for.
+  const page = makeScriptedScreens([
+    { step: 2, headings: ['→Are you 18+?'], text: 'Are you 18?', fields: [],
+      buttons: [{ label: 'A Yes' }, { label: 'Next →', disabled: true }] }
+  ]);
+  const result = await runApplication({
+    evaluate: page.evaluate,
+    profile: { ageCheck: 'Yes' },
+    options: { settleMs: 1, pollMs: 1, advanceTimeoutMs: 40, maxSteps: 3, waitForHumanMs: 600 }
+  });
+  eq('an unanswered question ends the run', result.ok, false);
+  eq('as a human timeout, not a failure to click', result.reason, 'human_timeout');
+  eq('it asked the right question', result.needsHuman.question, 'ageCheck');
+  eq('with the options the page offers', result.needsHuman.options, ['Yes']);
+  eq('and it leaves the page open for them', result.keepOpen, true);
+  ok('the transcript records that it asked', result.transcript.some((t) => t.event === 'human-needed'),
+    result.transcript.map((t) => t.event));
+}
+
 console.log(`\n${pass} passed, ${failures.length} failed`);
+
 if (failures.length) {
   for (const failure of failures) console.log(`FAIL ${failure}`);
   process.exit(1);
