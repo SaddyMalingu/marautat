@@ -5462,6 +5462,15 @@ app.use('/', createApplyPortalRouter({
   resolveTenant: async (slug) => {
     const { data } = await supabase.from('site_tenants').select('id,slug').eq('slug', String(slug)).maybeSingle();
     return data || null;
+  },
+  // The tenant dashboard knows its phone before it knows its slug; both are identifiers here.
+  resolveTenantByPhone: async (phone) => {
+    const digits = String(phone || '').replace(/\D/g, '');
+    if (!digits) return null;
+    const { data } = await supabase.from('site_tenants').select('id,slug,phone,whatsapp_number').limit(500);
+    const rows = Array.isArray(data) ? data : [];
+    return rows.find((row) => String(row.phone || '').replace(/\D/g, '') === digits
+      || String(row.whatsapp_number || '').replace(/\D/g, '') === digits) || null;
   }
 }));
 

@@ -20,6 +20,7 @@ import {
   sanitizeAnswers
 } from '../utils/applyRuns.js';
 import { createApplyPortalRouter, isApplyRunActive } from '../routes/applyPortal.js';
+import { agentsFor, enabledTenants, workUnderEnabled, workUnderFor } from '../utils/workUnder.js';
 import { answersFileName, buildApplyChildArgs, classifyApplyLine, summarizeApplyLine } from '../utils/browserActor/applyDispatch.js';
 import { buildProgressPatch } from '../utils/browserActor/runs.js';
 
@@ -166,10 +167,13 @@ function fakeTableFactory() {
 {
   process.env.ADMIN_KEY = 'operator-key';
   process.env.TENANT_DASHBOARD_PASS = 'tenant-key';
+  // Two tenants with the Work_Under upgrade (so isolation can be tested), and one without it (so the gate is).
+  process.env.WORK_UNDER_TENANTS = 'malingu-ventures,other-tenant';
 
   const tenants = {
     'malingu-ventures': { id: 'tenant-a', slug: 'malingu-ventures' },
-    'other-tenant': { id: 'tenant-b', slug: 'other-tenant' }
+    'other-tenant': { id: 'tenant-b', slug: 'other-tenant' },
+    'no-upgrade': { id: 'tenant-c', slug: 'no-upgrade' }
   };
   const app = express();
   app.use(express.json());
@@ -233,6 +237,17 @@ function fakeTableFactory() {
   eq('and the slot is free again', (await post('/api/apply/runs?tenant=malingu-ventures', { answers: GOOD_ANSWERS })).status, 202);
   eq('the kind is the one this suite assumes', APPLY_KIND, 'apply');
 
+  // The upgrade is enforced here, not only hidden in the dashboard.
+  const refused = await post('/api/apply/runs?tenant=no-upgrade', { answers: GOOD_ANSWERS });
+  eq('a tenant without Work_Under cannot queue a run', refused.status, 403);
+  ok('and is told why', /Work_Under is not enabled/.test((await refused.json()).error));
+  eq('nor read any', (await fetch(`${base}/api/apply/runs?tenant=no-upgrade`, { headers: asTenant })).status, 403);
+
+  const flag = await (await fetch(`${base}/api/work-under?tenant=malingu-ventures`, { headers: asTenant })).json();
+  ok('the dashboard can ask whether the section should exist', flag.enabled === true && flag.agents.length === 1, JSON.stringify(flag).slice(0, 120));
+  const flagOff = await (await fetch(`${base}/api/work-under?tenant=no-upgrade`, { headers: asTenant })).json();
+  eq('and is told no for a tenant without it', flagOff.enabled, false);
+
   await new Promise((r) => server.close(r));
 }
 
@@ -277,6 +292,28 @@ function fakeTableFactory() {
   ok('the progress patch carries the log', Array.isArray(patch.detail.log) && patch.detail.log.length === 1);
   ok('and keeps the latest message too', patch.message.includes('Are you 18+?'));
   ok('a plain progress patch carries no detail', buildProgressPatch({ done: 1 }).detail === undefined);
+}
+
+// ─── Work_Under: a paid upgrade, enforced by the server ──────────────────────────────────────
+{
+  const env = { WORK_UNDER_TENANTS: 'malingu-ventures, acme-co' };
+  ok('the named tenants have it', workUnderEnabled('malingu-ventures', env) && workUnderEnabled('acme-co', env));
+  ok('and other tenants do not', !workUnderEnabled('someone-else', env));
+  ok('case and spacing do not matter', workUnderEnabled('  MALINGU-VENTURES ', { WORK_UNDER_TENANTS: ' Malingu-Ventures ' }));
+  eq('an empty setting falls back to the first customer', enabledTenants({ WORK_UNDER_TENANTS: '' }), ['malingu-ventures']);
+  eq('and so does an unset one', enabledTenants({}), ['malingu-ventures']);
+
+  eq('a tenant without the upgrade gets no agents', agentsFor('someone-else', env), []);
+  const mine = agentsFor('malingu-ventures', env);
+  eq('Malingu Ventures gets the OF Chatter agent', mine.map((a) => a.id), ['of-chatter']);
+  eq('which drives the site it is named for', mine[0].site, 'chatterapply.com');
+  eq('through the console that exists', mine[0].consolePath, '/apply');
+  ok('and says where it stops, before the tenant starts it', /15/.test(mine[0].stopsAt));
+
+  const off = workUnderFor('someone-else', env);
+  ok('a refused tenant is told why', off.enabled === false && /not enabled/.test(off.reason || ''));
+  const on = workUnderFor('malingu-ventures', env);
+  ok('an enabled tenant gets the section name for the sidebar', on.section.label === 'Work_Under' && on.section.group === 'Growth');
 }
 
 if (failures.length) {

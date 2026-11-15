@@ -369,7 +369,14 @@ const PROFILE = {
   for (const id of ['typing_test', 'english_test', 'voice', 'proof_of_work']) {
     ok(`${id} is listed as human-only`, Boolean(HUMAN_ONLY_TYPES[id]), HUMAN_ONLY_TYPES[id]);
   }
-  eq('the English test cannot be lifted', humanOnlyReason(english, { includeTyping: true }).type, 'english_test');
+  const englishQuestion = FUNNEL.find((s) => s.id === 'english_test').questions[0];
+  eq('the English test cannot be lifted', humanOnlyReason(FUNNEL.find((s) => s.id === 'english_test'), { includeTyping: true }).type, 'english_test');
+  // With a wait budget it becomes a place to wait, not the end of the run — otherwise steps 16-20 are unreachable.
+  eq('at step 15 the run waits when it may', decideStep({ snapshot: base, stepNumber: 15, options: { waitForHumanMs: 600000 } }).action, 'wait_human');
+  eq('and says why', decideStep({ snapshot: base, stepNumber: 15, options: { waitForHumanMs: 600000 } }).reason, 'human_boundary_waiting');
+  eq('without a wait budget it still stops there', decideStep({ snapshot: base, stepNumber: 15, options: {} }).action, 'handoff');
+  eq('the voice intro never waits — there is nothing after it',
+    decideStep({ snapshot: base, stepNumber: 21, options: { waitForHumanMs: 600000 } }).action, 'handoff');
   eq('the typing test can be lifted', humanOnlyReason(FUNNEL.find((s) => s.id === 'speed_typing'), { includeTyping: true }), null);
   eq('but not by default', humanOnlyReason(FUNNEL.find((s) => s.id === 'speed_typing')).type, 'typing_test');
   ok('the proof screen is human-only', Boolean(humanOnlyReason(FUNNEL.find((s) => s.id === 'proof'))));

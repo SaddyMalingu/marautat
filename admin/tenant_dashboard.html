@@ -367,6 +367,8 @@
 
     <div class="sidebar-label">Growth</div>
     <div class="nav-item" data-sec="writers-flow"><span class="nav-icon"><i class="fa-solid fa-rocket"></i></span>Writer's Flow</div>
+    <!-- Work_Under: a paid upgrade, so the item exists but stays hidden until the server says this tenant has it. -->
+    <div class="nav-item" data-sec="work-under" id="navWorkUnder" style="display:none"><span class="nav-icon"><i class="fa-solid fa-user-astronaut"></i></span>Work_Under</div>
 
     <div class="sidebar-label">Settings</div>
     <div class="nav-item" data-sec="profile"><span class="nav-icon"><i class="fa-solid fa-user"></i></span>Profile</div>
@@ -441,6 +443,9 @@ const S = {
   token: '', phone: sessionStorage.getItem(PHONE_SLOT) || '', name: '', expires: null,
 };
 let curSec = 'home';
+
+// Work_Under is a paid upgrade: ask once, early, and reveal the section only if this tenant has it.
+setTimeout(() => { try { workUnderProbe(); } catch { /* no upgrade, no section */ } }, 900);
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• TOAST â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 function toast(msg, type = 'ok', ms = 4200) {
@@ -624,7 +629,7 @@ function go(sec, opts) {
     if (main) main.scrollTo({ top: 0, behavior: 'smooth' });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, 0);
-  const map = { home:renderHome, revenue:renderRevenue, analytics:renderAnalytics, 'a-boss-lite':renderABossLite, customers:renderCustomers, search:renderSearch, preferences:renderPreferences, favorites:renderFavorites, referrals:renderReferrals, catalog:renderCatalog, performance:renderPerformance, suppliers:renderSuppliers, orders:renderOrders, 'scan-pay':renderScanPay, training:renderTraining, 'bot-config':renderBotConfig, profile:renderProfile, smtp:renderSmtp, payments:renderPayments, 'add-agent':renderAddAgent, assignments:renderAssignments, reviews:renderReviews, broadcast:renderBroadcast, abandoned:renderAbandoned, insights:renderInsights, 'auto-responses':renderAutoResponses, scheduled:renderScheduled, workflows:renderWorkflows, escalations:renderEscalations, 'agent-performance':renderAgentPerformance, onboarding:renderOnboarding, 'writers-flow':renderWritersFlow, help:renderHelp };
+  const map = { home:renderHome, revenue:renderRevenue, analytics:renderAnalytics, 'a-boss-lite':renderABossLite, customers:renderCustomers, search:renderSearch, preferences:renderPreferences, favorites:renderFavorites, referrals:renderReferrals, catalog:renderCatalog, performance:renderPerformance, suppliers:renderSuppliers, orders:renderOrders, 'scan-pay':renderScanPay, training:renderTraining, 'bot-config':renderBotConfig, profile:renderProfile, smtp:renderSmtp, payments:renderPayments, 'add-agent':renderAddAgent, assignments:renderAssignments, reviews:renderReviews, broadcast:renderBroadcast, abandoned:renderAbandoned, insights:renderInsights, 'auto-responses':renderAutoResponses, scheduled:renderScheduled, workflows:renderWorkflows, escalations:renderEscalations, 'agent-performance':renderAgentPerformance, onboarding:renderOnboarding, 'writers-flow':renderWritersFlow, 'work-under':renderWorkUnder, help:renderHelp };
   (map[sec] || renderHome)();
 }
 
@@ -2409,6 +2414,55 @@ function wfWireAccess() {
   });
 }
 
+// ══════════════════════════════════ WORK_UNDER ══════════════════════════════════
+// Agents that work *for* this tenant on a specific site (2026-11-14). A paid upgrade: the server answers
+// whether this tenant has it, and until it says yes the nav item stays hidden — hiding is the courtesy,
+// /api/apply/* refusing is the control.
+let WU = null;
+
+async function workUnderProbe() {
+  try {
+    const q = S.phone ? `?phone=${encodeURIComponent(S.phone)}` : '';
+    const r = await apiJson('/api/work-under' + q);
+    if (!r.ok || !r.data?.enabled) return;
+    WU = r.data;
+    const nav = document.getElementById('navWorkUnder');
+    if (nav) nav.style.display = '';
+  } catch { /* no upgrade, no section */ }
+}
+
+async function renderWorkUnder() {
+  const sp = document.getElementById('spa');
+  sp.innerHTML = spinner('Loading Work_Under...');
+  if (!WU) await workUnderProbe();
+  if (!WU?.enabled) {
+    sp.innerHTML = `<div class="panel"><div class="panel-title">Work_Under</div>
+      <div class="text-muted" style="font-size:.85rem">Work_Under is not enabled for this tenant.
+      It is a paid upgrade that lets an agent work a specific site on your behalf.</div></div>`;
+    return;
+  }
+  const cards = (WU.agents || []).map((agent) => `
+    <div class="panel mb-3">
+      <div class="panel-title d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <span><i class="fa-solid fa-user-astronaut me-1"></i> ${esc(agent.name)}</span>
+        <span class="text-muted" style="font-size:.72rem">${esc(agent.site)} · runs on your worker</span>
+      </div>
+      <div class="text-muted" style="font-size:.8rem;margin-bottom:8px">${esc(agent.summary)}</div>
+      <div class="text-muted" style="font-size:.74rem;margin-bottom:10px">
+        It stops for: ${esc(agent.stopsAt)}
+      </div>
+      <iframe title="${esc(agent.name)} console" src="${esc(agent.consolePath)}?tenant=${encodeURIComponent(WU.tenant || '')}"
+        style="width:100%;height:820px;border:0;border-radius:8px;background:#f6f7fb"></iframe>
+      <div class="text-muted" style="font-size:.72rem;margin-top:6px">
+        If the panel looks empty, open it in its own tab:
+        <a href="${esc(agent.consolePath)}?tenant=${encodeURIComponent(WU.tenant || '')}" target="_blank" rel="noopener">${esc(agent.consolePath)}</a>.
+      </div>
+    </div>`).join('');
+  sp.innerHTML = `<div class="text-muted" style="font-size:.82rem;margin-bottom:12px">
+      Work_Under agents act for you on one site each. Your browser profile stays on your computer; the agent
+      drives it from your worker and stops wherever only you can answer.</div>${cards}`;
+}
+
 async function renderWritersFlow() {
 
   // A re-render replaces the panel, so an old poller would keep querying a DOM node that
@@ -2471,36 +2525,6 @@ async function renderWritersFlow() {
     bloggerTab.insertBefore(control, strip);
     wfWireControl();
     wfLoadControl();
-
-    /**
-     * The OF application (2026-11-14).
-     *
-     * ChatterApply is not a capture: it fills somebody's job application, so it is not a card in Collection
-     * control next to the marketplaces. It gets its own panel, and the panel is the console itself — the same
-     * page at /apply, embedded, so the answers form, the start button and the live log all live inside the
-     * portal the tenant is already signed into instead of sending them to a URL they have to be told about.
-     *
-     * The profile is on their computer, so the run happens on their worker (the machine running MoreLogin) and
-     * this panel reads the log the worker sends back.
-     */
-    const apply = document.createElement('div');
-    apply.id = 'wfApply';
-    apply.className = 'panel mb-3';
-    apply.innerHTML = '<div class="panel-title d-flex justify-content-between align-items-center flex-wrap gap-2">'
-      + '<span><i class="fa-solid fa-file-signature me-1"></i> OF application (ChatterApply)</span>'
-      + '<span class="text-muted" style="font-size:.72rem">runs on your worker · you answer the questions it highlights</span></div>'
-      + '<div id="wfApplyBody"><iframe id="wfApplyFrame" title="ChatterApply console" '
-      + 'style="width:100%;height:760px;border:0;border-radius:8px;background:#f6f7fb"></iframe></div>'
-      + '<div class="text-muted" style="font-size:.72rem;margin-top:6px">'
-      + 'If the panel looks empty, open it in its own tab: <a href="/apply" target="_blank" rel="noopener">/apply</a>.'
-      + '</div>';
-    bloggerTab.insertBefore(apply, strip);
-    // Loaded once, with the tenant prefilled, so the page asks only for the access key the first time.
-    const applyFrame = apply.querySelector('#wfApplyFrame');
-    if (applyFrame) {
-      const slug = (S && (S.slug || S.site?.slug)) || '';
-      applyFrame.src = '/apply' + (slug ? `?tenant=${encodeURIComponent(slug)}` : '');
-    }
 
     // "Your own browser" sits above the collection controls: until a tenant's sessions are
     // connected, every run below it is reading somebody else's profile — and the tenant

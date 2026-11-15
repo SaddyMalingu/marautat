@@ -19,6 +19,7 @@ import path from 'node:path';
 import express from 'express';
 import { createRunStore } from '../utils/browserActor/runs.js';
 import { APPLY_KIND, applyRunView, buildApplyDetail, MAX_LOG_LINES } from '../utils/applyRuns.js';
+import { workUnderFor } from '../utils/workUnder.js';
 
 /** Statuses that mean "an apply run is already in flight for this tenant". */
 const ACTIVE_STATUSES = Object.freeze(['queued', 'running']);
@@ -31,6 +32,7 @@ export function createApplyPortalRouter({
   root = process.cwd(),
   table = null,
   resolveTenant = null,
+  resolveTenantByPhone = null,
   pageDir = path.join(root, 'admin')
 } = {}) {
   const router = express.Router();
@@ -59,8 +61,40 @@ export function createApplyPortalRouter({
     if (typeof resolveTenant !== 'function') return { error: 'tenant lookup is not configured', status: 503 };
     const tenant = await resolveTenant(slug);
     if (!tenant?.id) return { error: `no tenant "${slug}"`, status: 404 };
-    return { tenant, role: supplied === process.env.TENANT_DASHBOARD_PASS ? 'tenant' : 'operator' };
+    /**
+     * Work_Under is a paid upgrade, so this is where it is enforced. The dashboard hides the section for a
+     * tenant without it; the API refuses to queue, read or cancel, so a hidden button is not the only thing
+     * standing between a tenant and an agent acting with their identity on a site they have not bought.
+     */
+    const upgrade = workUnderFor(slug);
+    if (!upgrade.enabled) {
+      return { error: 'Work_Under is not enabled for this tenant', status: 403, upgrade };
+    }
+    return { tenant, upgrade, role: supplied === process.env.TENANT_DASHBOARD_PASS ? 'tenant' : 'operator' };
   };
+
+  // What the dashboard may show. Deliberately outside `caller`, which refuses a tenant without the upgrade:
+  // the dashboard has to be able to ask the question in order to decide whether to render the section.
+  router.get('/api/work-under', async (req, res) => {
+    const supplied = keyFor(req);
+    const accepted = acceptedKeys();
+    if (!supplied) return res.status(401).json({ error: 'missing key' });
+    if (!accepted.length) return res.status(503).json({ error: 'no tenant key is configured on this server' });
+    if (!accepted.includes(supplied)) return res.status(401).json({ error: 'unknown key' });
+    // The dashboard knows its own phone (it is in its URL) before it knows the slug, so both identify the tenant.
+    const slug = String(req.query.tenant || '').trim().toLowerCase();
+    const phone = String(req.query.phone || '').trim();
+    if (!slug && !phone) return res.status(400).json({ error: 'tenant or phone is required' });
+    let tenant = null;
+    try {
+      if (slug && typeof resolveTenant === 'function') tenant = await resolveTenant(slug);
+      else if (phone && typeof resolveTenantByPhone === 'function') tenant = await resolveTenantByPhone(phone);
+    } catch (error) {
+      return res.status(500).json({ error: `could not look the tenant up: ${error.message}` });
+    }
+    if (!tenant?.id) return res.status(404).json({ error: 'tenant not found' });
+    return res.json(workUnderFor(tenant.slug || slug));
+  });
 
   // The page holds nothing: served without a key, needs one to do anything.
   router.get('/apply', (req, res) => res.sendFile(path.join(pageDir, 'apply_portal.html')));

@@ -843,7 +843,12 @@ export function planScreenValues({ screen = null, fields = [], profile = {}, inc
  * question with no value in the profile stops the run instead of being filled with a guess.
  */
 export function decideStep({ snapshot = {}, plan = null, screen = null, stepNumber = null, options = {} } = {}) {
-  const { includeTyping = false, stopScreen = STOP_SCREEN, speedScreen = 'speed_typing' } = options;
+  const {
+    includeTyping = false,
+    stopScreen = STOP_SCREEN,
+    speedScreen = 'speed_typing',
+    waitForHumanMs = 0
+  } = options;
 
   if (!snapshot.ok) {
     return { action: 'stop', reason: snapshot.reason || 'unreadable', detail: snapshot.detail || null };
@@ -857,9 +862,20 @@ export function decideStep({ snapshot = {}, plan = null, screen = null, stepNumb
     const type = atStep.question.type;
     const liftable = type === 'typing_test' && includeTyping;
     if (HUMAN_ONLY_TYPES[type] && !liftable) {
+      /**
+       * The English test is where the run used to stop for good (2026-11-14).
+       *
+       * That made steps 16–20 unreachable in one pass: a person does step 15, and the answers they wrote for the
+       * five caption questions sat unused until a second run picked the page up. With a wait budget, 15 becomes
+       * a wait like steps 2/8/10 — the English test is never typed for the applicant, the run just holds while
+       * they do it, then carries on into 16–20.
+       *
+       * Step 21 (voice) stays a stop: it is the last step, and there is nothing after it to carry on to.
+       */
+      const waivable = type === 'english_test' && Number(waitForHumanMs) > 0;
       return {
-        action: 'handoff',
-        reason: type === 'english_test' ? 'human_boundary' : 'human_only_question',
+        action: waivable ? 'wait_human' : 'handoff',
+        reason: waivable ? 'human_boundary_waiting' : (type === 'english_test' ? 'human_boundary' : 'human_only_question'),
         step: stepNumber,
         question: atStep.question.id,
         screen: atStep.screen?.id || null,
@@ -1135,7 +1151,7 @@ export async function runApplication({
       steps.push({ ...record, key: stepKey });
     }
 
-    const decision = decideStep({ snapshot, plan, screen, stepNumber, options: policy });
+    const decision = decideStep({ snapshot, plan, screen, stepNumber, options: { ...policy, waitForHumanMs } });
     note({
       event: 'decide',
       step: stepNumber,
@@ -1151,6 +1167,47 @@ export async function runApplication({
     if (decision.action === 'handoff') {
       // The caller must leave the browser exactly as it is.
       return { ok: true, handoff: true, step: stepNumber, reason: decision.reason, keepOpen: true, transcript, steps };
+    }
+
+    /**
+     * A boundary the run waits at instead of ending (2026-11-14).
+     *
+     * The English test measures the applicant, so nothing types it for them. But ending the run there also ended
+     * the useful part of it: the five written answers for steps 16–20 were collected and never used. Holding
+     * here — the same wait steps 2/8/10 use — lets one run reach the voice intro with a single pass.
+     */
+    if (decision.action === 'wait_human') {
+      note({
+        event: 'human-needed',
+        step: stepNumber,
+        question: decision.question,
+        label: 'the English test — do it in the browser',
+        options: [],
+        boundary: true,
+        waitingMs: waitForHumanMs
+      });
+      const waited = await waitForHuman({
+        evaluate,
+        previous: { step: stepNumber, progressText: snapshot.progressText },
+        timeoutMs: waitForHumanMs,
+        pollMs: Math.max(500, pollMs)
+      });
+      if (waited.ok) {
+        note({ event: 'human-answered', step: stepNumber, waitedMs: waited.waitedMs, boundary: true });
+        await new Promise((r) => setTimeout(r, settleMs));
+        continue;
+      }
+      return {
+        ok: false,
+        handoff: true,
+        step: stepNumber,
+        reason: 'human_timeout',
+        needsHuman: { question: decision.question, boundary: true },
+        waitedMs: waited.waitedMs,
+        keepOpen: true,
+        transcript,
+        steps
+      };
     }
 
     // The loop breaker: same step, same action, three times running.
