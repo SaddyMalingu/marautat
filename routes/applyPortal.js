@@ -19,7 +19,7 @@ import path from 'node:path';
 import express from 'express';
 import { createRunStore } from '../utils/browserActor/runs.js';
 import { APPLY_KIND, applyRunView, buildApplyDetail, MAX_LOG_LINES } from '../utils/applyRuns.js';
-import { workUnderFor } from '../utils/workUnder.js';
+import { workAndaFor, buildOnboardingRequest, appendRequest } from '../utils/workAnda.js';
 
 /** Statuses that mean "an apply run is already in flight for this tenant". */
 const ACTIVE_STATUSES = Object.freeze(['queued', 'running']);
@@ -33,6 +33,7 @@ export function createApplyPortalRouter({
   table = null,
   resolveTenant = null,
   resolveTenantByPhone = null,
+  saveOnboarding = null,
   pageDir = path.join(root, 'admin')
 } = {}) {
   const router = express.Router();
@@ -62,26 +63,28 @@ export function createApplyPortalRouter({
     const tenant = await resolveTenant(slug);
     if (!tenant?.id) return { error: `no tenant "${slug}"`, status: 404 };
     /**
-     * Work_Under is a paid upgrade, so this is where it is enforced. The dashboard hides the section for a
-     * tenant without it; the API refuses to queue, read or cancel, so a hidden button is not the only thing
-     * standing between a tenant and an agent acting with their identity on a site they have not bought.
+     * Work_Anda is a paid upgrade, so this is where it is enforced for *runs*. The section itself is visible to
+     * every tenant — that is how the upgrade sells itself — but queueing, reading or cancelling a run requires
+     * it, so a visible button is never the only thing between a tenant and an agent acting with their identity
+     * on a site they have not bought.
      */
-    const upgrade = workUnderFor(slug);
+    const upgrade = workAndaFor(slug);
     if (!upgrade.enabled) {
-      return { error: 'Work_Under is not enabled for this tenant', status: 403, upgrade };
+      return { error: 'Work_Anda is not enabled for this tenant', status: 403, upgrade };
     }
     return { tenant, upgrade, role: supplied === process.env.TENANT_DASHBOARD_PASS ? 'tenant' : 'operator' };
   };
 
-  // What the dashboard may show. Deliberately outside `caller`, which refuses a tenant without the upgrade:
-  // the dashboard has to be able to ask the question in order to decide whether to render the section.
-  router.get('/api/work-under', async (req, res) => {
+  /**
+   * What the dashboard shows for this tenant. Outside `caller`, because a tenant *without* the upgrade still gets
+   * the section: templates to see, and the onboarding form. Refusing this call would hide the only way to buy.
+   */
+  const section = async (req, res) => {
     const supplied = keyFor(req);
     const accepted = acceptedKeys();
     if (!supplied) return res.status(401).json({ error: 'missing key' });
     if (!accepted.length) return res.status(503).json({ error: 'no tenant key is configured on this server' });
     if (!accepted.includes(supplied)) return res.status(401).json({ error: 'unknown key' });
-    // The dashboard knows its own phone (it is in its URL) before it knows the slug, so both identify the tenant.
     const slug = String(req.query.tenant || '').trim().toLowerCase();
     const phone = String(req.query.phone || '').trim();
     if (!slug && !phone) return res.status(400).json({ error: 'tenant or phone is required' });
@@ -93,7 +96,55 @@ export function createApplyPortalRouter({
       return res.status(500).json({ error: `could not look the tenant up: ${error.message}` });
     }
     if (!tenant?.id) return res.status(404).json({ error: 'tenant not found' });
-    return res.json(workUnderFor(tenant.slug || slug));
+    return res.json(workAndaFor(tenant.slug || slug));
+  };
+
+  router.get('/api/work-anda', section);
+  // The old path, so a dashboard tab open across the rename keeps working.
+  router.get('/api/work-under', section);
+
+  /**
+   * "Onboard a system": the site, an HTML dump of the pages that matter, and what the work is.
+   *
+   * This is the door for a tenant who wants an agent nobody has built yet, so it is open to every tenant — asking
+   * is how they buy. The request is kept on their own tenant row (`metadata.workAnda.requests`), newest five,
+   * because that needs no migration and lands where support already looks.
+   */
+  router.post('/api/work-anda/requests', async (req, res) => {
+    const supplied = keyFor(req);
+    const accepted = acceptedKeys();
+    if (!supplied) return res.status(401).json({ error: 'missing key' });
+    if (!accepted.length) return res.status(503).json({ error: 'no tenant key is configured on this server' });
+    if (!accepted.includes(supplied)) return res.status(401).json({ error: 'unknown key' });
+
+    const slug = String(req.query.tenant || req.body?.tenant || '').trim().toLowerCase();
+    const phone = String(req.query.phone || req.body?.phone || '').trim();
+    if (!slug && !phone) return res.status(400).json({ error: 'tenant or phone is required' });
+    let tenant = null;
+    try {
+      if (slug && typeof resolveTenant === 'function') tenant = await resolveTenant(slug);
+      else if (phone && typeof resolveTenantByPhone === 'function') tenant = await resolveTenantByPhone(phone);
+    } catch (error) {
+      return res.status(500).json({ error: `could not look the tenant up: ${error.message}` });
+    }
+    if (!tenant?.id) return res.status(404).json({ error: 'tenant not found' });
+
+    const { request, errors } = buildOnboardingRequest(req.body || {});
+    if (errors.length) return res.status(400).json({ error: errors.join('; ') });
+    if (typeof saveOnboarding !== 'function') {
+      return res.status(503).json({ error: 'onboarding storage is not configured on this server' });
+    }
+    try {
+      const kept = await saveOnboarding(tenant, request);
+      return res.status(202).json({
+        ok: true,
+        request: { id: request.id, at: request.at, siteUrl: request.siteUrl, status: request.status },
+        kept: Array.isArray(kept) ? kept.length : 1,
+        note: 'Received. We build the agent against this site and dump, and come back to you before it runs anything.'
+      });
+    } catch (error) {
+      return res.status(500).json({ error: `could not save the request: ${error.message}` });
+    }
   });
 
   // The page holds nothing: served without a key, needs one to do anything.

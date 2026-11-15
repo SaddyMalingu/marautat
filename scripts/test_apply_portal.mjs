@@ -1,8 +1,8 @@
-/**
- * /apply — the tenant page, the answers it may send, and the run row it queues (2026-11-14)
+﻿/**
+ * /apply â€” the tenant page, the answers it may send, and the run row it queues (2026-11-14)
  *
  * No database and no browser: the table is a fake that answers the query shapes `createRunStore` uses, and the
- * tenant lookup is a function. What is being proved is the boundary — which answers survive, which are refused,
+ * tenant lookup is a function. What is being proved is the boundary â€” which answers survive, which are refused,
  * which run the page may see, and what happens when two tenants exist at once.
  *
  * Run: node scripts/test_apply_portal.mjs
@@ -20,7 +20,7 @@ import {
   sanitizeAnswers
 } from '../utils/applyRuns.js';
 import { createApplyPortalRouter, isApplyRunActive } from '../routes/applyPortal.js';
-import { agentsFor, enabledTenants, workUnderEnabled, workUnderFor } from '../utils/workUnder.js';
+import { agentsFor, enabledTenants, workAndaEnabled, workAndaFor, buildOnboardingRequest, appendRequest, templatesFor } from '../utils/workAnda.js';
 import { answersFileName, buildApplyChildArgs, classifyApplyLine, summarizeApplyLine } from '../utils/browserActor/applyDispatch.js';
 import { buildProgressPatch } from '../utils/browserActor/runs.js';
 
@@ -29,11 +29,11 @@ const failures = [];
 const eq = (label, actual, expected) => {
   const ok = JSON.stringify(actual) === JSON.stringify(expected);
   if (ok) pass += 1;
-  else failures.push(`${label} — expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+  else failures.push(`${label} â€” expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
 };
 const ok = (label, condition, detail = '') => {
   if (condition) pass += 1;
-  else failures.push(`${label}${detail === '' ? '' : ` — ${detail}`}`);
+  else failures.push(`${label}${detail === '' ? '' : ` â€” ${detail}`}`);
 };
 
 const GOOD_ANSWERS = {
@@ -48,7 +48,7 @@ const GOOD_ANSWERS = {
   deskPhoto: 'C:/Users/HP/Downloads/IMG_20211123_161036_205.jpg'
 };
 
-// ─── Answers: what the page may send ──────────────────────────────────────────────────────────
+// â”€â”€â”€ Answers: what the page may send â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 {
   const { answers, rejected } = sanitizeAnswers({ ...GOOD_ANSWERS, emial: 'typo@example.com', __proto__: 'x' });
   eq('known answers survive', answers.fullName, 'David Saddy Malingu');
@@ -87,11 +87,11 @@ const GOOD_ANSWERS = {
   ok('no answers at all is refused', buildApplyDetail({}).errors.length > 0);
 }
 
-// ─── The log and the view ─────────────────────────────────────────────────────────────────────
+// â”€â”€â”€ The log and the view â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 {
   let detail = {};
-  detail = appendLogLine(detail, '  decide step 3 [personal] — fill');
-  detail = appendLogLine(detail, '  human-needed step 8 —  ** YOU: Have you worked with OnlyFans before? → No **');
+  detail = appendLogLine(detail, '  decide step 3 [personal] â€” fill');
+  detail = appendLogLine(detail, '  human-needed step 8 â€”  ** YOU: Have you worked with OnlyFans before? â†’ No **');
   eq('lines accumulate', detail.log.length, 2);
   const again = appendLogLine(detail, detail.log[1]);
   eq('a repeated line is not stored twice', again.log.length, 2);
@@ -107,7 +107,7 @@ const GOOD_ANSWERS = {
   const view = applyRunView({
     id: 'run-1',
     status: 'running',
-    detail: { mode: 'fill', answers: GOOD_ANSWERS, log: ['start', '  human-needed step 8 —  ** YOU: Are you 18+? → Yes **'] },
+    detail: { mode: 'fill', answers: GOOD_ANSWERS, log: ['start', '  human-needed step 8 â€”  ** YOU: Are you 18+? â†’ Yes **'] },
     done_items: 4, ok_items: 4, failed_items: 0, total_items: 21
   });
   eq('the view says what it is doing', view.mode, 'fill');
@@ -120,7 +120,7 @@ const GOOD_ANSWERS = {
 }
 
 
-// ─── The routes, over real HTTP, against a fake table ─────────────────────────────────────────
+// â”€â”€â”€ The routes, over real HTTP, against a fake table â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 /** Just enough of a Supabase query builder for what `createRunStore` actually calls. */
 function fakeTableFactory() {
   const rows = [];
@@ -167,8 +167,8 @@ function fakeTableFactory() {
 {
   process.env.ADMIN_KEY = 'operator-key';
   process.env.TENANT_DASHBOARD_PASS = 'tenant-key';
-  // Two tenants with the Work_Under upgrade (so isolation can be tested), and one without it (so the gate is).
-  process.env.WORK_UNDER_TENANTS = 'malingu-ventures,other-tenant';
+  // Two tenants with the Work_Anda upgrade (so isolation can be tested), and one without it (so the gate is).
+  process.env.WORK_ANDA_TENANTS = 'malingu-ventures,other-tenant';
 
   const tenants = {
     'malingu-ventures': { id: 'tenant-a', slug: 'malingu-ventures' },
@@ -240,18 +240,21 @@ function fakeTableFactory() {
   // The upgrade is enforced here, not only hidden in the dashboard.
   const refused = await post('/api/apply/runs?tenant=no-upgrade', { answers: GOOD_ANSWERS });
   eq('a tenant without Work_Under cannot queue a run', refused.status, 403);
-  ok('and is told why', /Work_Under is not enabled/.test((await refused.json()).error));
+  ok('and is told why', /Work_Anda is not enabled/.test((await refused.json()).error));
   eq('nor read any', (await fetch(`${base}/api/apply/runs?tenant=no-upgrade`, { headers: asTenant })).status, 403);
 
-  const flag = await (await fetch(`${base}/api/work-under?tenant=malingu-ventures`, { headers: asTenant })).json();
-  ok('the dashboard can ask whether the section should exist', flag.enabled === true && flag.agents.length === 1, JSON.stringify(flag).slice(0, 120));
-  const flagOff = await (await fetch(`${base}/api/work-under?tenant=no-upgrade`, { headers: asTenant })).json();
-  eq('and is told no for a tenant without it', flagOff.enabled, false);
+  const flag = await (await fetch(`${base}/api/work-anda?tenant=malingu-ventures`, { headers: asTenant })).json();
+  ok('the section is readable for an enabled tenant', flag.enabled === true && flag.agents.length === 1, JSON.stringify(flag).slice(0, 120));
+  ok('and it carries the templates every tenant sees', Array.isArray(flag.templates) && flag.templates.length === 1);
+  const flagOff = await (await fetch(`${base}/api/work-anda?tenant=no-upgrade`, { headers: asTenant })).json();
+  eq('a tenant without the upgrade is not enabled', flagOff.enabled, false);
+  ok('but still sees the templates — that is how it sells itself', (flagOff.templates || []).length === 1);
+  ok('and is pointed at onboarding', /onboard/i.test(flagOff.reason || '') && flagOff.onboarding?.open === true);
 
   await new Promise((r) => server.close(r));
 }
 
-// ─── What the worker does with a queued run ───────────────────────────────────────────────────
+// â”€â”€â”€ What the worker does with a queued run â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 {
   const args = buildApplyChildArgs({
     tenantSlug: 'malingu-ventures',
@@ -278,11 +281,11 @@ function fakeTableFactory() {
 
 {
   // The worker relays what the child prints; the portal stores it as the run's log.
-  const prompt = '  human-needed step 2 —  ** YOU: Are you 18+? → Yes (waiting 600s) **';
+  const prompt = '  human-needed step 2 â€”  ** YOU: Are you 18+? â†’ Yes (waiting 600s) **';
   ok('a prompt is recognised', classifyApplyLine(prompt).isPrompt);
-  ok('an advance is counted as progress', classifyApplyLine('  advance —  "Next →"').advanced);
-  ok('a fill is recognised', classifyApplyLine('  fill step 3 —  (+1)').filled);
-  ok('an upload too', classifyApplyLine('  upload step 12 —  (1/1 attached)').uploaded);
+  ok('an advance is counted as progress', classifyApplyLine('  advance â€”  "Next â†’"').advanced);
+  ok('a fill is recognised', classifyApplyLine('  fill step 3 â€”  (+1)').filled);
+  ok('an upload too', classifyApplyLine('  upload step 12 â€”  (1/1 attached)').uploaded);
   ok('a stop is a failure line', classifyApplyLine('Stopped: no_next_button').failed);
   eq('the summary keeps the prompt whole', summarizeApplyLine(prompt).includes('Are you 18+?'), true);
   eq('a blank line has no summary', summarizeApplyLine('   '), null);
@@ -294,12 +297,12 @@ function fakeTableFactory() {
   ok('a plain progress patch carries no detail', buildProgressPatch({ done: 1 }).detail === undefined);
 }
 
-// ─── Work_Under: a paid upgrade, enforced by the server ──────────────────────────────────────
+// â”€â”€â”€ Work_Under: a paid upgrade, enforced by the server â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 {
   const env = { WORK_UNDER_TENANTS: 'malingu-ventures, acme-co' };
-  ok('the named tenants have it', workUnderEnabled('malingu-ventures', env) && workUnderEnabled('acme-co', env));
-  ok('and other tenants do not', !workUnderEnabled('someone-else', env));
-  ok('case and spacing do not matter', workUnderEnabled('  MALINGU-VENTURES ', { WORK_UNDER_TENANTS: ' Malingu-Ventures ' }));
+  ok('the named tenants have it', workAndaEnabled('malingu-ventures', env) && workAndaEnabled('acme-co', env));
+  ok('and other tenants do not', !workAndaEnabled('someone-else', env));
+  ok('case and spacing do not matter', workAndaEnabled('  MALINGU-VENTURES ', { WORK_UNDER_TENANTS: ' Malingu-Ventures ' }));
   eq('an empty setting falls back to the first customer', enabledTenants({ WORK_UNDER_TENANTS: '' }), ['malingu-ventures']);
   eq('and so does an unset one', enabledTenants({}), ['malingu-ventures']);
 
@@ -310,10 +313,38 @@ function fakeTableFactory() {
   eq('through the console that exists', mine[0].consolePath, '/apply');
   ok('and says where it stops, before the tenant starts it', /15/.test(mine[0].stopsAt));
 
-  const off = workUnderFor('someone-else', env);
-  ok('a refused tenant is told why', off.enabled === false && /not enabled/.test(off.reason || ''));
-  const on = workUnderFor('malingu-ventures', env);
-  ok('an enabled tenant gets the section name for the sidebar', on.section.label === 'Work_Under' && on.section.group === 'Growth');
+  const off = workAndaFor('someone-else', env);
+  ok('a refused tenant is invited to onboard instead', off.enabled === false && /onboard/i.test(off.reason || ''));
+  const on = workAndaFor('malingu-ventures', env);
+  ok('an enabled tenant gets the section for the sidebar',
+    on.section.label === 'Work_Anda' && on.section.group === 'Growth' && on.section.id === 'work-anda');
+}
+
+// ─── Onboard a system: the door for a tenant without an agent ────────────────────────────────
+{
+  const good = buildOnboardingRequest({
+    siteUrl: 'https://chatterapply.com/apply',
+    htmlDump: '<form><input name="fullName"></form>',
+    brief: 'Fill the application form, stop for the age question, and leave the typing test to me.'
+  });
+  eq('a complete request has no errors', good.errors, []);
+  eq('and keeps the site', good.request.siteUrl, 'https://chatterapply.com/apply');
+  eq('with the size of the dump recorded', good.request.htmlDumpBytes, good.request.htmlDump.length);
+  eq('and a status a person can read', good.request.status, 'submitted');
+
+  const noUrl = buildOnboardingRequest({ brief: 'x'.repeat(60) });
+  ok('a site link is required', noUrl.errors.some((e) => /siteUrl is required/.test(e)));
+  const badUrl = buildOnboardingRequest({ siteUrl: 'chatterapply.com', brief: 'x'.repeat(60) });
+  ok('and it must be a full link', badUrl.errors.some((e) => /full http/.test(e)));
+  const thinBrief = buildOnboardingRequest({ siteUrl: 'https://a.com', brief: 'do it' });
+  ok('a one-line brief is refused, because the agent is built from it', thinBrief.errors.some((e) => /brief is required/.test(e)));
+  const huge = buildOnboardingRequest({ siteUrl: 'https://a.com', brief: 'x'.repeat(60), htmlDump: 'x'.repeat(300 * 1024) });
+  ok('an enormous dump is refused with its size', huge.errors.some((e) => /too large/.test(e)));
+
+  let list = [];
+  for (let i = 0; i < 7; i += 1) list = appendRequest(list, { id: `r${i}` });
+  eq('only the newest few are kept', list.length, 5);
+  eq('newest first', list[0].id, 'r6');
 }
 
 if (failures.length) {
@@ -321,3 +352,4 @@ if (failures.length) {
 }
 console.log(`\n${pass} passed, ${failures.length} failed`);
 process.exit(failures.length ? 1 : 0);
+

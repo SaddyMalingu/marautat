@@ -92,6 +92,7 @@ import { createWriterFlowRouter } from "./routes/writerFlow.js";
 import { createBrowserAccessRouter } from "./routes/browserAccess.js";
 import { createApplyConsoleRouter } from "./routes/applyConsole.js";
 import { createApplyPortalRouter } from "./routes/applyPortal.js";
+import { appendRequest } from "./utils/workAnda.js";
 import { createAgentRunsRouter } from "./routes/agentRuns.js";
 // Digital Drops: a priced catalogue, an M-Pesa prompt and a signed paywall, so a
 // digital product can be sold and delivered without a human in the loop.
@@ -5471,6 +5472,27 @@ app.use('/', createApplyPortalRouter({
     const rows = Array.isArray(data) ? data : [];
     return rows.find((row) => String(row.phone || '').replace(/\D/g, '') === digits
       || String(row.whatsapp_number || '').replace(/\D/g, '') === digits) || null;
+  },
+  /**
+   * Work_Anda onboarding ("onboard a system"). Kept on the tenant's own metadata row: no migration, no new table,
+   * and it lands where support already looks. Newest five, because this is a notebook, not a warehouse.
+   */
+  saveOnboarding: async (tenant, request) => {
+    const { data: row, error } = await supabase
+      .from('site_tenants')
+      .select('id,metadata')
+      .eq('id', tenant.id)
+      .maybeSingle();
+    if (error) throw error;
+    const metadata = (row && row.metadata && typeof row.metadata === 'object') ? row.metadata : {};
+    const existing = metadata.workAnda && metadata.workAnda.requests;
+    const requests = appendRequest(existing, request);
+    const { error: writeError } = await supabase
+      .from('site_tenants')
+      .update({ metadata: { ...metadata, workAnda: { ...(metadata.workAnda || {}), requests } } })
+      .eq('id', tenant.id);
+    if (writeError) throw writeError;
+    return requests;
   }
 }));
 

@@ -367,8 +367,8 @@
 
     <div class="sidebar-label">Growth</div>
     <div class="nav-item" data-sec="writers-flow"><span class="nav-icon"><i class="fa-solid fa-rocket"></i></span>Writer's Flow</div>
-    <!-- Work_Under: a paid upgrade, so the item exists but stays hidden until the server says this tenant has it. -->
-    <div class="nav-item" data-sec="work-under" id="navWorkUnder" style="display:none"><span class="nav-icon"><i class="fa-solid fa-user-astronaut"></i></span>Work_Under</div>
+    <!-- Work_Anda is in every tenant's navigation. What differs is what they can do inside it. -->
+    <div class="nav-item" data-sec="work-anda" id="navWorkAnda"><span class="nav-icon"><i class="fa-solid fa-user-astronaut"></i></span>Work_Anda</div>
 
     <div class="sidebar-label">Settings</div>
     <div class="nav-item" data-sec="profile"><span class="nav-icon"><i class="fa-solid fa-user"></i></span>Profile</div>
@@ -629,7 +629,7 @@ function go(sec, opts) {
     if (main) main.scrollTo({ top: 0, behavior: 'smooth' });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, 0);
-  const map = { home:renderHome, revenue:renderRevenue, analytics:renderAnalytics, 'a-boss-lite':renderABossLite, customers:renderCustomers, search:renderSearch, preferences:renderPreferences, favorites:renderFavorites, referrals:renderReferrals, catalog:renderCatalog, performance:renderPerformance, suppliers:renderSuppliers, orders:renderOrders, 'scan-pay':renderScanPay, training:renderTraining, 'bot-config':renderBotConfig, profile:renderProfile, smtp:renderSmtp, payments:renderPayments, 'add-agent':renderAddAgent, assignments:renderAssignments, reviews:renderReviews, broadcast:renderBroadcast, abandoned:renderAbandoned, insights:renderInsights, 'auto-responses':renderAutoResponses, scheduled:renderScheduled, workflows:renderWorkflows, escalations:renderEscalations, 'agent-performance':renderAgentPerformance, onboarding:renderOnboarding, 'writers-flow':renderWritersFlow, 'work-under':renderWorkUnder, help:renderHelp };
+  const map = { home:renderHome, revenue:renderRevenue, analytics:renderAnalytics, 'a-boss-lite':renderABossLite, customers:renderCustomers, search:renderSearch, preferences:renderPreferences, favorites:renderFavorites, referrals:renderReferrals, catalog:renderCatalog, performance:renderPerformance, suppliers:renderSuppliers, orders:renderOrders, 'scan-pay':renderScanPay, training:renderTraining, 'bot-config':renderBotConfig, profile:renderProfile, smtp:renderSmtp, payments:renderPayments, 'add-agent':renderAddAgent, assignments:renderAssignments, reviews:renderReviews, broadcast:renderBroadcast, abandoned:renderAbandoned, insights:renderInsights, 'auto-responses':renderAutoResponses, scheduled:renderScheduled, workflows:renderWorkflows, escalations:renderEscalations, 'agent-performance':renderAgentPerformance, onboarding:renderOnboarding, 'writers-flow':renderWritersFlow, 'work-anda':renderWorkAnda, help:renderHelp };
   (map[sec] || renderHome)();
 }
 
@@ -2414,54 +2414,121 @@ function wfWireAccess() {
   });
 }
 
-// ══════════════════════════════════ WORK_UNDER ══════════════════════════════════
-// Agents that work *for* this tenant on a specific site (2026-11-14). A paid upgrade: the server answers
-// whether this tenant has it, and until it says yes the nav item stays hidden — hiding is the courtesy,
-// /api/apply/* refusing is the control.
-let WU = null;
+// ══════════════════════════════════ WORK_ANDA ══════════════════════════════════
+// Agents that work *for* a tenant on a specific site (2026-11-14).
+//
+// In every tenant's navigation on purpose: the catalogue is how the upgrade sells itself. What differs is what a
+// tenant can do here — one with an agent gets its console; one without gets the templates and the onboarding
+// form. The run endpoints refuse a tenant without it `/api/apply/*`, so this is convenience, not the control.
+let WA = null;
 
-async function workUnderProbe() {
-  try {
-    const q = S.phone ? `?phone=${encodeURIComponent(S.phone)}` : '';
-    const r = await apiJson('/api/work-under' + q);
-    if (!r.ok || !r.data?.enabled) return;
-    WU = r.data;
-    const nav = document.getElementById('navWorkUnder');
-    if (nav) nav.style.display = '';
-  } catch { /* no upgrade, no section */ }
+/** The tenant this page is about: the slug when we have it, otherwise the phone the portal knows. */
+function workAndaQuery() {
+  const slug = String(S.slug || URL_PARAMS.get('tenant') || '').trim().toLowerCase();
+  if (slug) return `tenant=${encodeURIComponent(slug)}`;
+  const phone = String(S.phone || URL_PARAMS.get('phone') || '').replace(/\D/g, '');
+  return phone ? `phone=${encodeURIComponent(phone)}` : '';
 }
 
-async function renderWorkUnder() {
+async function renderWorkAnda() {
   const sp = document.getElementById('spa');
-  sp.innerHTML = spinner('Loading Work_Under...');
-  if (!WU) await workUnderProbe();
-  if (!WU?.enabled) {
-    sp.innerHTML = `<div class="panel"><div class="panel-title">Work_Under</div>
-      <div class="text-muted" style="font-size:.85rem">Work_Under is not enabled for this tenant.
-      It is a paid upgrade that lets an agent work a specific site on your behalf.</div></div>`;
+  sp.innerHTML = spinner('Loading Work_Anda...');
+  const q = workAndaQuery();
+  if (!WA && q) {
+    const r = await apiJson('/api/work-anda?' + q);
+    if (r.ok) WA = r.data;
+  }
+  const data = WA;
+  if (!data) {
+    sp.innerHTML = `<div class="panel"><div class="panel-title">Work_Anda</div>
+      <div class="text-muted" style="font-size:.85rem">We could not read your Work_Anda entitlement for this
+      session. Reload the portal and open the section again.</div></div>`;
     return;
   }
-  const cards = (WU.agents || []).map((agent) => `
+
+  const templates = (data.templates || []).map((t) => `
+    <div class="border rounded p-3 mb-2">
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <strong style="font-size:.9rem">${esc(t.name)}</strong>
+        <span class="badge" style="background:${t.status === 'preview' ? '#eef2ff' : '#dcfce7'};color:${t.status === 'preview' ? '#3730a3' : '#166534'}">${esc(t.status)}</span>
+      </div>
+      <div class="text-muted" style="font-size:.78rem;margin-top:4px">${esc(t.site)} · built for ${esc(t.builtFor)}</div>
+      <div style="font-size:.82rem;margin-top:6px">${esc(t.summary)}</div>
+      <div class="text-muted" style="font-size:.74rem;margin-top:6px">${esc(t.lease || '')}</div>
+    </div>`).join('') || '<div class="text-muted" style="font-size:.82rem">No templates published yet.</div>';
+
+  const agents = (data.agents || []).map((agent) => `
     <div class="panel mb-3">
       <div class="panel-title d-flex justify-content-between align-items-center flex-wrap gap-2">
         <span><i class="fa-solid fa-user-astronaut me-1"></i> ${esc(agent.name)}</span>
         <span class="text-muted" style="font-size:.72rem">${esc(agent.site)} · runs on your worker</span>
       </div>
-      <div class="text-muted" style="font-size:.8rem;margin-bottom:8px">${esc(agent.summary)}</div>
-      <div class="text-muted" style="font-size:.74rem;margin-bottom:10px">
-        It stops for: ${esc(agent.stopsAt)}
-      </div>
-      <iframe title="${esc(agent.name)} console" src="${esc(agent.consolePath)}?tenant=${encodeURIComponent(WU.tenant || '')}"
+      <div class="text-muted" style="font-size:.8rem;margin-bottom:6px">${esc(agent.summary)}</div>
+      <div class="text-muted" style="font-size:.74rem;margin-bottom:10px">It stops for: ${esc(agent.stopsAt)}</div>
+      <iframe title="${esc(agent.name)} console" src="${esc(agent.consolePath)}?tenant=${encodeURIComponent(data.tenant || '')}"
         style="width:100%;height:820px;border:0;border-radius:8px;background:#f6f7fb"></iframe>
-      <div class="text-muted" style="font-size:.72rem;margin-top:6px">
-        If the panel looks empty, open it in its own tab:
-        <a href="${esc(agent.consolePath)}?tenant=${encodeURIComponent(WU.tenant || '')}" target="_blank" rel="noopener">${esc(agent.consolePath)}</a>.
-      </div>
+      <div class="text-muted" style="font-size:.72rem;margin-top:6px">If the panel looks empty, open it in its own tab:
+        <a href="${esc(agent.consolePath)}?tenant=${encodeURIComponent(data.tenant || '')}" target="_blank" rel="noopener">${esc(agent.consolePath)}</a>.</div>
     </div>`).join('');
-  sp.innerHTML = `<div class="text-muted" style="font-size:.82rem;margin-bottom:12px">
-      Work_Under agents act for you on one site each. Your browser profile stays on your computer; the agent
-      drives it from your worker and stops wherever only you can answer.</div>${cards}`;
+
+  sp.innerHTML = `
+    <div class="panel mb-3">
+      <div class="panel-title d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <span><i class="fa-solid fa-user-astronaut me-1"></i> Work_Anda</span>
+        <span class="text-muted" style="font-size:.72rem">agents that work a site on your behalf</span>
+      </div>
+      <div class="text-muted" style="font-size:.82rem;margin-bottom:12px">
+        Work_Anda agents act for you on one site each. Your browser profile stays on your computer; the agent drives
+        it from your worker and stops wherever only you can answer.
+        ${data.reason ? `<br><span style="color:#92400e">${esc(data.reason)}</span>` : ''}
+      </div>
+      <div class="row g-3">
+        <div class="col-12 col-lg-6">
+          <div style="font-size:.85rem;font-weight:600;margin-bottom:6px">Work_Anda Agent Templates</div>
+          ${templates}
+        </div>
+        <div class="col-12 col-lg-6">
+          <div class="border rounded p-3">
+            <div style="font-size:.85rem;font-weight:600;margin-bottom:6px">Onboard a system</div>
+            <div class="text-muted" style="font-size:.78rem;margin-bottom:8px">Want an agent that does not exist yet?
+              Give us the site, a page dump and what the work is; we build it against that and come back to you
+              before it runs anything.</div>
+            <input id="waSite" class="form-control form-control-sm" placeholder="https://example.com/the-page-that-matters" />
+            <textarea id="waDump" class="form-control form-control-sm mt-2" rows="4" placeholder="HTML dump: view source on the pages that matter and paste it here"></textarea>
+            <textarea id="waBrief" class="form-control form-control-sm mt-2" rows="4" placeholder="What should the worker do? The steps, what to answer, where it must stop for you."></textarea>
+            <button id="waSubmit" class="btn btn-dark btn-sm mt-2">Send it</button>
+            <div id="waResult" class="text-muted mt-2" style="font-size:.78rem"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    ${agents}`;
+
+  const submit = document.getElementById('waSubmit');
+  if (submit) {
+    submit.addEventListener('click', async () => {
+      const out = document.getElementById('waResult');
+      out.textContent = 'Sending...';
+      const r = await apiJson('/api/work-anda/requests?' + workAndaQuery(), {
+        method: 'POST',
+        body: {
+          siteUrl: document.getElementById('waSite').value.trim(),
+          htmlDump: document.getElementById('waDump').value,
+          brief: document.getElementById('waBrief').value
+        }
+      });
+      out.textContent = r.ok
+        ? `${r.data.note || 'Received.'} Reference ${r.data.request?.id || ''}`
+        : `Could not send: ${r.data?.error || r.status}`;
+      if (r.ok) {
+        document.getElementById('waSite').value = '';
+        document.getElementById('waDump').value = '';
+        document.getElementById('waBrief').value = '';
+      }
+    });
+  }
 }
+
 
 async function renderWritersFlow() {
 
