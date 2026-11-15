@@ -19,6 +19,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import express from 'express';
+import { buildApplyDetail } from '../utils/applyRuns.js';
 
 /** What the page may ask for. Anything else is a 400, not a silent default. */
 export const APPLY_MODES = Object.freeze(['fill', 'map', 'discover', 'dry-run']);
@@ -109,13 +110,13 @@ export function createRunRegistry({ spawnRun, now = () => Date.now(), ringLines 
       const run = runs.get(id);
       return run ? summary(run) : null;
     },
-    start({ mode, tenant, args, logPath }) {
+    start({ mode, tenant, args, logPath, cleanup = null }) {
       if (activeId) return { refused: 'run_in_progress', activeId };
       const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
       const run = {
         id, mode, tenant, args, logPath, status: 'running',
         startedAt: now(), endedAt: null, exitCode: null,
-        lines: [], listeners: new Set(), child: null
+        lines: [], listeners: new Set(), child: null, cleanup
       };
       runs.set(id, run);
       activeId = id;
@@ -127,6 +128,9 @@ export function createRunRegistry({ spawnRun, now = () => Date.now(), ringLines 
         run.endedAt = now();
         if (activeId === id) activeId = null;
         push(run, `— run ${run.status} (exit ${code ?? 'n/a'}${signal ? `, ${signal}` : ''}) —`);
+        // Anything the run needed on disk for its lifetime — a temporary answers profile with the tenant's name,
+        // email and phone — goes now, not on the next deploy.
+        if (typeof run.cleanup === 'function') { try { run.cleanup(); } catch { /* best effort */ } }
         for (const send of run.listeners) { try { send(null); } catch { /* closed */ } }
         run.listeners.clear();
       };
@@ -216,14 +220,47 @@ export function createApplyConsoleRouter({
   router.post('/admin/apply/runs', guard, (req, res) => {
     const body = req.body || {};
     let args;
+    let answersPath = null;
     try {
-      args = buildApplyArgs(body);
+      /**
+       * Answers typed into the page beat a profile file on disk (2026-11-14).
+       *
+       * The console used to accept only `--profile <path>`, which meant the tenant page's own answers could not
+       * drive a run — the page would have shown a form whose contents went nowhere. They now travel with the
+       * request, are validated by the same rules the queue uses, and are written to a temporary profile that is
+       * deleted when the run ends, because it holds somebody's name, email and phone.
+       */
+      let profile = body.profile || null;
+      let numbers = body;
+      if (body.answers && typeof body.answers === 'object') {
+        const { detail, errors } = buildApplyDetail(body);
+        if (errors.length) return res.status(400).json({ error: errors.join('; ') });
+        const dir = path.join(root, 'tmp_chatterapply');
+        fs.mkdirSync(dir, { recursive: true });
+        answersPath = path.join(dir, `answers-${Date.now().toString(36)}.json`);
+        fs.writeFileSync(answersPath, JSON.stringify(detail.answers, null, 2), 'utf8');
+        profile = answersPath;
+        numbers = {
+          ...body,
+          waitHumanSeconds: detail.waitHumanSeconds,
+          includeTyping: detail.includeTyping,
+          typingWpm: detail.typingWpm
+        };
+      }
+      args = buildApplyArgs({ ...numbers, profile });
     } catch (error) {
       return res.status(400).json({ error: error.message });
     }
     const logPath = path.join(root, 'tmp_chatterapply', `console-${Date.now().toString(36)}.log`);
-    const started = runs.start({ mode: body.mode || 'fill', tenant: String(body.tenant), args, logPath });
+    const started = runs.start({
+      mode: body.mode || 'fill',
+      tenant: String(body.tenant),
+      args,
+      logPath,
+      cleanup: answersPath ? () => { try { fs.unlinkSync(answersPath); } catch { /* already gone */ } } : null
+    });
     if (started.refused) {
+      if (answersPath) { try { fs.unlinkSync(answersPath); } catch { /* nothing to clean */ } }
       return res.status(409).json({ error: 'a run is already in progress', activeId: started.activeId });
     }
     return res.status(202).json({ run: started.run, logPath });

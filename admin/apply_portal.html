@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>ChatterApply — run your application</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root { --ink:#0f172a; --dim:#64748b; --line:#e2e8f0; --bad:#b91c1c; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.55 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; color:var(--ink); background:#f6f7fb; }
+  header { padding:18px 22px; background:#0f172a; color:#fff; }
+  header h1 { font-size:17px; margin:0 0 4px; font-weight:600; }
+  header p { margin:0; color:#94a3b8; font-size:12px; max-width:78ch; }
+  main { padding:20px; display:grid; gap:16px; grid-template-columns:380px 1fr; align-items:start; }
+  @media (max-width:940px){ main{ grid-template-columns:1fr; } }
+  section { background:#fff; border:1px solid var(--line); border-radius:12px; padding:16px; }
+  h2 { font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--dim); margin:0 0 12px; }
+  label { display:block; font-size:12px; color:var(--dim); margin:10px 0 4px; }
+  input, select { width:100%; padding:8px; border:1px solid var(--line); border-radius:8px; font:inherit; background:#fff; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .check { display:flex; gap:8px; align-items:center; margin:10px 0 0; font-size:13px; }
+  .check input { width:auto; }
+  button { font:inherit; padding:9px 14px; border-radius:9px; border:1px solid var(--line); background:#fff; cursor:pointer; }
+  button.primary { background:#0f172a; color:#fff; border-color:#0f172a; }
+  button.danger { color:var(--bad); border-color:#fecaca; }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  .actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:14px; }
+  .hint { font-size:12px; color:var(--dim); margin-top:8px; }
+  #log { margin:0; height:52vh; overflow:auto; background:#0b1220; color:#e2e8f0; padding:12px; border-radius:10px;
+         font:12px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; white-space:pre-wrap; }
+  #log .you { color:#fbbf24; font-weight:700; }
+  #log .bad { color:#f87171; }
+  #log .good { color:#34d399; }
+  #prompt { display:none; margin:0 0 12px; padding:12px 14px; border-radius:10px; background:#fffbeb;
+            border:1px solid #fcd34d; color:#78350f; font-weight:600; }
+  #prompt.on { display:block; }
+  .pill { display:inline-block; padding:2px 9px; border-radius:999px; font-size:11px; background:#e2e8f0; color:#334155; }
+  .pill.queued { background:#e0e7ff; color:#3730a3; }
+  .pill.running { background:#dbeafe; color:#1d4ed8; }
+  .pill.succeeded, .pill.done { background:#dcfce7; color:#166534; }
+  .pill.failed { background:#fee2e2; color:#991b1b; }
+  .pill.cancelled, .pill.stopped { background:#fef3c7; color:#92400e; }
+  .steps { font-size:12px; color:var(--dim); margin:12px 0 0; padding-left:18px; }
+  .steps li { margin:3px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>ChatterApply — run your application</h1>
+  <p>This drives the form on the browser profile that is already signed in, fills the answers you give it, and
+     stops for you at the questions it must not answer: your age, your experience, the typing and English tests.
+     Nothing is ever submitted.</p>
+</header>
+
+    <section style="margin-top:16px">
+      <h2>Your answers</h2>
+      <label for="fullName">Full name</label>
+      <input id="fullName" autocomplete="name" />
+      <label for="discordUsername">Discord username</label>
+      <input id="discordUsername" />
+      <div class="grid2">
+        <div><label for="country">Country</label><input id="country" /></div>
+        <div><label for="phone">Phone</label><input id="phone" autocomplete="tel" /></div>
+      </div>
+      <label for="email">Email</label>
+      <input id="email" type="email" autocomplete="email" />
+      <label for="hasExperience">Worked with OnlyFans before?</label>
+      <select id="hasExperience"><option value="No" selected>No</option><option value="Yes">Yes</option></select>
+      <label for="experienceDetails">If yes, which agencies? (optional)</label>
+      <input id="experienceDetails" />
+      <div class="grid2">
+        <div><label for="source">How did you find it?</label><input id="source" placeholder="Reddit" /></div>
+        <div><label for="referral">Referred by (optional)</label><input id="referral" /></div>
+      </div>
+      <label for="deskPhoto">Desk photo — full path on the machine with the browser</label>
+      <input id="deskPhoto" placeholder="C:\Users\you\Pictures\desk.jpg" />
+      <p class="hint">The photo is attached from that machine; it is never uploaded here.</p>
+    </section>
+  </div>
+
+  <div>
+    <section>
+      <h2>Run</h2>
+      <div class="grid2">
+        <div>
+          <label for="mode">What to do</label>
+          <select id="mode">
+            <option value="fill" selected>Fill the form</option>
+            <option value="map">Map every step (reads only)</option>
+            <option value="discover">Show the current step</option>
+            <option value="dry-run">Dry run (plan, touch nothing)</option>
+          </select>
+        </div>
+        <div>
+          <label for="wait">Wait for me (seconds)</label>
+          <input id="wait" type="number" min="0" max="3600" step="30" value="600" />
+        </div>
+      </div>
+      <div class="check"><input type="checkbox" id="typing" /><label for="typing" style="margin:0">type the typing test too</label></div>
+      <div class="check"><input type="checkbox" id="open" checked /><label for="open" style="margin:0">open the form fresh</label></div>
+      <div class="actions">
+        <button id="runHere" class="primary">Run on this machine</button>
+        <button id="queue">Queue for my worker</button>
+        <button id="cancel" class="danger" disabled>Cancel</button>
+      </div>
+      <p class="hint">Run on this machine needs the portal running here, next to the browser profile, with an admin
+        key. Queue for my worker works from anywhere: your worker picks it up and drives the profile.</p>
+      <p class="hint" id="state">nothing running</p>
+    </section>
+
+    <section style="margin-top:16px">
+      <h2>What happens <span id="status" class="pill">idle</span></h2>
+      <div id="prompt"></div>
+      <pre id="log"></pre>
+      <ol class="steps">
+        <li>Steps 3–7 are filled for you (name, Discord, country, email, phone); the age question is yours.</li>
+        <li>Step 8 is yours, step 9 is skipped when you answer No, step 10 is yours.</li>
+        <li>11 referral, 12 desk photo and 13 speed test are handled; 14 is typed if you asked for it.</li>
+        <li>15 is the English test — the run stops there and leaves the page open for you.</li>
+      </ol>
+    </section>
+  </div>
+</main>
+
+
+<main>
+  <div>
+    <section>
+      <h2>Who you are</h2>
+      <label for="tenant">Tenant</label>
+      <input id="tenant" placeholder="your tenant slug, e.g. malingu-ventures" />
+      <label for="key">Access key</label>
+      <input id="key" type="password" placeholder="the key you were given" autocomplete="off" />
+      <div class="check"><input type="checkbox" id="remember" /><label for="remember" style="margin:0">remember on this device</label></div>
+    </section>
+
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const logEl = $('log');
+  const ANSWER_FIELDS = ['fullName','discordUsername','country','phone','email','hasExperience','experienceDetails','source','referral','deskPhoto'];
+  let currentRun = null;
+  let stream = null;
+  let poller = null;
+
+  const saved = JSON.parse(localStorage.getItem('applyPortal') || 'null');
+  if (saved) {
+    $('tenant').value = saved.tenant || '';
+    $('key').value = saved.key || '';
+    $('remember').checked = Boolean(saved.key);
+    for (const key of ANSWER_FIELDS) if (saved.answers?.[key]) $(key).value = saved.answers[key];
+  }
+
+  const answers = () => {
+    const out = {};
+    for (const key of ANSWER_FIELDS) {
+      const value = $(key).value.trim();
+      if (value) out[key] = value;
+    }
+    return out;
+  };
+  const remember = () => {
+    if (!$('remember').checked) { localStorage.removeItem('applyPortal'); return; }
+    localStorage.setItem('applyPortal', JSON.stringify({
+      tenant: $('tenant').value.trim(), key: $('key').value.trim(), answers: answers()
+    }));
+  };
+  $('remember').onchange = remember;
+
+  const say = (text) => {
+    const line = document.createElement('div');
+    if (/\*\* YOU:/.test(text)) line.className = 'you';
+    else if (/— run (failed|stopped)|failed:|Stopped:|process error/.test(text)) line.className = 'bad';
+    else if (/run done|attached|human-answered|advance/.test(text)) line.className = 'good';
+    line.textContent = text;
+    logEl.appendChild(line);
+    logEl.scrollTop = logEl.scrollHeight;
+    if (/\*\* YOU:/.test(text)) {
+      $('prompt').textContent = `Your turn: ${text.replace(/^.*\*\* YOU:\s*/, '').replace(/\*\*$/, '')}`;
+      $('prompt').className = 'on';
+    }
+  };
+
+  const setStatus = (status, run) => {
+    if (run) currentRun = run;
+    const pill = $('status');
+    pill.textContent = status;
+    pill.className = 'pill ' + status;
+    const live = ['running', 'stopping', 'queued'].includes(status);
+
+  /** Path 1: this server spawns the runner (needs the admin key and a profile on this machine). */
+  $('runHere').onclick = async () => {
+    remember();
+    logEl.textContent = '';
+    $('prompt').className = '';
+    say('starting on this machine…');
+    const res = await fetch('/admin/apply/runs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-admin-key': $('key').value.trim() },
+      body: JSON.stringify({
+        tenant: $('tenant').value.trim(),
+        mode: $('mode').value,
+        waitHumanSeconds: Number($('wait').value) || 0,
+        includeTyping: $('typing').checked,
+        open: $('open').checked
+      })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { say(`could not start: ${data.error || res.status}`); return; }
+    setStatus('running', data.run);
+    if (stream) stream.close();
+    stream = new EventSource(`/admin/apply/runs/${data.run.id}/stream?key=${encodeURIComponent($('key').value.trim())}`);
+    stream.addEventListener('tail', (e) => {
+      try { for (const line of JSON.parse(e.data || '[]')) say(line); } catch { /* ignore */ }
+    });
+    stream.onmessage = (e) => { try { say(JSON.parse(e.data)); } catch { say(e.data); } };
+    stream.addEventListener('end', () => { if (stream) { stream.close(); stream = null; } });
+  };
+
+  /** Path 2: queue for the tenant's worker, then poll the run row for its log. */
+  const poll = (reset = false) => {
+    if (poller) clearInterval(poller);
+    if (reset) logEl.textContent = '';
+    let seen = 0;
+    poller = setInterval(async () => {
+      const res = await fetch(`/api/apply/runs?${whoAmI()}`, { headers: headers() });
+      if (!res.ok) return;
+      const { active, runs } = await res.json();
+      const run = active || (runs && runs[0]);
+      if (!run) return;
+      setStatus(run.status, run);
+      const lines = run.log || [];
+      for (let i = seen; i < lines.length; i += 1) say(lines[i]);
+      seen = lines.length;
+      if (!active) { clearInterval(poller); poller = null; }
+    }, 3000);
+  };
+
+  $('queue').onclick = async () => {
+    remember();
+    logEl.textContent = '';
+    $('prompt').className = '';
+    say('queuing for your worker…');
+    const res = await fetch(`/api/apply/runs?${whoAmI()}`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({
+        tenant: $('tenant').value.trim(),
+        mode: $('mode').value,
+        open: $('open').checked,
+        includeTyping: $('typing').checked,
+        waitHumanSeconds: Number($('wait').value) || 0,
+        answers: answers()
+      })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { say(`could not queue: ${data.error || res.status}`); return; }
+    say(data.note || 'queued');
+    setStatus('queued', data.run);
+    poll(true);
+  };
+
+  $('cancel').onclick = async () => {
+    if (!currentRun?.id) return;
+    const res = await fetch(`/api/apply/runs/${currentRun.id}/cancel?${whoAmI()}`, { method: 'POST', headers: headers() });
+    const data = await res.json().catch(() => ({}));
+    say(res.ok ? 'cancelled' : `could not cancel: ${data.error || res.status}`);
+    if (res.ok) setStatus('cancelled', data.run);
+  };
+
+  // Coming back to the page must not lose a run that is in flight.
+  (async () => {
+    if (!$('key').value.trim() || !$('tenant').value.trim()) return;
+    try {
+      const res = await fetch(`/api/apply/runs?${whoAmI()}`, { headers: headers() });
+      if (!res.ok) return;
+      const { active, runs } = await res.json();
+      if (active) { setStatus(active.status, active); poll(); }
+      else if (runs?.length) $('state').textContent = `last run: ${runs[0].status} · ${runs[0].mode}`;
+    } catch { /* optional at load */ }
+  })();
+})();
+</script>
+</body>
+</html>
+
+    $('runHere').disabled = live;
+    $('queue').disabled = live;
+    $('cancel').disabled = !live;
+    if (currentRun) $('state').textContent = `run ${currentRun.id || ''} · ${status}`;
+  };
+
+  const headers = () => ({ 'Content-Type': 'application/json', 'x-tenant-key': $('key').value.trim() });
+  const whoAmI = () => `tenant=${encodeURIComponent($('tenant').value.trim())}`;

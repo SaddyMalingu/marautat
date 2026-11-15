@@ -67,7 +67,7 @@ export const RUN_TABLE = 'browser_actor_runs';
  * a queued Turing run (waiting for an operator) silently block the Micro1 capture the tenant
  * could actually run. A marketplace whose run cannot run the other's job is its own kind.
  */
-export const RUN_KINDS = Object.freeze(['collect', 'import', 'referrals', 'verify', 'micro1', 'listen']);
+export const RUN_KINDS = Object.freeze(['collect', 'import', 'referrals', 'verify', 'micro1', 'listen', 'apply']);
 
 /** The kind a tenant's own browser capture uses. Not queueable through the writer-flow route. */
 export const MICRO1_RUN_KIND = 'micro1';

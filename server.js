@@ -91,6 +91,7 @@ import { createSocialPublishRouter } from "./routes/socialPublish.js";
 import { createWriterFlowRouter } from "./routes/writerFlow.js";
 import { createBrowserAccessRouter } from "./routes/browserAccess.js";
 import { createApplyConsoleRouter } from "./routes/applyConsole.js";
+import { createApplyPortalRouter } from "./routes/applyPortal.js";
 import { createAgentRunsRouter } from "./routes/agentRuns.js";
 // Digital Drops: a priced catalogue, an M-Pesa prompt and a signed paywall, so a
 // digital product can be sold and delivered without a human in the loop.
@@ -5450,6 +5451,19 @@ app.use('/', createBrowserAccessRouter({
 // tenant runs a worker there. These routes are authenticated by a per-tenant bearer token and
 // never take a tenant from the request body — see routes/agentRuns.js.
 app.use('/', createAgentRunsRouter({ supabase }));
+
+// ChatterApply (2026-11-14): the tenant's own page at /apply. It queues a run for their worker — the profile
+// is on their machine, so the browser has to be driven there — and shows the log the worker sends back. The
+// same page can start the run in-process when the caller has the admin key, which is how it works on the
+// machine that holds the profile today.
+app.use('/', createApplyPortalRouter({
+  root: __dirname,
+  table: () => supabase.from('browser_actor_runs'),
+  resolveTenant: async (slug) => {
+    const { data } = await supabase.from('site_tenants').select('id,slug').eq('slug', String(slug)).maybeSingle();
+    return data || null;
+  }
+}));
 
 // Digital Drops (2026-11-10): the storefront, the M-Pesa lane and the paywall.
 // Mounted here because `supabase`, `initiateStkPush`, `sendMessage` and `log` are
