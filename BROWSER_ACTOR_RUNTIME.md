@@ -885,3 +885,43 @@ node scripts/browser_actor_chatterapply.mjs --tenant <slug> \
 so on a profile that starts with fourteen tabs it navigated one tab and read another — and reported **Reddit**
 as the application form. The tab is now pinned once by URL, verified before anything is read, and the run
 refuses with `wrong_tab` rather than touching a page it did not choose.
+
+## Apply Console: start it from a page, not a terminal (2026-11-14)
+
+`http://localhost:3000/admin/apply` — the same runner the CLI starts, behind a Start button and a Stop button.
+Key = `ADMIN_KEY` or `ADMIN_PASS` (entered once, optionally remembered on the machine).
+
+| control | what it does |
+|---|---|
+| **Start** | spawns `scripts/browser_actor_chatterapply.mjs` with the options below |
+| **Stop** | `taskkill /T /F` on the child, so the browser goes too — the run is recorded as `stopped`, never `failed` |
+| **Live output** | the runner's own log over SSE; the `** YOU: … **` prompt is highlighted because that line is the work |
+| **What to do** | `fill` (stops at the English test), `map` (reads every step), `discover` (this step only), `dry-run` (plan, touch nothing) |
+
+Rules that are enforced rather than documented:
+
+- **One run at a time.** A second Start while one is live answers `409` with the active run id, because two
+  drivers on one MoreLogin profile fight over the same tab and the loser reads the winner's screens.
+- **Fail-closed key.** No `ADMIN_KEY`/`ADMIN_PASS` set means every route answers `401`; an unset key never
+  accepts. The page itself holds no data, so it is served without one.
+- **Validated arguments.** Mode must be one of the four; the tenant must be a slug; the human wait is clamped to
+  1 hour and the typing speed to 20–200 WPM, so the page cannot ask for a ten-hour wait or a 900 WPM typist.
+
+Endpoints: `POST /admin/apply/runs`, `GET /admin/apply/runs`, `GET /admin/apply/runs/:id`,
+`GET /admin/apply/runs/:id/stream` (SSE), `POST /admin/apply/runs/:id/stop`.
+`test:apply-console` (59 assertions, no browser) covers the page, the 401, the 400, the 409, the stream and the stop.
+
+### The speed-test scare was really the desk photo
+
+The run that "stopped at the speed test" had actually stopped at **step 12, straight after the upload**:
+
+```
+attached IMG_20211123_161036_205.jpg -> Desk Photo (1 file(s))
+upload step 12 — (1/1 attached)
+decide step 12 [setup] — stuck          ← Next was still disabled for a moment
+```
+
+The photo arrived; the page needed a second to accept it. The loop read once and called it stuck. A screen with
+no usable `Next` now gets a bounded grace window (`stuckGraceMs`, 8 s) and is re-read; a screen that never
+recovers still stops with `no_next_button`, just later. `stuck-waiting` in the transcript is how you tell the
+difference between "slow" and "broken".

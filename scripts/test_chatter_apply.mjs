@@ -1055,6 +1055,67 @@ function makeBackablePage(start = 3, floor = 1) {
 }
 
 {
+  /**
+   * Live, step 12 stopped the run the instant the photo was attached: the file arrived, the page took a
+   * moment to accept it and enable Next, and a single read reported `no_next_button`. The screen deserves a
+   * grace window — and a page that never recovers must still stop.
+   */
+  const setup = FUNNEL.find((s) => s.id === 'setup');
+  let reads = 0;
+  const evaluate = async (expr) => {
+    if (!/querySelectorAll/.test(String(expr))) return { ok: true };
+    reads += 1;
+    const processed = reads > 3;
+    return {
+      ok: true,
+      step: 12,
+      progressText: 'Step 12 of 21',
+      headings: ['→Desk Photo'],
+      text: 'Desk Photo',
+      measurements: {},
+      fields: [{ index: 0, name: '', id: '', label: '', type: 'file', required: true, value: '' }],
+      buttons: [{ label: '← Previous' }, { label: 'Next →', disabled: !processed }]
+    };
+  };
+  const result = await runApplication({
+    evaluate,
+    attachFile: async () => ({ ok: true, files: 1 }),
+    profile: { deskPhoto: 'C:/Users/HP/Downloads/IMG_20211123_161036_205.jpg' },
+    options: { settleMs: 1, pollMs: 1, maxSteps: 6, stuckGraceMs: 5000 }
+  });
+  ok('the upload is given time to register', reads > 3, reads);
+  ok('and the run advances instead of stopping as stuck',
+    result.transcript.some((t) => t.event === 'advance' && t.step === 12),
+    result.transcript.map((t) => `${t.event}${t.step ? `:${t.step}` : ''}`));
+  ok('the run does not end as stuck', result.reason !== 'no_next_button', result.reason);
+  ok('with the upload recorded', result.transcript.some((t) => t.event === 'upload' && t.attached === 1),
+    result.transcript.map((t) => t.event));
+}
+
+{
+  // A page that never enables Next is still reported, not waited on forever.
+  const evaluate = async (expr) => {
+    if (!/querySelectorAll/.test(String(expr))) return { ok: true };
+    return {
+      ok: true, step: 12, progressText: 'Step 12 of 21', headings: ['→Desk Photo'], text: 'Desk Photo',
+      measurements: {},
+      fields: [{ index: 0, name: '', id: '', label: '', type: 'file', required: true, value: '' }],
+      buttons: [{ label: 'Next →', disabled: true }]
+    };
+  };
+  const started = Date.now();
+  const result = await runApplication({
+    evaluate,
+    attachFile: async () => ({ ok: true, files: 1 }),
+    profile: { deskPhoto: 'C:/docs/desk.jpg' },
+    options: { settleMs: 1, pollMs: 1, maxSteps: 40, stuckGraceMs: 120 }
+  });
+  eq('a genuinely stuck screen still stops', result.reason, 'no_next_button');
+  ok('after the grace window, not instantly', Date.now() - started >= 100, Date.now() - started);
+  ok('and it reports the wait in the transcript', result.transcript.some((t) => t.event === 'stuck-waiting'));
+}
+
+{
   // The page mounts every step and slides between them, so the counter must be read from what is on screen.
   const expr = readStepExpr();
   ok('the counter is read from visible text only', expr.includes('.filter((el) => el.children.length === 0 && visible(el))'));

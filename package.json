@@ -88,6 +88,7 @@
     "test:share-card": "node scripts/test_post_share.mjs",
     "test:chatterapply": "node scripts/test_chatter_apply.mjs",
     "chatterapply:funnel": "node scripts/chatterapply_funnel_map.mjs",
+    "test:apply-console": "node scripts/test_apply_console.mjs",
     "test:localprofile": "node scripts/test_local_profile.mjs",
     "apply:fill": "node scripts/browser_actor_chatterapply.mjs",
     "aboss:workbook": "node scripts/aboss_make_workbook.cjs",

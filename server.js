@@ -90,6 +90,7 @@ import browserActorsRouter from "./routes/browserActors.js";
 import { createSocialPublishRouter } from "./routes/socialPublish.js";
 import { createWriterFlowRouter } from "./routes/writerFlow.js";
 import { createBrowserAccessRouter } from "./routes/browserAccess.js";
+import { createApplyConsoleRouter } from "./routes/applyConsole.js";
 import { createAgentRunsRouter } from "./routes/agentRuns.js";
 // Digital Drops: a priced catalogue, an M-Pesa prompt and a signed paywall, so a
 // digital product can be sold and delivered without a human in the loop.
@@ -670,6 +671,11 @@ app.use('/', aiJobsGuidesRouter);
 // Its own key check lives in the router, so mounting it here cannot widen access
 // to any existing surface.
 app.use('/api/agents/browser', browserActorsRouter);
+
+// Apply Console: start, watch and stop the ChatterApply run from a page instead of a terminal.
+// Key-checked per route inside the router (an unset ADMIN_KEY/ADMIN_PASS accepts nobody), and it starts
+// the same tested runner the CLI does — no second driving path.
+app.use(createApplyConsoleRouter({ root: __dirname }));
 
 // Secure route to download request.log for debugging
 app.get('/debug/request-log', (req, res) => {

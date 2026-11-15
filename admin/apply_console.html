@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Apply Console — ChatterApply</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root { --ink:#0f172a; --dim:#64748b; --line:#e2e8f0; --bad:#b91c1c; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; color:var(--ink); background:#f8fafc; }
+  header { padding:16px 20px; background:#0f172a; color:#fff; display:flex; gap:16px; align-items:baseline; flex-wrap:wrap; }
+  header h1 { font-size:16px; margin:0; font-weight:600; }
+  header span { color:#94a3b8; font-size:12px; }
+  main { padding:20px; display:grid; gap:16px; grid-template-columns:340px 1fr; align-items:start; }
+  @media (max-width:900px){ main{ grid-template-columns:1fr; } }
+  section { background:#fff; border:1px solid var(--line); border-radius:10px; padding:14px; }
+  h2 { font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--dim); margin:0 0 10px; }
+  label { display:block; font-size:12px; color:var(--dim); margin:10px 0 4px; }
+  input, select { width:100%; padding:7px 8px; border:1px solid var(--line); border-radius:7px; font:inherit; background:#fff; }
+  .row { display:flex; gap:8px; }
+  .row > * { flex:1; }
+  .check { display:flex; gap:8px; align-items:center; margin:10px 0 0; font-size:13px; color:var(--ink); }
+  .check input { width:auto; }
+  button { font:inherit; padding:8px 12px; border-radius:8px; border:1px solid var(--line); background:#fff; cursor:pointer; }
+  button.primary { background:#0f172a; color:#fff; border-color:#0f172a; }
+  button.danger { color:var(--bad); border-color:#fecaca; }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  .actions { display:flex; gap:8px; margin-top:14px; flex-wrap:wrap; }
+  #state { font-size:12px; color:var(--dim); margin-top:10px; word-break:break-word; }
+  #log { margin:0; height:60vh; overflow:auto; background:#0b1220; color:#e2e8f0; padding:12px; border-radius:8px;
+         font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; white-space:pre-wrap; }
+  #log .you { color:#fbbf24; font-weight:700; }
+  #log .bad { color:#f87171; }
+  #log .good { color:#34d399; }
+  #log .dim { color:#64748b; }
+  .pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; background:#e2e8f0; color:#334155; }
+  .pill.running, .pill.stopping { background:#dbeafe; color:#1d4ed8; }
+  .pill.done { background:#dcfce7; color:#166534; }
+  .pill.failed { background:#fee2e2; color:#991b1b; }
+  .pill.stopped { background:#fef3c7; color:#92400e; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Apply Console</h1>
+  <span>ChatterApply — drive the form, answer what it will not let a machine answer, stop wherever you like</span>
+</header>
+
+<main>
+  <div>
+
+    <section>
+      <h2>Run</h2>
+      <label for="tenant">Tenant</label>
+      <input id="tenant" value="malingu-ventures" />
+      <label for="profile">Answers profile (JSON)</label>
+      <input id="profile" value="docs/chatterapply-profile.example.json" />
+      <label for="mode">What to do</label>
+      <select id="mode">
+        <option value="fill" selected>Fill the form (stops at the English test)</option>
+        <option value="map">Map the funnel (reads every step)</option>
+        <option value="discover">Discover the current step only</option>
+        <option value="dry-run">Dry run (plan, touch nothing)</option>
+      </select>
+      <div class="row">
+        <div>
+          <label for="wait">Wait for me (seconds)</label>
+          <input id="wait" type="number" min="0" max="3600" step="30" value="600" />
+        </div>
+        <div>
+          <label for="wpm">Typing WPM</label>
+          <input id="wpm" type="number" min="20" max="200" value="78" />
+        </div>
+      </div>
+      <div class="check"><input type="checkbox" id="typing" /><label for="typing" style="margin:0">type the typing test at that speed</label></div>
+      <div class="check"><input type="checkbox" id="open" checked /><label for="open" style="margin:0">open the form first (fresh start)</label></div>
+      <div class="check"><input type="checkbox" id="envid" /><label for="envid" style="margin:0">pin the MoreLogin profile id</label></div>
+      <input id="env" placeholder="profile id, e.g. 2116562908359495680" style="margin-top:6px" />
+      <div class="actions">
+        <button id="start" class="primary">Start</button>
+        <button id="stop" class="danger" disabled>Stop</button>
+      </div>
+      <div id="state">no run yet</div>
+    </section>
+  </div>
+
+  <section>
+    <h2>Live output <span id="status" class="pill">idle</span></h2>
+    <pre id="log"></pre>
+  </section>
+</main>
+
+    <section>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const logEl = $('log');
+  let currentRun = null;
+  let stream = null;
+
+  const key = () => $('key').value.trim();
+  const savedKey = localStorage.getItem('applyConsoleKey');
+  if (savedKey) { $('key').value = savedKey; $('remember').checked = true; }
+  $('remember').onchange = () => {
+    if ($('remember').checked) localStorage.setItem('applyConsoleKey', key());
+    else localStorage.removeItem('applyConsoleKey');
+  };
+
+  /** One line of runner output. The line that needs a person is made impossible to miss. */
+  const say = (text) => {
+    const line = document.createElement('div');
+    if (/\*\* YOU:/.test(text)) line.className = 'you';
+    else if (/— run (failed|stopped)|failed:|Stopped:|process error/.test(text)) line.className = 'bad';
+    else if (/run done|attached|human-answered|advance/.test(text)) line.className = 'good';
+    else if (/^—/.test(text)) line.className = 'dim';
+    line.textContent = text;
+    logEl.appendChild(line);
+    logEl.scrollTop = logEl.scrollHeight;
+  };
+
+  const setStatus = (status, run) => {
+    if (run) currentRun = run;
+    const pill = $('status');
+    pill.textContent = status;
+    pill.className = 'pill ' + status;
+    const live = status === 'running' || status === 'stopping';
+    $('start').disabled = live;
+    $('stop').disabled = !live;
+    if (currentRun) {
+      $('state').textContent = `run ${currentRun.id} · ${status}` + (currentRun.logPath ? ` · log: ${currentRun.logPath}` : '');
+    }
+  };
+
+  const headers = () => ({ 'Content-Type': 'application/json', 'x-admin-key': key() });
+
+  const refresh = async () => {
+    if (!currentRun) return;
+    const res = await fetch(`/admin/apply/runs/${currentRun.id}`, { headers: headers() });
+    if (!res.ok) return;
+    const { run } = await res.json();
+    setStatus(run.status, run);
+  };
+
+  const follow = (id) => {
+    if (stream) stream.close();
+    logEl.textContent = '';
+    stream = new EventSource(`/admin/apply/runs/${id}/stream?key=${encodeURIComponent(key())}`);
+    stream.addEventListener('tail', (e) => {
+      let lines = [];
+      try { lines = JSON.parse(e.data || '[]'); } catch { lines = []; }
+      for (const line of lines) say(line);
+    });
+    stream.onmessage = (e) => {
+      try { say(JSON.parse(e.data)); } catch { say(e.data); }
+    };
+    stream.addEventListener('end', () => {
+      if (stream) { stream.close(); stream = null; }
+      refresh();
+    });
+  };
+
+  $('start').onclick = async () => {
+    if (!key()) { alert('Enter the admin key first'); return; }
+    const body = {
+      tenant: $('tenant').value.trim(),
+      mode: $('mode').value,
+      profile: $('profile').value.trim() || null,
+      waitHumanSeconds: Number($('wait').value) || 0,
+      includeTyping: $('typing').checked,
+      typingWpm: Number($('wpm').value) || 70,
+      open: $('open').checked,
+      envId: $('envid').checked ? ($('env').value.trim() || null) : null
+    };
+    logEl.textContent = '';
+    say(`starting ${body.mode} for ${body.tenant}…`);
+    const res = await fetch('/admin/apply/runs', { method: 'POST', headers: headers(), body: JSON.stringify(body) });
+    let data = {};
+    try { data = await res.json(); } catch { data = {}; }
+    if (!res.ok) {
+      say(`could not start: ${data.error || res.status}`, 'bad');
+      if (data.activeId) { currentRun = { id: data.activeId, status: 'running' }; setStatus('running'); follow(data.activeId); }
+      return;
+    }
+    setStatus('running', data.run);
+    follow(data.run.id);
+  };
+
+  $('stop').onclick = async () => {
+    if (!currentRun) return;
+    say('— stop requested from the console —');
+    await fetch(`/admin/apply/runs/${currentRun.id}/stop`, { method: 'POST', headers: headers() });
+    refresh();
+  };
+
+  // Returning to the page while a run is live must not lose it.
+  (async () => {
+    if (!key()) return;
+    try {
+      const res = await fetch('/admin/apply/runs', { headers: headers() });
+      if (!res.ok) return;
+      const { runs, active } = await res.json();
+      if (active) {
+        const run = runs.find((r) => r.id === active);
+        if (run) { setStatus('running', run); follow(active); }
+      } else if (runs.length) {
+        $('state').textContent = `last run: ${runs[0].mode} · ${runs[0].status}`;
+      }
+    } catch { /* the console is optional at load */ }
+  })();
+})();
+</script>
+</body>
+</html>
+
+      <h2>Admin key</h2>
+      <input id="key" type="password" placeholder="ADMIN_KEY / ADMIN_PASS" autocomplete="off" />
+      <div class="check"><input type="checkbox" id="remember" /><label for="remember" style="margin:0">remember on this machine</label></div>
+    </section>

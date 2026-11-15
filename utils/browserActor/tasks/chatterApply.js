@@ -1026,6 +1026,9 @@ export async function runApplication({
     dryRun = false,
     typingWpm = 70,
     waitForHumanMs = 0,
+    // How long a screen with no usable Next may stay that way before it is reported as stuck. The desk photo
+    // upload needs a moment; a page that is genuinely stuck still stops, just later.
+    stuckGraceMs = 8000,
     ...policy
   } = options;
 
@@ -1039,6 +1042,8 @@ export async function runApplication({
   let repeatCount = 0;
   // The highest step reached, so a read that goes backwards is caught instead of clicked.
   let lastStepNumber = null;
+  // When this screen last looked drivable — the start of the stuck grace window.
+  let stuckSince = Date.now();
   const note = (entry) => { transcript.push(entry); log(entry); return entry; };
 
   for (let index = 0; index < maxSteps; index += 1) {
@@ -1176,9 +1181,29 @@ export async function runApplication({
         steps
       };
     }
-    if (decision.action === 'stop' || decision.action === 'stuck') {
+    if (decision.action === 'stop') {
       return { ok: false, step: stepNumber, reason: decision.reason, detail: decision, keepOpen: true, transcript, steps };
     }
+    if (decision.action === 'stuck') {
+      /**
+       * "Stuck" is usually "not yet" (2026-11-14).
+       *
+       * Live, step 12 stopped the run the instant the desk photo was attached: the file arrived, the page
+       * needed a moment to accept it and enable Next, and the loop read once and gave up with
+       * `no_next_button`. A bounded grace window keeps it honest — it waits for the page, and if the page is
+       * genuinely stuck it still stops and reports, just a few seconds later.
+       */
+      if (Date.now() - stuckSince < stuckGraceMs && index < maxSteps - 1) {
+        note({ event: 'stuck-waiting', step: stepNumber, reason: decision.reason, waitedMs: Date.now() - stuckSince });
+        // A re-read is not a repetition: reset the breaker so the grace window is not counted as no progress.
+        lastSignature = null;
+        repeatCount = 0;
+        await new Promise((r) => setTimeout(r, settleMs));
+        continue;
+      }
+      return { ok: false, step: stepNumber, reason: decision.reason, detail: decision, keepOpen: true, transcript, steps };
+    }
+    stuckSince = Date.now();
     if (dryRun) {
       // A dry run reads and decides, then stops: it must not fill or click its way through a real form.
       note({ event: 'dry-run', step: stepNumber, would: decision.action });
