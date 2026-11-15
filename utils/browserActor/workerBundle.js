@@ -40,6 +40,10 @@ export const REQUIRED_ENTRIES = Object.freeze([
   'utils/browserActor/cdp.js',
   'utils/browserActor/applyCaptures.js',
   'scripts/browser_actor_referrals.mjs',
+  // The OF application runner rides the same worker: the profile is on the tenant's machine, so the
+  // browser that fills the form has to be driven from there. A zip without it would claim an apply
+  // run and fail — the same mistake the listener made on 2026-11-04.
+  'scripts/browser_actor_chatterapply.mjs',
   // The listener rides the same worker since 2026-11-04: it needs the same profile, the same
   // token and the same context call, and a zip without it would claim a listen run and fail.
   'scripts/browser_actor_social_listen.mjs',
@@ -118,6 +122,9 @@ export function buildWorkerBundle({ apiBase, pairCode = null, repoRoot = REPO_RO
   // read with `--platform`. Its per-site descriptions live in `tasks/`, which is copied with the
   // rest of `utils/browserActor` below.
   entries.push({ name: 'scripts/browser_actor_social_listen.mjs', data: read(path.join('scripts', 'browser_actor_social_listen.mjs')) });
+  // And the OF application runner since 2026-11-14: it drives a real application form, so the browser that
+  // does it must be the tenant's own. Its modules live under `utils/browserActor`, which is copied below.
+  entries.push({ name: 'scripts/browser_actor_chatterapply.mjs', data: read(path.join('scripts', 'browser_actor_chatterapply.mjs')) });
   for (const file of listModuleFiles(path.join(repoRoot, 'utils', 'browserActor'))) {
     entries.push({ name: path.relative(repoRoot, file).split(path.sep).join('/'), data: fs.readFileSync(file) });
   }

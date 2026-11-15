@@ -43,6 +43,7 @@ import readline from 'node:readline';
 import { spawn } from 'node:child_process';
 import { extractAgentToken } from '../utils/browserActor/agentTokens.js';
 import { runPlatform, canRunOnWorker } from '../utils/browserActor/runs.js';
+import { APPLY_SCRIPT, answersFileName, buildApplyChildArgs, summarizeApplyLine } from '../utils/browserActor/applyDispatch.js';
 import { extractPairingCode } from '../utils/browserActor/pairing.js';
 import { maskEnvId } from '../utils/browserActor/identity.js';
 import { chooseLocalProfile, describeProfileChoices } from '../utils/browserActor/localProfile.js';
@@ -337,6 +338,7 @@ async function reportProfile(profile) {
 const SCRIPT_BY_PLATFORM = Object.freeze({
   micro1: path.join('scripts', 'browser_actor_micro1.mjs'),
   turing: path.join('scripts', 'browser_actor_referrals.mjs'),
+  chatterapply: APPLY_SCRIPT,
   linkedin: SOCIAL_LISTENER,
   x: SOCIAL_LISTENER,
   facebook: SOCIAL_LISTENER,
@@ -397,6 +399,71 @@ function lastProblemLine(lines) {
   const interesting = lines.filter((line) => /error|failed|refused|cannot|not found|ENOENT|invalid|denied|timed out/i.test(line));
   const chosen = interesting.length ? interesting[interesting.length - 1] : lines[lines.length - 1];
   return String(chosen || '').slice(0, 200);
+}
+
+/**
+ * Drive a ChatterApply run that the tenant queued from the portal (2026-11-14).
+ *
+ * The difference from `runCapture` is what the child *is*: the marketplace runners talk to the portal
+ * themselves (agent mode), while this one is a plain script that prints what it is doing. So the worker is the
+ * reporter here — every line it prints goes to `/api/agent/runs/:id/progress`, which the portal appends to the
+ * run's log so the tenant can read the prompt that needs them without watching this window.
+ */
+async function runApply({ tenantSlug, runId, detail = {} }) {
+  const answersPath = path.resolve(WORKER_ROOT, answersFileName(runId));
+  const outPath = path.resolve(WORKER_ROOT, 'tmp', `apply-${runId}.json`);
+  try {
+    // The answers arrive with the run; they never sit in a database field the page can read back, and they are
+    // deleted here whatever happens next.
+    fs.mkdirSync(path.dirname(answersPath), { recursive: true });
+    fs.writeFileSync(answersPath, JSON.stringify(detail.answers || {}, null, 2), 'utf8');
+    fs.mkdirSync(path.dirname(outPath), { recursive: true });
+  } catch (error) {
+    return { code: 1, reason: `could not write the answers file: ${error.message}` };
+  }
+
+  const args = absoluteArgv(buildApplyChildArgs({ tenantSlug, answersPath, detail, outPath }), (value) => (
+    path.resolve(WORKER_ROOT, value)
+  ));
+  console.error(`spawn: ${[path.basename(args[0]), ...args.slice(1)].join(' ')} (cwd ${WORKER_ROOT})`);
+  console.error('the browser window on this computer is the run — answer the questions it highlights.');
+
+  const tail = [];
+  const report = (line) => {
+    const message = summarizeApplyLine(line);
+    if (message) call('POST', `/api/agent/runs/${runId}/progress`, { message }).catch(() => null);
+  };
+
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, args, { env: { ...process.env, TENANT_WORKER_TOKEN: token } });
+    const keep = (chunk) => {
+      for (const raw of String(chunk).split(/\r?\n/)) {
+        const line = raw.trimEnd();
+        if (!line.trim()) continue;
+        tail.push(line);
+        if (tail.length > 40) tail.shift();
+        console.error(line);
+        report(line);
+      }
+    };
+    child.stdout.on('data', keep);
+    child.stderr.on('data', keep);
+    child.on('exit', (code) => {
+      try { fs.unlinkSync(answersPath); } catch { /* already gone */ }
+      const exit = code ?? 1;
+      // The runner closes its own run when it stops on purpose; a non-zero exit it did not explain is ours to
+      // close, or the tenant's next press of Start is refused for no visible reason.
+      call('POST', `/api/agent/runs/${runId}/finish`, {
+        status: exit === 0 ? 'succeeded' : 'failed',
+        message: (exit === 0 ? 'the form was driven; the page is left open where it stopped' : lastProblemLine(tail)).slice(0, 300)
+      }).catch(() => null);
+      resolve({ code: exit, reason: exit === 0 ? '' : lastProblemLine(tail) });
+    });
+    child.on('error', (error) => {
+      try { fs.unlinkSync(answersPath); } catch { /* already gone */ }
+      resolve({ code: 1, reason: `could not start ${APPLY_SCRIPT}: ${error.message}` });
+    });
+  });
 }
 
 function runCapture({ tenantSlug, runId, limit, platform = 'micro1' }) {
@@ -534,8 +601,12 @@ async function tick(tenantSlug) {
 
   const limit = Number(claimed.data?.run?.detail?.limit) || 12;
   const platform = platformOf(claimed.data?.run) || platformOf(run) || 'micro1';
-  console.error(`claimed ${run.id} (${platform}, limit ${limit}) — capturing`);
-  const code = await runCapture({ tenantSlug, runId: run.id, limit, platform });
+  const detail = claimed.data?.run?.detail || {};
+  console.error(`claimed ${run.id} (${platform}${platform === 'chatterapply' ? '' : `, limit ${limit}`}) — driving`);
+  // ChatterApply is dispatched separately: its runner prints rather than reporting, so the worker relays.
+  const code = platform === 'chatterapply'
+    ? await runApply({ tenantSlug, runId: run.id, detail })
+    : await runCapture({ tenantSlug, runId: run.id, limit, platform });
   if (code && code.code !== undefined) {
     if (code.code !== 0) await closeAbandonedRun(run.id, code.code, code.reason);
     else console.error('runner exited 0 — the portal shows what it recorded');

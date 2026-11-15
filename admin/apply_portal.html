@@ -151,6 +151,9 @@
     $('remember').checked = Boolean(saved.key);
     for (const key of ANSWER_FIELDS) if (saved.answers?.[key]) $(key).value = saved.answers[key];
   }
+  // Embedded in the tenant dashboard (or linked with ?tenant=), the slug is known — do not ask for it again.
+  const queryTenant = new URLSearchParams(location.search).get('tenant');
+  if (queryTenant) $('tenant').value = queryTenant;
 
   const answers = () => {
     const out = {};

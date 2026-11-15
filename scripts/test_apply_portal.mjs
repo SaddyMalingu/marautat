@@ -20,6 +20,8 @@ import {
   sanitizeAnswers
 } from '../utils/applyRuns.js';
 import { createApplyPortalRouter, isApplyRunActive } from '../routes/applyPortal.js';
+import { answersFileName, buildApplyChildArgs, classifyApplyLine, summarizeApplyLine } from '../utils/browserActor/applyDispatch.js';
+import { buildProgressPatch } from '../utils/browserActor/runs.js';
 
 let pass = 0;
 const failures = [];
@@ -224,6 +226,49 @@ function fakeTableFactory() {
   eq('the kind is the one this suite assumes', APPLY_KIND, 'apply');
 
   await new Promise((r) => server.close(r));
+}
+
+// ─── What the worker does with a queued run ───────────────────────────────────────────────────
+{
+  const args = buildApplyChildArgs({
+    tenantSlug: 'malingu-ventures',
+    answersPath: 'C:/w/.apply-answers-run1.json',
+    detail: { waitHumanSeconds: 600, includeTyping: true, typingWpm: 78, open: true }
+  });
+  ok('the runner is the documented script', args[0].endsWith('browser_actor_chatterapply.mjs'), args[0]);
+  eq('the tenant is passed', args.slice(1, 3), ['--tenant', 'malingu-ventures']);
+  eq('the answers file is the profile', args.slice(3, 5), ['--profile', 'C:/w/.apply-answers-run1.json']);
+  eq('the wait is passed', args.slice(args.indexOf('--wait-human'), args.indexOf('--wait-human') + 2), ['--wait-human', '600']);
+  eq('typing is claimed with its speed', args.slice(args.indexOf('--typing-wpm'), args.indexOf('--typing-wpm') + 2), ['--typing-wpm', '78']);
+  ok('and the fresh start is honoured', args.includes('--open'));
+
+  const quiet = buildApplyChildArgs({ tenantSlug: 'acme-co', answersPath: 'a.json', detail: {} });
+  ok('no wait means no wait flag', !quiet.includes('--wait-human'));
+  ok('and typing is not claimed', !quiet.includes('--include-typing'));
+  const threw = (fn) => { try { fn(); return null; } catch (error) { return error.message; } };
+  ok('a run without a tenant is refused', /tenant/.test(threw(() => buildApplyChildArgs({ answersPath: 'a.json' })) || ''));
+  ok('a run without answers is refused', /answers/.test(threw(() => buildApplyChildArgs({ tenantSlug: 'acme-co' })) || ''));
+
+  eq('the answers file is named per run', answersFileName('run-1'), '.apply-answers-run-1.json');
+  eq('and a hostile run id cannot escape the folder', answersFileName('../../etc/passwd'), '.apply-answers-etcpasswd.json');
+}
+
+{
+  // The worker relays what the child prints; the portal stores it as the run's log.
+  const prompt = '  human-needed step 2 —  ** YOU: Are you 18+? → Yes (waiting 600s) **';
+  ok('a prompt is recognised', classifyApplyLine(prompt).isPrompt);
+  ok('an advance is counted as progress', classifyApplyLine('  advance —  "Next →"').advanced);
+  ok('a fill is recognised', classifyApplyLine('  fill step 3 —  (+1)').filled);
+  ok('an upload too', classifyApplyLine('  upload step 12 —  (1/1 attached)').uploaded);
+  ok('a stop is a failure line', classifyApplyLine('Stopped: no_next_button').failed);
+  eq('the summary keeps the prompt whole', summarizeApplyLine(prompt).includes('Are you 18+?'), true);
+  eq('a blank line has no summary', summarizeApplyLine('   '), null);
+
+  const detail = (await import('../utils/applyRuns.js')).appendLogLine({ mode: 'fill' }, prompt);
+  const patch = buildProgressPatch({ message: prompt, detail });
+  ok('the progress patch carries the log', Array.isArray(patch.detail.log) && patch.detail.log.length === 1);
+  ok('and keeps the latest message too', patch.message.includes('Are you 18+?'));
+  ok('a plain progress patch carries no detail', buildProgressPatch({ done: 1 }).detail === undefined);
 }
 
 if (failures.length) {

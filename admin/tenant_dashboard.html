@@ -2472,6 +2472,36 @@ async function renderWritersFlow() {
     wfWireControl();
     wfLoadControl();
 
+    /**
+     * The OF application (2026-11-14).
+     *
+     * ChatterApply is not a capture: it fills somebody's job application, so it is not a card in Collection
+     * control next to the marketplaces. It gets its own panel, and the panel is the console itself — the same
+     * page at /apply, embedded, so the answers form, the start button and the live log all live inside the
+     * portal the tenant is already signed into instead of sending them to a URL they have to be told about.
+     *
+     * The profile is on their computer, so the run happens on their worker (the machine running MoreLogin) and
+     * this panel reads the log the worker sends back.
+     */
+    const apply = document.createElement('div');
+    apply.id = 'wfApply';
+    apply.className = 'panel mb-3';
+    apply.innerHTML = '<div class="panel-title d-flex justify-content-between align-items-center flex-wrap gap-2">'
+      + '<span><i class="fa-solid fa-file-signature me-1"></i> OF application (ChatterApply)</span>'
+      + '<span class="text-muted" style="font-size:.72rem">runs on your worker · you answer the questions it highlights</span></div>'
+      + '<div id="wfApplyBody"><iframe id="wfApplyFrame" title="ChatterApply console" '
+      + 'style="width:100%;height:760px;border:0;border-radius:8px;background:#f6f7fb"></iframe></div>'
+      + '<div class="text-muted" style="font-size:.72rem;margin-top:6px">'
+      + 'If the panel looks empty, open it in its own tab: <a href="/apply" target="_blank" rel="noopener">/apply</a>.'
+      + '</div>';
+    bloggerTab.insertBefore(apply, strip);
+    // Loaded once, with the tenant prefilled, so the page asks only for the access key the first time.
+    const applyFrame = apply.querySelector('#wfApplyFrame');
+    if (applyFrame) {
+      const slug = (S && (S.slug || S.site?.slug)) || '';
+      applyFrame.src = '/apply' + (slug ? `?tenant=${encodeURIComponent(slug)}` : '');
+    }
+
     // "Your own browser" sits above the collection controls: until a tenant's sessions are
     // connected, every run below it is reading somebody else's profile — and the tenant
     // should see that before they press anything.

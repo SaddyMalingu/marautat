@@ -22,6 +22,7 @@
  */
 import { Router } from 'express';
 import { createRunStore, deriveRunStatus, RUN_STATUSES, runPlatform } from '../utils/browserActor/runs.js';
+import { appendLogLine } from '../utils/applyRuns.js';
 import { bearerTokenFromHeader, createAgentTokenStore } from '../utils/browserActor/agentTokens.js';
 import { applyCaptures, applyCaptureUpdates, readCoverage } from '../utils/browserActor/applyCaptures.js';
 import { isValidEnvId } from '../utils/browserActor/identity.js';
@@ -274,13 +275,18 @@ export function createAgentRunsRouter({
     try {
       const run = await findRunForTenant(auth, req.params.id);
       if (!run) return fail(res, 404, 'Run not found for this tenant');
+      const message = req.body?.message ? String(req.body.message).slice(0, 300) : null;
+      // A runner that prints instead of reporting (ChatterApply) sends its lines here; they become the run's
+      // bounded log, which is what the tenant's page reads to see the prompt that needs them.
+      const detail = message ? appendLogLine(run.detail || {}, message) : null;
       await runs.progress({
         runId: run.id,
         done: req.body?.done,
         ok: req.body?.ok,
         failed: req.body?.failed,
         total: req.body?.total,
-        message: req.body?.message ? String(req.body.message).slice(0, 300) : null
+        message,
+        detail
       });
       res.json({ ok: true });
     } catch (error) {

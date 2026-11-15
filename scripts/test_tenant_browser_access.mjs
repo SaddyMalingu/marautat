@@ -1887,6 +1887,12 @@ function fakeOfferDb() {
     /'--queries'/.test(runArgsSrc) && !/'--per-query'/.test(runArgsSrc));
   ok('the bundle carries the Turing runner it dispatches to',
     buildWorkerBundle({ apiBase: 'https://portal.example' }).entries.some((entry) => entry.name === 'scripts/browser_actor_referrals.mjs'));
+  // A worker that can claim a ChatterApply run but has no runner would queue it, claim it and do nothing —
+  // observed with the listener on 2026-11-04. The bundle has to carry it, and the module it imports.
+  ok('and the ChatterApply runner, since a claimed apply run must be drivable',
+    buildWorkerBundle({ apiBase: 'https://portal.example' }).entries.some((entry) => entry.name === 'scripts/browser_actor_chatterapply.mjs'));
+  ok('with the module that turns a queued run into its argv',
+    buildWorkerBundle({ apiBase: 'https://portal.example' }).entries.some((entry) => entry.name === 'utils/browserActor/applyDispatch.js'));
   ok('and the social listener too, with its per-network descriptions',
     buildWorkerBundle({ apiBase: 'https://portal.example' }).entries
       .some((entry) => entry.name === 'scripts/browser_actor_social_listen.mjs'));

@@ -50,7 +50,7 @@ import { SOCIAL_PLATFORM_IDS } from './tasks/socialPlatforms.js';
  * own signed-in profile and reads public posts. `canRunOnWorker` still decides *per platform*,
  * which is what stops a worker claiming a run it cannot actually drive.
  */
-export const WORKER_PLATFORMS = Object.freeze(['micro1', 'turing', ...SOCIAL_PLATFORM_IDS]);
+export const WORKER_PLATFORMS = Object.freeze(['micro1', 'turing', 'chatterapply', ...SOCIAL_PLATFORM_IDS]);
 
 export function canRunOnWorker(run) {
   return WORKER_PLATFORMS.includes(runPlatform(run));
@@ -319,13 +319,16 @@ export function buildQueueRow({ tenantId, kind, sourceSlug = null, requestedBy =
   };
 }
 
-export function buildProgressPatch({ done, ok, failed, total, message = null } = {}) {
+export function buildProgressPatch({ done, ok, failed, total, message = null, detail = null } = {}) {
   return {
     done_items: Math.max(0, Number(done) || 0),
     ok_items: Math.max(0, Number(ok) || 0),
     failed_items: Math.max(0, Number(failed) || 0),
     ...(total === undefined ? {} : { total_items: Math.max(0, Number(total) || 0) }),
     ...(message ? { message } : {}),
+    // A run whose runner prints rather than reports (ChatterApply) gets its log carried here: `detail.log` is
+    // the bounded tail the tenant's page reads, and it travels in the same patch as the heartbeat.
+    ...(detail ? { detail } : {}),
     // The heartbeat is the only thing that separates a live run from an abandoned one,
     // so it travels with every progress patch rather than in a call of its own.
     heartbeat_at: new Date().toISOString()
@@ -400,9 +403,9 @@ export function createRunStore({ table, now = () => Date.now() } = {}) {
       return data || null;
     },
 
-    async progress({ runId, done, ok, failed, total, message }) {
+    async progress({ runId, done, ok, failed, total, message, detail }) {
       const { error } = await table()
-        .update(buildProgressPatch({ done, ok, failed, total, message }))
+        .update(buildProgressPatch({ done, ok, failed, total, message, detail }))
         .eq('id', runId);
       if (error) throw error;
     },
