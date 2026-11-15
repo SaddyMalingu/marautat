@@ -715,7 +715,16 @@ async function main() {
         typingWpm,
         waitForHumanMs
       },
-      log: (entry) => console.error(
+      log: (entry) => {
+        // Written as it happens, one JSON line per event: a run that waits for a person can be interrupted
+        // by anything (a closed terminal, a timeout), and a transcript that only exists at the end is a
+        // transcript you do not have.
+        try {
+          const trail = path.resolve('tmp_chatterapply/transcript.ndjson');
+          fs.mkdirSync(path.dirname(trail), { recursive: true });
+          fs.appendFileSync(trail, `${JSON.stringify({ at: new Date().toISOString(), ...entry })}\n`);
+        } catch { /* a transcript that cannot be written must not stop the run */ }
+        console.error(
         `  ${entry.event}${entry.step ? ` step ${entry.step}` : ''}${entry.screen ? ` [${entry.screen}]` : ''}`
         + ` — ${entry.action || entry.reason || ''}`
         + `${entry.button ? ` "${entry.button}"` : ''}`
@@ -725,7 +734,8 @@ async function main() {
         + `${entry.event === 'human-needed' ? ` ** YOU: ${entry.label || entry.question || 'answer the question'} → ${(entry.options || []).join(' / ')} (waiting ${Math.round((entry.waitingMs || 0) / 1000)}s) **` : ''}`
         + `${entry.event === 'human-answered' ? ` (you answered, ${Math.round((entry.waitedMs || 0) / 1000)}s)` : ''}`
         + `${entry.moved === false ? ' (did not move)' : ''}`
-      )
+        );
+      }
     });
     leaveOpen = outcome.keepOpen !== false;
 
