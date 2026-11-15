@@ -33,6 +33,7 @@ export function createApplyPortalRouter({
   table = null,
   resolveTenant = null,
   resolveTenantByPhone = null,
+  resolveTenantFromSession = null,
   saveOnboarding = null,
   pageDir = path.join(root, 'admin')
 } = {}) {
@@ -47,56 +48,73 @@ export function createApplyPortalRouter({
   ].filter(Boolean);
 
   /**
-   * Who is asking. Two credentials are accepted, both already in use: the shared tenant-dashboard key (what the
-   * tenant dashboard uses) and the admin key. With the shared key the tenant names its slug; resolveTenant turns
-   * that into a row, and an unknown slug is refused rather than created.
+   * Who is asking, in the order the portal itself uses.
+   *
+   * **A session first**, because that is what the tenant dashboard actually sends (`x-tenant-session`): it logs in
+   * with a token, not with a key, so requiring a key here made the Work_Anda section answer 401 to a tenant who
+   * was already signed in — which reads as "your entitlement could not be read". The key path stays for scripts
+   * and for the standalone `/apply` page; the session path is the dashboard's.
    */
-  const caller = async (req) => {
+  const identify = async (req, body = {}) => {
     const supplied = keyFor(req);
-    if (!supplied) return { error: 'missing key', status: 401 };
-    const accepted = acceptedKeys();
-    if (!accepted.length) return { error: 'no tenant key is configured on this server', status: 503 };
-    if (!accepted.includes(supplied)) return { error: 'unknown key', status: 401 };
-    const slug = String(req.query.tenant || req.body?.tenant || '').trim().toLowerCase();
-    if (!slug) return { error: 'tenant is required', status: 400 };
-    if (typeof resolveTenant !== 'function') return { error: 'tenant lookup is not configured', status: 503 };
-    const tenant = await resolveTenant(slug);
-    if (!tenant?.id) return { error: `no tenant "${slug}"`, status: 404 };
-    /**
-     * Work_Anda is a paid upgrade, so this is where it is enforced for *runs*. The section itself is visible to
-     * every tenant — that is how the upgrade sells itself — but queueing, reading or cancelling a run requires
-     * it, so a visible button is never the only thing between a tenant and an agent acting with their identity
-     * on a site they have not bought.
-     */
-    const upgrade = workAndaFor(slug);
-    if (!upgrade.enabled) {
-      return { error: 'Work_Anda is not enabled for this tenant', status: 403, upgrade };
+    if (supplied) {
+      const accepted = acceptedKeys();
+      if (!accepted.length) return { error: 'no tenant key is configured on this server', status: 503 };
+      if (!accepted.includes(supplied)) return { error: 'unknown key', status: 401 };
     }
-    return { tenant, upgrade, role: supplied === process.env.TENANT_DASHBOARD_PASS ? 'tenant' : 'operator' };
-  };
 
-  /**
-   * What the dashboard shows for this tenant. Outside `caller`, because a tenant *without* the upgrade still gets
-   * the section: templates to see, and the onboarding form. Refusing this call would hide the only way to buy.
-   */
-  const section = async (req, res) => {
-    const supplied = keyFor(req);
-    const accepted = acceptedKeys();
-    if (!supplied) return res.status(401).json({ error: 'missing key' });
-    if (!accepted.length) return res.status(503).json({ error: 'no tenant key is configured on this server' });
-    if (!accepted.includes(supplied)) return res.status(401).json({ error: 'unknown key' });
-    const slug = String(req.query.tenant || '').trim().toLowerCase();
-    const phone = String(req.query.phone || '').trim();
-    if (!slug && !phone) return res.status(400).json({ error: 'tenant or phone is required' });
+    const slug = String(req.query.tenant || body.tenant || '').trim().toLowerCase();
+    const phone = String(req.query.phone || body.phone || '').trim();
+
+    // The dashboard's own identity: a signed-in tenant, resolved from its session token.
+    if (!supplied || (!slug && !phone)) {
+      if (typeof resolveTenantFromSession === 'function') {
+        try {
+          const viaSession = await resolveTenantFromSession(req);
+          if (viaSession?.id) return { tenant: viaSession, via: 'session' };
+        } catch { /* fall through to the key path */ }
+      }
+    }
+    if (!supplied) return { error: 'missing key or tenant session', status: 401 };
+
+    if (!slug && !phone) return { error: 'tenant or phone is required', status: 400 };
     let tenant = null;
     try {
       if (slug && typeof resolveTenant === 'function') tenant = await resolveTenant(slug);
       else if (phone && typeof resolveTenantByPhone === 'function') tenant = await resolveTenantByPhone(phone);
     } catch (error) {
-      return res.status(500).json({ error: `could not look the tenant up: ${error.message}` });
+      return { error: `could not look the tenant up: ${error.message}`, status: 500 };
     }
-    if (!tenant?.id) return res.status(404).json({ error: 'tenant not found' });
-    return res.json(workAndaFor(tenant.slug || slug));
+    if (!tenant?.id) return { error: 'tenant not found', status: 404 };
+    return { tenant, via: 'key' };
+  };
+
+
+  /**
+   * The gate for *runs*. The section itself is visible to every tenant — that is how the upgrade sells itself —
+   * but queueing, reading or cancelling a run requires the upgrade, so a visible button is never the only thing
+   * between a tenant and an agent acting with their identity on a site they have not bought.
+   */
+  const caller = async (req) => {
+    const who = await identify(req, req.body || {});
+    if (who.error) return who;
+    const slug = String(who.tenant.slug || req.query.tenant || req.body?.tenant || '').trim().toLowerCase();
+    const upgrade = workAndaFor(slug, process.env, who.tenant.phone || '');
+    if (!upgrade.enabled) return { error: 'Work_Anda is not enabled for this tenant', status: 403, upgrade };
+    return { tenant: who.tenant, upgrade, role: who.via === 'session' ? 'tenant' : 'operator' };
+  };
+
+  /** What the dashboard shows for this tenant. Open to every tenant: templates to see, onboarding to send. */
+  const section = async (req, res) => {
+    const who = await identify(req);
+    if (who.error) {
+      // One line, so Render's log answers "why is the section empty?" without a redeploy.
+      console.error(`[work-anda] refused: ${who.error} (session=${req.headers['x-tenant-session'] ? 'present' : 'absent'}, key=${keyFor(req) ? 'present' : 'absent'})`);
+      return res.status(who.status).json({ error: who.error });
+    }
+    const data = workAndaFor(who.tenant.slug || '', process.env, who.tenant.phone || '');
+    console.error(`[work-anda] tenant=${who.tenant.slug || '(no slug)'} via=${who.via} enabled=${data.enabled}`);
+    return res.json(data);
   };
 
   router.get('/api/work-anda', section);
@@ -111,23 +129,9 @@ export function createApplyPortalRouter({
    * because that needs no migration and lands where support already looks.
    */
   router.post('/api/work-anda/requests', async (req, res) => {
-    const supplied = keyFor(req);
-    const accepted = acceptedKeys();
-    if (!supplied) return res.status(401).json({ error: 'missing key' });
-    if (!accepted.length) return res.status(503).json({ error: 'no tenant key is configured on this server' });
-    if (!accepted.includes(supplied)) return res.status(401).json({ error: 'unknown key' });
-
-    const slug = String(req.query.tenant || req.body?.tenant || '').trim().toLowerCase();
-    const phone = String(req.query.phone || req.body?.phone || '').trim();
-    if (!slug && !phone) return res.status(400).json({ error: 'tenant or phone is required' });
-    let tenant = null;
-    try {
-      if (slug && typeof resolveTenant === 'function') tenant = await resolveTenant(slug);
-      else if (phone && typeof resolveTenantByPhone === 'function') tenant = await resolveTenantByPhone(phone);
-    } catch (error) {
-      return res.status(500).json({ error: `could not look the tenant up: ${error.message}` });
-    }
-    if (!tenant?.id) return res.status(404).json({ error: 'tenant not found' });
+    const who = await identify(req, req.body || {});
+    if (who.error) return res.status(who.status).json({ error: who.error });
+    const tenant = who.tenant;
 
     const { request, errors } = buildOnboardingRequest(req.body || {});
     if (errors.length) return res.status(400).json({ error: errors.join('; ') });

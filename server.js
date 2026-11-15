@@ -5474,6 +5474,34 @@ app.use('/', createApplyPortalRouter({
       || String(row.whatsapp_number || '').replace(/\D/g, '') === digits) || null;
   },
   /**
+   * The tenant dashboard is signed in with a **session token** (`x-tenant-session`), not a key — so the Work_Anda
+   * section asked "who is this?", got a 401, and the page reported "could not read your entitlement". This
+   * resolves the token with the portal's own primitives and returns the tenant's site, whose slug is what
+   * Work_Anda is keyed on. It never throws: no session, no tenant.
+   */
+  resolveTenantFromSession: async (req) => {
+    try {
+      const raw = String(
+        req.headers['x-tenant-session'] || req.query.session || getTenantSessionCookie(req) || ''
+      ).trim();
+      if (!raw) return null;
+      const signed = verifyTenantSession(raw, tenantSessionSecret());
+      if (!signed?.tenantId) return null;
+      const { data: tenant } = await supabase
+        .from('bot_tenants')
+        .select('id, client_name, client_phone')
+        .eq('id', signed.tenantId)
+        .maybeSingle();
+      if (!tenant) return null;
+      const site = await resolveTenantSite(tenant);
+      if (!site) return null;
+      return { id: site.id, slug: site.slug, phone: tenant.client_phone || '' };
+    } catch (error) {
+      console.error('[work-anda] could not resolve the tenant session:', error.message);
+      return null;
+    }
+  },
+  /**
    * Work_Anda onboarding ("onboard a system"). Kept on the tenant's own metadata row: no migration, no new table,
    * and it lands where support already looks. Newest five, because this is a notebook, not a warehouse.
    */

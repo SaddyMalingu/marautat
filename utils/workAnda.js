@@ -58,14 +58,28 @@ export function enabledTenants(env = process.env) {
   return list.length ? list : [...DEFAULT_WORK_ANDA_TENANTS];
 }
 
-export function workAndaEnabled(slug, env = process.env) {
+/**
+ * Is this tenant entitled?
+ *
+ * Matched on the site slug **or** the tenant's phone: the portal keeps two identifiers for one customer and the
+ * site slug is derived from their name, so a tenant listed by phone must not lose the upgrade to a slug mismatch
+ * that reads like a bug.
+ */
+export function workAndaEnabled(slug, env = process.env, phone = '') {
   const wanted = String(slug || '').trim().toLowerCase();
-  return Boolean(wanted) && enabledTenants(env).includes(wanted);
+  const digits = String(phone || '').replace(/\D/g, '');
+  const list = enabledTenants(env);
+  if (wanted && list.includes(wanted)) return true;
+  if (!digits) return false;
+  return list.some((entry) => {
+    const asDigits = String(entry).replace(/\D/g, '');
+    return asDigits.length >= 9 && asDigits === digits;
+  });
 }
 
-/** A tenant's live agents. Empty without the upgrade â€” they still get templates and onboarding. */
-export function agentsFor(slug, env = process.env) {
-  return workAndaEnabled(slug, env) ? WORK_ANDA_AGENTS.map((agent) => ({ ...agent })) : [];
+/** A tenant's live agents. Empty without the upgrade — they still get templates and onboarding. */
+export function agentsFor(slug, env = process.env, phone = '') {
+  return workAndaEnabled(slug, env, phone) ? WORK_ANDA_AGENTS.map((agent) => ({ ...agent })) : [];
 }
 
 /** The catalogue every tenant sees. */
@@ -79,14 +93,14 @@ export function templatesFor() {
  * `enabled` is not "may you see the section" â€” everybody may â€” it is "do you have a live agent". The reason
  * string exists so a tenant without one is told what to do next instead of facing an empty page.
  */
-export function workAndaFor(slug, env = process.env) {
-  const enabled = workAndaEnabled(slug, env);
+export function workAndaFor(slug, env = process.env, phone = '') {
+  const enabled = workAndaEnabled(slug, env, phone);
   return {
     enabled,
     tenant: String(slug || '').trim().toLowerCase(),
     section: { ...WORK_ANDA_SECTION },
     templates: templatesFor(),
-    agents: agentsFor(slug, env),
+    agents: agentsFor(slug, env, phone),
     onboarding: { open: true, accepts: ['siteUrl', 'htmlDump', 'brief'] },
     reason: enabled ? null : 'No Work_Anda agent is unlocked for this tenant yet â€” onboard a system below and we will build one.'
   };

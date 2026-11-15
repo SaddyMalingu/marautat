@@ -243,6 +243,19 @@ function fakeTableFactory() {
   ok('and is told why', /Work_Anda is not enabled/.test((await refused.json()).error));
   eq('nor read any', (await fetch(`${base}/api/apply/runs?tenant=no-upgrade`, { headers: asTenant })).status, 403);
 
+  // The dashboard's real path: a session token, no key at all. This is what was answering 401.
+  const viaSession = await fetch(`${base}/api/work-anda`, { headers: { 'x-tenant-session': 'session:malingu-ventures' } });
+  const viaSessionBody = await viaSession.json();
+  eq('a signed-in tenant needs no key', viaSession.status, 200);
+  eq('and is recognised as enabled', viaSessionBody.enabled, true);
+  ok('with their agent', (viaSessionBody.agents || []).length === 1);
+  eq('a session for another tenant is that tenant', (await (await fetch(`${base}/api/work-anda`, {
+    headers: { 'x-tenant-session': 'session:no-upgrade' }
+  })).json()).enabled, false);
+  eq('a forged session with no key is refused', (await fetch(`${base}/api/work-anda`, {
+    headers: { 'x-tenant-session': 'session:nobody' }
+  })).status, 401);
+
   const flag = await (await fetch(`${base}/api/work-anda?tenant=malingu-ventures`, { headers: asTenant })).json();
   ok('the section is readable for an enabled tenant', flag.enabled === true && flag.agents.length === 1, JSON.stringify(flag).slice(0, 120));
   ok('and it carries the templates every tenant sees', Array.isArray(flag.templates) && flag.templates.length === 1);
