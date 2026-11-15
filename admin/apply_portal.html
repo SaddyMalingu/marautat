@@ -75,6 +75,20 @@
       <label for="deskPhoto">Desk photo — full path on the machine with the browser</label>
       <input id="deskPhoto" placeholder="C:\Users\you\Pictures\desk.jpg" />
       <p class="hint">The photo is attached from that machine; it is never uploaded here.</p>
+
+      <h2 style="margin-top:20px">Your five written answers</h2>
+      <p class="hint" style="margin:0 0 8px">Steps 16–20. These are yours to write — the run types exactly what you
+        put here, and nothing if you leave it blank.</p>
+      <label for="subscriberAgency">Which subscriber agency are you with, or applying to?</label>
+      <textarea id="subscriberAgency" rows="3"></textarea>
+      <label for="salesProcess">Describe your sales process, start to finish</label>
+      <textarea id="salesProcess" rows="4"></textarea>
+      <label for="captionShower">Caption: shower scene</label>
+      <textarea id="captionShower" rows="3"></textarea>
+      <label for="captionStrip">Caption: strip scene</label>
+      <textarea id="captionStrip" rows="3"></textarea>
+      <label for="captionExplicit">Caption: explicit scene</label>
+      <textarea id="captionExplicit" rows="3"></textarea>
     </section>
   </div>
 
@@ -139,7 +153,7 @@
 (() => {
   const $ = (id) => document.getElementById(id);
   const logEl = $('log');
-  const ANSWER_FIELDS = ['fullName','discordUsername','country','phone','email','hasExperience','experienceDetails','source','referral','deskPhoto'];
+  const ANSWER_FIELDS = ['fullName','discordUsername','country','phone','email','hasExperience','experienceDetails','source','referral','deskPhoto','subscriberAgency','salesProcess','captionShower','captionStrip','captionExplicit'];
   let currentRun = null;
   let stream = null;
   let poller = null;

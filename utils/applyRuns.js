@@ -33,7 +33,11 @@ export const APPLY_MODES = Object.freeze(['fill', 'map', 'discover', 'dry-run'])
  */
 export const ANSWER_KEYS = Object.freeze([
   'fullName', 'discordUsername', 'country', 'email', 'phone',
-  'hasExperience', 'experienceDetails', 'source', 'referral', 'deskPhoto'
+  'hasExperience', 'experienceDetails', 'source', 'referral', 'deskPhoto',
+  // Steps 16–20 are the five writing answers (subscriber agency, sales process, the three caption
+  // questions). They are the tenant's own words, so the page collects them and the runner types them —
+  // without this the worker could drive the form to step 15 and then had nothing to write at 16.
+  'subscriberAgency', 'salesProcess', 'captionShower', 'captionStrip', 'captionExplicit'
 ]);
 
 export const WAIT_HUMAN_MAX_SECONDS = 3600;
@@ -44,6 +48,11 @@ export const TYPING_WPM_MAX = 200;
 export const MAX_LOG_LINES = 300;
 /** One line is capped too: a single enormous line must not become the whole log. */
 export const MAX_LOG_LINE = 400;
+
+/** The answers that are prose, not a value: a caption question needs more than a name's worth of characters. */
+export const LONG_ANSWER_KEYS = Object.freeze([
+  'experienceDetails', 'subscriberAgency', 'salesProcess', 'captionShower', 'captionStrip', 'captionExplicit'
+]);
 
 /**
  * Keep only answers the runner knows, trimmed and bounded.
@@ -57,7 +66,8 @@ export function sanitizeAnswers(raw = {}) {
   for (const [key, value] of Object.entries(raw || {})) {
     if (!ANSWER_KEYS.includes(key)) { rejected.push(key); continue; }
     if (value === null || value === undefined) continue;
-    const text = String(value).replace(/\s+/g, ' ').trim().slice(0, 300);
+    const limit = LONG_ANSWER_KEYS.includes(key) ? 2000 : 300;
+    const text = String(value).replace(/[ \t]+/g, ' ').replace(/\s*\n\s*/g, '\n').trim().slice(0, limit);
     if (text) answers[key] = text;
   }
   return { answers, rejected };

@@ -56,6 +56,14 @@ const GOOD_ANSWERS = {
   eq('whitespace is collapsed', sanitizeAnswers({ fullName: '  David   Saddy  ' }).answers.fullName, 'David Saddy');
   eq('empty values are dropped', sanitizeAnswers({ email: '   ' }).answers.email, undefined);
   eq('every key the runner knows is accepted', ANSWER_KEYS.filter((key) => !sanitizeAnswers({ [key]: 'x' }).answers[key]).length, 0);
+
+  // The five writing answers (steps 16-20) are prose: 300 characters would cut a real answer in half.
+  const long = 'a'.repeat(900);
+  eq('a written answer keeps a full paragraph', sanitizeAnswers({ salesProcess: long }).answers.salesProcess.length, 900);
+  eq('while a name stays short', sanitizeAnswers({ fullName: long }).answers.fullName.length, 300);
+  ok('and the writing answers are keys the runner knows',
+    ['subscriberAgency', 'salesProcess', 'captionShower', 'captionStrip', 'captionExplicit']
+      .every((key) => ANSWER_KEYS.includes(key)));
 }
 
 {
