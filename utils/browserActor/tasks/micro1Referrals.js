@@ -346,18 +346,84 @@ export function installClipboardHookExpr() {
 }
 
 /**
+ * The tick helper, shared by the select and clear expressions (2026-11-16).
+ *
+ * The live popup (refer.micro1.ai/opportunities) puts a small square in each card's TOP-RIGHT corner, shows its own
+ * "N Roles selected" counter, and disables "Select at least 2 roles" until two are ticked. On the first live run the
+ * modal opened and nothing got selected: a single click on the found control was not enough, and the verification
+ * only read `input.checked`, which cannot see a control the page renders and tracks itself.
+ *
+ * So each attempt walks a ladder — real input, then ARIA checkbox, then the visible square found by geometry — and
+ * the page's own counter is accepted as proof alongside the checkbox state. Written once and interpolated into both
+ * expressions so the untick path can never drift from the tick path.
+ */
+const TICK_HELPER = `
+  const pointerAt = (el, type, x, y) => {
+    const at = { bubbles: true, cancelable: true, button: 0, clientX: x, clientY: y };
+    try { el.dispatchEvent(new (String(type).indexOf('pointer') === 0 ? PointerEvent : MouseEvent)(type, at)); } catch (e) {}
+  };
+  const press = (el) => {
+    if (!el) return false;
+    try { el.scrollIntoView({ block: 'center' }); } catch (e) {}
+    const r = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+    const x = r ? r.left + r.width / 2 : 0;
+    const y = r ? r.top + r.height / 2 : 0;
+    for (const t of ['pointerdown', 'mousedown', 'pointerup', 'mouseup']) pointerAt(el, t, x, y);
+    try { el.click(); } catch (e) {}
+    return true;
+  };
+  const boxOf = (card) =>
+    card.querySelector('input[type="checkbox"]') || card.querySelector('[role="checkbox"], [aria-checked]') || null;
+  const isTicked = (card) => {
+    const input = card.querySelector('input[type="checkbox"]');
+    if (input) return !!input.checked;
+    const aria = card.querySelector('[role="checkbox"], [aria-checked]');
+    if (aria) return aria.getAttribute('aria-checked') === 'true';
+    return null;
+  };
+  // The square in the top-right corner, found by where it is rather than by what it is called.
+  const cornerTarget = (card) => {
+    const r = card.getBoundingClientRect();
+    if (!r || !r.width) return null;
+    const el = document.elementFromPoint(
+      Math.min(window.innerWidth - 2, r.right - 22),
+      Math.max(2, r.top + 22)
+    );
+    return el && card.contains(el) ? el : null;
+  };
+  const counterNow = () => {
+    const flat = (v) => String(v == null ? '' : v).split(/[^0-9a-zA-Z$]+/).join(' ').trim();
+    const one = Array.from(document.querySelectorAll('span,div,p'))
+      .map((n) => flat(n.textContent))
+      .filter((t) => /^[0-9]+ Roles? selected$/i.test(t))
+      .pop();
+    const found = one || (flat(document.body ? document.body.innerText : '').match(/[0-9]+ Roles? selected/i) || [])[0];
+    const digit = found ? String(found).match(/[0-9]+/) : null;
+    return digit ? Number(digit[0]) : null;
+  };
+  const waitTicked = async (card, ms) => {
+    const end = Date.now() + Math.max(100, ms || 0);
+    for (;;) {
+      const v = isTicked(card);
+      if (v === true) return true;
+      if (Date.now() >= end) return v;
+      await new Promise((r) => setTimeout(r, 120));
+    }
+  };
+`;
+
+/**
  * Tick one group's roles, then prove they are ticked.
  *
- * The checkbox is `sr-only`, so the click goes to the wrapping `<label>`; `input.click()` is the
- * fallback. Either way the assertion afterwards is on `input.checked` and the page's own
- * "N Roles selected" counter — not on "we did not throw", because a click swallowed by a
- * re-render would otherwise mint a link for the wrong roles.
+ * The assertion is on the checkbox state AND the page's own "N Roles selected" counter — not on "we did not throw",
+ * because a click swallowed by a re-render would otherwise mint a link for the wrong roles.
  */
 export function selectRolesExpr({ titles = [], settleMs = 400 } = {}) {
   const wanted = JSON.stringify(titles.map((t) => String(t)));
   return `(async () => {
   const clean = (v) => String(v == null ? '' : v).replace(/\\s+/g, ' ').trim();
   const wanted = ${wanted};
+  ${TICK_HELPER}
   const cards = Array.from(document.querySelectorAll('${MICRO1_CARD}'));
   const titleOf = (card) => {
     const h = card.querySelector('h2') || card.querySelector('h3');
@@ -365,6 +431,7 @@ export function selectRolesExpr({ titles = [], settleMs = 400 } = {}) {
   };
   const clicked = [];
   const missed = [];
+  const counterBefore = counterNow();
   for (const title of wanted) {
     const key = title.toLowerCase();
     const matches = cards.filter((c) => {
@@ -377,13 +444,30 @@ export function selectRolesExpr({ titles = [], settleMs = 400 } = {}) {
     if (!card) { missed.push(title); continue; }
     const box = card.querySelector('input[type="checkbox"]');
     if (!box) { missed.push(title); continue; }
-    if (box.checked) { clicked.push({ title: titleOf(card), already: true }); continue; }
-    const label = card.querySelector('label');
-    try { card.scrollIntoView({ block: 'center' }); } catch (e) {}
-    if (label) label.click(); else box.click();
-    clicked.push({ title: titleOf(card), already: false });
+    const before = counterNow();
+    const target = boxOf(card) || box;
+    if (isTicked(card) === true) { clicked.push({ title: titleOf(card), already: true, method: 'already' }); continue; }
+    // Ladder: the control itself, then its label, then the visible square in the corner. On the live popup the
+    // first click did nothing, and the old code had no second attempt — which is how a modal opened and no role
+    // was ever selected.
+    let method = null;
+    let ticked = null;
+    if (target) { press(target); method = 'box'; ticked = await waitTicked(card, 800); }
+    if (ticked !== true) {
+      const label = card.querySelector('label');
+      if (label) { press(label); method = method ? method + '+label' : 'label'; ticked = await waitTicked(card, 500); }
+    }
+    if (ticked !== true) {
+      const corner = cornerTarget(card);
+      if (corner && press(corner)) {
+        method = method ? method + '+corner' : 'corner';
+        ticked = await waitTicked(card, 800);
+      }
+    }
+    clicked.push({ title: titleOf(card), already: false, method, ticked, before, after: counterNow() });
   }
   await new Promise((r) => setTimeout(r, ${Number(settleMs) || 400}));
+  const counterAfter = counterNow();
   // Read the state back from the DOM: this is the difference between "clicked" and "selected".
   const states = clicked.map((row) => {
     const key = row.title.toLowerCase();
@@ -398,10 +482,16 @@ export function selectRolesExpr({ titles = [], settleMs = 400 } = {}) {
   const action = Array.from(document.querySelectorAll('button')).find((b) =>
     /select at least|generate|create link|copy link|get link/i.test(clean(b.innerText || b.textContent)));
   return JSON.stringify({
-    ok: states.every((s) => s.checked === true) && states.length === wanted.length,
+    // Proof is the checkbox state OR the page's own counter rising by the number of roles asked for. The counter is
+    // what the tenant can see, and a custom control may never expose its checked state to us at all.
+    ok: (states.every((s) => s.checked === true) && states.length === wanted.length)
+      || (counterBefore != null && counterAfter != null && counterAfter - counterBefore >= wanted.length),
     selected: states.filter((s) => s.checked === true).map((s) => s.title),
     unselected: states.filter((s) => s.checked !== true).map((s) => s.title),
     missed,
+    counterBefore,
+    counterAfter,
+    ticks: clicked,
     counter,
     action: action ? { label: clean(action.innerText || action.textContent), disabled: !!action.disabled } : null,
     states
@@ -412,21 +502,27 @@ export function selectRolesExpr({ titles = [], settleMs = 400 } = {}) {
 /** Untick everything, so one group's roles cannot leak into the next group's link. */
 export function clearSelectionExpr({ settleMs = 300 } = {}) {
   return `(async () => {
+  ${TICK_HELPER}
   const cards = Array.from(document.querySelectorAll('${MICRO1_CARD}'));
+  const counterBefore = counterNow();
   let cleared = 0;
   for (const card of cards) {
-    const box = card.querySelector('input[type="checkbox"]');
-    if (!box || !box.checked) continue;
-    const label = card.querySelector('label');
-    if (label) label.click(); else box.click();
+    if (isTicked(card) !== true) continue;
+    const target = boxOf(card);
+    if (target) press(target);
+    if (isTicked(card) === true) {
+      const label = card.querySelector('label');
+      if (label) press(label);
+    }
+    if (isTicked(card) === true) {
+      const corner = cornerTarget(card);
+      if (corner) press(corner);
+    }
     cleared += 1;
   }
   await new Promise((r) => setTimeout(r, ${Number(settleMs) || 300}));
-  const left = cards.filter((c) => {
-    const box = c.querySelector('input[type="checkbox"]');
-    return box && box.checked;
-  }).length;
-  return JSON.stringify({ ok: left === 0, cleared, remaining: left });
+  const left = cards.filter((c) => isTicked(c) === true).length;
+  return JSON.stringify({ ok: left === 0, cleared, remaining: left, counterBefore, counterAfter: counterNow() });
 })()`;
 }
 
@@ -435,8 +531,10 @@ export function clearSelectionExpr({ settleMs = 300 } = {}) {
 export function clickActionExpr() {
   return `(() => {
   const clean = (v) => String(v == null ? '' : v).replace(/\\s+/g, ' ').trim();
-  const button = Array.from(document.querySelectorAll('button')).find((b) =>
-    /select at least|generate|create link|copy link|get link|share/i.test(clean(b.innerText || b.textContent)));
+  // Never the header pill: clicking "Your referral link" reopens its menu and takes the modal away.
+  const button = Array.from(document.querySelectorAll('button')).filter((b) =>
+    !/your referral link/i.test(clean(b.innerText || b.textContent)))
+    .find((b) => /select at least|generate|create link|copy link|get link|share|referral link/i.test(clean(b.innerText || b.textContent)));
   if (!button) return JSON.stringify({ ok: false, reason: 'no_action_button' });
   if (button.disabled) {
     return JSON.stringify({
@@ -557,10 +655,16 @@ export async function runReferralGroups({ evaluate, groups = [], waitForLinkMs =
 
     const selection = await evaluate(selectRolesExpr({ titles }));
     if (!selection?.ok) {
+      // Say what the page showed, not just that it failed: the counter before→after, which roles could not be
+      // found, and how each one was (or was not) ticked. A bare "selection_not_verified" cost a live run.
+      const ticks = (selection?.ticks || [])
+        .map((t) => `${String(t.title || '').slice(0, 28)}=${t.method || 'no control'}/${t.ticked === true ? 'ticked' : (t.ticked === null ? 'unreadable' : 'not ticked')}`)
+        .join(', ');
+      log(`selection not verified — counter ${selection?.counterBefore ?? '?'}→${selection?.counterAfter ?? '?'}${selection?.missed?.length ? `, missing: ${selection.missed.join(', ')}` : ''}${ticks ? ` · ${ticks}` : ''}`);
       failures.push({ groupId, reason: 'selection_not_verified', titles, selection });
       continue;
     }
-    log(`selected ${selection.selected?.length || 0} role(s) — ${selection.counter || 'counter unread'}`);
+    log(`selected ${selection.selected?.length || 0} role(s) — counter ${selection.counterBefore ?? '?'}→${selection.counterAfter ?? '?'}`);
 
     // Reset the trap before each confirm: a stale link from the previous group must never be
     // attached to this one.

@@ -658,5 +658,46 @@ const ROLES = [
   ok('a page with no entry reports its own controls', /controls: opened\?\.controls/.test(moduleSrc));
 }
 
+// ─── Every injected expression must at least parse (2026-11-16) ──────────────────────────────
+//
+// These strings are evaluated in the tenant's browser, so a stray backtick or a duplicated identifier is invisible
+// to `node --check` and only shows up as a silent no-op on a live run. Parsing them here costs nothing.
+{
+  const mod = await import('../utils/browserActor/tasks/micro1Referrals.js');
+  const expressions = {
+    readAffiliateExpr: mod.readAffiliateExpr({ limit: 5 }),
+    selectRolesExpr: mod.selectRolesExpr({ titles: ['A', 'B'] }),
+    clearSelectionExpr: mod.clearSelectionExpr(),
+    clickActionExpr: mod.clickActionExpr(),
+    openBuilderExpr: mod.openBuilderExpr(),
+    parkedSurveyExpr: mod.parkedSurveyExpr(),
+    readGeneratedLinkExpr: mod.readGeneratedLinkExpr(),
+    installClipboardHookExpr: mod.installClipboardHookExpr()
+  };
+  for (const [name, expression] of Object.entries(expressions)) {
+    let parsed = true;
+    let message = null;
+    try {
+      // eslint-disable-next-line no-new-func
+      new Function(expression);
+    } catch (error) {
+      parsed = false;
+      message = error.message;
+    }
+    ok(`${name} parses as JavaScript`, parsed, message);
+  }
+
+  // The tick ladder, and the page's own counter as proof.
+  const select = mod.selectRolesExpr({ titles: ['A'] });
+  ok('the tick walks a ladder: control, label, corner', /press\(target\)/.test(select)
+    && /card\.querySelector\('label'\)/.test(select)
+    && /cornerTarget\(card\)/.test(select));
+  ok('and waits for the page to confirm each tick', /waitTicked\(card, 800\)/.test(select));
+  ok('with the counter before and after', /counterBefore = counterNow\(\)/.test(select) && /counterAfter = counterNow\(\)/.test(select));
+  ok('and accepts the counter as proof', /counterAfter - counterBefore >= wanted\.length/.test(select));
+  ok('the untick path uses the same ladder', /cornerTarget\(card\)/.test(mod.clearSelectionExpr()));
+  ok('the action button is never the header pill', /your referral link/i.test(mod.clickActionExpr()));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
