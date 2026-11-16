@@ -667,6 +667,21 @@ export async function runReferralGroups({ evaluate, groups = [], waitForLinkMs =
     }
     await evaluate(clearSelectionExpr());
 
+    // Assert the state we are about to act on. Re-opening can succeed while the page is still the wrong one, and the
+    // old code then ticked cards, clicked a button that was not there and reported a failure three steps later. A
+    // popup with no readable counter or no action button is a stop, named here.
+    const state = await evaluate(readAffiliateExpr({ limit: 1 })).catch(() => null);
+    if (!state?.ok || state.mode !== 'builder') {
+      failures.push({ groupId, reason: `builder_not_ready:${state?.mode || 'unreadable'}`, titles });
+      log(`group ${groupId}: the popup is not on screen (${state?.mode || 'unreadable'}) — stopping`);
+      break;
+    }
+    if (state.counter == null) {
+      failures.push({ groupId, reason: 'counter_unreadable', titles });
+      log(`group ${groupId}: no "N Roles selected" counter on the page — stopping rather than ticking blind`);
+      break;
+    }
+
     const selection = await evaluate(selectRolesExpr({ titles }));
     if (!selection?.ok) {
       // Say what the page showed, not just that it failed: the counter before→after, which roles could not be

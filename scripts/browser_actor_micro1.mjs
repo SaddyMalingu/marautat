@@ -597,6 +597,14 @@ async function runCapture({ existingOffers = [], identity = null } = {}) {
 
     // ---- Pass 2: the job body, one navigation per role ------------------------
     if (withDescriptions) {
+      // A paired link has no job id, so its roles get no body here. Say so once, instead of leaving the tenant
+      // wondering why "bodies 0".
+      const paired = captures.filter((capture) => capture.groupId && !capture.jobId).length;
+      if (paired) console.error(`bodies: ${paired} paired role(s) skipped — a group link is a list, not a role page (use a thin-coverage pass for those)`);
+      // The page shell and the chat widget both return long text that is identical for every role; that happened on
+      // 2026-11-16 (36 roles, 17467 chars each) and would have written the same description onto 36 offers. Distinct
+      // bodies only.
+      const seenBodies = new Map();
       for (const capture of captures) {
         if (!capture.jobId) continue;
         try {
@@ -604,9 +612,18 @@ async function runCapture({ existingOffers = [], identity = null } = {}) {
           await sleep(2200);
           const detail = await evaluateJson({ host, port, expression: MICRO1_DETAIL_CONTENT_EXPR });
           if (detail?.ok && detail.content) {
-            capture.content = detail.content;
-            capture.descriptionChars = detail.chars;
-            console.error(`[${capture.index}] body ${detail.chars} chars`);
+            const signature = `${detail.chars}:${String(detail.content).slice(0, 120)}`;
+            const already = seenBodies.get(signature);
+            if (already) {
+              capture.content = null;
+              capture.reason = 'duplicate_body';
+              console.error(`[${capture.index}] body identical to "${String(already).slice(0, 40)}" — discarded, the extractor is reading the shell`);
+            } else {
+              seenBodies.set(signature, capture.title);
+              capture.content = detail.content;
+              capture.descriptionChars = detail.chars;
+              console.error(`[${capture.index}] body ${detail.chars} chars`);
+            }
           } else {
             console.error(`[${capture.index}] body unreadable (${detail?.chars || 0} chars)`);
           }

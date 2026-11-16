@@ -473,6 +473,8 @@ const ROLES = [
   // Answer by *what was asked*, not by position: an aborted group skips calls, so counting desyncs.
   // The selection expression embeds the group's titles, so match its stable prefix instead.
   const selectPrefix = selectRolesExpr({ titles: ['__probe__'] }).split('__probe__')[0];
+  // `readAffiliateExpr` is called at two limits (240 for planning, 1 as a state assertion), so match its prefix.
+  const readPrefix = readAffiliateExpr({ limit: 240 }).split('240')[0];
   const fakePage = ({ page = 'builder', opensTo = null, opensAfter = 1, entry = null, cards = [], selectionOk = true, closeAfterCapture = false, link = 'https://jobs.micro1.ai/post/abc123?referralCode=42' } = {}) => {
     let clicks = 0;
     let entryIndex = 0;
@@ -492,7 +494,16 @@ const ROLES = [
         if (Array.isArray(entry)) return entry[Math.min(entryIndex++, entry.length - 1)];
         return entry || { ok: true, clicked: true, navigated: false, label: 'Your referral link', candidates: 2 };
       }
-      if (expression === readAffiliateExpr({ limit: 240 })) return { ok: cards.length > 0, cards };
+      if (String(expression).startsWith(readPrefix)) {
+        return {
+          ok: cards.length > 0,
+          mode: 'builder',
+          counter: '0 Roles selected',
+          minimum: 2,
+          action: { label: 'Select at least 2 roles', disabled: true },
+          cards
+        };
+      }
       if (expression === installClipboardHookExpr()) return { ok: true };
       if (expression === clearSelectionExpr()) return { ok: true };
       if (String(expression).startsWith(selectPrefix)) {
@@ -669,9 +680,13 @@ const ROLES = [
   // A link that credits nobody is refused by the engine rather than stored: that is the failure that cost months.
   const { runReferralGroups } = await import('../utils/browserActor/tasks/micro1Referrals.js');
   const bare = 'https://jobs.micro1.ai/post/abc123';
-  const evaluate = async (expression) => (/m1clip|data-clipboard|input,textarea/.test(String(expression))
-    ? { ok: true, url: bare, strategy: 'clipboard' }
-    : { ok: true, selected: ['Legal A', 'Legal B'], counter: '2 selected' });
+  const evaluate = async (expression) => {
+    const source = String(expression);
+    if (/m1clip|data-clipboard|input,textarea/.test(source)) return { ok: true, url: bare, strategy: 'clipboard' };
+    // The engine now asserts the popup state before each pair, so the fake has to answer that read too.
+    if (source.includes('job-card') && /Pay:/.test(source)) return { ok: true, mode: 'builder', counter: '0 Roles selected', cards: [{ title: 'Legal A' }] };
+    return { ok: true, selected: ['Legal A', 'Legal B'], counter: '2 selected' };
+  };
   const run = await runReferralGroups({ evaluate, groups: [{ title: 'legal pair', members: ['Legal A', 'Legal B'] }], waitForLinkMs: 20, pollMs: 5 });
   eq('a link without attribution is a failure', run.failures[0]?.reason, 'link_without_attribution');
   eq('and is not published', run.captures.length, 0);
