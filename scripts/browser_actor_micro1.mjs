@@ -111,7 +111,7 @@ const agentMode = Boolean(agentApi && agentToken);
  */
 const groupMode = flag('per-role', null) === null;
 const groupSize = Math.max(2, Number(flag('group-size', 2)) || 2);
-const maxGroups = Math.max(1, Number(flag('max-groups', 5)) || 5);
+const maxGroups = Math.min(25, Math.max(1, Number(flag('max-groups', 12)) || 12));
 
 if (!tenant) {
   console.error('usage: --tenant <slug> [--limit 12] [--skip 0] [--apply] [--only-missing] [--no-descriptions] [--out tmp/micro1.json]');
@@ -808,7 +808,11 @@ async function main() {
   const { captures, listing } = await runCapture({ existingOffers: offers, identity });
   const withLink = captures.filter((capture) => capture.referralUrl);
   const withBody = captures.filter((capture) => capture.content);
-  console.error(`captured: ${captures.length} roles Â· ${withLink.length} links Â· ${withBody.length} bodies`);
+  // Say what each phase did, separately. "captured 14 roles · 2 links" reads like a broken run when 12 of those roles
+  // simply have no related partner yet — and in links mode the offers themselves were captured by an earlier run.
+  const unpaired = captures.filter((capture) => capture.reason === 'no_related_partner').length;
+  console.error(`captured: ${captures.length} roles Â· ${withLink.length} links Â· ${withBody.length} bodies${unpaired ? ` Â· ${unpaired} role(s) with no related partner` : ''}`);
+  if (groupMode) console.error(`links phase: offers already exist â€” this run only mints and attaches links${withDescriptions ? '' : ' (bodies off)'}`);
 
   // One caller writes offers, and it is never the tenant's machine.
   const applied = agentMode

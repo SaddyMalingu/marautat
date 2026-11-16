@@ -839,6 +839,22 @@ const ROLES = [
   });
   eq('a group link with no attribution is refused', bare.links.planned, 0);
   ok('and says why', (bare.links.skipped || []).some((row) => /attribution/.test(row.reason || '')), JSON.stringify(bare.links.skipped));
+
+  // The builder and the listing render the same role differently, and an exact-title join skipped exactly the offers
+  // the tenant already holds — the 259 that need links.
+  const punctuated = await applyCaptureUpdates({
+    supabase,
+    offers: [{ id: 'o2', title: 'Ecommerce Data and Catalog Specialist', referral_url: null, external_id: null, description: null }],
+    apply: false,
+    captures: [{
+      title: 'E-commerce Data & Catalog Specialist',
+      referralUrl: 'https://refer.micro1.ai/referral/jobs?referralCode=abc',
+      groupId: 'commerce pair'
+    }],
+    verify: async () => ({ ok: false })
+  });
+  eq('punctuation differences still match the offer', punctuated.links.planned, 1);
+  eq('and nothing is reported missing', (punctuated.links.skipped || []).length, 0);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

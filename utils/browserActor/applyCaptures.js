@@ -202,9 +202,28 @@ export async function applyCaptureUpdates({ supabase, offers = [], captures = []
   const verification = [];
   const accepted = [];
 
-  const offerByTitle = new Map(rows.map((offer) => [String(offer.title || '').toLowerCase(), offer]));
+  // Match a paired link to the offer it belongs to. Exact title first, then a normalised form: the builder and the
+  // listing are two different renderers of the same role, and they disagree on punctuation ("E-commerce Data &
+  // Catalog Specialist" vs "Ecommerce Data and Catalog Specialist"). An exact-match-only join silently skipped links
+  // for offers the tenant already had, which is the whole point of the backfill (2026-11-16).
+  const normalise = (value) => String(value || '')
+    .toLowerCase()
+    // "E-commerce" and "Ecommerce" are the same word to a reader; hyphens must not split them.
+    .replace(/-/g, '')
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .split(' ')
+    .filter((word) => word.length > 1 && !['and', 'the', 'of', 'for', 'with'].includes(word))
+    .join(' ');
+  const offerByTitle = new Map();
+  for (const offer of rows) {
+    const exact = String(offer.title || '').toLowerCase();
+    if (exact) offerByTitle.set(exact, offer);
+    const loose = normalise(offer.title);
+    if (loose && !offerByTitle.has(loose)) offerByTitle.set(loose, offer);
+  }
   for (const capture of groupCaptures) {
-    const offer = offerByTitle.get(String(capture.title || '').toLowerCase());
+    const offer = offerByTitle.get(String(capture.title || '').toLowerCase()) || offerByTitle.get(normalise(capture.title));
     if (!offer || !offer.id) {
       // A paired role that is not an offer yet: the insert path needs a job id, which a pair link does not have.
       linkPlan.skipped.push({ title: capture.title, reason: 'no_offer_for_role' });

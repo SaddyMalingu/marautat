@@ -73,7 +73,9 @@ export function buildRunArgs({ relative, platform, tenantSlug, runId, limit, api
    * mailshot), and a run may turn it off with `detail.group === false`.
    */
   if (String(platform || '').toLowerCase() === 'micro1' && group !== false) {
-    args.push('--groups', '--group-size', '2', '--max-groups', String(Math.max(1, Number(maxGroups) || 5)));
+    // 12 pairs per run, not 5: the tenant's backlog is ~259 offers with no link, and each pair is one transaction with
+    // the popup (it closes on generate). More pairs per MoreLogin start is the cheapest throughput there is.
+    args.push('--groups', '--group-size', '2', '--max-groups', String(Math.min(25, Math.max(1, Number(maxGroups) || 12))));
   }
   return args;
 }
