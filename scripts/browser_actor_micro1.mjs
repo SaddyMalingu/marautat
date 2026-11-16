@@ -102,10 +102,14 @@ const agentMode = Boolean(agentApi && agentToken);
  * Group mode (2026-11-16): one link per PAIR of roles.
  *
  * Micro1 only mints a referral link when at least two roles are selected in its builder, so the per-role pass
- * that follows cannot produce an attributable link — it produces a healthy-looking run that pays nothing. With
- * `--groups`, the tested group engine runs first (popup → pair → link) and the per-role pass is skipped.
+ * that follows cannot produce an attributable link — it produces a healthy-looking run that pays nothing.
+ *
+ * It is therefore the default rather than a flag: a run that pairs nothing has nothing to sell, and making the
+ * payable path the opt-in one is how months of single-role runs happened. `--groups` is still accepted (the
+ * portal passes it), and `--per-role` restores the old behaviour for the diagnostic case where job ids matter
+ * more than links.
  */
-const groupMode = flag('groups', null) !== null;
+const groupMode = flag('per-role', null) === null;
 const groupSize = Math.max(2, Number(flag('group-size', 2)) || 2);
 const maxGroups = Math.max(1, Number(flag('max-groups', 5)) || 5);
 
@@ -403,8 +407,73 @@ async function runCapture({ existingOffers = [], identity = null } = {}) {
     console.error(`reading cards ${skip + 1}..${skip + window.length}`);
     runState.total = window.length;
 
+    // ---- Pass 0: grouped links (2026-11-16) ------------------------------------
+    //
+    // Micro1 mints a referral link only when two or more roles are selected together, so the per-role pass
+    // cannot attribute a click at all — it produced runs that looked healthy and paid nothing. With `--groups`
+    // the pairing engine runs first, related roles only, and its link is attached to each role it covers.
+    let groupedLinks = new Map();
+    if (groupMode) {
+      const engine = await captureGroupsOnPage({
+        evaluateJson,
+        host,
+        port,
+        size: groupSize,
+        maxGroups,
+        // Roles this tenant already owns are not regrouped: a group spent on a role already linked earns nothing.
+        alreadyGrouped: existingOffers.map((offer) => offer.title).filter(Boolean),
+        allowMixed: flag('group-mixed', null) !== null,
+        log: (line) => console.error(line)
+      }).catch((error) => ({ ok: false, reason: `group_error:${error?.message || error}`, captures: [], failures: [], skipped: [] }));
+
+      if (engine.ok) {
+        console.error(`group pass: ${engine.captures.length} role(s) linked across ${engine.groups || 0} pair(s)`);
+      } else {
+        console.error(`group pass stopped — ${engine.reason}`);
+      }
+      for (const failure of engine.failures || []) {
+        console.error(`  group ${failure.groupId}: ${failure.reason} — ${(failure.titles || []).join(' + ')}`);
+      }
+      for (const single of engine.skipped || []) {
+        console.error(`  no related partner: ${String(single.title).slice(0, 60)} (${single.reason})`);
+      }
+      groupedLinks = new Map((engine.captures || []).map((c) => [String(c.title).toLowerCase(), c]));
+    }
+
     // ---- Pass 1: the referral link for each card -------------------------------
     for (const item of window) {
+      const pair = groupedLinks.get(String(item.title || '').toLowerCase());
+      if (pair) {
+        // One URL covers the whole pair — micro1's own model — so both roles carry the same link and the
+        // partner is recorded with it, which is what makes the recommendation look deliberate.
+        const pairJobId = (String(pair.referralUrl || '').match(/\/post\/([0-9a-f-]{16,})/i) || [])[1] || null;
+        captures.push({
+          ...item,
+          referralUrl: pair.referralUrl,
+          jobId: pairJobId,
+          externalId: pairJobId ? `micro1:${pairJobId}` : (item.externalId || null),
+          url: pairJobId ? micro1JobUrl(pairJobId) : item.url,
+          reason: null,
+          groupId: pair.groupId,
+          sharedWith: pair.sharedWith,
+          attribution: pair.attribution
+        });
+        runState.done += 1;
+        runState.ok += 1;
+        console.error(`[${item.index}] GROUP ${pair.groupId} — ${String(item.title).slice(0, 60)} (with ${(pair.sharedWith || []).join(' + ')})`);
+        await beatRun();
+        continue;
+      }
+      if (groupMode) {
+        // No related role to pair with, and micro1 will not mint a link for one role. Say so rather than
+        // hunting a link that does not exist, and never pair it with an unrelated role to make the number look better.
+        captures.push({ ...item, referralUrl: null, jobId: null, reason: 'no_related_partner' });
+        runState.done += 1;
+        runState.failed += 1;
+        console.error(`[${item.index}] skipped — no related role to pair with`);
+        await beatRun();
+        continue;
+      }
       const capture = { ...item, referralUrl: null, jobId: null, reason: null };
       try {
         // Close whatever the previous role opened. The share popover renders inside the

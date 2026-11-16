@@ -498,6 +498,36 @@ export function readGeneratedLinkExpr() {
  * verified. That is exactly how months of single-role links produced zero attribution, so it is a
  * hard failure here — never a silent success.
  */
+/**
+ * Does this link carry attribution? (2026-11-16)
+ *
+ * The tenant's complaint was precise: a group link must *display accreditation when clicked*. A URL that points
+ * at micro1 without a referral/affiliate parameter is a valid-looking link that credits nobody — the same shape
+ * of failure as the single-role links that produced months of zero earnings. So attribution is checked before a
+ * capture is recorded, here in Node where it can be asserted, rather than inside the page expression.
+ *
+ * `unknown` is honest rather than optimistic: an unrecognised query parameter may well be the referral code, and
+ * refusing those would throw away good links on a guess. A bare URL with no query at all cannot be attribution.
+ *
+ * @returns {'param'|'path'|'unknown'|'none'}
+ */
+export function referralAttribution(rawUrl) {
+  const url = String(rawUrl == null ? '' : rawUrl).trim();
+  if (!url) return 'none';
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return 'none';
+  }
+  const known = /^(referral|referral_?code|ref|ref_?code|code|aff|affiliate|affiliate_?id|invite|invite_?code|token|via|src|utm_source)$/i;
+  const keys = Array.from(parsed.searchParams.keys());
+  if (keys.some((key) => known.test(key))) return 'param';
+  if (keys.length) return 'unknown';
+  if (/\/(r|ref|invite|i)\/[A-Za-z0-9_-]{5,}/i.test(parsed.pathname)) return 'path';
+  return 'none';
+}
+
 export async function runReferralGroups({ evaluate, groups = [], waitForLinkMs = 6000, pollMs = 400, log = () => {} } = {}) {
   if (typeof evaluate !== 'function') throw new TypeError('runReferralGroups needs an evaluate() function');
   const captures = [];
@@ -557,13 +587,26 @@ export async function runReferralGroups({ evaluate, groups = [], waitForLinkMs =
       continue;
     }
 
-    log(`link captured via ${link.strategy} for ${titles.length} role(s)`);
+    // A link with no attribution parameter credits nobody: recording it would recreate the very failure this
+    // whole exercise exists to fix (links that look fine and earn nothing).
+    const attribution = referralAttribution(link.url);
+    if (attribution === 'none') {
+      failures.push({ groupId, reason: 'link_without_attribution', titles, referralUrl: link.url });
+      log(`group ${groupId}: link carries no attribution parameter — not recorded`);
+      continue;
+    }
+    if (attribution === 'unknown') {
+      log(`group ${groupId}: link attribution is an unrecognised parameter — recorded, but confirm a click credits the tenant`);
+    }
+
+    log(`link captured via ${link.strategy} for ${titles.length} role(s) (attribution: ${attribution})`);
     for (const title of titles) {
       captures.push({
         title,
         groupId,
         referralUrl: link.url,
         strategy: link.strategy,
+        attribution,
         // The same URL on both roles is micro1's own model, so it is recorded rather than deduped.
         sharedWith: titles.filter((other) => other !== title)
       });
@@ -600,6 +643,7 @@ export async function captureGroupsOnPage({
   alreadyGrouped = [],
   allowMixed = false,
   waitForLinkMs = 6000,
+  openWaitMs = 4000,
   log = () => {}
 } = {}) {
   if (typeof evaluateJson !== 'function') throw new TypeError('captureGroupsOnPage needs evaluateJson()');
@@ -613,11 +657,25 @@ export async function captureGroupsOnPage({
     if (!opened?.ok) {
       return { ok: false, reason: `not_on_builder:${page} (${opened?.reason || 'open_failed'})`, cards: 0, groups: 0, captures: [], failures: [], skipped: [] };
     }
-    await new Promise((r) => setTimeout(r, 600));
-    const again = await evalExpr(parkedSurveyExpr()).catch(() => null);
-    page = again?.page || 'unknown';
+    // Say what was actually clicked. A wrong target used to look like a slow page: the log claimed the modal
+    // opened and the run then failed somewhere else, which is how a click on the search box went unnoticed.
+    log(`builder entry: clicked <${opened.tag}${opened.role ? ` role=${opened.role}` : ''}> "${String(opened.label || '').slice(0, 60)}" (${opened.candidates || 1} candidate(s))`);
+
+    // Wait for the modal by watching the page, not by sleeping a guessed amount.
+    const openDeadline = Date.now() + Math.max(500, Number(openWaitMs) || 4000);
+    for (;;) {
+      const again = await evalExpr(parkedSurveyExpr()).catch(() => null);
+      page = again?.page || 'unknown';
+      if (page === 'builder' || Date.now() >= openDeadline) break;
+      await new Promise((r) => setTimeout(r, 400));
+    }
     if (page !== 'builder') {
-      return { ok: false, reason: `not_on_builder:${page}`, cards: 0, groups: 0, captures: [], failures: [], skipped: [] };
+      return {
+        ok: false,
+        // A named reason with the label attached: the next run says "the click went somewhere else".
+        reason: `builder_did_not_open:${page} after clicking "${String(opened.label || '').slice(0, 40)}"`,
+        cards: 0, groups: 0, captures: [], failures: [], skipped: []
+      };
     }
     log('builder modal opened');
   }
@@ -668,14 +726,60 @@ export function openBuilderExpr() {
   const boxes = document.querySelectorAll('input[type="checkbox"]').length;
   const cards = document.querySelectorAll('${MICRO1_CARD}').length;
   if (boxes >= 2 && cards >= 2) return JSON.stringify({ ok: true, alreadyOpen: true, boxes, cards });
-  const button = Array.from(document.querySelectorAll('button, [role="button"], a')).find((el) =>
-    /link with specific|specific expert|select the opportunit/i.test(clean(el.innerText || el.textContent)));
-  if (!button) return JSON.stringify({ ok: false, reason: 'no_builder_entry', boxes, cards });
+  // The failure this guards against, seen live on 2026-11-16: the first element whose *innerText* mentioned the
+  // builder was a wrapper that contained the referral panel — tab label, copy, and the search input. Clicking it
+  // focused the search field, so the runner sat in a search box while the log said it had opened the builder.
+  // Two rules follow: never pick something that wraps a field, and prefer the smallest text (the leaf is the tab).
+  const wrapsField = (el) => !!el.querySelector('input, textarea, select, [role="searchbox"], [contenteditable="true"]');
+  const matches = (el) => /link with specific|specific expert|select the opportunit/i.test(clean(el.innerText || el.textContent));
+  const candidates = Array.from(document.querySelectorAll('button, [role="button"], [role="tab"], a, [data-testid]'))
+    .filter((el) => matches(el) && !wrapsField(el));
+  if (!candidates.length) {
+    const wrapped = Array.from(document.querySelectorAll('button, [role="button"], [role="tab"], a')).some(matches);
+    return JSON.stringify({ ok: false, reason: wrapped ? 'entry_wraps_a_field' : 'no_builder_entry', boxes, cards });
+  }
+  const score = (el) => {
+    const text = clean(el.innerText || el.textContent);
+    const role = (el.getAttribute('role') || '').toLowerCase();
+    let s = text.length;
+    if (/^link with specific/i.test(text)) s -= 40;
+    if (/specific expert opportunit/i.test(text)) s -= 20;
+    if (role === 'tab') s -= 25;
+    if (el.getAttribute('aria-selected')) s -= 10;
+    if (el.disabled) s += 100;
+    return s;
+  };
+  const button = candidates.sort((a, b) => score(a) - score(b))[0];
   const label = clean(button.innerText || button.textContent).slice(0, 120);
-  if (button.disabled) return JSON.stringify({ ok: false, reason: 'builder_entry_disabled', label });
+  if (button.disabled) return JSON.stringify({ ok: false, reason: 'builder_entry_disabled', label, boxes, cards });
   try { button.scrollIntoView({ block: 'center' }); } catch (e) {}
+
+  // Some tabs on this build are React components that ignore .click() and only act on the pointer sequence,
+  // so send both rather than betting on one.
+  const rect = button.getBoundingClientRect();
+  const at = {
+    clientX: rect.left + rect.width / 2,
+    clientY: rect.top + rect.height / 2,
+    bubbles: true,
+    cancelable: true,
+    button: 0
+  };
+  try {
+    for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup']) {
+      button.dispatchEvent(new (type.startsWith('pointer') ? PointerEvent : MouseEvent)(type, at));
+    }
+  } catch (e) {}
   button.click();
-  return JSON.stringify({ ok: true, clicked: true, label });
+
+  return JSON.stringify({
+    ok: true,
+    clicked: true,
+    label,
+    tag: button.tagName.toLowerCase(),
+    role: button.getAttribute('role') || undefined,
+    textLen: label.length,
+    candidates: candidates.length
+  });
 })()`;
 }
 

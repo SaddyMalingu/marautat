@@ -502,9 +502,12 @@ const ROLES = [
     { title: 'Tutor D', family: 'tutor', referValue: 25, payMax: 10 }
   ];
 
-  const onListing = await captureGroupsOnPage({ ...fakePage({ page: 'listing', cards }), size: 2, maxGroups: 5 });
+  const onListing = await captureGroupsOnPage({ ...fakePage({ page: 'listing', cards }), size: 2, maxGroups: 5, openWaitMs: 60 });
   eq('on the listing it refuses instead of pretending', onListing.ok, false);
-  eq('and says which page it saw', onListing.reason, 'not_on_builder:listing');
+  // The reason names the click target, because a click that lands somewhere else (the search box, live on
+  // 2026-11-16) used to read as a slow page rather than a wrong target.
+  ok('and says which page it saw', /builder_did_not_open:listing/.test(onListing.reason || ''), onListing.reason);
+  ok('and names what it clicked', /after clicking/.test(onListing.reason || ''), onListing.reason);
   eq('having captured nothing', onListing.captures.length, 0);
 
   // The real page: the roles become selectable only after the popup is opened. One click, then pairs.
@@ -532,6 +535,58 @@ const ROLES = [
   ok('and names the stage that failed', /selection/i.test(unselectable.reason || ''), unselectable.reason);
 }
 
+
+// ─── Related roles only, and links that credit somebody (2026-11-16) ─────────────────────────
+{
+  const { planReferralGroups, referralAttribution } = await import('../utils/browserActor/tasks/micro1Referrals.js');
+
+  // The tenant's own words: grouping must not seem spammy. Two unrelated roles in one recommendation do.
+  const unrelated = planReferralGroups([
+    { title: 'Legal Expert (Employment)', family: 'legal', referValue: 90, payMax: 40 },
+    { title: 'Game Developer (Godot)', family: 'game', referValue: 80, payMax: 35 }
+  ], { size: 2, maxGroups: 5, allowMixed: false });
+  eq('unrelated singletons are not paired', unrelated.groups.length, 0);
+  eq('and both are reported unpairable', unrelated.skipped.length, 2);
+  ok('with a reason a tenant can read', /partner/i.test(unrelated.skipped[0].reason || ''), unrelated.skipped[0].reason);
+
+  const related = planReferralGroups([
+    { title: 'Legal Expert (Employment)', family: 'legal', referValue: 90, payMax: 40 },
+    { title: 'Legal Expert (Antitrust)', family: 'legal', referValue: 85, payMax: 38 },
+    { title: 'Game Developer (Godot)', family: 'game', referValue: 80, payMax: 35 }
+  ], { size: 2, maxGroups: 5, allowMixed: false });
+  eq('a related pair still forms', related.groups.length, 1);
+  eq('from the two legal roles', related.groups[0].family, 'legal');
+  eq('and the odd one out waits instead of being forced in', related.skipped.length, 1);
+
+  // Attribution: what makes a click credit the tenant at all.
+  eq('a referral parameter counts', referralAttribution('https://jobs.micro1.ai/post/abc?referralCode=42'), 'param');
+  eq('an invite path counts', referralAttribution('https://micro1.ai/invite/abc123xyz'), 'path');
+  eq('an unrecognised query is kept but flagged', referralAttribution('https://micro1.ai/post/abc?foo=1'), 'unknown');
+  eq('a bare link credits nobody', referralAttribution('https://jobs.micro1.ai/post/abc123'), 'none');
+  eq('and nothing is not a link', referralAttribution(''), 'none');
+}
+
+{
+  // A link that credits nobody is refused by the engine rather than stored: that is the failure that cost months.
+  const { runReferralGroups } = await import('../utils/browserActor/tasks/micro1Referrals.js');
+  const bare = 'https://jobs.micro1.ai/post/abc123';
+  const evaluate = async (expression) => (/m1clip|data-clipboard|input,textarea/.test(String(expression))
+    ? { ok: true, url: bare, strategy: 'clipboard' }
+    : { ok: true, selected: ['Legal A', 'Legal B'], counter: '2 selected' });
+  const run = await runReferralGroups({ evaluate, groups: [{ title: 'legal pair', members: ['Legal A', 'Legal B'] }], waitForLinkMs: 20, pollMs: 5 });
+  eq('a link without attribution is a failure', run.failures[0]?.reason, 'link_without_attribution');
+  eq('and is not published', run.captures.length, 0);
+}
+
+{
+  // The live run of 2026-11-16 never called the group engine at all: the flags existed and nothing used them.
+  const fs = await import('node:fs');
+  const src = fs.readFileSync(new URL('../scripts/browser_actor_micro1.mjs', import.meta.url), 'utf8');
+  ok('the runner actually calls the group engine', /captureGroupsOnPage\(\{/.test(src));
+  ok('pairing is the default, with --per-role as the opt-out', /flag\('per-role'/.test(src));
+  ok('roles with no related partner are named, not silently dropped', /no_related_partner/.test(src));
+  ok('a pair shares one link and says who with', /sharedWith: pair\.sharedWith/.test(src));
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
