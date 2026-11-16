@@ -629,7 +629,7 @@ export function referralAttribution(rawUrl) {
   return 'none';
 }
 
-export async function runReferralGroups({ evaluate, groups = [], waitForLinkMs = 6000, pollMs = 400, log = () => {} } = {}) {
+export async function runReferralGroups({ evaluate, groups = [], waitForLinkMs = 6000, pollMs = 400, ensureBuilder = null, log = () => {} } = {}) {
   if (typeof evaluate !== 'function') throw new TypeError('runReferralGroups needs an evaluate() function');
   const captures = [];
   const failures = [];
@@ -654,6 +654,17 @@ export async function runReferralGroups({ evaluate, groups = [], waitForLinkMs =
     }
 
     log(`group ${groupId}: clearing, then selecting ${titles.length} roles`);
+    // The popup closes after it generates a link, so every group after the first would tick cards on the listing
+    // page instead — which is exactly what happened on 2026-11-16: group 1 captured, group 2 read `counter 2→?`,
+    // group 3 found no action button at all. Re-open it before touching anything.
+    if (typeof ensureBuilder === 'function') {
+      const ready = await ensureBuilder().catch((error) => ({ ok: false, reason: error?.message || 'ensure_failed' }));
+      if (!ready?.ok) {
+        failures.push({ groupId, reason: `builder_lost:${ready?.reason || 'unknown'}`, titles });
+        log(`group ${groupId}: the popup could not be re-opened (${ready?.reason || 'unknown'}) — stopping`);
+        break;
+      }
+    }
     await evaluate(clearSelectionExpr());
 
     const selection = await evaluate(selectRolesExpr({ titles }));
@@ -756,27 +767,26 @@ export async function captureGroupsOnPage({
   if (typeof evaluateJson !== 'function') throw new TypeError('captureGroupsOnPage needs evaluateJson()');
   const evalExpr = (expression) => evaluateJson({ host, port, expression });
 
-  const parked = await evalExpr(parkedSurveyExpr()).catch(() => null);
-  let page = parked?.page || 'unknown';
+  /**
+   * Open the popup, one stage per attempt, and report what it clicked.
+   *
+   * Called once to start and again before every group: the popup closes when it generates a link, so without this
+   * groups two and three ticked cards on the listing page (2026-11-16 — `counter 2→?`, then `no_action_button`).
+   */
   let controls = [];
   let lastEntry = null;
-  if (page !== 'builder') {
-    // The modal has to be opened first: without it the page has no checkboxes at all. It can take two attempts,
-    // because the entry pill lives on the referral dashboard while the run starts on the listing.
+  const openBuilder = async () => {
+    let page = (await evalExpr(parkedSurveyExpr()).catch(() => null))?.page || 'unknown';
+    if (page === 'builder') return { ok: true, already: true, page };
+    // Each attempt is one stage of the real path: walk to the dashboard → click "Your referral link" → click
+    // "Link with specific expert opportunities" → the checkbox modal. Naming the stage is what makes a stop
+    // readable ("clicked the pill, never got a menu") instead of a timeout.
     for (let attempt = 1; attempt <= 4 && page !== 'builder'; attempt += 1) {
       const opened = await evalExpr(openBuilderExpr()).catch((error) => ({ ok: false, reason: error?.message }));
       if (!opened?.ok) {
-        return {
-          ok: false,
-          reason: `not_on_builder:${page} (${opened?.reason || 'open_failed'})`,
-          // The page's own controls, so the next attempt is a selector fix rather than a screenshot.
-          controls: opened?.controls || [],
-          cards: 0, groups: 0, captures: [], failures: [], skipped: []
-        };
+        if (opened?.controls) controls = opened.controls;
+        return { ok: false, reason: `${page}:${opened?.reason || 'open_failed'}`, controls, page };
       }
-      // Each attempt is one stage of the real path: walk to the dashboard → click "Your referral link" → click
-      // "Link with specific expert opportunities" → the checkbox modal. Naming the stage is what makes a stop
-      // readable ("clicked the pill, never got a menu") instead of a timeout.
       log(`builder entry [${attempt}] stage=${opened.stage || (opened.navigated ? 'nav' : 'entry')}: ${opened.navigated ? 'walked to the referral page via' : 'clicked'} "${String(opened.label || '').slice(0, 60)}"`);
       lastEntry = String(opened.label || '').slice(0, 40);
       if (Array.isArray(opened.controls) && opened.controls.length) controls = opened.controls;
@@ -786,24 +796,31 @@ export async function captureGroupsOnPage({
       const budget = Number(opened.waitMs) || (opened.navigated ? Math.max(3_000, openWaitMs * 2) : Math.max(500, Number(openWaitMs) || 4_000));
       const openDeadline = Date.now() + budget;
       for (;;) {
-        const again = await evalExpr(parkedSurveyExpr()).catch(() => null);
-        page = again?.page || 'unknown';
+        page = (await evalExpr(parkedSurveyExpr()).catch(() => null))?.page || 'unknown';
         if (page === 'builder' || Date.now() >= openDeadline) break;
         await new Promise((r) => setTimeout(r, 400));
       }
       if (!page || page === 'unknown') page = opened.navigated ? 'listing' : page;
     }
-    if (page !== 'builder') {
-      return {
-        ok: false,
-        // A named reason with the label attached: the next run says "the click went somewhere else".
-        reason: `builder_did_not_open:${page} after clicking "${lastEntry || 'the entry'}"`,
-        controls,
-        cards: 0, groups: 0, captures: [], failures: [], skipped: []
-      };
-    }
-    log('builder modal opened');
+    return {
+      ok: page === 'builder',
+      reason: page === 'builder' ? undefined : `builder_did_not_open:${page} after clicking "${lastEntry || 'the entry'}"`,
+      page,
+      controls
+    };
+  };
+
+  const openedAtStart = await openBuilder();
+  if (!openedAtStart.ok) {
+    return {
+      ok: false,
+      // Named with the label attached, so the next run says "the click went somewhere else" rather than timing out.
+      reason: openedAtStart.reason,
+      controls: openedAtStart.controls || [],
+      cards: 0, groups: 0, captures: [], failures: [], skipped: []
+    };
   }
+  log('builder modal opened');
 
   const read = await evalExpr(readAffiliateExpr({ limit: 240 })).catch((error) => ({ ok: false, reason: error?.message }));
   // Plan from PARSED cards, never the raw read. parseAffiliateCards assigns the family (so only related roles pair),
@@ -824,8 +841,10 @@ export async function captureGroupsOnPage({
     };
   }
   if (parsed.duplicates) log(`builder: ${parsed.duplicates} duplicate card(s) collapsed before pairing`);
-  const unselectable = cards.filter((card) => card.selectable === false).length;
-  if (unselectable) log(`builder: ${unselectable} of ${cards.length} card(s) carry no checkbox and cannot be ticked`);
+  // Informational only — pairing no longer gates on it. The flag is a guess from markup, and a card without an input
+  // is still tickable through the ladder (the tick finds the square by geometry).
+  const unread = cards.filter((card) => card.selectable === false).length;
+  if (unread) log(`builder: ${unread} of ${cards.length} card(s) expose no obvious control — the tick will locate it`);
 
   // Every card in the popup is tickable — the reader's `selectable` flag is a guess made from markup, and gating on it
   // paired only 12 of 70 cards (2026-11-16). So pairing covers every parsed card, and a role that truly cannot be
@@ -836,7 +855,7 @@ export async function captureGroupsOnPage({
   }
   log(`groups: ${plan.groups.length} pair(s) from ${cards.length} builder card(s)`);
 
-  const run = await runReferralGroups({ evaluate: evalExpr, groups: plan.groups, waitForLinkMs, log });
+  const run = await runReferralGroups({ evaluate: evalExpr, groups: plan.groups, waitForLinkMs, ensureBuilder: openBuilder, log });
   return {
     ok: run.ok,
     reason: run.ok ? undefined : (run.failures[0]?.reason || 'group_failed'),

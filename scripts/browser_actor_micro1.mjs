@@ -728,7 +728,12 @@ async function reportAgentResult({ captures, listing }) {
   // Chunked for the same reason the Turing runner chunks: one request per 20 roles keeps the body
   // far below any server limit, and a 413 splits rather than loses the batch.
   const CHUNK = 20;
-  const applied = { planned: 0, inserted: 0, withLinks: 0, skipped: [], verification: [], coverage: null, error: null };
+  const applied = {
+    planned: 0, inserted: 0, withLinks: 0, skipped: [], verification: [], coverage: null, error: null,
+    // The other half of a capture: existing offers given their link or body. Without this the run printed "imported 0"
+    // while two links had been attached — a summary that reads like failure after success (2026-11-16).
+    linksUpdated: 0, descriptionsUpdated: 0, existingSkipped: []
+  };
   for (let index = 0; index < captures.length; index += CHUNK) {
     const chunk = captures.slice(index, index + CHUNK);
     const res = await agentCall('POST', `/api/agent/runs/${encodeURIComponent(String(runIdFlag))}/result`, {
@@ -761,6 +766,9 @@ async function reportAgentResult({ captures, listing }) {
     applied.planned += body.planned || 0;
     applied.inserted += body.inserted || 0;
     applied.withLinks += body.withLinks || 0;
+    applied.linksUpdated += body.existing?.linksUpdated || 0;
+    applied.descriptionsUpdated += body.existing?.descriptionsUpdated || 0;
+    applied.existingSkipped.push(...(body.existing?.linkSkipped || []));
     applied.skipped.push(...(body.skipped || []));
     applied.verification.push(...(body.verification || []));
     applied.coverage = res.data?.coverage || applied.coverage;
@@ -798,8 +806,14 @@ async function main() {
       apply
     });
   if (applied.error) console.error(`insert failed: ${applied.error}`);
-  if (apply) console.error(`imported ${applied.inserted} draft offers (${applied.withLinks} with a verified link)`);
-  else console.error(`plan only â€” ${applied.planned} new offers would be created; re-run with --apply`);
+  if (apply) {
+    // Two outcomes, both reported: new offers, and existing offers that just received their link. Printing only the
+    // insert count told a successful run it had imported nothing (2026-11-16).
+    console.error(`imported ${applied.inserted} draft offer(s) (${applied.withLinks} with a verified link) Â· ${applied.linksUpdated} existing offer(s) given their link`);
+    for (const skipped of (applied.existingSkipped || []).slice(0, 8)) {
+      console.error(`  link skipped — ${String(skipped.title).slice(0, 50)}: ${skipped.reason}`);
+    }
+  } else console.error(`plan only â€” ${applied.planned} new offers would be created; re-run with --apply`);
 
   const coverage = agentMode ? applied.coverage : await readCoverage(supabase, tenantRow.id);
   if (coverage) {
@@ -816,8 +830,14 @@ async function main() {
         failed: 0,
         total: captures.length
       }),
-      message: `${applied.inserted || 0} imported of ${captures.length} captured, ${applied.withLinks || withLink.length} with a verified link`.slice(0, 300),
-      detail: { captured: captures.length, links: withLink.length, inserted: applied.inserted || 0 }
+      message: `${applied.inserted || 0} imported, ${applied.linksUpdated || 0} existing offer(s) linked of ${captures.length} captured`.slice(0, 300),
+      detail: {
+        captured: captures.length,
+        links: withLink.length,
+        inserted: applied.inserted || 0,
+        linksUpdated: applied.linksUpdated || 0,
+        groupLinks: withLink.filter((capture) => capture.groupId).length
+      }
     });
   }
 

@@ -473,18 +473,22 @@ const ROLES = [
   // Answer by *what was asked*, not by position: an aborted group skips calls, so counting desyncs.
   // The selection expression embeds the group's titles, so match its stable prefix instead.
   const selectPrefix = selectRolesExpr({ titles: ['__probe__'] }).split('__probe__')[0];
-  const fakePage = ({ page = 'builder', opensTo = null, opensAfter = 1, entry = null, cards = [], selectionOk = true, link = 'https://jobs.micro1.ai/post/abc123?referralCode=42' } = {}) => {
+  const fakePage = ({ page = 'builder', opensTo = null, opensAfter = 1, entry = null, cards = [], selectionOk = true, closeAfterCapture = false, link = 'https://jobs.micro1.ai/post/abc123?referralCode=42' } = {}) => {
     let clicks = 0;
     let entryIndex = 0;
+    // The real popup closes once it has generated a link, which is what left groups two and three clicking cards on
+    // the listing page (2026-11-16).
+    let closed = false;
     const evaluateJson = async ({ expression }) => {
       if (expression === parkedSurveyExpr()) {
         // How many entry clicks it takes before the builder exists: one for the pill on the referral dashboard,
         // two when the engine first has to walk from the listing to that dashboard.
-        const seen = opensTo && clicks >= opensAfter ? opensTo : page;
+        const seen = closed ? 'listing' : (opensTo && clicks >= opensAfter ? opensTo : page);
         return { ok: true, page: seen, boxes: seen === 'builder' ? 4 : 0, cards: seen === 'builder' ? cards.length : 0 };
       }
       if (expression === openBuilderExpr()) {
         clicks += 1;
+        closed = false;
         if (Array.isArray(entry)) return entry[Math.min(entryIndex++, entry.length - 1)];
         return entry || { ok: true, clicked: true, navigated: false, label: 'Your referral link', candidates: 2 };
       }
@@ -495,7 +499,10 @@ const ROLES = [
         return selectionOk ? { ok: true, selected: [] } : { ok: false, reason: 'selection_not_verified' };
       }
       if (expression === clickActionExpr()) return { ok: true };
-      if (expression === readGeneratedLinkExpr()) return { ok: true, url: link, strategy: 'clipboard' };
+      if (expression === readGeneratedLinkExpr()) {
+        if (closeAfterCapture) closed = true;
+        return { ok: true, url: link, strategy: 'clipboard' };
+      }
       return { ok: true, url: link, strategy: 'clipboard' };
     };
     return { evaluateJson };
@@ -613,6 +620,18 @@ const ROLES = [
     maxGroups: 5
   });
   eq('a card the reader cannot classify is still paired', unclassified.groups, 2);
+
+  // The popup closes once it generates a link. Every later group must re-open it, or it ticks cards on the listing
+  // page: the live run captured pair 1, then read `counter 2→?`, then found no action button at all (2026-11-16).
+  const reopened = await captureGroupsOnPage({
+    ...fakePage({ cards, closeAfterCapture: true }),
+    size: 2,
+    maxGroups: 5
+  });
+  eq('a pair that closes the popup does not stop the next pair', reopened.ok, true);
+  eq('both pairs captured', reopened.groups, 2);
+  eq('with a link on all four roles', reopened.captures.length, 4);
+  eq('and one re-open per pair after the first', reopened.failures.length, 0);
 }
 
 
@@ -678,7 +697,7 @@ const ROLES = [
   // 67 imported roles were excluded from pairing because they were imported — those were the ones needing links.
   ok('roles imported WITHOUT a link stay pairable', /existingOffers\.filter\(\(offer\) => offer\.referral_url\)/.test(src));
   ok('pairs outside the run window still get their link', /outside this run's window/.test(src));
-  ok('a page with no entry reports its own controls', /controls: opened\?\.controls/.test(moduleSrc));
+  ok('a page with no entry reports its own controls', /controls: openedAtStart\.controls/.test(moduleSrc));
   // The select expressions are async; without awaitPromise CDP hands back a pending Promise, which deserialises to
   // undefined — every selection then "failed" while the page was never read (2026-11-16).
   ok('the runner awaits promises in the page', /awaitPromise: true/.test(src));
