@@ -111,13 +111,22 @@ export function sanitizeAgentCaptures(raw) {
     summary: clampText(item?.summary, 2000),
     rate: clampText(item?.rate, 80),
     reason: clampText(item?.reason, 120),
-    descriptionChars: Number.isFinite(Number(item?.descriptionChars)) ? Number(item.descriptionChars) : null
+    descriptionChars: Number.isFinite(Number(item?.descriptionChars)) ? Number(item.descriptionChars) : null,
+    // A group link (Micro1 pairs two roles into one URL) has no job id at all: the link belongs to the pair, not to
+    // one posting. Requiring an id here is what answered "no usable captures" to a run that had just minted four
+    // attributed links.
+    groupId: clampText(item?.groupId, 200),
+    sharedWith: Array.isArray(item?.sharedWith)
+      ? item.sharedWith.slice(0, 6).map((title) => clampText(title, 300)).filter(Boolean)
+      : [],
+    attribution: clampText(item?.attribution, 20)
   })).filter((item) => (
     // A capture is identified by its job id (Micro1) **or** its marketplace id (Turing:
-    // `turing:<slug>`). Requiring `jobId` silently dropped every Turing capture, and the route
-    // then answered "no usable captures" — which is exactly what the tenant saw on 2026-11-03:
-    // a run that captured 65 links and wrote nothing.
-    item.title && (item.jobId || item.externalId)
+    // `turing:<slug>`), or — for a grouped referral link — by the link itself.
+    // Requiring `jobId` silently dropped every Turing capture, and the route then answered
+    // "no usable captures" — which is exactly what the tenant saw on 2026-11-03: a run that
+    // captured 65 links and wrote nothing.
+    item.title && (item.jobId || item.externalId || item.referralUrl)
   ));
 }
 

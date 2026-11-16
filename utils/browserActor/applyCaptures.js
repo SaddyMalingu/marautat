@@ -20,6 +20,7 @@
  */
 import { judgeWorkerReportedTitle, resolveLinkVerdict, verifyReferralLink } from './referralVerify.js';
 import { planReferralBackfill } from './tasks/turingReferrals.js';
+import { referralAttribution } from './tasks/micro1Referrals.js';
 import { planDescriptionUpdates } from './enrichment.js';
 import { planOfferImport } from './offersImport.js';
 import { describeEnrichment } from './enrichment.js';
@@ -45,6 +46,27 @@ export async function applyCaptures({
   const verification = [];
   for (const capture of captures) {
     if (!capture.referralUrl) continue;
+    if (capture.groupId) {
+      // A pair link resolves to a LIST of roles, so title-matching it against one posting is the wrong test — it
+      // refused every group link as a mismatch on 2026-11-16. The evidence a group link has is different: the roles
+      // were ticked and the page's own counter confirmed them. What still must be checked is attribution, because a
+      // group URL without a referral code credits nobody.
+      const attribution = referralAttribution(capture.referralUrl);
+      verification.push({
+        title: capture.title,
+        jobId: capture.jobId,
+        referral_url: capture.referralUrl,
+        verdict: attribution === 'none' ? 'no_attribution' : 'group',
+        reason: `group link covers ${(capture.sharedWith || []).length + 1} role(s), ticked and confirmed on the page`,
+        source: 'group-selection',
+        resolvedTitle: null
+      });
+      if (attribution === 'none') {
+        capture.reason = 'link_without_attribution';
+        capture.referralUrl = null;
+      }
+      continue;
+    }
     const check = await verify({ url: capture.referralUrl, expectedTitle: capture.title });
     // New offers take the same decision as existing ones, including the browser's own title when
     // the server cannot read the page. A role page rendered late is not a wrong link.
@@ -168,9 +190,47 @@ export async function applyCaptures({
  */
 export async function applyCaptureUpdates({ supabase, offers = [], captures = [], verify = verifyReferralLink, apply = true } = {}) {
   const rows = Array.isArray(offers) ? offers : [];
-  const linkPlan = planReferralBackfill({ offers: rows, captures });
+  const allCaptures = Array.isArray(captures) ? captures : [];
+  // A paired link is handled directly, by title — not through the single-role planner. It lives on refer.micro1.ai and
+  // carries no job id, so the planner refuses it as `wrong_host` before any verification could happen. Its evidence is
+  // different too: the roles were ticked and the page's own counter confirmed them.
+  const groupCaptures = allCaptures.filter((capture) => capture && capture.groupId && capture.referralUrl);
+  const linkPlan = planReferralBackfill({
+    offers: rows,
+    captures: allCaptures.filter((capture) => !(capture && capture.groupId))
+  });
   const verification = [];
   const accepted = [];
+
+  const offerByTitle = new Map(rows.map((offer) => [String(offer.title || '').toLowerCase(), offer]));
+  for (const capture of groupCaptures) {
+    const offer = offerByTitle.get(String(capture.title || '').toLowerCase());
+    if (!offer || !offer.id) {
+      // A paired role that is not an offer yet: the insert path needs a job id, which a pair link does not have.
+      linkPlan.skipped.push({ title: capture.title, reason: 'no_offer_for_role' });
+      continue;
+    }
+    if (String(offer.referral_url || '').trim()) {
+      // Same rule as everywhere else: a link already attached by someone else is never overwritten.
+      linkPlan.skipped.push({ title: capture.title, reason: 'already_has_link' });
+      continue;
+    }
+    const attribution = referralAttribution(capture.referralUrl);
+    verification.push({
+      title: offer.title,
+      referral_url: capture.referralUrl,
+      verdict: attribution === 'none' ? 'no_attribution' : 'group',
+      reason: `paired with ${(capture.sharedWith || []).join(' + ') || 'another role'}`,
+      resolvedTitle: null,
+      source: 'group-selection'
+    });
+    if (attribution === 'none') {
+      linkPlan.skipped.push({ title: capture.title, reason: 'link_without_attribution' });
+      continue;
+    }
+    accepted.push({ id: offer.id, title: offer.title, referral_url: capture.referralUrl });
+  }
+
   for (const update of linkPlan.updates) {
     const check = await verify({ url: update.referral_url, expectedTitle: update.title });
     /**

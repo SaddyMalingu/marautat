@@ -719,5 +719,70 @@ const ROLES = [
   ok('the action button is never the header pill', /your referral link/i.test(mod.clickActionExpr()));
 }
 
+// ─── A group link has to survive the portal (2026-11-16) ─────────────────────────────────────
+//
+// The run minted four attributed links and the portal answered "no usable captures": the sanitizer required a job id,
+// and a paired link has none — it belongs to the pair, not to one posting.
+{
+  const { sanitizeAgentCaptures } = await import('../routes/agentRuns.js');
+  const kept = sanitizeAgentCaptures([{
+    title: 'Spanish Language Expert (LATAM)',
+    referralUrl: 'https://refer.micro1.ai/referral/jobs?referralCode=98fb722e&linkId=9c3cf025&utm_source=referral',
+    groupId: 'spanish pair',
+    sharedWith: ['Spanish Language Expert (Mexico)'],
+    attribution: 'param'
+  }]);
+  eq('a group capture with no job id survives sanitising', kept.length, 1);
+  eq('and keeps the pair it belongs to', kept[0].groupId, 'spanish pair');
+  eq('and its partner', kept[0].sharedWith[0], 'Spanish Language Expert (Mexico)');
+  eq('a capture with neither id nor link is still dropped', sanitizeAgentCaptures([{ title: 'lonely' }]).length, 0);
+  eq('and so is one with no title', sanitizeAgentCaptures([{ referralUrl: 'https://x.example' }]).length, 0);
+}
+
+{
+  const { applyCaptureUpdates } = await import('../utils/browserActor/applyCaptures.js');
+  const writes = [];
+  const supabase = {
+    from: () => ({
+      update: (row) => ({
+        eq: () => ({
+          is: () => ({
+            select: async () => { writes.push(row); return { data: [{ id: 'o1', title: 'x' }], error: null }; }
+          })
+        })
+      })
+    })
+  };
+  const offers = [{ id: 'o1', title: 'Spanish Language Expert (LATAM)', referral_url: null, external_id: null, description: null }];
+  let verifyCalls = 0;
+  const result = await applyCaptureUpdates({
+    supabase,
+    offers,
+    captures: [{
+      title: 'Spanish Language Expert (LATAM)',
+      referralUrl: 'https://refer.micro1.ai/referral/jobs?referralCode=abc&linkId=def',
+      groupId: 'spanish pair',
+      sharedWith: ['Spanish Language Expert (Mexico)']
+    }],
+    // A group link cannot pass this; if it is called at all, the group path was missed.
+    verify: async () => { verifyCalls += 1; return { ok: false, status: 0 }; }
+  });
+  eq('a group link is not title-verified', verifyCalls, 0);
+  eq('and is written onto the existing offer', result.links.updated, 1);
+  ok('with the URL exactly as captured', /referralCode=abc/.test(writes[0]?.referral_url || ''), writes[0]?.referral_url);
+  eq('and the verdict says why it was accepted', result.links.verification[0]?.verdict, 'group');
+
+  // Attribution is the check that still applies: a pair link with no code credits nobody.
+  const bare = await applyCaptureUpdates({
+    supabase,
+    offers,
+    apply: false,
+    captures: [{ title: 'Spanish Language Expert (LATAM)', referralUrl: 'https://refer.micro1.ai/referral/jobs', groupId: 'p' }],
+    verify: async () => ({ ok: false })
+  });
+  eq('a group link with no attribution is refused', bare.links.planned, 0);
+  ok('and says why', (bare.links.skipped || []).some((row) => /attribution/.test(row.reason || '')), JSON.stringify(bare.links.skipped));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

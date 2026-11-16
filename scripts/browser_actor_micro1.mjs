@@ -726,7 +726,12 @@ async function reportAgentResult({ captures, listing }) {
         rate: capture.rate,
         summary: capture.summary,
         reason: capture.reason,
-        descriptionChars: capture.descriptionChars
+        descriptionChars: capture.descriptionChars,
+        // The pair this link came from. Without these three the server cannot tell a group link — which resolves to
+        // a LIST of roles — from a single-role link, and refuses it as a title mismatch.
+        groupId: capture.groupId,
+        sharedWith: capture.sharedWith,
+        attribution: capture.attribution
       }))
     });
     if (!res.ok) {
