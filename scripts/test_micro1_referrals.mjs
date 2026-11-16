@@ -727,6 +727,19 @@ const ROLES = [
   eq('languages are languages', roleField('Spanish Language Expert (Mexico)'), 'language');
   eq('e-commerce data is commerce, not data engineering', roleField('E-commerce Data & Catalog Specialist'), 'commerce');
   eq('a commercial underwriter is finance', roleField('Senior Commercial Underwriter'), 'finance');
+  // The live catalogue's engineering titles, which the first taxonomy missed — and an unplaced title can never pair.
+  eq('hardware is engineering', roleField('Hardware Expert'), 'tech');
+  eq('aerodynamics is engineering', roleField('Aerodynamics Expert'), 'tech');
+  eq('STEM is engineering', roleField('STEM Expert'), 'tech');
+  eq('a PhysioNet competitor is engineering', roleField('PhysioNet Competitor (Biomedical Signal Processing & ML)'), 'tech');
+
+  const engineering = planReferralGroups([
+    { title: 'STEM Expert', referValue: 1000, payMax: 120 },
+    { title: 'Hardware Expert', referValue: 1000, payMax: 120 },
+    { title: 'Aerodynamics Expert', referValue: 1000, payMax: 120 }
+  ], { size: 2, maxGroups: 5, allowMixed: false });
+  ok('three singleton engineering roles still form a pair', engineering.groups.length >= 1, `${engineering.groups.length}`);
+  eq('through the field tier', engineering.groups[0].basis, 'field');
 
   // Two roles that a first-token family made strangers.
   const loose = planReferralGroups([

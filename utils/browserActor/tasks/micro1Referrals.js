@@ -62,7 +62,10 @@ const FIELD_RULES = [
   {
     id: 'tech',
     phrases: ['full stack', 'back end', 'front end', 'machine learning', 'deep learning', 'data science', 'site reliability', 'computer vision', 'natural language', 'prompt engineer'],
-    words: ['software', 'engineer', 'engineering', 'developer', 'backend', 'frontend', 'fullstack', 'stack', 'platform', 'infrastructure', 'infra', 'architect', 'devops', 'sre', 'mobile', 'android', 'ios', 'web', 'api', 'qa', 'tester', 'testing', 'unreal', 'unity', 'godot', 'game', 'graphics', 'compiler', 'cloud', 'embedded', 'machine', 'learning', 'ml', 'ai', 'llm', 'nlp', 'vision', 'researcher', 'scientist', 'annotation', 'annotator', 'prompt', 'evaluator', 'rlhf', 'model', 'data', 'analytics', 'database', 'sql', 'pipeline', 'mlops', 'bioinformatics', 'computational', 'systems', 'security', 'technical']
+    // Breadth matters more than precision here: a role that matches no field can never be paired, and on Micro1 an
+    // unpaired role can never carry a payable link. The live catalogue's engineering titles are wide — hardware,
+    // aerodynamics, STEM, robotics — and every one of them is the same field to a reader.
+    words: ['software', 'engineer', 'engineering', 'developer', 'backend', 'frontend', 'fullstack', 'stack', 'platform', 'infrastructure', 'infra', 'architect', 'devops', 'sre', 'mobile', 'android', 'ios', 'web', 'api', 'qa', 'tester', 'testing', 'unreal', 'unity', 'godot', 'game', 'graphics', 'compiler', 'cloud', 'embedded', 'machine', 'learning', 'ml', 'ai', 'llm', 'nlp', 'vision', 'researcher', 'scientist', 'annotation', 'annotator', 'prompt', 'evaluator', 'rlhf', 'model', 'data', 'analytics', 'database', 'sql', 'pipeline', 'mlops', 'bioinformatics', 'computational', 'systems', 'security', 'technical', 'hardware', 'mechanical', 'aerodynamics', 'aerospace', 'robotics', 'electronics', 'electrical', 'civil', 'chemical', 'structural', 'manufacturing', 'metrology', 'simulation', 'stem', 'physics', 'chemistry', 'biology', 'biomedical', 'signal', 'quantum', 'optics', 'thermodynamics', 'fluid', 'cad', 'fpga', 'firmware', 'networking', 'cybersecurity']
   },
   {
     id: 'legal',
@@ -1051,6 +1054,15 @@ export async function captureGroupsOnPage({
   // ticked fails loudly by name in the tick ladder instead of being silently dropped here.
   const plan = planReferralGroups(knownCards, { size, maxGroups, alreadyGrouped, allowMixed });
   if (!plan.groups.length) {
+    // A zero-pair run has to explain itself: is every field a singleton, or did the classifier fail to place these
+    // titles? One line answers that, and it is the difference between "nothing to do" and "a gap to fix".
+    const spread = new Map();
+    for (const card of knownCards) {
+      const field = card.field || roleField(card.title) || 'unclassified';
+      spread.set(field, (spread.get(field) || 0) + 1);
+    }
+    const shape = [...spread.entries()].sort((a, b) => b[1] - a[1]).map(([field, count]) => `${field} ${count}`).join(', ');
+    log(`no pair available — ${knownCards.length} held card(s) by field: ${shape || 'none'}`);
     return { ok: false, reason: 'no_pairable_roles', cards: knownCards.length, groups: 0, captures: [], failures: [], skipped: plan.skipped };
   }
   const byBasis = plan.groups.reduce((acc, group) => {

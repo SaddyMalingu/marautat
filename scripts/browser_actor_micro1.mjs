@@ -436,6 +436,7 @@ async function runCapture({ existingOffers = [], identity = null } = {}) {
     // cannot attribute a click at all — it produced runs that looked healthy and paid nothing. With `--groups`
     // the pairing engine runs first, related roles only, and its link is attached to each role it covers.
     let groupedLinks = new Map();
+    let groupedOk = true;
     if (groupMode) {
       const engine = await captureGroupsOnPage({
         evaluateJson,
@@ -456,6 +457,7 @@ async function runCapture({ existingOffers = [], identity = null } = {}) {
       if (engine.ok) {
         console.error(`group pass: ${engine.captures.length} role(s) linked across ${engine.groups || 0} pair(s)`);
       } else {
+        groupedOk = false;
         console.error(`group pass stopped — ${engine.reason}`);
         // Print what the page actually offers. The first live attempt said only "no_builder_entry", which named
         // nothing and cost a round trip; these labels are the fix.
@@ -497,6 +499,8 @@ async function runCapture({ existingOffers = [], identity = null } = {}) {
         continue;
       }
       if (groupMode) {
+        // When the pairing pass failed outright, every role would print the same sentence: one line, not thirty-two.
+        if (!groupedOk) { runState.done += 1; await beatRun(); continue; }
         // No related role to pair with, and micro1 will not mint a link for one role. Say so rather than
         // hunting a link that does not exist, and never pair it with an unrelated role to make the number look better.
         captures.push({ ...item, referralUrl: null, jobId: null, reason: 'no_related_partner' });
@@ -811,18 +815,17 @@ async function main() {
   const { captures, listing } = await runCapture({ existingOffers: offers, identity });
   const withLink = captures.filter((capture) => capture.referralUrl);
   const withBody = captures.filter((capture) => capture.content);
+  // A role we could not pair, or could not link, carries nothing the portal can apply. Posting it made every batch
+  // mostly noise — and a batch that held only noise was rejected outright, killing the links in the next batch
+  // (2026-11-16). Unpaired roles are counted here and reported as a summary, not sent.
+  const postable = captures.filter((capture) => capture.referralUrl || capture.content);
+  const withheld = captures.length - postable.length;
   // Say what each phase did, separately. "captured 14 roles · 2 links" reads like a broken run when 12 of those roles
   // simply have no related partner yet — and in links mode the offers themselves were captured by an earlier run.
   const unpaired = captures.filter((capture) => capture.reason === 'no_related_partner').length;
   console.error(`captured: ${captures.length} roles Â· ${withLink.length} links Â· ${withBody.length} bodies${unpaired ? ` Â· ${unpaired} role(s) with no related partner` : ''}`);
   if (groupMode) console.error(`links phase: offers already exist â€” this run only mints and attaches links${withDescriptions ? '' : ' (bodies off)'}`);
   if (withheld) console.error(`not sent: ${withheld} role(s) carry no link and no body — counted above, nothing for the portal to apply`);
-
-  // A role we could not pair, or could not link, carries nothing the portal can apply. Posting it made every batch
-  // mostly noise — and a batch that held only noise was rejected outright, killing the links in the next batch
-  // (2026-11-16). Unpaired roles are counted here and reported as a summary, not sent.
-  const postable = captures.filter((capture) => capture.referralUrl || capture.content);
-  const withheld = captures.length - postable.length;
 
   // One caller writes offers, and it is never the tenant's machine.
   const applied = agentMode
