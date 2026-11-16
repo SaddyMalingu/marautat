@@ -156,6 +156,23 @@ async function ensureSession({ host, port }) {
   const target = await resolveDebugTarget({ host, port });
   if (!target.pageWsUrl) throw new Error('the profile exposed no page target');
   sharedSession = await CdpSession.open({ wsUrl: target.pageWsUrl, timeoutMs: 10_000 });
+
+  // The pairing flow ends with the page copying a referral link, which raises Chrome's clipboard permission bubble
+  // over the window. A worker cannot click that bubble, so the permission is granted up front and the page is brought
+  // to the front — a blurred tab is enough for clicks to be ignored (2026-11-16). Both are best-effort: the in-page
+  // clipboard hook already makes the run independent of the real clipboard.
+  try { await sharedSession.send('Page.bringToFront', {}, { timeoutMs: 5_000 }); } catch {}
+  for (const origin of ['https://refer.micro1.ai', 'https://jobs.micro1.ai', 'https://micro1.ai']) {
+    try {
+      await sharedSession.send('Browser.grantPermissions', {
+        origin,
+        permissions: ['clipboardReadWrite', 'clipboardSanitizedWrite']
+      }, { timeoutMs: 5_000 });
+    } catch (error) {
+      // Browser-domain commands are not always reachable from a page session; the hook covers it.
+      console.error(`clipboard permission not granted for ${origin}: ${error?.message || error}`);
+    }
+  }
   return sharedSession;
 }
 

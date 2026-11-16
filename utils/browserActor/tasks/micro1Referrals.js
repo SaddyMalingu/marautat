@@ -252,7 +252,8 @@ export function readAffiliateExpr({ limit = 120 } = {}) {
     });
   }
   const cards = nodes.map((card, index) => {
-    const box = card.querySelector('input[type="checkbox"]');
+    const box = card.querySelector('input[type="checkbox"]')
+      || card.querySelector('[role="checkbox"], [aria-checked]');
     const heading = card.querySelector('h2') || card.querySelector('h3');
     // innerText keeps the newlines that separate "Pay:" from its value; the collapsed copy does not.
     const raw = String(card.innerText || '');
@@ -276,7 +277,7 @@ export function readAffiliateExpr({ limit = 120 } = {}) {
       openings: openings || null,
       skills: chips.slice(0, 8),
       selectable: !!box,
-      checked: box ? !!box.checked : null
+      checked: box ? (typeof box.checked === 'boolean' ? !!box.checked : box.getAttribute('aria-checked') === 'true') : null
     };
   }).filter((card) => card.title);
 
@@ -318,14 +319,18 @@ export function readAffiliateExpr({ limit = 120 } = {}) {
  */
 export function installClipboardHookExpr() {
   return `(() => {
-  if (window.__m1clipInstalled) return JSON.stringify({ ok: true, already: true });
+  if (window.__m1clipInstalled) return JSON.stringify({ ok: true, already: true, value: window.__m1clip || null });
   window.__m1clipInstalled = true;
   window.__m1clip = null;
   const keep = (value) => { try { window.__m1clip = String(value == null ? '' : value); } catch (e) {} };
+  // The page's copy button calls the async clipboard API. THAT call is what raises Chrome's "allow micro1 to see
+  // text copied to the clipboard" bubble over the top-left of the window, which steals focus and stalls a run that
+  // cannot click a browser bubble (2026-11-16). The link only has to be READ, so the value is kept in the page and
+  // the native call is never made: no prompt, and the page still sees a successful copy.
   try {
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      const original = navigator.clipboard.writeText.bind(navigator.clipboard);
-      navigator.clipboard.writeText = function (text) { keep(text); return original(text); };
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText = function (text) { keep(text); return Promise.resolve(); };
+      navigator.clipboard.readText = function () { return Promise.resolve(String(window.__m1clip || '')); };
     }
   } catch (e) {}
   try {
@@ -337,6 +342,8 @@ export function installClipboardHookExpr() {
           const fromField = active && 'value' in active ? active.value : null;
           if (fromField) keep(fromField);
           else if (window.getSelection) keep(String(window.getSelection()));
+          // Report success without touching the system clipboard: no permission prompt.
+          return true;
         }
         return exec.apply(null, arguments);
       };
@@ -439,14 +446,12 @@ export function selectRolesExpr({ titles = [], settleMs = 400 } = {}) {
       const actual = titleOf(c).toLowerCase();
       return actual && (actual === key || actual.startsWith(key) || key.startsWith(actual));
     });
-    // The live page lists some roles twice in one grid and only one copy carries a checkbox.
-    // Ticking the copy without one looks like a click and selects nothing, so prefer the boxed one.
-    const card = matches.filter((c) => c.querySelector('input[type="checkbox"]'))[0] || matches[0];
+    // Prefer the copy that exposes a control, then any copy at all: the ladder can find the square by geometry even
+    // when the markup has no input, so requiring one would skip cards that are perfectly tickable (2026-11-16).
+    const card = matches.find((c) => boxOf(c)) || matches[0];
     if (!card) { missed.push(title); continue; }
-    const box = card.querySelector('input[type="checkbox"]');
-    if (!box) { missed.push(title); continue; }
     const before = counterNow();
-    const target = boxOf(card) || box;
+    const target = boxOf(card);
     if (isTicked(card) === true) { clicked.push({ title: titleOf(card), already: true, method: 'already' }); continue; }
     // Ladder: the control itself, then its label, then the visible square in the corner. On the live popup the
     // first click did nothing, and the old code had no second attempt — which is how a modal opened and no role
@@ -472,11 +477,8 @@ export function selectRolesExpr({ titles = [], settleMs = 400 } = {}) {
   // Read the state back from the DOM: this is the difference between "clicked" and "selected".
   const states = clicked.map((row) => {
     const key = row.title.toLowerCase();
-    const pool = cards.filter((c) => titleOf(c).toLowerCase() === key);
-    // Same preference as the click: the boxed copy is the one whose state means anything.
-    const card = pool.filter((c) => c.querySelector('input[type="checkbox"]'))[0] || pool[0];
-    const box = card ? card.querySelector('input[type="checkbox"]') : null;
-    return { title: row.title, checked: box ? !!box.checked : null };
+    const card = cards.filter((c) => titleOf(c).toLowerCase() === key)[0] || null;
+    return { title: row.title, checked: card ? isTicked(card) : null };
   });
   const body = clean(document.body ? document.body.innerText : '');
   const counter = (body.match(/(\\d+)\\s+Roles?\\s+selected/i) || [])[0] || null;
@@ -825,13 +827,10 @@ export async function captureGroupsOnPage({
   const unselectable = cards.filter((card) => card.selectable === false).length;
   if (unselectable) log(`builder: ${unselectable} of ${cards.length} card(s) carry no checkbox and cannot be ticked`);
 
-  // A card with no checkbox cannot be ticked, and one untickable role fails its whole pair. Pair the tickable ones
-  // when enough exist, but never quietly: a builder where nothing is tickable is a fact the log must state.
-  const tickable = cards.filter((card) => card.selectable !== false);
-  const pool = tickable.length >= 2 ? tickable : cards;
-  if (tickable.length < cards.length) log(`pairing ${tickable.length} tickable card(s) of ${cards.length}${tickable.length < 2 ? ' (none tickable — pairing everything to report the truth)' : ''}`);
-
-  const plan = planReferralGroups(pool, { size, maxGroups, alreadyGrouped, allowMixed });
+  // Every card in the popup is tickable — the reader's `selectable` flag is a guess made from markup, and gating on it
+  // paired only 12 of 70 cards (2026-11-16). So pairing covers every parsed card, and a role that truly cannot be
+  // ticked fails loudly by name in the tick ladder instead of being silently dropped here.
+  const plan = planReferralGroups(cards, { size, maxGroups, alreadyGrouped, allowMixed });
   if (!plan.groups.length) {
     return { ok: false, reason: 'no_pairable_roles', cards: cards.length, groups: 0, captures: [], failures: [], skipped: plan.skipped };
   }
@@ -860,7 +859,7 @@ export async function captureGroupsOnPage({
 export function openBuilderExpr() {
   return `(() => {
   const clean = (v) => String(v == null ? '' : v).replace(/\\s+/g, ' ').trim();
-  const boxes = document.querySelectorAll('input[type="checkbox"]').length;
+  const boxes = document.querySelectorAll('input[type="checkbox"], [role="checkbox"], [aria-checked]').length;
   const cards = document.querySelectorAll('${MICRO1_CARD}').length;
   if (boxes >= 2 && cards >= 2) return JSON.stringify({ ok: true, alreadyOpen: true, boxes, cards });
   // The failure this guards against, seen live on 2026-11-16: the first element whose *innerText* mentioned the
@@ -960,7 +959,7 @@ export function openBuilderExpr() {
 /** Which page is in front of us: the builder (checkboxes), the listing, or something else. */
 export function parkedSurveyExpr() {
   return `(() => {
-    const boxes = document.querySelectorAll('input[type="checkbox"]').length;
+    const boxes = document.querySelectorAll('input[type="checkbox"], [role="checkbox"], [aria-checked]').length;
     const cards = document.querySelectorAll('[data-testid="job-card"]').length;
     const builderWords = /select|refer\\s*&?\\s*earn|generate/i.test(document.body ? document.body.innerText.slice(0, 4000) : '');
     const page = boxes >= 2 && cards >= 2 ? 'builder' : (cards >= 2 ? 'listing' : 'unknown');

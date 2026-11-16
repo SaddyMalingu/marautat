@@ -605,6 +605,14 @@ const ROLES = [
   ok('never a Spanish role paired with an AI tester',
     !fromRaw.captures.some((capture) => /AI Agent Tester/i.test(capture.title)),
     fromRaw.captures.map((capture) => capture.title).join(' + '));
+
+  // The reader's `selectable` flag is a guess from markup, and gating on it paired only 12 of 70 tickable cards.
+  const unclassified = await captureGroupsOnPage({
+    ...fakePage({ cards: cards.map((card) => ({ ...card, selectable: false })) }),
+    size: 2,
+    maxGroups: 5
+  });
+  eq('a card the reader cannot classify is still paired', unclassified.groups, 2);
 }
 
 
@@ -674,6 +682,8 @@ const ROLES = [
   // The select expressions are async; without awaitPromise CDP hands back a pending Promise, which deserialises to
   // undefined — every selection then "failed" while the page was never read (2026-11-16).
   ok('the runner awaits promises in the page', /awaitPromise: true/.test(src));
+  ok('and grants the clipboard permission up front', /Browser\.grantPermissions/.test(src));
+  ok('bringing the page to the front so clicks land', /Page\.bringToFront/.test(src));
   // Raw cards carry no family, so planning must go through the parser that assigns one and drops duplicates.
   ok('pairing plans from parsed cards', /parseAffiliateCards\(read\)/.test(moduleSrc));
 }
@@ -717,6 +727,19 @@ const ROLES = [
   ok('and accepts the counter as proof', /counterAfter - counterBefore >= wanted\.length/.test(select));
   ok('the untick path uses the same ladder', /cornerTarget\(card\)/.test(mod.clearSelectionExpr()));
   ok('the action button is never the header pill', /your referral link/i.test(mod.clickActionExpr()));
+
+  // The clipboard hook must NOT touch the real clipboard: calling the native writeText is what raises Chrome's
+  // permission bubble, which a worker cannot click and which steals the page's clicks (2026-11-16).
+  const hook = mod.installClipboardHookExpr();
+  ok('the clipboard hook keeps the value in the page', /window\.__m1clip = String/.test(hook));
+  ok('and never calls the real clipboard', !/original\(text\)/.test(hook) && !/\.bind\(navigator\.clipboard\)/.test(hook));
+  ok('answering the page as if the copy succeeded', /return Promise\.resolve\(\)/.test(hook));
+  ok('and reading back what was copied', /navigator\.clipboard\.readText/.test(hook));
+
+  // Tickability is decided by the ladder, not by a markup guess.
+  ok('the reader accepts an ARIA checkbox', /\[role="checkbox"\], \[aria-checked\]/.test(mod.readAffiliateExpr({ limit: 3 })));
+  ok('and so does the page survey', /\[role="checkbox"\], \[aria-checked\]/.test(mod.parkedSurveyExpr()));
+  ok('a card with no input is still attempted', !/if \(!box\) \{ missed\.push/.test(select));
 }
 
 // ─── A group link has to survive the portal (2026-11-16) ─────────────────────────────────────
