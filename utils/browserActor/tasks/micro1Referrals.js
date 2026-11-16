@@ -80,7 +80,8 @@ export function parseAffiliateCards(snapshot = {}) {
       skills: Array.isArray(card?.skills) ? card.skills.filter(Boolean) : [],
       posted: card?.posted || null,
       openings: Number(String(card?.openings || '').match(/\d+/)?.[0] || 0) || null,
-      family: roleFamily(card?.title),
+      // An explicit family wins: the reader may know better than a first-token guess, and tests supply one.
+      family: card?.family || roleFamily(card?.title),
       payMax: parsePay(card?.pay),
       // Carried through so duplicates can prefer the copy that can actually be ticked.
       selectable: card?.selectable === true,
@@ -803,7 +804,12 @@ export async function captureGroupsOnPage({
   }
 
   const read = await evalExpr(readAffiliateExpr({ limit: 240 })).catch((error) => ({ ok: false, reason: error?.message }));
-  const cards = Array.isArray(read?.cards) ? read.cards : [];
+  // Plan from PARSED cards, never the raw read. parseAffiliateCards assigns the family (so only related roles pair),
+  // normalises the pay band and referral value, and collapses the duplicates the grid renders. Feeding the raw read
+  // straight to the planner put every card in one "(none)" family — which is how an AI Agent Tester got paired with a
+  // Spanish Language Expert and the same pair was planned twice in one run.
+  const parsed = parseAffiliateCards(read);
+  const cards = Array.isArray(parsed.cards) ? parsed.cards : [];
   if (!read?.ok || cards.length < 2) {
     return {
       ok: false,
@@ -815,8 +821,17 @@ export async function captureGroupsOnPage({
       skipped: []
     };
   }
+  if (parsed.duplicates) log(`builder: ${parsed.duplicates} duplicate card(s) collapsed before pairing`);
+  const unselectable = cards.filter((card) => card.selectable === false).length;
+  if (unselectable) log(`builder: ${unselectable} of ${cards.length} card(s) carry no checkbox and cannot be ticked`);
 
-  const plan = planReferralGroups(cards, { size, maxGroups, alreadyGrouped, allowMixed });
+  // A card with no checkbox cannot be ticked, and one untickable role fails its whole pair. Pair the tickable ones
+  // when enough exist, but never quietly: a builder where nothing is tickable is a fact the log must state.
+  const tickable = cards.filter((card) => card.selectable !== false);
+  const pool = tickable.length >= 2 ? tickable : cards;
+  if (tickable.length < cards.length) log(`pairing ${tickable.length} tickable card(s) of ${cards.length}${tickable.length < 2 ? ' (none tickable — pairing everything to report the truth)' : ''}`);
+
+  const plan = planReferralGroups(pool, { size, maxGroups, alreadyGrouped, allowMixed });
   if (!plan.groups.length) {
     return { ok: false, reason: 'no_pairable_roles', cards: cards.length, groups: 0, captures: [], failures: [], skipped: plan.skipped };
   }

@@ -161,15 +161,21 @@ async function ensureSession({ host, port }) {
 
 async function evaluateJson({ host, port, expression }) {
   let session = await ensureSession({ host, port });
+  // `awaitPromise` is not optional here. The select/clear expressions are async IIFEs (they wait for the page to
+  // confirm a tick), and without this flag CDP returns the pending Promise — which deserialises to undefined, so
+  // every selection came back empty and the run reported "counter ?→?" five times without ever reading the page.
+  // The timeout covers the waits inside those expressions.
+  const options = { timeoutMs: 45_000 };
+  const params = { expression, returnByValue: true, awaitPromise: true };
   try {
-    const result = await session.send('Runtime.evaluate', { expression, returnByValue: true }, { timeoutMs: 30_000 });
+    const result = await session.send('Runtime.evaluate', params, options);
     const raw = result?.result?.value;
     return typeof raw === 'string' ? JSON.parse(raw) : raw;
   } catch (error) {
     // A session can die with the page. Rebuild it once rather than failing the run.
     sharedSession = null;
     session = await ensureSession({ host, port });
-    const result = await session.send('Runtime.evaluate', { expression, returnByValue: true }, { timeoutMs: 30_000 });
+    const result = await session.send('Runtime.evaluate', params, options);
     const raw = result?.result?.value;
     return typeof raw === 'string' ? JSON.parse(raw) : raw;
   }

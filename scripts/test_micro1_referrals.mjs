@@ -590,6 +590,21 @@ const ROLES = [
   ok('naming the reason', /no_builder_entry/.test(noEntry.reason || ''), noEntry.reason);
   eq('and handing back the controls it saw', noEntry.controls.length, 1);
   eq('so the next attempt is a selector fix', noEntry.controls[0].text, 'Your referral link');
+
+  // The live grid renders duplicates and carries no family field. The planner must see PARSED cards, or every card
+  // lands in one "(none)" family and unrelated roles get paired — and the same pair gets planned twice (2026-11-16).
+  const rawGrid = [
+    { title: 'Spanish Language Expert (LATAM)', refer: '$100', pay: '$16 - $45/hour' },
+    { title: 'Spanish Language Expert (LATAM)', refer: '$100', pay: '$16 - $45/hour' },
+    { title: 'Spanish Language Expert (Mexico)', refer: '$100', pay: '$16 - $45/hour' },
+    { title: 'AI Agent Tester', refer: '$100', pay: '$25 - $45/hour' }
+  ];
+  const fromRaw = await captureGroupsOnPage({ ...fakePage({ cards: rawGrid }), size: 2, maxGroups: 5 });
+  eq('a duplicate card does not become a second pair of the same roles', fromRaw.groups, 1);
+  eq('and the pair is the two Spanish roles', fromRaw.captures.length, 2);
+  ok('never a Spanish role paired with an AI tester',
+    !fromRaw.captures.some((capture) => /AI Agent Tester/i.test(capture.title)),
+    fromRaw.captures.map((capture) => capture.title).join(' + '));
 }
 
 
@@ -656,6 +671,11 @@ const ROLES = [
   ok('roles imported WITHOUT a link stay pairable', /existingOffers\.filter\(\(offer\) => offer\.referral_url\)/.test(src));
   ok('pairs outside the run window still get their link', /outside this run's window/.test(src));
   ok('a page with no entry reports its own controls', /controls: opened\?\.controls/.test(moduleSrc));
+  // The select expressions are async; without awaitPromise CDP hands back a pending Promise, which deserialises to
+  // undefined — every selection then "failed" while the page was never read (2026-11-16).
+  ok('the runner awaits promises in the page', /awaitPromise: true/.test(src));
+  // Raw cards carry no family, so planning must go through the parser that assigns one and drops duplicates.
+  ok('pairing plans from parsed cards', /parseAffiliateCards\(read\)/.test(moduleSrc));
 }
 
 // ─── Every injected expression must at least parse (2026-11-16) ──────────────────────────────
