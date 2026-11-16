@@ -540,15 +540,17 @@ const ROLES = [
   eq('with nothing captured', unselectable.captures.length, 0);
   ok('and names the stage that failed', /selection/i.test(unselectable.reason || ''), unselectable.reason);
 
-  // The entry pill lives on the referral dashboard, not on the listing, so the engine walks there and clicks it.
+  // The entry pill lives on the referral dashboard and opens a MENU; the modal only opens from the menu's
+  // "Link with specific expert opportunities" item. Three stages, and the engine has to walk them one per attempt.
   const twoStep = await captureGroupsOnPage({
     ...fakePage({
       page: 'listing',
       opensTo: 'builder',
-      opensAfter: 2,
+      opensAfter: 3,
       entry: [
-        { ok: true, navigated: true, label: 'My referrals' },
-        { ok: true, clicked: true, navigated: false, label: 'Your referral link', candidates: 3 }
+        { ok: true, navigated: true, stage: 'nav', waitMs: 20, label: 'Dashboard' },
+        { ok: true, clicked: true, stage: 'pill', waitMs: 20, label: 'Your referral link' },
+        { ok: true, clicked: true, stage: 'menu', waitMs: 20, label: 'Link with specific expert opportunities' }
       ],
       cards
     }),
@@ -556,8 +558,25 @@ const ROLES = [
     maxGroups: 5,
     openWaitMs: 60
   });
-  eq('it walks to the referral page, then clicks the pill', twoStep.ok, true);
+  eq('it walks to the dashboard, clicks the pill, then the menu item', twoStep.ok, true);
   eq('and pairs once the modal opens', twoStep.groups, 2);
+
+  // The state the live run was stuck in: the pill was clicked, no menu appeared, nothing else to do.
+  const stuckAfterPill = await captureGroupsOnPage({
+    ...fakePage({
+      page: 'listing',
+      entry: [
+        { ok: true, clicked: true, stage: 'pill', waitMs: 20, label: 'Your referral link' },
+        { ok: false, reason: 'no_builder_entry', controls: [{ tag: 'button', text: 'Your referral link' }] }
+      ],
+      cards
+    }),
+    size: 2,
+    maxGroups: 5,
+    openWaitMs: 60
+  });
+  eq('a menu that never appears stops the pass', stuckAfterPill.ok, false);
+  ok('and says the pill was clicked', /no_builder_entry/.test(stuckAfterPill.reason || ''), stuckAfterPill.reason);
 
   // When there is nothing to click, the failure carries the page's own control labels: that is what turns the
   // next attempt into a one-line selector fix instead of another screenshot.
@@ -629,6 +648,10 @@ const ROLES = [
   // not have and stopped with "no_builder_entry".
   ok('the entry names the real pill', /your referral link/i.test(moduleSrc));
   ok('and can walk to the referral page when it is not on the current one', /navigated: true/.test(moduleSrc));
+  // The pill opens a dropdown; its items are not <button>s, and the modal only opens from the "specific" item.
+  ok('the menu item is matchable', /role="menuitem"/.test(moduleSrc));
+  ok('and is clicked after the pill opens the menu', /stage === 'menu'/.test(moduleSrc));
+  ok('only the innermost label is clicked', /el\.contains\(other\)/.test(moduleSrc));
   // 67 imported roles were excluded from pairing because they were imported — those were the ones needing links.
   ok('roles imported WITHOUT a link stay pairable', /existingOffers\.filter\(\(offer\) => offer\.referral_url\)/.test(src));
   ok('pairs outside the run window still get their link', /outside this run's window/.test(src));

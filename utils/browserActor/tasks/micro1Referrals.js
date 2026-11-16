@@ -656,7 +656,7 @@ export async function captureGroupsOnPage({
   if (page !== 'builder') {
     // The modal has to be opened first: without it the page has no checkboxes at all. It can take two attempts,
     // because the entry pill lives on the referral dashboard while the run starts on the listing.
-    for (let attempt = 1; attempt <= 3 && page !== 'builder'; attempt += 1) {
+    for (let attempt = 1; attempt <= 4 && page !== 'builder'; attempt += 1) {
       const opened = await evalExpr(openBuilderExpr()).catch((error) => ({ ok: false, reason: error?.message }));
       if (!opened?.ok) {
         return {
@@ -667,13 +667,17 @@ export async function captureGroupsOnPage({
           cards: 0, groups: 0, captures: [], failures: [], skipped: []
         };
       }
-      log(`builder entry [${attempt}]: ${opened.navigated ? 'walked to the referral page via' : 'clicked'} "${String(opened.label || '').slice(0, 60)}" (${opened.candidates || 1} candidate(s))`);
+      // Each attempt is one stage of the real path: walk to the dashboard → click "Your referral link" → click
+      // "Link with specific expert opportunities" → the checkbox modal. Naming the stage is what makes a stop
+      // readable ("clicked the pill, never got a menu") instead of a timeout.
+      log(`builder entry [${attempt}] stage=${opened.stage || (opened.navigated ? 'nav' : 'entry')}: ${opened.navigated ? 'walked to the referral page via' : 'clicked'} "${String(opened.label || '').slice(0, 60)}"`);
       lastEntry = String(opened.label || '').slice(0, 40);
       if (Array.isArray(opened.controls) && opened.controls.length) controls = opened.controls;
 
-      // Wait for the modal by watching the page. A navigation gets longer, because the next page has to render
-      // before its own entry pill exists.
-      const openDeadline = Date.now() + (opened.navigated ? Math.max(3_000, openWaitMs * 2) : Math.max(500, Number(openWaitMs) || 4_000));
+      // Wait only as long as this stage needs: a menu appears at once, so waiting the modal's full budget before
+      // clicking the menu item would spend seconds looking for a popup that is waiting on us.
+      const budget = Number(opened.waitMs) || (opened.navigated ? Math.max(3_000, openWaitMs * 2) : Math.max(500, Number(openWaitMs) || 4_000));
+      const openDeadline = Date.now() + budget;
       for (;;) {
         const again = await evalExpr(parkedSurveyExpr()).catch(() => null);
         page = again?.page || 'unknown';
@@ -752,8 +756,12 @@ export function openBuilderExpr() {
   const NAV = /^my referrals$|^referrals?$|^affiliate(?: program)?$|referral dashboard/i;
   const textOf = (el) => clean(el.innerText || el.textContent);
   const matches = (el) => ENTRY.test(textOf(el));
-  const candidates = Array.from(document.querySelectorAll('button, [role="button"], [role="tab"], a, [data-testid]'))
+  // role=menuitem and li matter: the pill opens a dropdown, and its items are not buttons on this build.
+  const raw = Array.from(document.querySelectorAll('button, [role="button"], [role="tab"], [role="menuitem"], a, li, [data-testid]'))
     .filter((el) => matches(el) && !wrapsField(el));
+  // Keep the innermost match. A menu container (or an li wrapping the item) also contains the label text, and
+  // clicking the container is how a click lands on nothing.
+  const candidates = raw.filter((el) => !raw.some((other) => other !== el && el.contains(other)));
   if (!candidates.length) {
     // Nothing matches here — most likely we are on the listing and the pill lives on the referral dashboard.
     // Walk there rather than reporting "no entry", which reads like a selector bug and hides the real route.
@@ -768,7 +776,7 @@ export function openBuilderExpr() {
       const label = textOf(nav).slice(0, 60);
       try { nav.scrollIntoView({ block: 'center' }); } catch (e) {}
       nav.click();
-      return JSON.stringify({ ok: true, navigated: true, label, href: nav.getAttribute('href') || undefined, boxes, cards });
+      return JSON.stringify({ ok: true, navigated: true, stage: 'nav', waitMs: 6_000, label, href: nav.getAttribute('href') || undefined, boxes, cards });
     }
     // Last resort, and the useful one: say what IS on the page. A dump of visible controls turns the next
     // failed attempt into a one-line selector fix instead of another screenshot and a guess.
@@ -783,23 +791,19 @@ export function openBuilderExpr() {
       .slice(0, 25);
     return JSON.stringify({ ok: false, reason: 'no_builder_entry', boxes, cards, controls });
   }
-  const score = (el) => {
-    const text = textOf(el);
-    const role = (el.getAttribute('role') || '').toLowerCase();
-    let s = text.length;
-    // The real entry, and the one worth preferring: the pill on the referral dashboard.
-    if (/your referral link/i.test(text)) s -= 60;
-    if (/^link with specific/i.test(text)) s -= 40;
-    if (/specific expert opportunit/i.test(text)) s -= 20;
-    if (role === 'tab') s -= 25;
-    if (role === 'button' || el.tagName === 'BUTTON') s -= 15;
-    if (el.getAttribute('aria-selected')) s -= 10;
-    if (el.disabled) s += 100;
-    return s;
-  };
-  const button = candidates.sort((a, b) => score(a) - score(b))[0];
-  const label = clean(button.innerText || button.textContent).slice(0, 120);
-  if (button.disabled) return JSON.stringify({ ok: false, reason: 'builder_entry_disabled', label, boxes, cards });
+  // Click order matters, and the live page settled it (2026-11-16): the pill opens a MENU, and the modal only
+  // opens from that menu's "Link with specific expert opportunities" item. So the menu item is tried first — it
+  // exists only after the pill was clicked — then the pill, then a nav link. The menu's other item links every
+  // role at once, which is the spammy path this work exists to avoid, so it is never matched.
+  const pick = (test) => candidates.find((el) => test(textOf(el)));
+  const specific = pick((text) => /specific expert/i.test(text));
+  const pill = pick((text) => /your referral link|referral link/i.test(text));
+  const button = specific || pill || candidates[0];
+  const stage = specific ? 'menu' : (pill ? 'pill' : 'entry');
+  // A menu renders in a moment, a modal takes longer, a page navigation takes longest.
+  const waitMs = stage === 'menu' ? 5_000 : (stage === 'pill' ? 1_500 : 6_000);
+  const label = textOf(button).slice(0, 120);
+  if (button.disabled) return JSON.stringify({ ok: false, reason: 'builder_entry_disabled', label, stage, boxes, cards });
   try { button.scrollIntoView({ block: 'center' }); } catch (e) {}
 
   // Some tabs on this build are React components that ignore .click() and only act on the pointer sequence,
@@ -823,6 +827,8 @@ export function openBuilderExpr() {
     ok: true,
     clicked: true,
     navigated: false,
+    stage,
+    waitMs,
     label,
     tag: button.tagName.toLowerCase(),
     role: button.getAttribute('role') || undefined,
