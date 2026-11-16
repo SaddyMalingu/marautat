@@ -49,6 +49,7 @@ import { capturePage, resolveDebugTarget, CdpSession } from '../utils/browserAct
 import { maskEnvId } from '../utils/browserActor/identity.js';
 import { resolveRunnerIdentity } from '../utils/tenantRunnerIdentity.js';
 import { applyCaptures, readCoverage } from '../utils/browserActor/applyCaptures.js';
+import { captureGroupsOnPage } from '../utils/browserActor/tasks/micro1Referrals.js';
 import { createRunStore, deriveRunStatus } from '../utils/browserActor/runs.js';
 import {
   MICRO1_PLATFORM,
@@ -96,6 +97,17 @@ const runIdFlag = flag('run-id');
 const agentApi = String(flag('agent-api', process.env.ALPHADOME_API || '')).replace(/\/+$/, '');
 const agentToken = String(flag('agent-token', process.env.TENANT_WORKER_TOKEN || ''));
 const agentMode = Boolean(agentApi && agentToken);
+
+/**
+ * Group mode (2026-11-16): one link per PAIR of roles.
+ *
+ * Micro1 only mints a referral link when at least two roles are selected in its builder, so the per-role pass
+ * that follows cannot produce an attributable link — it produces a healthy-looking run that pays nothing. With
+ * `--groups`, the tested group engine runs first (popup → pair → link) and the per-role pass is skipped.
+ */
+const groupMode = flag('groups', null) !== null;
+const groupSize = Math.max(2, Number(flag('group-size', 2)) || 2);
+const maxGroups = Math.max(1, Number(flag('max-groups', 5)) || 5);
 
 if (!tenant) {
   console.error('usage: --tenant <slug> [--limit 12] [--skip 0] [--apply] [--only-missing] [--no-descriptions] [--out tmp/micro1.json]');
