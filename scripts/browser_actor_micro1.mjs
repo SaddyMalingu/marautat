@@ -420,8 +420,9 @@ async function runCapture({ existingOffers = [], identity = null } = {}) {
         port,
         size: groupSize,
         maxGroups,
-        // Roles this tenant already owns are not regrouped: a group spent on a role already linked earns nothing.
-        alreadyGrouped: existingOffers.map((offer) => offer.title).filter(Boolean),
+        // Only roles that already CARRY A LINK are skipped: a role imported without one is exactly what a pair
+        // is for. The first live run passed every imported title, so 67 roles were excluded and 3 were left.
+        alreadyGrouped: existingOffers.filter((offer) => offer.referral_url).map((offer) => offer.title).filter(Boolean),
         allowMixed: flag('group-mixed', null) !== null,
         log: (line) => console.error(line)
       }).catch((error) => ({ ok: false, reason: `group_error:${error?.message || error}`, captures: [], failures: [], skipped: [] }));
@@ -430,6 +431,11 @@ async function runCapture({ existingOffers = [], identity = null } = {}) {
         console.error(`group pass: ${engine.captures.length} role(s) linked across ${engine.groups || 0} pair(s)`);
       } else {
         console.error(`group pass stopped — ${engine.reason}`);
+        // Print what the page actually offers. The first live attempt said only "no_builder_entry", which named
+        // nothing and cost a round trip; these labels are the fix.
+        if (Array.isArray(engine.controls) && engine.controls.length) {
+          console.error(`  controls on the page: ${engine.controls.map((c) => `[${c.tag}${c.role ? ` ${c.role}` : ''}] ${c.text}`).join(' | ')}`);
+        }
       }
       for (const failure of engine.failures || []) {
         console.error(`  group ${failure.groupId}: ${failure.reason} — ${(failure.titles || []).join(' + ')}`);
@@ -543,6 +549,28 @@ async function runCapture({ existingOffers = [], identity = null } = {}) {
       }
     }
 
+
+    // Roles paired by the group pass that were outside this run's window still deserve their link: the pair was
+    // minted for them, and dropping it wastes a group that a MoreLogin start already paid for. They are existing
+    // offers by definition (they were not in the window), so `applyCaptureUpdates` matches them by title.
+    const linkedTitles = new Set(captures.map((capture) => String(capture.title || '').toLowerCase()));
+    for (const pair of groupedLinks.values()) {
+      if (linkedTitles.has(String(pair.title || '').toLowerCase())) continue;
+      const pairJobId = (String(pair.referralUrl || '').match(/\/post\/([0-9a-f-]{16,})/i) || [])[1] || null;
+      captures.push({
+        title: pair.title,
+        index: null,
+        referralUrl: pair.referralUrl,
+        jobId: pairJobId,
+        externalId: pairJobId ? `micro1:${pairJobId}` : null,
+        url: pairJobId ? micro1JobUrl(pairJobId) : null,
+        reason: null,
+        groupId: pair.groupId,
+        sharedWith: pair.sharedWith,
+        attribution: pair.attribution
+      });
+      console.error(`GROUP ${pair.groupId} — ${String(pair.title).slice(0, 60)} (outside this run's window, still linked)`);
+    }
 
     // ---- Pass 2: the job body, one navigation per role ------------------------
     if (withDescriptions) {

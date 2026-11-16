@@ -651,29 +651,43 @@ export async function captureGroupsOnPage({
 
   const parked = await evalExpr(parkedSurveyExpr()).catch(() => null);
   let page = parked?.page || 'unknown';
+  let controls = [];
+  let lastEntry = null;
   if (page !== 'builder') {
-    // The modal has to be opened first: without it the page has no checkboxes at all.
-    const opened = await evalExpr(openBuilderExpr()).catch((error) => ({ ok: false, reason: error?.message }));
-    if (!opened?.ok) {
-      return { ok: false, reason: `not_on_builder:${page} (${opened?.reason || 'open_failed'})`, cards: 0, groups: 0, captures: [], failures: [], skipped: [] };
-    }
-    // Say what was actually clicked. A wrong target used to look like a slow page: the log claimed the modal
-    // opened and the run then failed somewhere else, which is how a click on the search box went unnoticed.
-    log(`builder entry: clicked <${opened.tag}${opened.role ? ` role=${opened.role}` : ''}> "${String(opened.label || '').slice(0, 60)}" (${opened.candidates || 1} candidate(s))`);
+    // The modal has to be opened first: without it the page has no checkboxes at all. It can take two attempts,
+    // because the entry pill lives on the referral dashboard while the run starts on the listing.
+    for (let attempt = 1; attempt <= 3 && page !== 'builder'; attempt += 1) {
+      const opened = await evalExpr(openBuilderExpr()).catch((error) => ({ ok: false, reason: error?.message }));
+      if (!opened?.ok) {
+        return {
+          ok: false,
+          reason: `not_on_builder:${page} (${opened?.reason || 'open_failed'})`,
+          // The page's own controls, so the next attempt is a selector fix rather than a screenshot.
+          controls: opened?.controls || [],
+          cards: 0, groups: 0, captures: [], failures: [], skipped: []
+        };
+      }
+      log(`builder entry [${attempt}]: ${opened.navigated ? 'walked to the referral page via' : 'clicked'} "${String(opened.label || '').slice(0, 60)}" (${opened.candidates || 1} candidate(s))`);
+      lastEntry = String(opened.label || '').slice(0, 40);
+      if (Array.isArray(opened.controls) && opened.controls.length) controls = opened.controls;
 
-    // Wait for the modal by watching the page, not by sleeping a guessed amount.
-    const openDeadline = Date.now() + Math.max(500, Number(openWaitMs) || 4000);
-    for (;;) {
-      const again = await evalExpr(parkedSurveyExpr()).catch(() => null);
-      page = again?.page || 'unknown';
-      if (page === 'builder' || Date.now() >= openDeadline) break;
-      await new Promise((r) => setTimeout(r, 400));
+      // Wait for the modal by watching the page. A navigation gets longer, because the next page has to render
+      // before its own entry pill exists.
+      const openDeadline = Date.now() + (opened.navigated ? Math.max(3_000, openWaitMs * 2) : Math.max(500, Number(openWaitMs) || 4_000));
+      for (;;) {
+        const again = await evalExpr(parkedSurveyExpr()).catch(() => null);
+        page = again?.page || 'unknown';
+        if (page === 'builder' || Date.now() >= openDeadline) break;
+        await new Promise((r) => setTimeout(r, 400));
+      }
+      if (!page || page === 'unknown') page = opened.navigated ? 'listing' : page;
     }
     if (page !== 'builder') {
       return {
         ok: false,
         // A named reason with the label attached: the next run says "the click went somewhere else".
-        reason: `builder_did_not_open:${page} after clicking "${String(opened.label || '').slice(0, 40)}"`,
+        reason: `builder_did_not_open:${page} after clicking "${lastEntry || 'the entry'}"`,
+        controls,
         cards: 0, groups: 0, captures: [], failures: [], skipped: []
       };
     }
@@ -731,20 +745,54 @@ export function openBuilderExpr() {
   // focused the search field, so the runner sat in a search box while the log said it had opened the builder.
   // Two rules follow: never pick something that wraps a field, and prefer the smallest text (the leaf is the tab).
   const wrapsField = (el) => !!el.querySelector('input, textarea, select, [role="searchbox"], [contenteditable="true"]');
-  const matches = (el) => /link with specific|specific expert|select the opportunit/i.test(clean(el.innerText || el.textContent));
+  // Two things the live page taught (2026-11-16): the entry is the pill reading "Your referral link" on the
+  // referral dashboard, and the dashboard is a different page from the listing. So the matcher names the real
+  // label, and when it is absent the expression can walk to the referral page and try again.
+  const ENTRY = /your referral link|referral link|link with specific expert|specific expert opportunit|refer (?:and|&) earn|invite link|share referral/i;
+  const NAV = /^my referrals$|^referrals?$|^affiliate(?: program)?$|referral dashboard/i;
+  const textOf = (el) => clean(el.innerText || el.textContent);
+  const matches = (el) => ENTRY.test(textOf(el));
   const candidates = Array.from(document.querySelectorAll('button, [role="button"], [role="tab"], a, [data-testid]'))
     .filter((el) => matches(el) && !wrapsField(el));
   if (!candidates.length) {
-    const wrapped = Array.from(document.querySelectorAll('button, [role="button"], [role="tab"], a')).some(matches);
-    return JSON.stringify({ ok: false, reason: wrapped ? 'entry_wraps_a_field' : 'no_builder_entry', boxes, cards });
+    // Nothing matches here — most likely we are on the listing and the pill lives on the referral dashboard.
+    // Walk there rather than reporting "no entry", which reads like a selector bug and hides the real route.
+    const nav = Array.from(document.querySelectorAll('a, [role="tab"], button, [role="link"]'))
+      .filter((el) => !wrapsField(el))
+      .find((el) => {
+        const text = textOf(el);
+        const href = String(el.getAttribute('href') || '');
+        return (text.length <= 40 && NAV.test(text)) || /referral/i.test(href);
+      });
+    if (nav) {
+      const label = textOf(nav).slice(0, 60);
+      try { nav.scrollIntoView({ block: 'center' }); } catch (e) {}
+      nav.click();
+      return JSON.stringify({ ok: true, navigated: true, label, href: nav.getAttribute('href') || undefined, boxes, cards });
+    }
+    // Last resort, and the useful one: say what IS on the page. A dump of visible controls turns the next
+    // failed attempt into a one-line selector fix instead of another screenshot and a guess.
+    const controls = Array.from(document.querySelectorAll('button, a, [role="button"], [role="tab"], [role="link"]'))
+      .filter((el) => !wrapsField(el) && el.getBoundingClientRect().width > 0)
+      .map((el) => ({
+        tag: el.tagName.toLowerCase(),
+        role: el.getAttribute('role') || undefined,
+        text: textOf(el).slice(0, 60)
+      }))
+      .filter((entry) => entry.text)
+      .slice(0, 25);
+    return JSON.stringify({ ok: false, reason: 'no_builder_entry', boxes, cards, controls });
   }
   const score = (el) => {
-    const text = clean(el.innerText || el.textContent);
+    const text = textOf(el);
     const role = (el.getAttribute('role') || '').toLowerCase();
     let s = text.length;
+    // The real entry, and the one worth preferring: the pill on the referral dashboard.
+    if (/your referral link/i.test(text)) s -= 60;
     if (/^link with specific/i.test(text)) s -= 40;
     if (/specific expert opportunit/i.test(text)) s -= 20;
     if (role === 'tab') s -= 25;
+    if (role === 'button' || el.tagName === 'BUTTON') s -= 15;
     if (el.getAttribute('aria-selected')) s -= 10;
     if (el.disabled) s += 100;
     return s;
@@ -774,6 +822,7 @@ export function openBuilderExpr() {
   return JSON.stringify({
     ok: true,
     clicked: true,
+    navigated: false,
     label,
     tag: button.tagName.toLowerCase(),
     role: button.getAttribute('role') || undefined,

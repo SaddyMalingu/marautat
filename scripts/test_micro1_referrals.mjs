@@ -473,15 +473,21 @@ const ROLES = [
   // Answer by *what was asked*, not by position: an aborted group skips calls, so counting desyncs.
   // The selection expression embeds the group's titles, so match its stable prefix instead.
   const selectPrefix = selectRolesExpr({ titles: ['__probe__'] }).split('__probe__')[0];
-  const fakePage = ({ page = 'builder', opensTo = null, cards = [], selectionOk = true, link = 'https://jobs.micro1.ai/post/abc123?referralCode=42' } = {}) => {
-    let surveys = 0;
+  const fakePage = ({ page = 'builder', opensTo = null, opensAfter = 1, entry = null, cards = [], selectionOk = true, link = 'https://jobs.micro1.ai/post/abc123?referralCode=42' } = {}) => {
+    let clicks = 0;
+    let entryIndex = 0;
     const evaluateJson = async ({ expression }) => {
       if (expression === parkedSurveyExpr()) {
-        surveys += 1;
-        const seen = surveys > 1 && opensTo ? opensTo : page;
+        // How many entry clicks it takes before the builder exists: one for the pill on the referral dashboard,
+        // two when the engine first has to walk from the listing to that dashboard.
+        const seen = opensTo && clicks >= opensAfter ? opensTo : page;
         return { ok: true, page: seen, boxes: seen === 'builder' ? 4 : 0, cards: seen === 'builder' ? cards.length : 0 };
       }
-      if (expression === openBuilderExpr()) return { ok: true, clicked: true, label: 'Link with specific expert opportunities' };
+      if (expression === openBuilderExpr()) {
+        clicks += 1;
+        if (Array.isArray(entry)) return entry[Math.min(entryIndex++, entry.length - 1)];
+        return entry || { ok: true, clicked: true, navigated: false, label: 'Your referral link', candidates: 2 };
+      }
       if (expression === readAffiliateExpr({ limit: 240 })) return { ok: cards.length > 0, cards };
       if (expression === installClipboardHookExpr()) return { ok: true };
       if (expression === clearSelectionExpr()) return { ok: true };
@@ -533,6 +539,38 @@ const ROLES = [
   eq('a selection that does not take is a failure, not a link', unselectable.ok, false);
   eq('with nothing captured', unselectable.captures.length, 0);
   ok('and names the stage that failed', /selection/i.test(unselectable.reason || ''), unselectable.reason);
+
+  // The entry pill lives on the referral dashboard, not on the listing, so the engine walks there and clicks it.
+  const twoStep = await captureGroupsOnPage({
+    ...fakePage({
+      page: 'listing',
+      opensTo: 'builder',
+      opensAfter: 2,
+      entry: [
+        { ok: true, navigated: true, label: 'My referrals' },
+        { ok: true, clicked: true, navigated: false, label: 'Your referral link', candidates: 3 }
+      ],
+      cards
+    }),
+    size: 2,
+    maxGroups: 5,
+    openWaitMs: 60
+  });
+  eq('it walks to the referral page, then clicks the pill', twoStep.ok, true);
+  eq('and pairs once the modal opens', twoStep.groups, 2);
+
+  // When there is nothing to click, the failure carries the page's own control labels: that is what turns the
+  // next attempt into a one-line selector fix instead of another screenshot.
+  const noEntry = await captureGroupsOnPage({
+    ...fakePage({ page: 'listing', cards, entry: { ok: false, reason: 'no_builder_entry', controls: [{ tag: 'button', text: 'Your referral link' }] } }),
+    size: 2,
+    maxGroups: 5,
+    openWaitMs: 60
+  });
+  eq('an entry it cannot find stops the pass', noEntry.ok, false);
+  ok('naming the reason', /no_builder_entry/.test(noEntry.reason || ''), noEntry.reason);
+  eq('and handing back the controls it saw', noEntry.controls.length, 1);
+  eq('so the next attempt is a selector fix', noEntry.controls[0].text, 'Your referral link');
 }
 
 
@@ -582,10 +620,19 @@ const ROLES = [
   // The live run of 2026-11-16 never called the group engine at all: the flags existed and nothing used them.
   const fs = await import('node:fs');
   const src = fs.readFileSync(new URL('../scripts/browser_actor_micro1.mjs', import.meta.url), 'utf8');
+  const moduleSrc = fs.readFileSync(new URL('../utils/browserActor/tasks/micro1Referrals.js', import.meta.url), 'utf8');
   ok('the runner actually calls the group engine', /captureGroupsOnPage\(\{/.test(src));
   ok('pairing is the default, with --per-role as the opt-out', /flag\('per-role'/.test(src));
   ok('roles with no related partner are named, not silently dropped', /no_related_partner/.test(src));
   ok('a pair shares one link and says who with', /sharedWith: pair\.sharedWith/.test(src));
+  // The entry is the pill on the referral dashboard; the first live attempt looked for a label that page does
+  // not have and stopped with "no_builder_entry".
+  ok('the entry names the real pill', /your referral link/i.test(moduleSrc));
+  ok('and can walk to the referral page when it is not on the current one', /navigated: true/.test(moduleSrc));
+  // 67 imported roles were excluded from pairing because they were imported — those were the ones needing links.
+  ok('roles imported WITHOUT a link stay pairable', /existingOffers\.filter\(\(offer\) => offer\.referral_url\)/.test(src));
+  ok('pairs outside the run window still get their link', /outside this run's window/.test(src));
+  ok('a page with no entry reports its own controls', /controls: opened\?\.controls/.test(moduleSrc));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
