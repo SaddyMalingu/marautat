@@ -1054,15 +1054,18 @@ export async function captureGroupsOnPage({
   // ticked fails loudly by name in the tick ladder instead of being silently dropped here.
   const plan = planReferralGroups(knownCards, { size, maxGroups, alreadyGrouped, allowMixed });
   if (!plan.groups.length) {
-    // A zero-pair run has to explain itself: is every field a singleton, or did the classifier fail to place these
-    // titles? One line answers that, and it is the difference between "nothing to do" and "a gap to fix".
+    // A zero-pair run has to explain itself, in the terms that matter: how many roles still NEED a link, and whether
+    // the classifier placed them. The first version reported all held roles, including the ones already paid for,
+    // which read as "48 cards, no pairs" while the real pool was empty (2026-11-16).
+    const used = new Set((alreadyGrouped || []).map((title) => String(title).toLowerCase()));
+    const needing = knownCards.filter((card) => !used.has(String(card.title).toLowerCase()));
     const spread = new Map();
-    for (const card of knownCards) {
+    for (const card of needing) {
       const field = card.field || roleField(card.title) || 'unclassified';
       spread.set(field, (spread.get(field) || 0) + 1);
     }
     const shape = [...spread.entries()].sort((a, b) => b[1] - a[1]).map(([field, count]) => `${field} ${count}`).join(', ');
-    log(`no pair available — ${knownCards.length} held card(s) by field: ${shape || 'none'}`);
+    log(`no pair available — ${knownCards.length} held card(s), ${knownCards.length - needing.length} already payable, ${needing.length} still need a link${needing.length ? ` (${shape})` : ' — nothing left to pair in this popup'}`);
     return { ok: false, reason: 'no_pairable_roles', cards: knownCards.length, groups: 0, captures: [], failures: [], skipped: plan.skipped };
   }
   const byBasis = plan.groups.reduce((acc, group) => {

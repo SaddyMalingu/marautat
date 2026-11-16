@@ -219,25 +219,35 @@ export async function applyCaptureUpdates({ supabase, offers = [], captures = []
       linkPlan.skipped.push({ title: capture.title, reason: 'no_offer_for_role' });
       continue;
     }
-    if (String(offer.referral_url || '').trim()) {
-      // Same rule as everywhere else: a link already attached by someone else is never overwritten.
-      linkPlan.skipped.push({ title: capture.title, reason: 'already_has_link' });
-      continue;
+    const existing = String(offer.referral_url || '').trim();
+    let replaceOf = null;
+    if (existing) {
+      // A URL that carries NO attribution credits nobody — it is the dead row this phase exists to replace. The
+      // tenant's catalogue is exactly this shape: hundreds of offers with a link, none of them payable. A URL that
+      // *does* attribute is somebody's working referral and is never touched.
+      if (referralAttribution(existing) !== 'none') {
+        linkPlan.skipped.push({ title: capture.title, reason: 'already_has_link' });
+        continue;
+      }
+      replaceOf = existing;
     }
     const attribution = referralAttribution(capture.referralUrl);
     verification.push({
       title: offer.title,
       referral_url: capture.referralUrl,
       verdict: attribution === 'none' ? 'no_attribution' : 'group',
-      reason: `paired with ${(capture.sharedWith || []).join(' + ') || 'another role'}`,
+      reason: replaceOf
+        ? `paired with ${(capture.sharedWith || []).join(' + ') || 'another role'} — replacing an unpayable link`
+        : `paired with ${(capture.sharedWith || []).join(' + ') || 'another role'}`,
       resolvedTitle: null,
-      source: 'group-selection'
+      source: 'group-selection',
+      replaced: Boolean(replaceOf)
     });
     if (attribution === 'none') {
       linkPlan.skipped.push({ title: capture.title, reason: 'link_without_attribution' });
       continue;
     }
-    accepted.push({ id: offer.id, title: offer.title, referral_url: capture.referralUrl });
+    accepted.push({ id: offer.id, title: offer.title, referral_url: capture.referralUrl, replaceOf });
   }
 
   for (const update of linkPlan.updates) {
@@ -295,13 +305,13 @@ export async function applyCaptureUpdates({ supabase, offers = [], captures = []
   if (apply) {
     for (const update of accepted) {
       if (!update.id) { links.skipped.push({ title: update.title, reason: 'no_id' }); continue; }
-      const { data, error } = await supabase
+      const base = supabase
         .from('opportunities')
         .update({ referral_url: update.referral_url, updated_at: new Date().toISOString() })
-        .eq('id', update.id)
-        // `.is('referral_url', null)` is the compare-and-set: a link someone attached while
-        // this run was driving the browser must not be overwritten by a slower capture.
-        .is('referral_url', null)
+        .eq('id', update.id);
+      // Compare-and-set either way: against NULL when the row had no link, or against the exact dead value we are
+      // replacing. A link somebody attached while this run was driving the browser is never clobbered.
+      const { data, error } = await (update.replaceOf ? base.eq('referral_url', update.replaceOf) : base.is('referral_url', null))
         .select('id, title');
       if (error) { links.skipped.push({ title: update.title, reason: error.message }); continue; }
       links.updated += Array.isArray(data) ? data.length : 0;

@@ -801,8 +801,9 @@ const ROLES = [
   ok('the menu item is matchable', /role="menuitem"/.test(moduleSrc));
   ok('and is clicked after the pill opens the menu', /stage === 'menu'/.test(moduleSrc));
   ok('only the innermost label is clicked', /el\.contains\(other\)/.test(moduleSrc));
-  // 67 imported roles were excluded from pairing because they were imported — those were the ones needing links.
-  ok('roles imported WITHOUT a link stay pairable', /existingOffers\.filter\(\(offer\) => offer\.referral_url\)/.test(src));
+  // 67 imported roles were excluded from pairing once, then 48 more whose URL credited nobody — the dead links are the
+  // population this phase exists to replace.
+  ok('roles imported without a payable link stay pairable', /referralAttribution\(offer\.referral_url\) !== 'none'/.test(src));
   ok('pairs outside the run window still get their link', /outside this run's window/.test(src));
   ok('a page with no entry reports its own controls', /controls: openedAtStart\.controls/.test(moduleSrc));
   // The select expressions are async; without awaitPromise CDP hands back a pending Promise, which deserialises to
@@ -891,17 +892,17 @@ const ROLES = [
 {
   const { applyCaptureUpdates } = await import('../utils/browserActor/applyCaptures.js');
   const writes = [];
-  const supabase = {
-    from: () => ({
-      update: (row) => ({
-        eq: () => ({
-          is: () => ({
-            select: async () => { writes.push(row); return { data: [{ id: 'o1', title: 'x' }], error: null }; }
-          })
-        })
-      })
-    })
+  // A Supabase builder is chainable: `.eq().eq().is().select()`. The stub has to be, or the compare-and-set path
+  // (which filters on the dead value as well as the id) cannot be exercised at all.
+  const makeBuilder = (row) => {
+    const builder = {
+      eq: () => builder,
+      is: () => builder,
+      select: async () => { writes.push(row); return { data: [{ id: 'o1', title: 'x' }], error: null }; }
+    };
+    return builder;
   };
+  const supabase = { from: () => ({ update: (row) => makeBuilder(row) }) };
   const offers = [{ id: 'o1', title: 'Spanish Language Expert (LATAM)', referral_url: null, external_id: null, description: null }];
   let verifyCalls = 0;
   const result = await applyCaptureUpdates({
@@ -945,8 +946,33 @@ const ROLES = [
     }],
     verify: async () => ({ ok: false })
   });
-  eq('punctuation differences still match the offer', punctuated.links.planned, 1);
-  eq('and nothing is reported missing', (punctuated.links.skipped || []).length, 0);
+  // A link that credits nobody is refused; a link that credits somebody is replaced only if... never. And a row whose
+  // URL pays nothing is exactly what this phase exists to replace — the tenant's 259 dead offers (2026-11-16).
+  const deadLink = await applyCaptureUpdates({
+    supabase,
+    offers: [{ id: 'o3', title: 'Spanish Language Expert (Spain)', referral_url: 'https://jobs.micro1.ai/post/aaaabbbbccccdddd', external_id: null, description: null }],
+    captures: [{
+      title: 'Spanish Language Expert (Spain)',
+      referralUrl: 'https://refer.micro1.ai/referral/jobs?referralCode=abc',
+      groupId: 'spanish pair'
+    }],
+    verify: async () => ({ ok: false })
+  });
+  eq('an unpayable link is replaced with a payable one', deadLink.links.updated, 1);
+  eq('and the old value is the compare-and-set', deadLink.links.verification[0]?.replaced, true);
+
+  const liveLink = await applyCaptureUpdates({
+    supabase,
+    offers: [{ id: 'o4', title: 'Spanish Language Expert (Mexico)', referral_url: 'https://refer.micro1.ai/referral/jobs?referralCode=someone-else', external_id: null, description: null }],
+    captures: [{
+      title: 'Spanish Language Expert (Mexico)',
+      referralUrl: 'https://refer.micro1.ai/referral/jobs?referralCode=abc',
+      groupId: 'spanish pair'
+    }],
+    verify: async () => ({ ok: false })
+  });
+  eq('a working referral is never overwritten', liveLink.links.planned, 0);
+  ok('and says which rule stopped it', (liveLink.links.skipped || []).some((row) => row.reason === 'already_has_link'), JSON.stringify(liveLink.links.skipped));
 }
 
   // A pair of the tenant's own offers survives every layer of the portal (2026-11-16).

@@ -49,7 +49,7 @@ import { capturePage, resolveDebugTarget, CdpSession } from '../utils/browserAct
 import { maskEnvId } from '../utils/browserActor/identity.js';
 import { resolveRunnerIdentity } from '../utils/tenantRunnerIdentity.js';
 import { applyCaptures, readCoverage } from '../utils/browserActor/applyCaptures.js';
-import { captureGroupsOnPage } from '../utils/browserActor/tasks/micro1Referrals.js';
+import { captureGroupsOnPage, referralAttribution } from '../utils/browserActor/tasks/micro1Referrals.js';
 import { createRunStore, deriveRunStatus } from '../utils/browserActor/runs.js';
 import {
   MICRO1_PLATFORM,
@@ -444,9 +444,14 @@ async function runCapture({ existingOffers = [], identity = null } = {}) {
         port,
         size: groupSize,
         maxGroups,
-        // Only roles that already CARRY A LINK are skipped: a role imported without one is exactly what a pair
-        // is for. The first live run passed every imported title, so 67 roles were excluded and 3 were left.
-        alreadyGrouped: existingOffers.filter((offer) => offer.referral_url).map((offer) => offer.title).filter(Boolean),
+        // Only roles that already CARRY AN ATTRIBUTED LINK are skipped. Two populations must not be excluded: roles
+        // imported without a link, and the far larger group whose link credits nobody — the tenant's catalogue is 259
+        // offers with a URL that pays nothing. Passing every imported title excluded 67 roles once; passing every
+        // *linked* title excluded 48 more (2026-11-16).
+        alreadyGrouped: existingOffers
+          .filter((offer) => offer.referral_url && referralAttribution(offer.referral_url) !== 'none')
+          .map((offer) => offer.title)
+          .filter(Boolean),
         // Every role this tenant holds. Pairing is limited to these, because a link minted for a role we do not own has
         // nowhere to go and is wasted — four links died that way on 2026-11-16.
         knownTitles: existingOffers.map((offer) => offer.title).filter(Boolean),
