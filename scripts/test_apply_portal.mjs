@@ -180,7 +180,15 @@ function fakeTableFactory() {
   app.use(createApplyPortalRouter({
     root: process.cwd(),
     table: fakeTableFactory(),
-    resolveTenant: async (slug) => tenants[slug] || null
+    resolveTenant: async (slug) => tenants[slug] || null,
+    // The dashboard proves who it is with a session token, not a key. Reproduce that contract: `session:<slug>`
+    // stands in for a verified token, exactly as server.js resolves it with verifyTenantSession.
+    resolveTenantFromSession: async (req) => {
+      const raw = String(req.headers['x-tenant-session'] || '');
+      if (!raw.startsWith('session:')) return null;
+      const row = tenants[raw.slice('session:'.length)];
+      return row ? { ...row, phone: row.slug === 'malingu-ventures' ? '254743780542' : '' } : null;
+    }
   }));
   const server = http.createServer(app);
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
