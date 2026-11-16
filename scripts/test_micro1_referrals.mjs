@@ -445,7 +445,17 @@ const ROLES = [
     && result.captures[0].groupId.includes('+'), result.captures[0].groupId);
 }
 
-// ─── The adapter the runner calls: builder in, payable links out (2026-11-14) ────────────────
+// ─── The worker asks for grouped capture (2026-11-16) ────────────────────────────────────────
+{
+  const { buildRunArgs } = await import('../utils/browserActor/runArgs.js');
+  const micro = buildRunArgs({ relative: 'scripts/browser_actor_micro1.mjs', platform: 'micro1', tenantSlug: 'acme', runId: 'r1', limit: 40, api: 'https://x' });
+  ok('a micro1 run asks for pairs', micro.includes('--groups'), micro.join(' '));
+  eq('at micro1s minimum of two', micro[micro.indexOf('--group-size') + 1], '2');
+  ok('and caps the pairs per run', Number(micro[micro.indexOf('--max-groups') + 1]) >= 1);
+  ok('a run may opt out', !buildRunArgs({ relative: 'scripts/browser_actor_micro1.mjs', platform: 'micro1', tenantSlug: 'acme', runId: 'r1', limit: 40, api: 'x', group: false }).includes('--groups'));
+  ok('turing is untouched by the micro1 flags', !buildRunArgs({ relative: 'scripts/browser_actor_referrals.mjs', platform: 'turing', tenantSlug: 'acme', runId: 'r1', limit: 40, api: 'x' }).includes('--groups'));
+}
+
 {
   const {
     captureGroupsOnPage,

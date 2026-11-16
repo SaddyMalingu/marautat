@@ -36,7 +36,7 @@ export function usesSocialListener(platform) {
  *          limit?: number|string, api: string}} input
  * @returns {string[]} argv for the child, script path first (relative; the caller makes it absolute)
  */
-export function buildRunArgs({ relative, platform, tenantSlug, runId, limit, api }) {
+export function buildRunArgs({ relative, platform, tenantSlug, runId, limit, api, group = true, maxGroups = 5 }) {
   // The branch is chosen by the **platform id**, which is a value the queue route validated,
   // rather than by comparing paths. Paths differ by separator, by resolution and by casing; an id
   // does not. That mistake cost two rounds and four networks.
@@ -51,7 +51,8 @@ export function buildRunArgs({ relative, platform, tenantSlug, runId, limit, api
       '--agent-api', api
     ];
   }
-  return [
+
+  const args = [
     relative,
     '--tenant', tenantSlug,
     '--limit', String(limit || 70),
@@ -62,6 +63,19 @@ export function buildRunArgs({ relative, platform, tenantSlug, runId, limit, api
     // The token goes through the environment, not argv: a command line is visible to every
     // process on the machine (Task Manager, `ps`), and this one is a credential.
   ];
+
+  /**
+   * Micro1 runs pair roles (2026-11-16).
+   *
+   * Micro1 only mints a referral link when two or more roles are selected together, so a per-role capture
+   * cannot produce an attributable link at all — it produced runs that looked healthy and earned nothing. The
+   * worker therefore asks for grouped capture by default, related roles only (a mixed pair reads like a
+   * mailshot), and a run may turn it off with `detail.group === false`.
+   */
+  if (String(platform || '').toLowerCase() === 'micro1' && group !== false) {
+    args.push('--groups', '--group-size', '2', '--max-groups', String(Math.max(1, Number(maxGroups) || 5)));
+  }
+  return args;
 }
 
 /** The argv with the absolute script path swapped in, for `spawn`. */

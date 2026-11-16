@@ -112,7 +112,7 @@ export function parseAffiliateCards(snapshot = {}) {
  * @param {{size?: number, maxGroups?: number, alreadyGrouped?: string[]}} options
  * @returns {{groups: object[], skipped: object[]}}
  */
-export function planReferralGroups(cards = [], { size = 2, maxGroups = 10, alreadyGrouped = [] } = {}) {
+export function planReferralGroups(cards = [], { size = 2, maxGroups = 10, alreadyGrouped = [], allowMixed = true } = {}) {
   const sizeWanted = Math.max(2, Number(size) || 2);
   const used = new Set((alreadyGrouped || []).map((t) => String(t).toLowerCase()));
   const pool = (Array.isArray(cards) ? cards : [])
@@ -155,9 +155,13 @@ export function planReferralGroups(cards = [], { size = 2, maxGroups = 10, alrea
 
   for (const [family, list] of byFamily) take(family, list, 'family');
 
-  // Stranded singles can still pair with other stranded singles: better a mixed link than an offer
-  // that can never earn.
-  if (groups.length < maxGroups) {
+  // Stranded singles can still pair with other stranded singles — but only when the caller allows it.
+  //
+  // A link covering "Sales Rep + Maths Tutor" is legal and earns, and it also looks arbitrary to the person who
+  // receives it: two unrelated roles in one recommendation reads like a mailshot. So the referral runner asks for
+  // related pairs only, and a role with no same-family partner is reported as unpairable instead of being forced
+  // into a group that would embarrass the tenant.
+  if (allowMixed && groups.length < maxGroups) {
     const leftovers = [];
     for (const [, list] of byFamily) leftovers.push(...list);
     leftovers.sort((a, b) => (b.referValue || 0) - (a.referValue || 0));
@@ -594,6 +598,7 @@ export async function captureGroupsOnPage({
   size = 2,
   maxGroups = 5,
   alreadyGrouped = [],
+  allowMixed = false,
   waitForLinkMs = 6000,
   log = () => {}
 } = {}) {
@@ -631,7 +636,7 @@ export async function captureGroupsOnPage({
     };
   }
 
-  const plan = planReferralGroups(cards, { size, maxGroups, alreadyGrouped });
+  const plan = planReferralGroups(cards, { size, maxGroups, alreadyGrouped, allowMixed });
   if (!plan.groups.length) {
     return { ok: false, reason: 'no_pairable_roles', cards: cards.length, groups: 0, captures: [], failures: [], skipped: plan.skipped };
   }
