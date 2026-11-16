@@ -445,5 +445,70 @@ const ROLES = [
     && result.captures[0].groupId.includes('+'), result.captures[0].groupId);
 }
 
+// ─── The adapter the runner calls: builder in, payable links out (2026-11-14) ────────────────
+{
+  const {
+    captureGroupsOnPage,
+    parkedSurveyExpr,
+    readAffiliateExpr,
+    clearSelectionExpr,
+    selectRolesExpr,
+    clickActionExpr,
+    installClipboardHookExpr
+  } = await import('../utils/browserActor/tasks/micro1Referrals.js');
+
+  // A fake page: the survey reports which page it is, the card read returns the builder's cards, and the group
+  // run returns one link shared by both roles — exactly micro1's own model.
+  // Answer by *what was asked*, not by position: an aborted group skips calls, so counting desyncs.
+  // The selection expression embeds the group's titles, so match its stable prefix instead.
+  const selectPrefix = selectRolesExpr({ titles: ['__probe__'] }).split('__probe__')[0];
+  const fakePage = ({ page = 'builder', cards = [], selectionOk = true, link = 'https://jobs.micro1.ai/post/abc123?referralCode=42' } = {}) => {
+    const evaluateJson = async ({ expression }) => {
+      if (expression === parkedSurveyExpr()) return { ok: true, page, boxes: page === 'builder' ? 4 : 0, cards: cards.length };
+      if (expression === readAffiliateExpr({ limit: 240 })) return { ok: cards.length > 0, cards };
+      if (expression === installClipboardHookExpr()) return { ok: true };
+      if (expression === clearSelectionExpr()) return { ok: true };
+      if (String(expression).startsWith(selectPrefix)) {
+        return selectionOk ? { ok: true, selected: [] } : { ok: false, reason: 'selection_not_verified' };
+      }
+      if (expression === clickActionExpr()) return { ok: true };
+      if (expression === readGeneratedLinkExpr()) return { ok: true, url: link, strategy: 'clipboard' };
+      return { ok: true, url: link, strategy: 'clipboard' };
+    };
+    return { evaluateJson };
+  };
+
+  const cards = [
+    { title: 'Sales Rep A', family: 'sales', referValue: 50, payMax: 20 },
+    { title: 'Sales Rep B', family: 'sales', referValue: 40, payMax: 18 },
+    { title: 'Tutor C', family: 'tutor', referValue: 30, payMax: 12 },
+    { title: 'Tutor D', family: 'tutor', referValue: 25, payMax: 10 }
+  ];
+
+  const onListing = await captureGroupsOnPage({ ...fakePage({ page: 'listing', cards }), size: 2, maxGroups: 5 });
+  eq('on the listing it refuses instead of pretending', onListing.ok, false);
+  eq('and says which page it saw', onListing.reason, 'not_on_builder:listing');
+  eq('having captured nothing', onListing.captures.length, 0);
+
+  const tooFew = await captureGroupsOnPage({ ...fakePage({ cards: [cards[0]] }), size: 2, maxGroups: 5 });
+  eq('one role cannot form a group', tooFew.reason, 'builder_has_too_few_roles');
+
+  const pairs = await captureGroupsOnPage({ ...fakePage({ cards }), size: 2, maxGroups: 5 });
+  eq('four cards make two pairs', pairs.groups, 2);
+  eq('each pair yields a capture per role', pairs.captures.length, 4);
+  ok('both roles of a pair carry the SAME url',
+    pairs.captures[0].referralUrl === pairs.captures[1].referralUrl, pairs.captures.slice(0, 2).map((c) => c.referralUrl));
+  ok('with the group recorded, so the portal can explain the pairing', Boolean(pairs.captures[0].groupId));
+
+  const capped = await captureGroupsOnPage({ ...fakePage({ cards }), size: 2, maxGroups: 1 });
+  eq('maxGroups is honoured', capped.groups, 1);
+
+  const unselectable = await captureGroupsOnPage({ ...fakePage({ cards, selectionOk: false }), size: 2, maxGroups: 5 });
+  eq('a selection that does not take is a failure, not a link', unselectable.ok, false);
+  eq('with nothing captured', unselectable.captures.length, 0);
+  ok('and names the stage that failed', /selection/i.test(unselectable.reason || ''), unselectable.reason);
+}
+
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

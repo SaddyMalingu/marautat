@@ -575,3 +575,76 @@ export async function runReferralGroups({ evaluate, groups = [], waitForLinkMs =
   };
 }
 
+/**
+ * Group capture, wired to the runner's page accessor (2026-11-14).
+ *
+ * The engine above takes an `evaluate(expression)`. The Micro1 runner has `evaluateJson({ host, port, expression })`
+ * and a `readAffiliateExpr()` that returns the builder's cards. This bridges the two, so the runner's call site is
+ * one line instead of a translation that could disagree with the engine.
+ *
+ * It refuses rather than guesses when the page is not the builder: micro1's listing has no checkboxes, and running
+ * the selection expressions there would report a page rule as a capture bug. `reason` says what to do about it.
+ *
+ * @returns {Promise<{ok:boolean, reason?:string, cards:number, groups:number, captures:Array, failures:Array, skipped:Array}>}
+ */
+export async function captureGroupsOnPage({
+  evaluateJson,
+  host,
+  port,
+  size = 2,
+  maxGroups = 5,
+  alreadyGrouped = [],
+  waitForLinkMs = 6000,
+  log = () => {}
+} = {}) {
+  if (typeof evaluateJson !== 'function') throw new TypeError('captureGroupsOnPage needs evaluateJson()');
+  const evalExpr = (expression) => evaluateJson({ host, port, expression });
+
+  const parked = await evalExpr(parkedSurveyExpr()).catch(() => null);
+  if (parked && parked.page && parked.page !== 'builder') {
+    return { ok: false, reason: `not_on_builder:${parked.page}`, cards: 0, groups: 0, captures: [], failures: [], skipped: [] };
+  }
+
+  const read = await evalExpr(readAffiliateExpr({ limit: 240 })).catch((error) => ({ ok: false, reason: error?.message }));
+  const cards = Array.isArray(read?.cards) ? read.cards : [];
+  if (!read?.ok || cards.length < 2) {
+    return {
+      ok: false,
+      reason: read?.ok ? 'builder_has_too_few_roles' : `builder_unreadable:${read?.reason || 'unknown'}`,
+      cards: cards.length,
+      groups: 0,
+      captures: [],
+      failures: [],
+      skipped: []
+    };
+  }
+
+  const plan = planReferralGroups(cards, { size, maxGroups, alreadyGrouped });
+  if (!plan.groups.length) {
+    return { ok: false, reason: 'no_pairable_roles', cards: cards.length, groups: 0, captures: [], failures: [], skipped: plan.skipped };
+  }
+  log(`groups: ${plan.groups.length} pair(s) from ${cards.length} builder card(s)`);
+
+  const run = await runReferralGroups({ evaluate: evalExpr, groups: plan.groups, waitForLinkMs, log });
+  return {
+    ok: run.ok,
+    reason: run.ok ? undefined : (run.failures[0]?.reason || 'group_failed'),
+    cards: cards.length,
+    groups: plan.groups.length,
+    captures: run.captures,
+    failures: run.failures,
+    skipped: plan.skipped
+  };
+}
+
+/** Which page is in front of us: the builder (checkboxes), the listing, or something else. */
+export function parkedSurveyExpr() {
+  return `(() => {
+    const boxes = document.querySelectorAll('input[type="checkbox"]').length;
+    const cards = document.querySelectorAll('[data-testid="job-card"]').length;
+    const builderWords = /select|refer\\s*&?\\s*earn|generate/i.test(document.body ? document.body.innerText.slice(0, 4000) : '');
+    const page = boxes >= 2 && cards >= 2 ? 'builder' : (cards >= 2 ? 'listing' : 'unknown');
+    return JSON.stringify({ ok: true, page, boxes, cards, builderWords });
+  })()`;
+}
+
