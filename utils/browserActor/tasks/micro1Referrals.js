@@ -47,6 +47,96 @@ export function roleFamily(title) {
   return tokens(title)[0] || null;
 }
 
+/**
+ * The field a role belongs to (2026-11-16).
+ *
+ * The tenant's own rule: software engineering is software engineering, whether it is dressed as ML, full-stack or
+ * back-end, and the same holds for law, medicine and languages. A first-token family is too narrow for that — it makes
+ * "Machine Learning Researcher" and "Applied Scientists — Machine Learning" strangers — and too narrow means roles
+ * that can never be paired, which on Micro1 means links that can never be minted.
+ *
+ * A pair inside one field still reads as a recommendation to the person receiving it, which is the line that must not
+ * be crossed: a shared field is defensible, a shared nothing is a mailshot.
+ */
+const FIELD_RULES = [
+  {
+    id: 'tech',
+    phrases: ['full stack', 'back end', 'front end', 'machine learning', 'deep learning', 'data science', 'site reliability', 'computer vision', 'natural language', 'prompt engineer'],
+    words: ['software', 'engineer', 'engineering', 'developer', 'backend', 'frontend', 'fullstack', 'stack', 'platform', 'infrastructure', 'infra', 'architect', 'devops', 'sre', 'mobile', 'android', 'ios', 'web', 'api', 'qa', 'tester', 'testing', 'unreal', 'unity', 'godot', 'game', 'graphics', 'compiler', 'cloud', 'embedded', 'machine', 'learning', 'ml', 'ai', 'llm', 'nlp', 'vision', 'researcher', 'scientist', 'annotation', 'annotator', 'prompt', 'evaluator', 'rlhf', 'model', 'data', 'analytics', 'database', 'sql', 'pipeline', 'mlops', 'bioinformatics', 'computational', 'systems', 'security', 'technical']
+  },
+  {
+    id: 'legal',
+    phrases: ['labor law', 'civil rights', 'environmental law', 'entertainment law', 'intellectual property'],
+    words: ['legal', 'law', 'attorney', 'counsel', 'paralegal', 'litigation', 'patent', 'antitrust', 'regulatory', 'privacy', 'contract', 'compliance', 'court', 'judicial']
+  },
+  {
+    id: 'health',
+    phrases: ['clinical research'],
+    words: ['physician', 'hematology', 'medical', 'medicine', 'clinical', 'nurse', 'nursing', 'health', 'healthcare', 'patient', 'pharmacy', 'pharma', 'dental', 'radiology', 'oncology', 'surgeon', 'therapy', 'therapist', 'psychology', 'psychiatry', 'biotech', 'anatomy']
+  },
+  {
+    id: 'language',
+    phrases: [],
+    words: ['language', 'translator', 'translation', 'localization', 'interpreter', 'linguist', 'spanish', 'french', 'portuguese', 'english', 'german', 'italian', 'japanese', 'mandarin', 'arabic', 'hindi', 'korean', 'russian', 'bilingual']
+  },
+  {
+    id: 'finance',
+    phrases: ['investment banking', 'equity research', 'credit research', 'commercial underwriting'],
+    words: ['finance', 'financial', 'banking', 'investment', 'equity', 'credit', 'underwriter', 'underwriting', 'accounting', 'accountant', 'audit', 'tax', 'treasury', 'trading', 'portfolio', 'actuarial', 'payroll', 'loan', 'lending']
+  },
+  {
+    id: 'public_service',
+    phrases: [],
+    words: ['medicare', 'medicaid', 'ship', 'passport', 'veterans', 'eligibility', 'enrollment', 'benefits', 'claims', 'caseworker', 'social', 'counselor', 'counsellor', 'government', 'defense', 'military', 'combat', 'special', 'operations']
+  },
+  {
+    id: 'education',
+    phrases: [],
+    words: ['tutor', 'teacher', 'instructor', 'professor', 'lecturer', 'curriculum', 'academic', 'educator', 'exam', 'assessment', 'grading', 'school', 'university']
+  },
+  {
+    id: 'content',
+    phrases: ['content writer'],
+    words: ['design', 'designer', 'ux', 'ui', 'figma', 'illustrator', 'creative', 'brand', 'content', 'writer', 'copywriter', 'editor', 'blog', 'seo', 'video', 'recorder', 'photographer', 'audio', 'music']
+  },
+  {
+    id: 'commerce',
+    phrases: ['e commerce', 'ecommerce'],
+    words: ['commerce', 'ecommerce', 'catalog', 'merchandising', 'marketplace', 'retail', 'seller', 'inventory']
+  },
+  {
+    id: 'sales_growth',
+    phrases: ['business development', 'go to market', 'revenue operations'],
+    words: ['sales', 'business', 'gtm', 'revenue', 'growth', 'marketing', 'demand', 'partnership', 'account', 'bdr', 'sdr', 'customer', 'commercial', 'procurement', 'logistics', 'supply', 'warehouse', 'coordinator', 'administrator', 'support']
+  }
+];
+
+/**
+ * Which field this role belongs to, or null when the title says nothing usable.
+ *
+ * Scoring rather than first-match: "E-commerce Data & Catalog Specialist" is commerce, not data engineering, and
+ * "Senior Commercial Underwriter" is finance even though "commercial" appears in the sales list. Phrases outweigh
+ * single words, so the specific reading wins over the generic one.
+ */
+export function roleField(title) {
+  const text = String(title || '')
+    .toLowerCase()
+    .replace(/-/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!text) return null;
+  const words = new Set(text.split(' ').filter(Boolean));
+  let best = null;
+  for (const rule of FIELD_RULES) {
+    let score = 0;
+    for (const phrase of rule.phrases || []) if (text.includes(phrase)) score += 3;
+    for (const word of rule.words || []) if (words.has(word)) score += 1;
+    if (score && (!best || score > best.score)) best = { id: rule.id, score };
+  }
+  return best ? best.id : null;
+}
+
 /** $1,000 -> 1000. "$100 - $200/hour" -> 200 (the top of the band, i.e. the best case). */
 export function parseRefereeValue(text) {
   const numbers = String(text || '').match(/[\d,]+/g);
@@ -82,6 +172,8 @@ export function parseAffiliateCards(snapshot = {}) {
       openings: Number(String(card?.openings || '').match(/\d+/)?.[0] || 0) || null,
       // An explicit family wins: the reader may know better than a first-token guess, and tests supply one.
       family: card?.family || roleFamily(card?.title),
+      // The wider field, so a run can pair across siblings without re-deriving it (see `roleField`).
+      field: card?.field || roleField(card?.title),
       payMax: parsePay(card?.pay),
       // Carried through so duplicates can prefer the copy that can actually be ticked.
       selectable: card?.selectable === true,
@@ -113,7 +205,7 @@ export function parseAffiliateCards(snapshot = {}) {
  * @param {{size?: number, maxGroups?: number, alreadyGrouped?: string[]}} options
  * @returns {{groups: object[], skipped: object[]}}
  */
-export function planReferralGroups(cards = [], { size = 2, maxGroups = 10, alreadyGrouped = [], allowMixed = true } = {}) {
+export function planReferralGroups(cards = [], { size = 2, maxGroups = 10, alreadyGrouped = [], allowMixed = true, allowLoose = true } = {}) {
   const sizeWanted = Math.max(2, Number(size) || 2);
   const used = new Set((alreadyGrouped || []).map((t) => String(t).toLowerCase()));
   const pool = (Array.isArray(cards) ? cards : [])
@@ -121,7 +213,10 @@ export function planReferralGroups(cards = [], { size = 2, maxGroups = 10, alrea
 
   const byFamily = new Map();
   for (const card of pool) {
-    const key = card.family || '(none)';
+    // Derive the family when the card does not carry one. Without this, cards handed straight to the planner all land
+    // in a single "(none)" bucket and pair with each other as though they were related — the mistake that paired an AI
+    // tester with a Spanish linguist.
+    const key = card.family || roleFamily(card.title) || '(none)';
     if (!byFamily.has(key)) byFamily.set(key, []);
     byFamily.get(key).push(card);
   }
@@ -133,28 +228,70 @@ export function planReferralGroups(cards = [], { size = 2, maxGroups = 10, alrea
   const skipped = [];
 
   /** Take whole groups off the front of a list; remember the ones that cannot form one. */
-  const take = (family, list, kind) => {
+  const take = (family, list, kind, field = null) => {
     while (list.length >= 2 && groups.length < maxGroups) {
       const members = list.splice(0, sizeWanted);
       groups.push({
         family,
         kind,
+        // Why these roles were put together, carried into the run report so the tenant can audit any pairing.
+        basis: kind,
+        field: field || undefined,
         members,
         title: members.map((m) => m.title).join(' + '),
         referralValue: members.reduce((sum, m) => sum + (m.referValue || 0), 0),
         maxPay: Math.max(...members.map((m) => m.payMax || 0)),
-        // Carried into the run report so the portal can say *why* these were paired.
         reason: kind === 'family'
           ? `${members.length} ${family || 'related'} role(s) — a coherent recommendation`
-          : `${members.length} leftover role(s) — paired to satisfy micro1's two-role minimum`
+          : kind === 'field'
+            ? `${members.length} role(s) in the same field (${field}) — a coherent recommendation`
+            : `${members.length} leftover role(s) — paired to satisfy micro1's two-role minimum`
       });
     }
     for (const leftover of list) {
-      skipped.push({ title: leftover.title, reason: 'no partner in its family — micro1 needs at least 2 roles' });
+      skipped.push({
+        title: leftover.title,
+        reason: kind === 'field'
+          ? `only role in the ${field} field — micro1 needs at least 2 roles`
+          : 'no partner in its family — micro1 needs at least 2 roles'
+      });
     }
   };
 
   for (const [family, list] of byFamily) take(family, list, 'family');
+
+  /**
+   * Second tier: same field (2026-11-16).
+   *
+   * Strict families first keeps the tightest pairs — two legal experts, two Spanish experts. Whatever is left is
+   * grouped by field, which is the tenant's own rule: software engineering is software engineering even when it is
+   * dressed as ML, full-stack or back-end, and the same holds for law, medicine and languages. Without this tier most
+   * roles can never be paired, and on Micro1 an unpaired role can never have a payable link.
+   *
+   * This is not the mixed tier: a pair here shares a field, so it still reads as a recommendation. A pair sharing
+   * nothing stays off unless `allowMixed` is set explicitly.
+   */
+  if (allowLoose && groups.length < maxGroups) {
+    const byField = new Map();
+    for (const [, list] of byFamily) {
+      for (const card of list) {
+        const field = card.field || roleField(card.title);
+        if (!field) continue; // unclassifiable titles fall through to the mixed tier, or stay unpaired
+        if (!byField.has(field)) byField.set(field, []);
+        byField.get(field).push(card);
+      }
+    }
+    for (const list of byField.values()) {
+      list.sort((a, b) => (b.referValue || 0) - (a.referValue || 0) || (b.payMax || 0) - (a.payMax || 0));
+    }
+    // Highest-value fields first: the pairs worth a link are the ones a candidate would actually click.
+    const fields = [...byField.entries()].sort((a, b) => b[1].length - a[1].length);
+    for (const [field, list] of fields) {
+      if (list.length < 2) continue;
+      // `take` consumes the list in place; whatever is left is a lone role in that field and is reported as such.
+      take(field, list, 'field', field);
+    }
+  }
 
   // Stranded singles can still pair with other stranded singles — but only when the caller allows it.
   //
@@ -653,7 +790,7 @@ export async function runReferralGroups({ evaluate, groups = [], waitForLinkMs =
       continue;
     }
 
-    log(`group ${groupId}: clearing, then selecting ${titles.length} roles`);
+    log(`group ${groupId}${group.field ? ` [${group.basis || 'field'}: ${group.field}]` : ''}: clearing, then selecting ${titles.length} roles`);
     // The popup closes after it generates a link, so every group after the first would tick cards on the listing
     // page instead — which is exactly what happened on 2026-11-16: group 1 captured, group 2 read `counter 2→?`,
     // group 3 found no action button at all. Re-open it before touching anything.
@@ -868,7 +1005,12 @@ export async function captureGroupsOnPage({
   if (!plan.groups.length) {
     return { ok: false, reason: 'no_pairable_roles', cards: cards.length, groups: 0, captures: [], failures: [], skipped: plan.skipped };
   }
-  log(`groups: ${plan.groups.length} pair(s) from ${cards.length} builder card(s)`);
+  const byBasis = plan.groups.reduce((acc, group) => {
+    const basis = group.basis || 'family';
+    acc[basis] = (acc[basis] || 0) + 1;
+    return acc;
+  }, {});
+  log(`groups: ${plan.groups.length} pair(s) from ${cards.length} builder card(s)${Object.keys(byBasis).length ? ` (${Object.entries(byBasis).map(([basis, count]) => `${count} ${basis}`).join(', ')})` : ''}`);
 
   const run = await runReferralGroups({ evaluate: evalExpr, groups: plan.groups, waitForLinkMs, ensureBuilder: openBuilder, log });
   return {

@@ -676,6 +676,51 @@ const ROLES = [
   eq('and nothing is not a link', referralAttribution(''), 'none');
 }
 
+// ─── Same field is the second tier (2026-11-16) ──────────────────────────────────────────────
+//
+// The tenant's rule: software engineering is software engineering, even when it is dressed as ML, full-stack or
+// back-end — and the same holds for law, medicine and languages. Families keep the tightest pairs; the field tier
+// makes the rest payable without pairing anything that shares nothing.
+{
+  const { planReferralGroups, roleField } = await import('../utils/browserActor/tasks/micro1Referrals.js');
+
+  eq('full-stack is software', roleField('Full Stack Developer'), 'tech');
+  eq('back-end is software', roleField('Back-End Engineer'), 'tech');
+  eq('ML is software dressed differently', roleField('Machine Learning Researcher'), 'tech');
+  eq('so is an AI tester', roleField('AI Agent Tester'), 'tech');
+  eq('law is law', roleField('Legal Expert (Antitrust & Competition Law)'), 'legal');
+  eq('medicine is medicine', roleField('Hematology Physician'), 'health');
+  eq('languages are languages', roleField('Spanish Language Expert (Mexico)'), 'language');
+  eq('e-commerce data is commerce, not data engineering', roleField('E-commerce Data & Catalog Specialist'), 'commerce');
+  eq('a commercial underwriter is finance', roleField('Senior Commercial Underwriter'), 'finance');
+
+  // Two roles that a first-token family made strangers.
+  const loose = planReferralGroups([
+    { title: 'Machine Learning Researcher', referValue: 500, payMax: 120 },
+    { title: 'Applied Scientists — Machine Learning', referValue: 500, payMax: 120 }
+  ], { size: 2, maxGroups: 5, allowMixed: false });
+  eq('roles in one field pair up', loose.groups.length, 1);
+  eq('and say the pairing came from the field tier', loose.groups[0].basis, 'field');
+  eq('naming the field, so it can be audited', loose.groups[0].field, 'tech');
+
+  // Families still win, because a tighter pair is a better recommendation.
+  const strict = planReferralGroups([
+    { title: 'Spanish Language Expert (LATAM)', referValue: 100, payMax: 45 },
+    { title: 'Spanish Language Expert (Mexico)', referValue: 100, payMax: 45 },
+    { title: 'Portuguese Language Expert (Brazil)', referValue: 100, payMax: 45 }
+  ], { size: 2, maxGroups: 5, allowMixed: false });
+  eq('the same-language pair is taken first', strict.groups[0].basis, 'family');
+  eq('and the third language waits for a partner', strict.skipped.length, 1);
+
+  // The line that must not move: two roles sharing nothing stay apart.
+  const disjoint = planReferralGroups([
+    { title: 'Legal Expert (Employment)', referValue: 100, payMax: 40 },
+    { title: 'Ground Combat & Special Operations SME', referValue: 100, payMax: 90 }
+  ], { size: 2, maxGroups: 5, allowMixed: false });
+  eq('a legal expert and a combat instructor are not a pair', disjoint.groups.length, 0);
+  eq('both are reported unpairable', disjoint.skipped.length, 2);
+}
+
 {
   // A link that credits nobody is refused by the engine rather than stored: that is the failure that cost months.
   const { runReferralGroups } = await import('../utils/browserActor/tasks/micro1Referrals.js');
