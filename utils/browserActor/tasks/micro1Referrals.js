@@ -112,6 +112,27 @@ const FIELD_RULES = [
 ];
 
 /**
+ * The key two renderers of the same role agree on (2026-11-16).
+ *
+ * The builder and the listing spell roles differently — "E-commerce Data & Catalog Specialist" vs "Ecommerce Data and
+ * Catalog Specialist" — and an exact-title join skipped exactly the offers that need links. One implementation, used by
+ * the planner and by the attach path, so they cannot drift apart.
+ */
+export function titleKey(value) {
+  return String(value || '')
+    .toLowerCase()
+    // "E-commerce" and "Ecommerce" are the same word to a reader; hyphens must not split them.
+    .replace(/-/g, '')
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .split(' ')
+    // Every token counts, including "a"/"b": dropping them made distinct roles collide ("Sales Rep A" and "Sales Rep B"
+    // became one key), and a collision here can attach a link to the wrong offer.
+    .filter((word) => word && !['and', 'the', 'of', 'for', 'with'].includes(word))
+    .join(' ');
+}
+
+/**
  * Which field this role belongs to, or null when the title says nothing usable.
  *
  * Scoring rather than first-match: "E-commerce Data & Catalog Specialist" is commerce, not data engineering, and
@@ -317,7 +338,11 @@ export function planReferralGroups(cards = [], { size = 2, maxGroups = 10, alrea
   }
 
   groups.sort((a, b) => b.referralValue - a.referralValue || b.maxPay - a.maxPay);
-  return { groups: groups.slice(0, maxGroups), skipped };
+  // One entry per role: a role skipped by the family tier and then by the field tier was reported twice, which made a
+  // log of 20 roles look like 40 (2026-11-16). The later reason is kept because it says the more useful thing.
+  const byTitle = new Map();
+  for (const row of skipped) byTitle.set(String(row.title).toLowerCase(), row);
+  return { groups: groups.slice(0, maxGroups), skipped: [...byTitle.values()] };
 }
 
 /**
@@ -911,6 +936,7 @@ export async function captureGroupsOnPage({
   size = 2,
   maxGroups = 5,
   alreadyGrouped = [],
+  knownTitles = [],
   allowMixed = false,
   waitForLinkMs = 6000,
   openWaitMs = 4000,
@@ -998,19 +1024,41 @@ export async function captureGroupsOnPage({
   const unread = cards.filter((card) => card.selectable === false).length;
   if (unread) log(`builder: ${unread} of ${cards.length} card(s) expose no obvious control — the tick will locate it`);
 
+  /**
+   * Pair only roles the tenant already holds as offers (2026-11-16).
+   *
+   * A link minted for a role we do not own has nowhere to go: the attach step answers `no_offer_for_role` and the
+   * link — the one thing Micro1 will not give again — is wasted. Four links died that way in one run. So the order is
+   * the one the tenant asked for: collect the offers first, then mint links for them.
+   */
+  const known = new Set((Array.isArray(knownTitles) ? knownTitles : []).map(titleKey).filter(Boolean));
+  const knownCards = known.size ? cards.filter((card) => known.has(titleKey(card.title))) : cards;
+  const notCollected = cards.length - knownCards.length;
+  if (known.size && !knownCards.length) {
+    return {
+      ok: false,
+      reason: 'no_known_offers_in_builder',
+      cards: cards.length,
+      groups: 0, captures: [], failures: [], skipped: []
+    };
+  }
+  if (notCollected > 0) {
+    log(`builder: ${knownCards.length} of ${cards.length} card(s) are offers you already hold — pairing those (${notCollected} not collected yet; the offers phase brings them in first)`);
+  }
+
   // Every card in the popup is tickable — the reader's `selectable` flag is a guess made from markup, and gating on it
   // paired only 12 of 70 cards (2026-11-16). So pairing covers every parsed card, and a role that truly cannot be
   // ticked fails loudly by name in the tick ladder instead of being silently dropped here.
-  const plan = planReferralGroups(cards, { size, maxGroups, alreadyGrouped, allowMixed });
+  const plan = planReferralGroups(knownCards, { size, maxGroups, alreadyGrouped, allowMixed });
   if (!plan.groups.length) {
-    return { ok: false, reason: 'no_pairable_roles', cards: cards.length, groups: 0, captures: [], failures: [], skipped: plan.skipped };
+    return { ok: false, reason: 'no_pairable_roles', cards: knownCards.length, groups: 0, captures: [], failures: [], skipped: plan.skipped };
   }
   const byBasis = plan.groups.reduce((acc, group) => {
     const basis = group.basis || 'family';
     acc[basis] = (acc[basis] || 0) + 1;
     return acc;
   }, {});
-  log(`groups: ${plan.groups.length} pair(s) from ${cards.length} builder card(s)${Object.keys(byBasis).length ? ` (${Object.entries(byBasis).map(([basis, count]) => `${count} ${basis}`).join(', ')})` : ''}`);
+  log(`groups: ${plan.groups.length} pair(s) from ${knownCards.length} builder card(s)${Object.keys(byBasis).length ? ` (${Object.entries(byBasis).map(([basis, count]) => `${count} ${basis}`).join(', ')})` : ''}`);
 
   const run = await runReferralGroups({ evaluate: evalExpr, groups: plan.groups, waitForLinkMs, ensureBuilder: openBuilder, log });
   return {
@@ -1132,14 +1180,18 @@ export function openBuilderExpr() {
 })()`;
 }
 
-/** Which page is in front of us: the builder (checkboxes), the listing, or something else. */
+/** Which page is in front of us: the builder (cards carrying controls), the listing, or something else. */
 export function parkedSurveyExpr() {
   return `(() => {
+    // Count controls that live INSIDE a card. Page-wide counts made the listing look like the builder: it has job
+    // cards and enough aria toggles in its own furniture to satisfy a naive test, so a run that had never re-opened
+    // the popup believed it was open and ticked nothing (2026-11-16).
+    const cards = Array.from(document.querySelectorAll('[data-testid="job-card"]'));
+    const withControl = cards.filter((card) => card.querySelector('input[type="checkbox"], [role="checkbox"], [aria-checked], button[aria-label*="select" i]')).length;
     const boxes = document.querySelectorAll('input[type="checkbox"], [role="checkbox"], [aria-checked]').length;
-    const cards = document.querySelectorAll('[data-testid="job-card"]').length;
     const builderWords = /select|refer\\s*&?\\s*earn|generate/i.test(document.body ? document.body.innerText.slice(0, 4000) : '');
-    const page = boxes >= 2 && cards >= 2 ? 'builder' : (cards >= 2 ? 'listing' : 'unknown');
-    return JSON.stringify({ ok: true, page, boxes, cards, builderWords });
+    const page = withControl >= 2 ? 'builder' : (cards.length >= 2 ? 'listing' : 'unknown');
+    return JSON.stringify({ ok: true, page, boxes, cards: cards.length, withControl, builderWords });
   })()`;
 }
 

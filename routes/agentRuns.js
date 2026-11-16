@@ -526,7 +526,24 @@ export function createAgentRunsRouter({
       }
 
       const captures = sanitizeAgentCaptures(req.body?.captures);
-      if (!captures.length) return fail(res, 400, 'That result contained no usable captures');
+      if (!captures.length) {
+        /**
+         * A batch carrying nothing usable is a no-op, not an error (2026-11-16).
+         *
+         * The runner posts in chunks, and this route used to answer 400 to a chunk that held only unpaired roles — which
+         * killed the run *after* the previous chunk had banked its links, so the tenant saw a failure for work that had
+         * succeeded. A body with no captures at all is still refused: that is a broken worker, not an empty batch.
+         */
+        if (Array.isArray(req.body?.captures) && req.body.captures.length) {
+          return res.json({
+            ok: true,
+            applied: { planned: 0, inserted: 0, withLinks: 0, skipped: [], verification: [], error: null, existing: null },
+            coverage: null,
+            note: 'that batch carried nothing to apply'
+          });
+        }
+        return fail(res, 400, 'That result contained no usable captures');
+      }
 
       const { data: tenantRow, error: tenantError } = await supabase
         .from('site_tenants').select('id, slug, name').eq('id', auth.tenantId).maybeSingle();

@@ -643,6 +643,40 @@ const ROLES = [
   eq('both pairs captured', reopened.groups, 2);
   eq('with a link on all four roles', reopened.captures.length, 4);
   eq('and one re-open per pair after the first', reopened.failures.length, 0);
+
+  // A link minted for a role the tenant does not own has nowhere to go — four links died that way in one run. Pairing
+  // is limited to the tenant's own offers, and an empty intersection is a named stop rather than a wasted run.
+  const heldFixture = [
+    { title: 'Spanish Language Expert (LATAM)', family: 'spanish', referValue: 100, payMax: 45 },
+    { title: 'Spanish Language Expert (Mexico)', family: 'spanish', referValue: 100, payMax: 45 },
+    { title: 'Mechanical Engineering Expert', family: 'mechanical', referValue: 90, payMax: 60 }
+  ];
+  const heldOnly = await captureGroupsOnPage({
+    ...fakePage({ cards: heldFixture }),
+    size: 2,
+    maxGroups: 5,
+    // Only two of the three are offers the tenant holds, and they are unrelated.
+    knownTitles: ['Spanish Language Expert (LATAM)', 'Mechanical Engineering Expert']
+  });
+  eq('only held offers are paired', heldOnly.ok, false);
+  eq('and the stop says why', heldOnly.reason, 'no_pairable_roles');
+
+  const pairOfHeld = await captureGroupsOnPage({
+    ...fakePage({ cards: heldFixture }),
+    size: 2,
+    maxGroups: 5,
+    knownTitles: ['Spanish Language Expert (LATAM)', 'Spanish Language Expert (Mexico)']
+  });
+  eq('the held pair is the one that gets a link', pairOfHeld.ok, true);
+  eq('and it is that pair', pairOfHeld.groups, 1);
+
+  const noneHeld = await captureGroupsOnPage({
+    ...fakePage({ cards }),
+    size: 2,
+    maxGroups: 5,
+    knownTitles: ['Something Else Entirely']
+  });
+  eq('a builder with none of your offers stops by name', noneHeld.reason, 'no_known_offers_in_builder');
 }
 
 
@@ -901,6 +935,16 @@ const ROLES = [
   eq('punctuation differences still match the offer', punctuated.links.planned, 1);
   eq('and nothing is reported missing', (punctuated.links.skipped || []).length, 0);
 }
+
+  // A pair of the tenant's own offers survives every layer of the portal (2026-11-16).
+  {
+    const { titleKey } = await import('../utils/browserActor/tasks/micro1Referrals.js');
+    eq('the planner and the attach step share one title key',
+      titleKey('E-commerce Data & Catalog Specialist'), titleKey('Ecommerce Data and Catalog Specialist'));
+    ok('and different roles do not collide',
+      titleKey('Legal Expert (Employment)') !== titleKey('Legal Expert (Antitrust)'),
+      `${titleKey('Legal Expert (Employment)')} / ${titleKey('Legal Expert (Antitrust)')}`);
+  }
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

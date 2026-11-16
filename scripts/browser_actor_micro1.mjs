@@ -446,6 +446,9 @@ async function runCapture({ existingOffers = [], identity = null } = {}) {
         // Only roles that already CARRY A LINK are skipped: a role imported without one is exactly what a pair
         // is for. The first live run passed every imported title, so 67 roles were excluded and 3 were left.
         alreadyGrouped: existingOffers.filter((offer) => offer.referral_url).map((offer) => offer.title).filter(Boolean),
+        // Every role this tenant holds. Pairing is limited to these, because a link minted for a role we do not own has
+        // nowhere to go and is wasted — four links died that way on 2026-11-16.
+        knownTitles: existingOffers.map((offer) => offer.title).filter(Boolean),
         allowMixed: flag('group-mixed', null) !== null,
         log: (line) => console.error(line)
       }).catch((error) => ({ ok: false, reason: `group_error:${error?.message || error}`, captures: [], failures: [], skipped: [] }));
@@ -813,17 +816,24 @@ async function main() {
   const unpaired = captures.filter((capture) => capture.reason === 'no_related_partner').length;
   console.error(`captured: ${captures.length} roles Â· ${withLink.length} links Â· ${withBody.length} bodies${unpaired ? ` Â· ${unpaired} role(s) with no related partner` : ''}`);
   if (groupMode) console.error(`links phase: offers already exist â€” this run only mints and attaches links${withDescriptions ? '' : ' (bodies off)'}`);
+  if (withheld) console.error(`not sent: ${withheld} role(s) carry no link and no body — counted above, nothing for the portal to apply`);
+
+  // A role we could not pair, or could not link, carries nothing the portal can apply. Posting it made every batch
+  // mostly noise — and a batch that held only noise was rejected outright, killing the links in the next batch
+  // (2026-11-16). Unpaired roles are counted here and reported as a summary, not sent.
+  const postable = captures.filter((capture) => capture.referralUrl || capture.content);
+  const withheld = captures.length - postable.length;
 
   // One caller writes offers, and it is never the tenant's machine.
   const applied = agentMode
-    ? await reportAgentResult({ captures, listing })
+    ? await reportAgentResult({ captures: postable, listing })
     : await applyCaptures({
       supabase,
       tenant: tenantRow,
       offers,
       sourceId,
       sourceSlug: MICRO1_PLATFORM.source,
-      captures,
+      captures: postable,
       apply
     });
   if (applied.error) console.error(`insert failed: ${applied.error}`);
