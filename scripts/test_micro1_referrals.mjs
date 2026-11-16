@@ -450,6 +450,7 @@ const ROLES = [
   const {
     captureGroupsOnPage,
     parkedSurveyExpr,
+    openBuilderExpr,
     readAffiliateExpr,
     clearSelectionExpr,
     selectRolesExpr,
@@ -462,9 +463,15 @@ const ROLES = [
   // Answer by *what was asked*, not by position: an aborted group skips calls, so counting desyncs.
   // The selection expression embeds the group's titles, so match its stable prefix instead.
   const selectPrefix = selectRolesExpr({ titles: ['__probe__'] }).split('__probe__')[0];
-  const fakePage = ({ page = 'builder', cards = [], selectionOk = true, link = 'https://jobs.micro1.ai/post/abc123?referralCode=42' } = {}) => {
+  const fakePage = ({ page = 'builder', opensTo = null, cards = [], selectionOk = true, link = 'https://jobs.micro1.ai/post/abc123?referralCode=42' } = {}) => {
+    let surveys = 0;
     const evaluateJson = async ({ expression }) => {
-      if (expression === parkedSurveyExpr()) return { ok: true, page, boxes: page === 'builder' ? 4 : 0, cards: cards.length };
+      if (expression === parkedSurveyExpr()) {
+        surveys += 1;
+        const seen = surveys > 1 && opensTo ? opensTo : page;
+        return { ok: true, page: seen, boxes: seen === 'builder' ? 4 : 0, cards: seen === 'builder' ? cards.length : 0 };
+      }
+      if (expression === openBuilderExpr()) return { ok: true, clicked: true, label: 'Link with specific expert opportunities' };
       if (expression === readAffiliateExpr({ limit: 240 })) return { ok: cards.length > 0, cards };
       if (expression === installClipboardHookExpr()) return { ok: true };
       if (expression === clearSelectionExpr()) return { ok: true };
@@ -489,6 +496,12 @@ const ROLES = [
   eq('on the listing it refuses instead of pretending', onListing.ok, false);
   eq('and says which page it saw', onListing.reason, 'not_on_builder:listing');
   eq('having captured nothing', onListing.captures.length, 0);
+
+  // The real page: the roles become selectable only after the popup is opened. One click, then pairs.
+  const openedFirst = await captureGroupsOnPage({ ...fakePage({ page: 'listing', opensTo: 'builder', cards }), size: 2, maxGroups: 5 });
+  eq('it opens the popup and then captures', openedFirst.ok, true);
+  eq('two pairs from four cards', openedFirst.groups, 2);
+  eq('with a link on every role', openedFirst.captures.length, 4);
 
   const tooFew = await captureGroupsOnPage({ ...fakePage({ cards: [cards[0]] }), size: 2, maxGroups: 5 });
   eq('one role cannot form a group', tooFew.reason, 'builder_has_too_few_roles');

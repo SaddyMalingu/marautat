@@ -601,8 +601,20 @@ export async function captureGroupsOnPage({
   const evalExpr = (expression) => evaluateJson({ host, port, expression });
 
   const parked = await evalExpr(parkedSurveyExpr()).catch(() => null);
-  if (parked && parked.page && parked.page !== 'builder') {
-    return { ok: false, reason: `not_on_builder:${parked.page}`, cards: 0, groups: 0, captures: [], failures: [], skipped: [] };
+  let page = parked?.page || 'unknown';
+  if (page !== 'builder') {
+    // The modal has to be opened first: without it the page has no checkboxes at all.
+    const opened = await evalExpr(openBuilderExpr()).catch((error) => ({ ok: false, reason: error?.message }));
+    if (!opened?.ok) {
+      return { ok: false, reason: `not_on_builder:${page} (${opened?.reason || 'open_failed'})`, cards: 0, groups: 0, captures: [], failures: [], skipped: [] };
+    }
+    await new Promise((r) => setTimeout(r, 600));
+    const again = await evalExpr(parkedSurveyExpr()).catch(() => null);
+    page = again?.page || 'unknown';
+    if (page !== 'builder') {
+      return { ok: false, reason: `not_on_builder:${page}`, cards: 0, groups: 0, captures: [], failures: [], skipped: [] };
+    }
+    log('builder modal opened');
   }
 
   const read = await evalExpr(readAffiliateExpr({ limit: 240 })).catch((error) => ({ ok: false, reason: error?.message }));
@@ -635,6 +647,31 @@ export async function captureGroupsOnPage({
     failures: run.failures,
     skipped: plan.skipped
   };
+}
+
+/**
+ * Open the builder modal (2026-11-16).
+ *
+ * From the live page dump: the card grid with checkboxes lives **inside** a modal opened by a button reading
+ * "Link with specific expert opportunities", with a `fixed inset-0 z-[110]` overlay and a "Close modal" control.
+ * Without this click there are no checkboxes on the page at all, and every selection attempt would fail with a
+ * reason that looks like a selector problem.
+ */
+export function openBuilderExpr() {
+  return `(() => {
+  const clean = (v) => String(v == null ? '' : v).replace(/\\s+/g, ' ').trim();
+  const boxes = document.querySelectorAll('input[type="checkbox"]').length;
+  const cards = document.querySelectorAll('${MICRO1_CARD}').length;
+  if (boxes >= 2 && cards >= 2) return JSON.stringify({ ok: true, alreadyOpen: true, boxes, cards });
+  const button = Array.from(document.querySelectorAll('button, [role="button"], a')).find((el) =>
+    /link with specific|specific expert|select the opportunit/i.test(clean(el.innerText || el.textContent)));
+  if (!button) return JSON.stringify({ ok: false, reason: 'no_builder_entry', boxes, cards });
+  const label = clean(button.innerText || button.textContent).slice(0, 120);
+  if (button.disabled) return JSON.stringify({ ok: false, reason: 'builder_entry_disabled', label });
+  try { button.scrollIntoView({ block: 'center' }); } catch (e) {}
+  button.click();
+  return JSON.stringify({ ok: true, clicked: true, label });
+})()`;
 }
 
 /** Which page is in front of us: the builder (checkboxes), the listing, or something else. */
