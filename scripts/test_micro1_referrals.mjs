@@ -669,6 +669,18 @@ const ROLES = [
   eq('only held offers are paired', heldOnly.ok, false);
   eq('and the stop says why', heldOnly.reason, 'no_pairable_roles');
 
+  // One held role is not a pair, and it is not `no_pairable_roles` either: the fix is the offers phase, because the
+  // popup's other roles are not offers yet. Three re-mint runs were spent on that confusion on 2026-11-17.
+  const singleHeld = await captureGroupsOnPage({
+    ...fakePage({ cards: heldFixture }),
+    size: 2,
+    maxGroups: 5,
+    knownTitles: ['Mechanical Engineering Expert']
+  });
+  eq('a popup with one held role cannot pair', singleHeld.reason, 'held_pool_too_small');
+  eq('and it reports what the pool held', singleHeld.held, 1);
+  eq('and how many roles are not collected yet', singleHeld.notCollected, 2);
+
   const pairOfHeld = await captureGroupsOnPage({
     ...fakePage({ cards: heldFixture }),
     size: 2,

@@ -308,12 +308,20 @@ export function nextActions({ coverage, platforms = [], runs, links } = {}) {
       && Number(run.done) > 0
       && Number(run.ok) === 0);
   if (emptyCapture) {
+    // Two very different empty captures, and the fix differs. A popup that contains only one of the tenant's roles cannot
+    // pair anything — the answer is the offers phase, not another re-mint (2026-11-17, three runs spent on that).
+    const stop = String(emptyCapture.run.message || '');
+    const needsOffers = /held_pool_too_small|no_pairable_roles|no_known_offers|not collected/i.test(stop);
     actions.push({
       key: 'empty_capture',
       severity: 'critical',
-      label: `The last ${emptyCapture.slug} capture processed ${emptyCapture.run.done} and minted nothing`,
-      hint: 'No role and no link reached the portal. Re-run it and watch the popup builder open: a capture that produced nothing cannot pay, however finished it looks.',
-      action: { type: 'capture', phase: 'links', remint: true }
+      label: needsOffers
+        ? `Only roles you already hold can be paired — the last ${emptyCapture.slug} popup was mostly roles you do not have`
+        : `The last ${emptyCapture.slug} capture processed ${emptyCapture.run.done} and minted nothing`,
+      hint: needsOffers
+        ? 'Micro1 needs two roles you own in the same popup. Run Collect new roles first, then re-mint: a link minted for a partner you do not own has nowhere to go.'
+        : 'No role and no link reached the portal. Re-run it and watch the popup builder open: a capture that produced nothing cannot pay, however finished it looks.',
+      action: needsOffers ? { type: 'capture', phase: 'offers' } : { type: 'capture', phase: 'links', remint: true }
     });
   }
 

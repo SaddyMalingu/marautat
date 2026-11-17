@@ -1064,6 +1064,7 @@ async function withServer(db) {
   const { planReferralGroups, parseAffiliateCards } = await import('../utils/browserActor/tasks/micro1Referrals.js');
   const { buildRunArgs } = await import('../utils/browserActor/runArgs.js');
   const { applyCaptureUpdates } = await import('../utils/browserActor/applyCaptures.js');
+  const { nextActions } = await import('../utils/writerFlow.js');
 
   const cards = [
     { title: 'Legal Expert (Employment)', family: 'legal', field: 'legal' },
@@ -1103,6 +1104,23 @@ async function withServer(db) {
   const dash = fs.readFileSync(new URL('../admin/tenant_dashboard.html', import.meta.url), 'utf8');
   ok("the panel's actions can render a capture button", /kind\.type === 'capture'/.test(dash));
   ok('and a re-mint button exists for a tenant with no minted link', /Re-mint Micro1 links/.test(dash) && /data-remint="1"/.test(dash));
+
+  // The two empty captures have different fixes, and the run's own words choose between them.
+  const withStop = (message) => nextActions({
+    coverage: {},
+    platforms: [],
+    runs: { byPlatform: { micro1: { last: { status: 'failed', done: 22, total: 22, ok: 0, failed: 0, message } } } },
+    links: {}
+  }).find((action) => action.key === 'empty_capture');
+
+  eq('a popup holding one held role asks for the offers phase',
+    withStop('0/0 links, 0 imported · stopped: held_pool_too_small')?.action?.phase, 'offers');
+  eq('and a bare empty capture asks for the links phase',
+    withStop('0/0 links, 0 imported')?.action?.phase, 'links');
+  eq('with a re-mint, since nothing was ever minted',
+    withStop('0/0 links, 0 imported')?.action?.remint, true);
+  ok('the offers-phase action says why',
+    /roles you already hold/.test(String(withStop('stopped: held_pool_too_small')?.label)), withStop('stopped: held_pool_too_small')?.label);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -1049,6 +1049,29 @@ export async function captureGroupsOnPage({
     log(`builder: ${knownCards.length} of ${cards.length} card(s) are offers you already hold — pairing those (${notCollected} not collected yet; the offers phase brings them in first)`);
   }
 
+  /**
+   * Pairing needs two roles the tenant OWNS (2026-11-17).
+   *
+   * Micro1 mints for a selection, and a partner that is not an offer yet has nowhere to receive the link — but the
+   * planner cannot see that difference: it only knows it has one card in the pool. Saying `no_pairable_roles` for this
+   * case sent the tenant back to re-mint over and over; the actual next step is the offers phase, which is what turns
+   * the popup's other cards into offers. Three runs were spent on that confusion on 17 Nov.
+   */
+  if (knownCards.length < 2) {
+    log(`only ${knownCards.length} of ${cards.length} role(s) in this popup are offers you hold — run Collect new roles first: a link minted for a partner you do not own has nowhere to go`);
+    return {
+      ok: false,
+      reason: 'held_pool_too_small',
+      cards: cards.length,
+      held: knownCards.length,
+      notCollected,
+      groups: 0,
+      captures: [],
+      failures: [],
+      skipped: []
+    };
+  }
+
   // Every card in the popup is tickable — the reader's `selectable` flag is a guess made from markup, and gating on it
   // paired only 12 of 70 cards (2026-11-16). So pairing covers every parsed card, and a role that truly cannot be
   // ticked fails loudly by name in the tick ladder instead of being silently dropped here.

@@ -437,6 +437,10 @@ async function runCapture({ existingOffers = [], identity = null } = {}) {
     // the pairing engine runs first, related roles only, and its link is attached to each role it covers.
     let groupedLinks = new Map();
     let groupedOk = true;
+    // Why the group pass stopped, when it did. Without this the reason lived only in the tenant's console window, so the
+    // portal could see `0 links` and nothing else — which is what made three re-mint attempts look identical
+    // (2026-11-17).
+    let groupStop = null;
     if (groupMode) {
       /**
        * Re-mint mode (2026-11-17).
@@ -478,6 +482,7 @@ async function runCapture({ existingOffers = [], identity = null } = {}) {
         console.error(`group pass: ${engine.captures.length} role(s) linked across ${engine.groups || 0} pair(s)`);
       } else {
         groupedOk = false;
+        groupStop = engine.reason;
         console.error(`group pass stopped — ${engine.reason}`);
         // Print what the page actually offers. The first live attempt said only "no_builder_entry", which named
         // nothing and cost a round trip; these labels are the fix.
@@ -943,8 +948,15 @@ async function main() {
   console.log(JSON.stringify(report, null, 2));
 
   await finishRunTracking({
-    message: `${withLink.length}/${captures.length} links, ${applied.inserted} imported`,
-    detail: { captured: captures.length, links: withLink.length, bodies: withBody.length, inserted: applied.inserted }
+    message: `${withLink.length}/${captures.length} links, ${applied.inserted} imported${groupStop ? ` · stopped: ${groupStop}` : ''}`,
+    detail: {
+      captured: captures.length,
+      links: withLink.length,
+      bodies: withBody.length,
+      inserted: applied.inserted,
+      // Carried to the portal so the panel can name the next step instead of showing a bare zero.
+      groupStop: groupStop || null
+    }
   });
 }
 
