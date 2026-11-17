@@ -38,16 +38,38 @@ export const LINK_STATES = Object.freeze(['wrong', 'unpayable', 'unchecked', 'mi
 /** Severity order for the action list: money lost first, cosmetics last. */
 export const SEVERITY_ORDER = Object.freeze(['critical', 'high', 'medium', 'low']);
 
+/**
+ * The referral code, which host, and how it is carried — or null when there is none.
+ *
+ * `payable` has to answer one question: if a reader clicks this, does anybody get credited? That is a property of the
+ * URL alone, so it is parsed once here and every other answer is derived from it. Two forms exist in this repo:
+ *
+ *   - query form — `?referralCode=<uuid>` — Micro1's per-account share code, one per account, so *every* role carries
+ *     the same value. Two values on one host means a capture used a second account (2026-11-17, see `linkAttribution`).
+ *   - path form  — `/r/<code>` — Turing's per-role invite code, a different value for every role by design.
+ */
+export function referralCodeOf(url) {
+  const raw = String(url || '').trim();
+  if (!raw) return null;
+  let parsed;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return null;
+  }
+  const queryKeys = ['referralCode', 'referral_code', 'ref', 'code', 'invite', 'aff', 'affiliate'];
+  for (const key of queryKeys) {
+    const value = parsed.searchParams.get(key);
+    if (value && value.trim()) return { code: value.trim(), host: parsed.host, form: 'query' };
+  }
+  const path = parsed.pathname.match(/\/(?:r|ref|refs|invite|i)\/([A-Za-z0-9_-]+)/i);
+  if (path) return { code: path[1], host: parsed.host, form: 'path' };
+  return null;
+}
+
 /** Does this URL actually credit the tenant? A bare URL has no query at all, so it cannot carry a code. */
 function creditsSomebody(url) {
-  try {
-    const parsed = new URL(String(url));
-    // `?referralCode=…` (Micro1) or a path segment such as `/r/<code>` (Turing). The path form carries short codes, so no
-    // minimum length: refusing `/r/a` would call a working Turing link unpayable (2026-11-17).
-    return parsed.search.length > 1 || /\/(r|ref|invite|i)\/[A-Za-z0-9_-]+/i.test(parsed.pathname);
-  } catch {
-    return false;
-  }
+  return Boolean(referralCodeOf(url));
 }
 
 /**
@@ -60,11 +82,14 @@ export function linkStateOf(offer) {
   const url = String(offer?.referral_url || '').trim();
   if (!url) return 'missing';
   const verdict = String(offer?.link_verdict || '').toLowerCase();
+  // A mismatch leads the queue even among code-less links: it is the one state that pays somebody else, and a human
+  // has to look at where it lands before anything is replaced.
   if (verdict === 'mismatch') return 'wrong';
-  if (verdict === 'match') return 'verified';
-  // A link with no referral code cannot credit anyone, whatever else is true of it. This is the state that cost the
-  // tenant months: the row looks done, and every click through it earns nothing.
+  // A link with no referral code cannot credit anyone, whatever else is true of it — including a "verified" link, where
+  // verification proved it lands on the right role and said nothing about whether a click earns. That is the state that
+  // cost this tenant months: the row looks done, and every click through it earns nothing.
   if (!creditsSomebody(url)) return 'unpayable';
+  if (verdict === 'match') return 'verified';
   return 'unchecked';
 }
 
@@ -148,6 +173,9 @@ export function buildPlatformFunnel(offers = []) {
     };
     const live = String(offer.status || '').toLowerCase() === 'published';
     const state = linkStateOf(offer);
+    // Payability is decided by the URL, not by the verdict. Keeping it independent is what stops a link from being
+    // counted as payable because somebody once clicked "verify" on it (2026-11-17).
+    const credits = creditsSomebody(offer.referral_url);
     row.captured += 1;
     if (live) row.live += 1; else row.draft += 1;
     if (state === 'missing') row.missing += 1; else row.linked += 1;
@@ -155,8 +183,11 @@ export function buildPlatformFunnel(offers = []) {
     if (state === 'wrong') row.wrong += 1;
     if (state === 'unchecked') row.unchecked += 1;
     if (state === 'unpayable') row.unpayable += 1;
-    // Both `verified` and `unchecked` carry a referral code, so both can earn; `unpayable` and `missing` cannot.
-    if (state === 'verified' || state === 'unchecked') row.payable += 1;
+    // A URL that carries no code earns nothing, whatever its verdict says — including a mismatch, where the row is also
+    // counted as `wrong`. Both statements are true, and hiding either one flatters the catalogue.
+    if (!credits && state !== 'missing') row.unpayable += state === 'unpayable' ? 0 : 1;
+    // Payable = carries a code AND has not been proven to point at a different role.
+    if (credits && state !== 'wrong') row.payable += 1;
     byPlatform.set(slug, row);
   }
 
@@ -193,6 +224,54 @@ export function sharedLinkGroups(offers = [], limit = 6) {
     .sort((a, b) => b[1].length - a[1].length)
     .slice(0, Math.max(1, Number(limit) || 6))
     .map(([url, titles]) => ({ url, titles, count: titles.length }));
+}
+
+/**
+ * Which referral code the catalogue actually rides on, per host (2026-11-17).
+ *
+ * 236 roles under one `?referralCode=` is normal for Micro1 — the code is the account's share code, so every role
+ * carries the same value, and that sameness is the *evidence* the capture used one signed-in account. Two values on the
+ * same host means one of them belongs to somebody else, and nothing else on the panel would notice: every row would
+ * still say "payable". Path-form codes (Turing `/r/<id>`) are per role by design, so they are counted, never flagged.
+ */
+export function linkAttribution(offers = []) {
+  const byHost = new Map();
+  for (const offer of Array.isArray(offers) ? offers : []) {
+    const parsed = referralCodeOf(offer?.referral_url);
+    if (!parsed) continue;
+    const entry = byHost.get(parsed.host) || { host: parsed.host, form: parsed.form, codes: new Map() };
+    entry.codes.set(parsed.code, (entry.codes.get(parsed.code) || 0) + 1);
+    byHost.set(parsed.host, entry);
+  }
+  const hosts = [...byHost.values()]
+    .map((entry) => {
+      const codes = [...entry.codes.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .map(([code, roles]) => ({ code, roles }));
+      return {
+        host: entry.host,
+        form: entry.form,
+        code: codes[0].code,
+        roles: codes.reduce((sum, row) => sum + row.roles, 0),
+        distinct: codes.length,
+        codes: codes.slice(0, 4),
+        // Only the query form is expected to hold exactly one code.
+        mixed: entry.form === 'query' && codes.length > 1
+      };
+    })
+    .sort((a, b) => b.roles - a.roles);
+  return {
+    hosts,
+    primary: hosts[0] || null,
+    // The whole catalogue's answer in one flag: "does every link here credit the same account?"
+    mixed: hosts.some((host) => host.mixed)
+  };
+}
+
+/** A code long enough to read, short enough for a table cell. */
+export function shortCode(code) {
+  const value = String(code || '');
+  return value.length > 12 ? `${value.slice(0, 8)}…` : value;
 }
 
 /** A tenant overriding the verifier. Recorded as a decision, not as a fact. */
@@ -239,6 +318,18 @@ export function nextActions({ coverage, platforms = [], runs, links } = {}) {
       label: `${wrong} referral link${wrong === 1 ? '' : 's'} point at a different job`,
       hint: "They look fine in the list and pay for somebody else's placement. Review each one.",
       action: { type: 'filter', link: 'wrong' }
+    });
+  }
+  // Two codes on one marketplace is the quiet version of "wrong links": every row still says payable, and half the
+  // clicks credit an account the tenant does not own (2026-11-17).
+  const mixedHost = Array.isArray(links?.attribution?.hosts) ? links.attribution.hosts.find((host) => host.mixed) : null;
+  if (mixedHost) {
+    actions.push({
+      key: 'mixed_codes',
+      severity: 'high',
+      label: `${mixedHost.distinct} referral codes on ${mixedHost.host}`,
+      hint: 'One signed-in account should mint one code for every role. A second code means part of the catalogue credits another account.',
+      action: { type: 'capture', phase: 'links' }
     });
   }
   if (unchecked) {
@@ -400,6 +491,9 @@ export function writerFlowView({
   // an operations one: "how much of this catalogue can I be paid for?" (2026-11-17).
   const payable = platforms.reduce((sum, row) => sum + (row.payable || 0), 0);
   const unpayable = platforms.reduce((sum, row) => sum + (row.unpayable || 0), 0);
+  // Which account the links ride on. "Payable" is only trustworthy if the tenant can see the code, because a link that
+  // credits the wrong account is indistinguishable from one that credits theirs until the money fails to arrive.
+  const attribution = linkAttribution(offers);
   const links = {
     counts: {
       wrong: coverage.wrong,
@@ -411,6 +505,10 @@ export function writerFlowView({
     },
     payableTotal: payable,
     unpayableTotal: unpayable,
+    // How many roles carry a code at all. The plain-language answer to "is anything unpayable?": none when this equals
+    // the number of linked roles.
+    linkedTotal: platforms.reduce((sum, row) => sum + (row.linked || 0), 0),
+    attribution,
     shared: sharedLinkGroups(offers),
     queue: linkQueue(offers, { limit: linkLimit }),
     // Descriptions are counted here too: a published offer with a one-line body looks
@@ -432,6 +530,8 @@ export function writerFlowView({
     sharedLinks: links.shared,
     payableTotal: payable,
     unpayableTotal: unpayable,
+    // The code behind every link, and whether it is one code or several.
+    attribution,
     runs: {
       available: runsAvailable,
       total: runSummary.total,

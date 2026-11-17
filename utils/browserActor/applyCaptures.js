@@ -24,6 +24,9 @@ import { referralAttribution, titleKey } from './tasks/micro1Referrals.js';
 import { planDescriptionUpdates } from './enrichment.js';
 import { planOfferImport } from './offersImport.js';
 import { describeEnrichment } from './enrichment.js';
+// The money question and the portal's funnel must be answered by one function, or the run log and the dashboard
+// disagree about the same catalogue (2026-11-17).
+import { referralCodeOf } from '../writerFlow.js';
 
 /**
  * @param {{supabase: object, tenant: {id: string, slug: string}, offers?: object[],
@@ -354,6 +357,11 @@ export async function readCoverage(supabase, tenantId) {
    * Description fullness says whether the funnel has text to work with; this says whether an offer can EARN. A row with
    * no URL and a row whose URL carries no referral code are both dead, and only the second looks healthy in a list —
    * which is exactly how 259 offers sat there paying nothing.
+   *
+   * The test is `referralCodeOf`, the *same* one the portal's funnel uses, and not `referralAttribution`. They answer
+   * different questions: attribution is deliberately forgiving about an unrecognised query so a capture is not thrown
+   * away on a guess, while this number claims that a click earns. `?utm_source=share` and `?referralCode=` are worlds
+   * apart, and letting the lenient one answer the money question is how a run log and a dashboard end up disagreeing.
    */
   let payable = 0;
   let unpayable = 0;
@@ -361,7 +369,7 @@ export async function readCoverage(supabase, tenantId) {
   for (const row of live) {
     const url = String(row.referral_url || '').trim();
     if (!url) unlinked += 1;
-    else if (referralAttribution(url) === 'none') unpayable += 1;
+    else if (!referralCodeOf(url)) unpayable += 1;
     else payable += 1;
   }
   return {

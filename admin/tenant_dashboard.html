@@ -1460,7 +1460,9 @@ function wfFunnelHtml(d) {
               <td class="text-center">${p.captured}</td>
               <td class="text-center">${p.live}</td>
               <td class="text-center">${p.linked}${p.missing ? ` <span style="color:#f59e0b">(${p.missing} none)</span>` : ''}</td>
-              <td class="text-center">${p.payable || 0}${p.unpayable ? ` <span style="color:#ef4444" title="The URL carries no referral code, so a click through it earns nothing">(${p.unpayable} unpayable)</span>` : ''}</td>
+              <td class="text-center">${p.payable || 0}${p.unpayable
+                ? ` <span style="color:#ef4444" title="The URL carries no referral code, so a click through it earns nothing">(${p.unpayable} unpayable)</span>`
+                : (p.payable ? ' <span style="color:#22c55e" title="Every attached link carries a referral code">0 unpayable</span>' : '')}</td>
               <td class="text-center">${p.verified}${p.wrong ? ` <span style="color:#ef4444">(${p.wrong} wrong)</span>` : ''}</td>
               <td>
                 <div class="progress" style="height:6px;background:#1e293b">
@@ -1504,7 +1506,9 @@ function wfPlatformCardHtml(d, spec) {
       : '<span class="text-muted">never run for this tenant</span>';
 
   const counters = funnel
-    ? `${funnel.captured} captured · <span style="color:#22c55e">${funnel.payable || 0} payable</span> · ${funnel.verified} verified${funnel.unpayable ? ` · <span style="color:#f59e0b" title="A URL is attached but carries no referral code">${funnel.unpayable} unpayable</span>` : ''}${funnel.wrong ? ` · <span style="color:#ef4444">${funnel.wrong} wrong</span>` : ''}`
+    ? `${funnel.captured} captured · <span style="color:#22c55e">${funnel.payable || 0} payable</span> · ${funnel.verified} verified · ${funnel.unpayable
+        ? `<span style="color:#f59e0b" title="A URL is attached but carries no referral code">${funnel.unpayable} unpayable</span>`
+        : '<span style="color:#22c55e" title="Every attached link carries a referral code">0 unpayable</span>'}${funnel.wrong ? ` · <span style="color:#ef4444">${funnel.wrong} wrong</span>` : ''}`
     : 'nothing captured yet';
 
   // A marketplace with a live run cannot queue another (the database holds one slot per kind),
@@ -1606,6 +1610,42 @@ function wfPairLinksHtml(d) {
       ${pairs.length > 6 ? `<div class="text-muted" style="font-size:.72rem">+ ${pairs.length - 6} more pair(s)</div>` : ''}
     </div>`;
 }
+
+/** A code long enough to recognise, short enough to sit in a line. */
+function wfShortCode(code) {
+  const value = String(code || '');
+  return value.length > 12 ? `${value.slice(0, 8)}…` : value;
+}
+
+/**
+ * The code every link rides on.
+ *
+ * "Payable: 264" is only reassuring if the tenant can see *which* account is being credited. Micro1's code is the
+ * account's share code, so 236 roles under one value is the expected shape and is worth stating plainly; two values on
+ * one host means part of the catalogue credits another account, and every other number here would still look green
+ * (2026-11-17).
+ */
+function wfAttributionHtml(d) {
+  const attribution = d.attribution || null;
+  const hosts = attribution && Array.isArray(attribution.hosts) ? attribution.hosts : [];
+  if (!hosts.length) return '';
+  const mixed = Boolean(attribution.mixed);
+  return `
+    <div class="mt-3">
+      <div class="text-muted" style="font-size:.74rem;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Attribution — the code your links ride on</div>
+      ${hosts.slice(0, 4).map((host) => `
+        <div style="font-size:.78rem;margin-top:2px">
+          <i class="fa-solid fa-fingerprint" style="opacity:.55"></i>
+          ${esc(host.host)}
+          <span class="text-muted">· ${host.roles} role${host.roles === 1 ? '' : 's'} · ${esc(host.form)} code </span>
+          <code>${esc(wfShortCode(host.code))}</code>
+          ${host.mixed ? ` <span style="color:#ef4444">(${host.distinct} different codes — one of them is not your account)</span>`
+            : (host.distinct === 1 ? ' <span style="color:#22c55e">· one code, one account</span>' : '')}
+        </div>`).join('')}
+      ${mixed ? '<div style="color:#ef4444;font-size:.76rem;margin-top:4px">Some links were captured under a different account. Re-capture them with Capture Micro1 links while signed in as this tenant.</div>' : ''}
+    </div>`;
+}
+
 
 function wfActionsHtml(d) {
   const actions = (d.nextActions || []).slice(0, 3);
@@ -1863,6 +1903,7 @@ function wfControlHtml(d) {
          and a long table between the cards and the button is how a control gets missed. */ ''}
     ${wfListeningHtml(d)}
     ${wfFunnelHtml(d)}
+    ${wfAttributionHtml(d)}
     ${wfPairLinksHtml(d)}
     <div class="mt-3"><div class="text-muted" style="font-size:.74rem;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Next</div>${wfActionsHtml(d)}</div>
     <div class="mt-3"><div class="text-muted" style="font-size:.74rem;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Links that need you</div>${wfLinkQueueHtml(d)}</div>

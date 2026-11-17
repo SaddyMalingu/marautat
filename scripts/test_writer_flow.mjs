@@ -917,6 +917,91 @@ async function withServer(db) {
   eq('and exposes the pair for display', view.sharedLinks.length, 1);
 }
 
+// ---------------------------------------------------------------------------
+// Payability is a fact about the URL, not about the last verdict
+// ---------------------------------------------------------------------------
+// The live catalogue (Malingu Ventures, 17 Nov) is 236 Micro1 roles behind ONE `?referralCode=` and 104 Turing
+// `/r/<id>` codes, and not a single code-less URL. That makes `unpayable: 0` the honest answer — which is exactly why
+// the panel has to say it out loud instead of omitting the word, and why the code itself has to be visible.
+{
+  const { linkStateOf, buildPlatformFunnel, referralCodeOf, linkAttribution, nextActions, writerFlowView } =
+    await import('../utils/writerFlow.js');
+
+  const micro1 = 'https://jobs.micro1.ai/post/79aa5dad-4ce0-49bd-8d38-d20f5aeb0cd9?referralCode=98fb722e-dde7-40cc-977b-f40871bdb2e6&utm_source=referral&utm_medium=share&utm_campaign=job_referral';
+  const turing = 'https://work.turing.com/r/1RaIcR1_hi';
+
+  eq('a Micro1 link reports its share code', referralCodeOf(micro1)?.code, '98fb722e-dde7-40cc-977b-f40871bdb2e6');
+  eq('and which form it takes', referralCodeOf(micro1)?.form, 'query');
+  eq('a Turing link reports its own code', referralCodeOf(turing)?.code, '1RaIcR1_hi');
+  eq('and is a path code', referralCodeOf(turing)?.form, 'path');
+  eq('a bare posting URL has no code', referralCodeOf('https://jobs.micro1.ai/post/79aa5dad-4ce0-49bd-8d38-d20f5aeb0cd9'), null);
+  eq('an empty query value is not a code', referralCodeOf('https://jobs.micro1.ai/post/x?referralCode='), null);
+  eq('nonsense is not a code', referralCodeOf('not a url'), null);
+
+  // The verdict answers "is this the right role". It never answered "does a click earn" — and treating it as if it did
+  // is how 339 verified rows sat on a catalogue whose earning was untested.
+  eq('a verified link with no code is still unpayable',
+    linkStateOf({ referral_url: 'https://jobs.micro1.ai/post/abc', link_verdict: 'match' }), 'unpayable');
+  eq('a code-carrying link with no verdict is only unchecked', linkStateOf({ referral_url: micro1 }), 'unchecked');
+
+  const live = [
+    { title: 'Spanish (LATAM)', status: 'published', referral_url: micro1, link_verdict: 'match' },
+    { title: 'Attorney', status: 'published', referral_url: 'https://jobs.micro1.ai/post/abc', link_verdict: 'match' }
+  ];
+  const liveFunnel = buildPlatformFunnel(live);
+  eq('one role is payable', liveFunnel[0].payable, 1);
+  eq('and the verified-but-codeless one is counted unpayable', liveFunnel[0].unpayable, 1);
+  eq('so payable is not simply the verified count', liveFunnel[0].verified, 1);
+
+  const single = linkAttribution([
+    { referral_url: micro1 }, { referral_url: micro1 }, { referral_url: micro1 },
+    { referral_url: 'https://work.turing.com/r/aaa' }, { referral_url: 'https://work.turing.com/r/bbb' }
+  ]);
+  eq('one Micro1 code across many roles is one account', single.primary.distinct, 1);
+  eq('and covers every role', single.primary.roles, 3);
+  eq('so nothing is flagged', single.mixed, false);
+  // Turing issues a different code per role on purpose; flagging that would have the panel crying wolf forever.
+  eq('per-role path codes are never called a mix-up', linkAttribution([{ referral_url: 'https://work.turing.com/r/aaa' }, { referral_url: 'https://work.turing.com/r/bbb' }]).mixed, false);
+
+  const twoCodes = linkAttribution([
+    { referral_url: micro1 },
+    { referral_url: 'https://jobs.micro1.ai/post/2?referralCode=1c25240b-d7c0-4102-a415-7bf2afc6e2b7' }
+  ]);
+  eq('two codes on one host is a mix-up', twoCodes.mixed, true);
+  eq('and both are named', twoCodes.primary.distinct, 2);
+
+  const mixedActions = nextActions({ coverage: {}, platforms: buildPlatformFunnel(live), runs: {}, links: { attribution: twoCodes } });
+  ok('a second account becomes an action', Boolean(mixedActions.find((a) => a.key === 'mixed_codes')));
+  eq('one that re-captures rather than re-verifies',
+    mixedActions.find((a) => a.key === 'mixed_codes')?.action?.phase, 'links');
+
+  const liveView = writerFlowView({ offers: live });
+  eq('the panel exposes the attribution', liveView.attribution.primary.code, '98fb722e-dde7-40cc-977b-f40871bdb2e6');
+  eq('with every role it covers', liveView.attribution.primary.roles, 1);
+  eq('and how many linked roles exist', liveView.links.linkedTotal, 2);
+
+  // The run log and the dashboard must not be able to disagree about the same catalogue: `readCoverage` used to ask the
+  // lenient capture predicate, which counts ANY query string as attribution (2026-11-17).
+  const { readCoverage } = await import('../utils/browserActor/applyCaptures.js');
+  const coverageRows = [
+    { id: '1', title: 'A', external_id: 'micro1:a', description: 'x'.repeat(400), referral_url: micro1, deleted_at: null },
+    { id: '2', title: 'B', external_id: 'micro1:b', description: 'x'.repeat(400), referral_url: 'https://jobs.micro1.ai/post/abc?utm_source=share', deleted_at: null },
+    { id: '3', title: 'C', external_id: 'micro1:c', description: 'x'.repeat(400), referral_url: null, deleted_at: null }
+  ];
+  const fake = { from: () => ({ select: () => ({ eq: async () => ({ data: coverageRows, error: null }) }) }) };
+  const coverage = await readCoverage(fake, 'tenant');
+  const coverageFunnel = buildPlatformFunnel(coverageRows);
+  eq('the worker and the panel agree on payable', coverage.links.payable, coverageFunnel[0].payable);
+  eq('and on how many credit nobody', coverage.links.unpayable, coverageFunnel[0].unpayable);
+  eq('a utm-only URL earns nothing, whoever is asked', coverage.links.unpayable, 1);
+
+  // The absence of unpayable links has to be visible, otherwise "can't see unpayable" is the reader's only reading.
+  const dash = fs.readFileSync(new URL('../admin/tenant_dashboard.html', import.meta.url), 'utf8');
+  ok('the panel states zero-unpayable rather than omitting it', /0 unpayable/.test(dash));
+  ok('and renders the attribution block', /function wfAttributionHtml/.test(dash) && /wfAttributionHtml\(d\)/.test(dash));
+  ok('with the mix-up warning', /one of them is not your account/.test(dash));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
 
