@@ -36,7 +36,7 @@ export function usesSocialListener(platform) {
  *          limit?: number|string, api: string}} input
  * @returns {string[]} argv for the child, script path first (relative; the caller makes it absolute)
  */
-export function buildRunArgs({ relative, platform, tenantSlug, runId, limit, api, group = true, maxGroups = 5 }) {
+export function buildRunArgs({ relative, platform, tenantSlug, runId, limit, api, group = true, maxGroups = 12 }) {
   // The branch is chosen by the **platform id**, which is a value the queue route validated,
   // rather than by comparing paths. Paths differ by separator, by resolution and by casing; an id
   // does not. That mistake cost two rounds and four networks.

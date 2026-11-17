@@ -626,6 +626,8 @@ export function createAgentRunsRouter({
           existing: updated
             ? {
                 linksUpdated,
+                // How many of those replaced a URL that credited nobody. A mass write should say so out loud.
+                linksReplaced: (updated.links?.verification || []).filter((row) => row.replaced).length,
                 linksPlanned: updated.links?.planned || 0,
                 linkSkipped: updated.links?.skipped || [],
                 linkConflicts: updated.links?.conflicts || [],

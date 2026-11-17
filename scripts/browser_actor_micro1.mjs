@@ -761,7 +761,7 @@ async function reportAgentResult({ captures, listing }) {
     planned: 0, inserted: 0, withLinks: 0, skipped: [], verification: [], coverage: null, error: null,
     // The other half of a capture: existing offers given their link or body. Without this the run printed "imported 0"
     // while two links had been attached — a summary that reads like failure after success (2026-11-16).
-    linksUpdated: 0, descriptionsUpdated: 0, existingSkipped: []
+    linksUpdated: 0, descriptionsUpdated: 0, existingSkipped: [], linksReplaced: 0
   };
   for (let index = 0; index < captures.length; index += CHUNK) {
     const chunk = captures.slice(index, index + CHUNK);
@@ -796,6 +796,7 @@ async function reportAgentResult({ captures, listing }) {
     applied.inserted += body.inserted || 0;
     applied.withLinks += body.withLinks || 0;
     applied.linksUpdated += body.existing?.linksUpdated || 0;
+    applied.linksReplaced += body.existing?.linksReplaced || 0;
     applied.descriptionsUpdated += body.existing?.descriptionsUpdated || 0;
     applied.existingSkipped.push(...(body.existing?.linkSkipped || []));
     applied.skipped.push(...(body.skipped || []));
@@ -848,7 +849,7 @@ async function main() {
   if (apply) {
     // Two outcomes, both reported: new offers, and existing offers that just received their link. Printing only the
     // insert count told a successful run it had imported nothing (2026-11-16).
-    console.error(`imported ${applied.inserted} draft offer(s) (${applied.withLinks} with a verified link) Â· ${applied.linksUpdated} existing offer(s) given their link`);
+    console.error(`imported ${applied.inserted} draft offer(s) (${applied.withLinks} with a verified link) Â· ${applied.linksUpdated} existing offer(s) given their link${applied.linksReplaced ? ` (${applied.linksReplaced} replacing a link that credited nobody)` : ''}`);
     for (const skipped of (applied.existingSkipped || []).slice(0, 8)) {
       console.error(`  link skipped — ${String(skipped.title).slice(0, 50)}: ${skipped.reason}`);
     }
