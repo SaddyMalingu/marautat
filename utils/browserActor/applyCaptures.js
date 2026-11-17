@@ -24,9 +24,7 @@ import { referralAttribution, titleKey } from './tasks/micro1Referrals.js';
 import { planDescriptionUpdates } from './enrichment.js';
 import { planOfferImport } from './offersImport.js';
 import { describeEnrichment } from './enrichment.js';
-// The money question and the portal's funnel must be answered by one function, or the run log and the dashboard
-// disagree about the same catalogue (2026-11-17).
-import { referralCodeOf } from '../writerFlow.js';
+import { referralCodeOf } from './referralCode.js';
 
 /**
  * @param {{supabase: object, tenant: {id: string, slug: string}, offers?: object[],

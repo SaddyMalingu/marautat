@@ -25,6 +25,8 @@
  */
 import { summarizeCoverage, coverageHeadline, sourceOf } from './coverage.js';
 import { summarizeRuns, isActiveStatus, isStalled, runPlatform } from './browserActor/runs.js';
+// The one rule for "does this URL credit anyone", shared with the tenant's worker. See the module header.
+import { referralCodeOf, creditsSomebody } from './browserActor/referralCode.js';
 
 /**
  * A link needs attention when it is absent, unproven, provably wrong — or when it credits nobody.
@@ -41,36 +43,10 @@ export const SEVERITY_ORDER = Object.freeze(['critical', 'high', 'medium', 'low'
 /**
  * The referral code, which host, and how it is carried — or null when there is none.
  *
- * `payable` has to answer one question: if a reader clicks this, does anybody get credited? That is a property of the
- * URL alone, so it is parsed once here and every other answer is derived from it. Two forms exist in this repo:
- *
- *   - query form — `?referralCode=<uuid>` — Micro1's per-account share code, one per account, so *every* role carries
- *     the same value. Two values on one host means a capture used a second account (2026-11-17, see `linkAttribution`).
- *   - path form  — `/r/<code>` — Turing's per-role invite code, a different value for every role by design.
+ * Defined in `utils/browserActor/referralCode.js` because the tenant's worker must be able to import it too; this module
+ * only re-exports it so the portal and the runner cannot answer the same question differently.
  */
-export function referralCodeOf(url) {
-  const raw = String(url || '').trim();
-  if (!raw) return null;
-  let parsed;
-  try {
-    parsed = new URL(raw);
-  } catch {
-    return null;
-  }
-  const queryKeys = ['referralCode', 'referral_code', 'ref', 'code', 'invite', 'aff', 'affiliate'];
-  for (const key of queryKeys) {
-    const value = parsed.searchParams.get(key);
-    if (value && value.trim()) return { code: value.trim(), host: parsed.host, form: 'query' };
-  }
-  const path = parsed.pathname.match(/\/(?:r|ref|refs|invite|i)\/([A-Za-z0-9_-]+)/i);
-  if (path) return { code: path[1], host: parsed.host, form: 'path' };
-  return null;
-}
-
-/** Does this URL actually credit the tenant? A bare URL has no query at all, so it cannot carry a code. */
-function creditsSomebody(url) {
-  return Boolean(referralCodeOf(url));
-}
+export { referralCodeOf } from './browserActor/referralCode.js';
 
 /**
  * What this offer's referral link is, in one word.

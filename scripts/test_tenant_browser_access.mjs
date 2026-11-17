@@ -1085,7 +1085,35 @@ const tokenRows = [
     ok(`the zip contains ${required}`, names.includes(required));
   }
 
-  // The whole point of the bundle: the machine that browses holds no credential.
+  // Every relative import in the zip must land on another file *in the zip*.
+  //
+  // This is not hypothetical: `applyCaptures.js` imported `../writerFlow.js`, which the bundle never ships, so on
+  // 2026-11-17 every tenant's worker died with ERR_MODULE_NOT_FOUND before running a single capture — and the failure
+  // only appeared on the tenant's machine, inside a downloaded zip nobody tests by hand.
+  {
+    const present = new Set(names);
+    const broken = [];
+    const specifiers = (source) => {
+      const found = new Set();
+      for (const match of source.matchAll(/from\s+['"](\.[^'"]+)['"]/g)) found.add(match[1]);
+      for (const match of source.matchAll(/^\s*import\s+['"](\.[^'"]+)['"]/gm)) found.add(match[1]);
+      for (const match of source.matchAll(/import\s*\(\s*['"](\.[^'"]+)['"]\s*\)/g)) found.add(match[1]);
+      return [...found];
+    };
+    for (const entry of entries) {
+      if (!/\.(m?js)$/.test(entry.name)) continue;
+      const source = entry.data.toString('utf8');
+      for (const specifier of specifiers(source)) {
+        const target = path.posix.normalize(path.posix.join(path.posix.dirname(entry.name), specifier));
+        if (!present.has(target)) broken.push(`${entry.name} imports ${specifier}`);
+      }
+    }
+    ok('every import inside the worker zip resolves inside the zip', broken.length === 0, broken.join(' | '));
+    // The rule the funnel and the runner share has to ship, or the runner cannot ask whether a link can earn.
+    ok('the zip carries the shared payability rule', present.has('utils/browserActor/referralCode.js'));
+  }
+
+
   ok('no JWT in the zip', !/eyJhbGciOi/.test(allText));
   ok('no private key in the zip', !/BEGIN [A-Z ]*PRIVATE KEY/.test(allText));
   ok('no worker token in the zip', !/wkr_[A-Za-z0-9_-]{8,}/.test(allText));

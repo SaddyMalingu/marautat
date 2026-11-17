@@ -39,6 +39,10 @@ export const REQUIRED_ENTRIES = Object.freeze([
   'utils/browserActor/runtime.js',
   'utils/browserActor/cdp.js',
   'utils/browserActor/applyCaptures.js',
+  // The rule that decides whether a link can earn, shared by the portal's funnel and the runner. Named here because the
+  // day it was only in a server-side file, `applyCaptures.js` imported it and every worker died with
+  // ERR_MODULE_NOT_FOUND before running a capture (2026-11-17).
+  'utils/browserActor/referralCode.js',
   'scripts/browser_actor_referrals.mjs',
   // The OF application runner rides the same worker: the profile is on the tenant's machine, so the
   // browser that fills the form has to be driven from there. A zip without it would claim an apply
@@ -49,6 +53,15 @@ export const REQUIRED_ENTRIES = Object.freeze([
   'scripts/browser_actor_social_listen.mjs',
   'utils/browserActor/tasks/socialPlatforms.js'
 ]);
+
+/**
+ * Modules under `utils/browserActor` that the worker never loads.
+ *
+ * `workerBundle.js` *builds* the zip, so shipping it inside the zip is dead weight — and it is the one file that cannot
+ * satisfy the bundle's own rule, because it imports `../zipStore.js`, which is server-side. Keeping it out makes the
+ * invariant true for every file that does ship: an import in the zip always resolves inside the zip (2026-11-17).
+ */
+export const SERVER_ONLY_MODULES = Object.freeze(new Set(['utils/browserActor/workerBundle.js']));
 
 /** Every module under a directory, sorted so two builds are identical. */
 function listModuleFiles(dir) {
@@ -126,7 +139,9 @@ export function buildWorkerBundle({ apiBase, pairCode = null, repoRoot = REPO_RO
   // does it must be the tenant's own. Its modules live under `utils/browserActor`, which is copied below.
   entries.push({ name: 'scripts/browser_actor_chatterapply.mjs', data: read(path.join('scripts', 'browser_actor_chatterapply.mjs')) });
   for (const file of listModuleFiles(path.join(repoRoot, 'utils', 'browserActor'))) {
-    entries.push({ name: path.relative(repoRoot, file).split(path.sep).join('/'), data: fs.readFileSync(file) });
+    const name = path.relative(repoRoot, file).split(path.sep).join('/');
+    if (SERVER_ONLY_MODULES.has(name)) continue;
+    entries.push({ name, data: fs.readFileSync(file) });
   }
   entries.push({ name: 'utils/tenantRunnerIdentity.js', data: read(path.join('utils', 'tenantRunnerIdentity.js')) });
   entries.push({ name: 'utils/tenantAccess.js', data: read(path.join('utils', 'tenantAccess.js')) });
