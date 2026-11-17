@@ -36,7 +36,7 @@ export function usesSocialListener(platform) {
  *          limit?: number|string, api: string}} input
  * @returns {string[]} argv for the child, script path first (relative; the caller makes it absolute)
  */
-export function buildRunArgs({ relative, platform, tenantSlug, runId, limit, api, group = true, maxGroups = 12, phase = null }) {
+export function buildRunArgs({ relative, platform, tenantSlug, runId, limit, api, group = true, maxGroups = 12, phase = null, remint = false }) {
   // The branch is chosen by the **platform id**, which is a value the queue route validated,
   // rather than by comparing paths. Paths differ by separator, by resolution and by casing; an id
   // does not. That mistake cost two rounds and four networks.
@@ -90,6 +90,15 @@ export function buildRunArgs({ relative, platform, tenantSlug, runId, limit, api
     // 12 pairs per run, not 5: each pair is one transaction with the popup (it closes on generate), so more pairs per
     // MoreLogin start is the cheapest throughput there is.
     args.push('--groups', '--group-size', '2', '--max-groups', String(Math.min(25, Math.max(1, Number(maxGroups) || 12))));
+    /**
+     * Re-mint instead of assuming the stored links work (2026-11-17).
+     *
+     * The planner skips a role whose offer already carries an attributed URL, which is right when those links were
+     * minted. This tenant's were not: no capture has ever recorded a referral code, all 236 share one value, and
+     * clicking one does not name the tenant as the inviter. With `--remint` those roles are paired and minted again,
+     * and an existing link is replaceable when the new one differs.
+     */
+    if (remint) args.push('--remint');
   }
   return args;
 }

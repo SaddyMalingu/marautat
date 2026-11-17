@@ -313,7 +313,7 @@ export function nextActions({ coverage, platforms = [], runs, links } = {}) {
       severity: 'critical',
       label: `The last ${emptyCapture.slug} capture processed ${emptyCapture.run.done} and minted nothing`,
       hint: 'No role and no link reached the portal. Re-run it and watch the popup builder open: a capture that produced nothing cannot pay, however finished it looks.',
-      action: { type: 'capture', phase: 'links' }
+      action: { type: 'capture', phase: 'links', remint: true }
     });
   }
 

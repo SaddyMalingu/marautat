@@ -39,7 +39,9 @@ export async function applyCaptures({
   sourceSlug,
   captures = [],
   apply = true,
-  verify = verifyReferralLink
+  verify = verifyReferralLink,
+  // Set by a re-mint run: a stored link that carries a code but was never minted for this tenant is replaceable.
+  allowReplacePayable = false
 } = {}) {
   if (!tenant?.id) throw new Error('applyCaptures needs the tenant id — offers are tenant-scoped');
   if (!sourceSlug) throw new Error('applyCaptures needs a source slug');
@@ -189,7 +191,7 @@ export async function applyCaptures({
  *
  * @returns {{links: object, descriptions: object}}
  */
-export async function applyCaptureUpdates({ supabase, offers = [], captures = [], verify = verifyReferralLink, apply = true } = {}) {
+export async function applyCaptureUpdates({ supabase, offers = [], captures = [], verify = verifyReferralLink, apply = true, allowReplacePayable = false } = {}) {
   const rows = Array.isArray(offers) ? offers : [];
   const allCaptures = Array.isArray(captures) ? captures : [];
   // A paired link is handled directly, by title — not through the single-role planner. It lives on refer.micro1.ai and
@@ -225,12 +227,15 @@ export async function applyCaptureUpdates({ supabase, offers = [], captures = []
     if (existing) {
       // A URL that carries NO attribution credits nobody — it is the dead row this phase exists to replace. The
       // tenant's catalogue is exactly this shape: hundreds of offers with a link, none of them payable. A URL that
-      // *does* attribute is somebody's working referral and is never touched.
-      if (referralAttribution(existing) !== 'none') {
+      // *does* attribute is somebody's working referral and is never touched — unless the run is a re-mint, where the
+      // tenant has established that the stored codes do not credit them (2026-11-17).
+      const newUrl = String(capture.referralUrl || '').trim();
+      const sameLink = Boolean(newUrl) && newUrl === existing;
+      if (referralAttribution(existing) !== 'none' && !(allowReplacePayable && !sameLink)) {
         linkPlan.skipped.push({ title: capture.title, reason: 'already_has_link' });
         continue;
       }
-      replaceOf = existing;
+      if (!sameLink) replaceOf = existing;
     }
     const attribution = referralAttribution(capture.referralUrl);
     verification.push({
@@ -238,7 +243,7 @@ export async function applyCaptureUpdates({ supabase, offers = [], captures = []
       referral_url: capture.referralUrl,
       verdict: attribution === 'none' ? 'no_attribution' : 'group',
       reason: replaceOf
-        ? `paired with ${(capture.sharedWith || []).join(' + ') || 'another role'} — replacing an unpayable link`
+        ? `paired with ${(capture.sharedWith || []).join(' + ') || 'another role'} — replacing a link that does not credit you`
         : `paired with ${(capture.sharedWith || []).join(' + ') || 'another role'}`,
       resolvedTitle: null,
       source: 'group-selection',
@@ -298,6 +303,9 @@ export async function applyCaptureUpdates({ supabase, offers = [], captures = []
   const links = {
     planned: accepted.length,
     updated: 0,
+    // How many of the planned writes are replacements of a link already on file. A re-mint run reports this so the
+    // tenant can see it displaced something rather than quietly adding a second link (2026-11-17).
+    replaced: accepted.filter((update) => update.replaceOf).length,
     skipped: linkPlan.skipped,
     conflicts: linkPlan.conflicts,
     verification

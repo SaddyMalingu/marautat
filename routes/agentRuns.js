@@ -604,7 +604,11 @@ export function createAgentRunsRouter({
       const updated = await applyCaptureUpdates({
         supabase,
         offers: Array.isArray(offers) ? offers : [],
-        captures
+        captures,
+        // `remint` comes from the worker, which was told by the queue. It permits replacing a stored link that carries
+        // a code but was never minted for this tenant — the only way out of a catalogue whose links credit nobody
+        // (2026-11-17).
+        allowReplacePayable: req.body?.remint === true
       }).catch((error) => {
         console.error(`[agent] run ${run.id} could not apply offer updates: ${error?.message || error}`);
         return null;

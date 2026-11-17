@@ -1055,6 +1055,56 @@ async function withServer(db) {
     writerFlowView({ offers: [], runs: [{ id: 'r2', detail: { log: 'minted https://jobs.micro1.ai/post/x?referralCode=abc' } }] }).mintedInRuns, true);
 }
 
+// ---------------------------------------------------------------------------
+// Re-minting: the only way out of a catalogue whose links credit nobody
+// ---------------------------------------------------------------------------
+// The 17 Nov run opened the popup, read 84 cards, and stopped with `no_pairable_roles` — because every held role was
+// "already payable" on the strength of a code nobody minted (2026-11-17).
+{
+  const { planReferralGroups, parseAffiliateCards } = await import('../utils/browserActor/tasks/micro1Referrals.js');
+  const { buildRunArgs } = await import('../utils/browserActor/runArgs.js');
+  const { applyCaptureUpdates } = await import('../utils/browserActor/applyCaptures.js');
+
+  const cards = [
+    { title: 'Legal Expert (Employment)', family: 'legal', field: 'legal' },
+    { title: 'Legal Expert (Antitrust)', family: 'legal', field: 'legal' }
+  ];
+  const held = cards.map((card) => card.title);
+  eq('a role whose link is already on file is not paired again',
+    planReferralGroups(parseAffiliateCards({ ok: true, cards }).cards, { alreadyGrouped: held }).groups.length, 0);
+  eq('the planner pairs it as soon as nothing is held',
+    planReferralGroups(parseAffiliateCards({ ok: true, cards }).cards, { alreadyGrouped: [] }).groups.length, 1);
+
+  const remintArgv = buildRunArgs({ relative: 'scripts/browser_actor_micro1.mjs', platform: 'micro1', tenantSlug: 't', runId: 'r', limit: 70, api: 'https://a', remint: true });
+  ok('a re-mint run asks the runner for it', remintArgv.includes('--remint'), remintArgv.join(' '));
+  ok('and a normal capture does not',
+    !buildRunArgs({ relative: 'scripts/browser_actor_micro1.mjs', platform: 'micro1', tenantSlug: 't', runId: 'r', limit: 70, api: 'https://a' }).includes('--remint'));
+
+  // The write rule: a coded link is protected — unless the run is a re-mint and the new link differs.
+  const offer = { id: 'o1', title: 'Legal Expert (Employment)', referral_url: 'https://jobs.micro1.ai/post/x?referralCode=old' };
+  const capture = { title: offer.title, groupId: 'g1', referralUrl: 'https://jobs.micro1.ai/post/x?referralCode=new', sharedWith: ['Legal Expert (Antitrust)'] };
+  const guarded = await applyCaptureUpdates({ supabase: null, offers: [offer], captures: [capture], apply: false, verify: async () => ({ verdict: 'match' }) });
+  eq('a working link is never overwritten by a normal run', guarded.links.planned, 0);
+  ok('and the reason is named', (guarded.links.skipped || []).some((row) => row.reason === 'already_has_link'));
+
+  const reminted = await applyCaptureUpdates({ supabase: null, offers: [offer], captures: [capture], apply: false, allowReplacePayable: true, verify: async () => ({ verdict: 'match' }) });
+  eq('a re-mint run may replace it', reminted.links.planned, 1);
+  eq('and says it displaced a link', reminted.links.replaced, 1);
+  ok('naming the reason', /does not credit you/.test(String(reminted.links.verification[0].reason)), reminted.links.verification[0].reason);
+
+  // The same link back is not a replacement: it would churn the row for nothing.
+  const identical = await applyCaptureUpdates({
+    supabase: null, offers: [offer], captures: [{ ...capture, referralUrl: offer.referral_url }],
+    apply: false, allowReplacePayable: true, verify: async () => ({ verdict: 'match' })
+  });
+  eq('an identical link is left alone even when re-minting', identical.links.planned, 0);
+
+  // An action that names a fix has to carry the control.
+  const dash = fs.readFileSync(new URL('../admin/tenant_dashboard.html', import.meta.url), 'utf8');
+  ok("the panel's actions can render a capture button", /kind\.type === 'capture'/.test(dash));
+  ok('and a re-mint button exists for a tenant with no minted link', /Re-mint Micro1 links/.test(dash) && /data-remint="1"/.test(dash));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
 

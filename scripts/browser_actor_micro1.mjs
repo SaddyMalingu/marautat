@@ -438,6 +438,19 @@ async function runCapture({ existingOffers = [], identity = null } = {}) {
     let groupedLinks = new Map();
     let groupedOk = true;
     if (groupMode) {
+      /**
+       * Re-mint mode (2026-11-17).
+       *
+       * Normally a role whose offer already carries an attributed URL is skipped, because minting a second link for a
+       * paid-for role wastes the one thing Micro1 will not give twice. That rule assumes the stored links were minted.
+       * For this tenant they were not: no run has ever recorded a referral code, all 236 share one value, and clicking
+       * one does not name the tenant as the inviter — so every held role looked "already payable" and the planner
+       * answered `no_pairable_roles` on 2026-11-17 while 340 roles sat unable to earn.
+       */
+      const remint = flag('remint', null) !== null;
+      if (remint) {
+        console.error('remint: every held role is eligible for a fresh pair — the stored links were never minted by a run');
+      }
       const engine = await captureGroupsOnPage({
         evaluateJson,
         host,
@@ -448,10 +461,12 @@ async function runCapture({ existingOffers = [], identity = null } = {}) {
         // imported without a link, and the far larger group whose link credits nobody — the tenant's catalogue is 259
         // offers with a URL that pays nothing. Passing every imported title excluded 67 roles once; passing every
         // *linked* title excluded 48 more (2026-11-16).
-        alreadyGrouped: existingOffers
-          .filter((offer) => offer.referral_url && referralAttribution(offer.referral_url) !== 'none')
-          .map((offer) => offer.title)
-          .filter(Boolean),
+        alreadyGrouped: remint
+          ? []
+          : existingOffers
+            .filter((offer) => offer.referral_url && referralAttribution(offer.referral_url) !== 'none')
+            .map((offer) => offer.title)
+            .filter(Boolean),
         // Every role this tenant holds. Pairing is limited to these, because a link minted for a role we do not own has
         // nowhere to go and is wasted — four links died that way on 2026-11-16.
         knownTitles: existingOffers.map((offer) => offer.title).filter(Boolean),
@@ -753,7 +768,7 @@ async function finishRunTracking({ status, message, detail } = {}) {
  * so it reports what it observed and stops there. The server re-checks every link before it
  * is attached — holding a valid token makes a worker authentic, not trusted.
  */
-async function reportAgentResult({ captures, listing }) {
+async function reportAgentResult({ captures, listing, remint = false }) {
   // Chunked for the same reason the Turing runner chunks: one request per 20 roles keeps the body
   // far below any server limit, and a 413 splits rather than loses the batch.
   const CHUNK = 20;
@@ -775,6 +790,9 @@ async function reportAgentResult({ captures, listing }) {
     const chunk = captures.slice(index, index + CHUNK);
     const res = await agentCall('POST', `/api/agent/runs/${encodeURIComponent(String(runIdFlag))}/result`, {
       listing: { cards: listing?.count || 0, waitedMs: listing?.waitedMs || null },
+      // A re-mint run may replace a stored link that carries a code but was never minted for this tenant. The server
+      // decides what to do with it; the worker only reports what it was told to do (2026-11-17).
+      remint: Boolean(remint),
       captures: chunk.map((capture) => ({
         title: capture.title,
         jobId: capture.jobId,
@@ -845,7 +863,7 @@ async function main() {
 
   // One caller writes offers, and it is never the tenant's machine.
   const applied = agentMode
-    ? await reportAgentResult({ captures: postable, listing })
+    ? await reportAgentResult({ captures: postable, listing, remint: flag('remint', null) !== null })
     : await applyCaptures({
       supabase,
       tenant: tenantRow,
@@ -853,7 +871,9 @@ async function main() {
       sourceId,
       sourceSlug: MICRO1_PLATFORM.source,
       captures: postable,
-      apply
+      apply,
+      // A re-mint run may replace a link that carries a code but was never minted by us — the state this tenant is in.
+      allowReplacePayable: flag('remint', null) !== null
     });
   if (applied.error) console.error(`insert failed: ${applied.error}`);
   if (apply) {

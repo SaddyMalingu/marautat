@@ -487,6 +487,10 @@ export function createBrowserAccessRouter({
       // Whitelisted, because the value ends up as a command-line argument on the tenant's machine.
       const phaseAsked = String(req.body?.phase || '').toLowerCase();
       const runPhase = phaseAsked === 'offers' ? 'offers' : (phaseAsked === 'links' ? 'links' : null);
+      // Re-mint: the tenant has established that the links already on file do not credit them (no capture ever recorded
+      // a minted code, and clicking one does not name them as the inviter), so held roles must be pairable again
+      // (2026-11-17). A boolean, because it becomes a command-line flag on the tenant's machine.
+      const remint = req.body?.remint === true;
 
       let run = null;
       let kindUsed = MICRO1_RUN_KIND;
@@ -497,7 +501,14 @@ export function createBrowserAccessRouter({
         kind,
         sourceSlug: platform,
         requestedBy: 'tenant:portal',
-        detail: { limit, platform, via: 'portal', runtime: access?.runtime || 'local', ...(runPhase ? { phase: runPhase } : {}) }
+        detail: {
+          limit,
+          platform,
+          via: 'portal',
+          runtime: access?.runtime || 'local',
+          ...(runPhase ? { phase: runPhase } : {}),
+          ...(remint ? { remint: true } : {})
+        }
       });
 
       // Two database errors mean different things, and both used to fall through to a 500:
