@@ -1513,7 +1513,8 @@ function wfPlatformCardHtml(d, spec) {
   const busyTitle = 'A capture is already running for this marketplace — wait for it or press Cancel';
 
   const buttons = browserDriven
-    ? `<button class="btn btn-outline-acc btn-sm" data-wfact="capture" ${busy ? `disabled title="${esc(busyTitle)}"` : browserReady ? '' : 'disabled title="Connect your browser below first"'}>Capture Micro1 links</button>`
+    ? `<button class="btn btn-outline-acc btn-sm" data-wfact="capture" ${busy ? `disabled title="${esc(busyTitle)}"` : browserReady ? '' : 'disabled title="Connect your browser below first"'}>Capture Micro1 links</button>
+       <button class="btn btn-outline-light btn-sm" data-wfact="capture" data-phase="offers" ${busy ? `disabled title="${esc(busyTitle)}"` : browserReady ? '' : 'disabled title="Connect your browser below first"'} title="Reads the roles themselves — title, pay, openings and full description — without minting links. A role you have not collected cannot be given a link, so run this when Micro1 lists roles your portal does not have yet.">Collect new roles</button>`
     : `<button class="btn btn-outline-acc btn-sm" data-wfact="queue" data-kind="referrals" data-refresh="0" ${busy ? `disabled title="${esc(busyTitle)}"` : ''} title="Reads Turing and attaches each role's referral link">Capture links</button>
        <button class="btn btn-outline-light btn-sm" data-wfact="queue" data-kind="referrals" data-refresh="1" ${busy ? 'disabled' : ''} title="Opens each Turing role and stores the full description">Fill descriptions</button>`;
 
@@ -1571,11 +1572,15 @@ function wfActiveRunHtml(d) {
  */
 function wfQueuedHint(run) {
   const platform = String(run.platform || (String(run.kind) === 'micro1' ? 'micro1' : 'turing')).toLowerCase();
+  // Which of the two jobs is waiting: minting links and collecting roles use the same queue, and a tenant staring at
+  // "waiting for a runner" could not tell which one they had asked for.
+  const phase = String(run.phase || (run.detail && run.detail.phase) || '').toLowerCase();
+  const doing = phase === 'offers' ? 'Collecting new roles: ' : (phase === 'links' ? 'Minting links: ' : '');
   // Both marketplaces now run on the tenant's worker, one at a time. The hint says which
   // condition is actually outstanding, because "waiting for a runner" was ambiguous for months.
   return platform === 'micro1'
-    ? 'Queued for your worker — it claims this within about 15 seconds while its window is open. Leave the worker running.'
-    : 'Queued for your worker — it starts as soon as the previous capture finishes, so the two never drive the same profile at once. It clears itself after 30 minutes if the worker stays closed.';
+    ? `${doing}queued for your worker — it claims this within about 15 seconds while its window is open. Leave the worker running.`
+    : `${doing}queued for your worker — it starts as soon as the previous capture finishes, so the two never drive the same profile at once. It clears itself after 30 minutes if the worker stays closed.`;
 }
 
 function wfActionsHtml(d) {

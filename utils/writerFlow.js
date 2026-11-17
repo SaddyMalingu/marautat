@@ -376,6 +376,9 @@ export function writerFlowView({
         ok: Number(run.ok_items) || 0,
         failed: Number(run.failed_items) || 0,
         message: run.message || null,
+        // Which job this run is: minting links, or collecting roles. Without it the queue line could not say, and the
+        // tenant had no way to tell the two apart (2026-11-17).
+        phase: (run.detail && run.detail.phase) || null,
         createdAt: run.created_at || null,
         finishedAt: run.finished_at || null,
         heartbeatAt: run.heartbeat_at || null
