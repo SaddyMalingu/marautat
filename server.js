@@ -7958,6 +7958,23 @@ app.get("/admin", adminAuth, (req, res) => {
 });
 
 // ===== TENANT DASHBOARD =====
+/**
+ * Which build is this? (2026-11-17)
+ *
+ * Public and deliberately boring: no secrets, just the commit the running process was started from. "Is my deploy live?"
+ * has cost several rounds of guessing, and the dashboard now prints this in the Collection control panel.
+ */
+app.get('/api/build', (req, res) => {
+  const commit = process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || process.env.SOURCE_VERSION || null;
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({
+    ok: true,
+    commit: commit ? String(commit) : null,
+    // How long this process has been up: a deploy that has not happened shows an old uptime under an old commit.
+    uptimeSeconds: Math.round(process.uptime())
+  });
+});
+
 app.get("/tenant-dashboard", tenantDashboardAuth, (req, res) => {
   log(`Tenant dashboard loaded by ${req.ip} at ${new Date().toISOString()}`, "PAGE");
   const dashboardPath = path.join(process.cwd(), "admin", "tenant_dashboard.html");
