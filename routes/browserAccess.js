@@ -482,6 +482,12 @@ export function createBrowserAccessRouter({
         console.error(`[browser-access] tenant=${ctx.site.slug} closed ${expired ? 'expired' : 'abandoned'} run ${row.id}`);
       }
 
+      // Two phases ride the same route: `links` (the default) mints attributed links for roles the tenant already
+      // holds; `offers` collects the roles themselves — which is the only thing that makes a role linkable at all.
+      // Whitelisted, because the value ends up as a command-line argument on the tenant's machine.
+      const phaseAsked = String(req.body?.phase || '').toLowerCase();
+      const runPhase = phaseAsked === 'offers' ? 'offers' : (phaseAsked === 'links' ? 'links' : null);
+
       let run = null;
       let kindUsed = MICRO1_RUN_KIND;
       let kindFallback = false;
@@ -491,7 +497,7 @@ export function createBrowserAccessRouter({
         kind,
         sourceSlug: platform,
         requestedBy: 'tenant:portal',
-        detail: { limit, platform, via: 'portal', runtime: access?.runtime || 'local' }
+        detail: { limit, platform, via: 'portal', runtime: access?.runtime || 'local', ...(runPhase ? { phase: runPhase } : {}) }
       });
 
       // Two database errors mean different things, and both used to fall through to a 500:

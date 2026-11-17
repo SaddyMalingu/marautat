@@ -2070,6 +2070,7 @@ function wfAccessHtml(d) {
       ${d.connected
         ? `<button class="btn btn-info btn-sm" data-wfact="verify">Verify sessions</button>
            <button class="btn btn-outline-acc btn-sm" data-wfact="capture">Capture now (Micro1)</button>
+<button class="btn btn-outline-light btn-sm" data-wfact="capture" data-phase="offers" title="Reads the roles themselves — title, pay, openings and full description — without minting links. Use this first when Micro1 lists roles your portal does not have yet: a role that was never collected cannot be given a link.">Collect new roles</button>
            <button class="btn btn-outline-light btn-sm" data-wfact="disconnect">Disconnect</button>`
         : `<input class="form-control form-control-sm" id="wfAccessKey" type="password" autocomplete="off"
                  placeholder="MoreLogin API key" style="max-width:280px" ${d.canStore ? '' : 'disabled'}>
@@ -2329,7 +2330,7 @@ async function wfCaptureNow(btn) {
   if (btn) { btn.disabled = true; btn.textContent = 'Starting…'; }
   try {
     const r = await apiJson('/tenant/blogger/browser-access/capture', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ platform: 'micro1', limit: 70 })
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ platform: 'micro1', limit: 70, ...(btn && btn.dataset && btn.dataset.phase ? { phase: btn.dataset.phase } : {}) })
     });
     if (!r.ok) { toast(r.data?.error || 'Could not start the capture', 'err'); return; }
     if (r.data?.queuedForWorker) {

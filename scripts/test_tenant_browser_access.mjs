@@ -842,15 +842,43 @@ const localAccess = { browserAccess: { provider: 'morelogin', envId: '2116562908
   }
 }
 
-// ---------------------------------------------------------------------------
-// The guide lives in the portal, not in an operator's chat message
-// ---------------------------------------------------------------------------
+{
+  const db = fakeCaptureDb(cloudAccess);
+  const server = await withCaptureServer({ db, spawnRun: () => ({ pid: 11 }) });
+  try {
+    // Two phases, one button each: a role that was never collected cannot be given a link, so collection is a
+    // first-class request rather than a flag nobody sets (2026-11-17).
+    const res = await call(server.base, 'POST', '/tenant/blogger/browser-access/capture', { platform: 'micro1', phase: 'offers' });
+    eq('an offers-phase capture is accepted', res.status, 202);
+    eq('and the phase travels with the run', db.runs[0].detail.phase, 'offers');
+  } finally {
+    await server.close();
+  }
+}
+
+{
+  const db = fakeCaptureDb(cloudAccess);
+  const server = await withCaptureServer({ db, spawnRun: () => ({ pid: 12 }) });
+  try {
+    // The phase ends up as a command-line argument on the tenant's machine, so anything unrecognised is dropped
+    // rather than passed through.
+    const res = await call(server.base, 'POST', '/tenant/blogger/browser-access/capture', { platform: 'micro1', phase: '--per-role --rm' });
+    eq('an invented phase is still a capture', res.status, 202);
+    eq('and is not stored', db.runs[0].detail.phase, undefined);
+  } finally {
+    await server.close();
+  }
+}
+
 
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..');
 const dash = fs.readFileSync(path.join(root, 'admin/tenant_dashboard.html'), 'utf8');
 
 ok('the connect panel is mounted in the portal', dash.includes("access.id = 'wfAccess'"));
 ok('the five-step guide is rendered inside it', /How to connect \(5 minutes\)/.test(dash));
+// The second phase is a button, not a hidden flag: collection is what makes a new role linkable at all.
+ok('the portal can ask for the offers phase', /data-phase="offers"/.test(dash));
+ok('and the request carries the phase', /dataset\.phase \? \{ phase: btn\.dataset\.phase \}/.test(dash));
 ok('step 1 says to create a MoreLogin account', /Create a MoreLogin account/.test(dash));
 // The one promise this whole design rests on must be visible to the tenant, not just true.
 ok('step 2 promises we never see the password', /never sees your password/.test(dash));
