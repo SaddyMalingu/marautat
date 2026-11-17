@@ -322,6 +322,27 @@ export function nextActions({ coverage, platforms = [], runs, links } = {}) {
   }
   // Two codes on one marketplace is the quiet version of "wrong links": every row still says payable, and half the
   // clicks credit an account the tenant does not own (2026-11-17).
+  // A capture that walked the listing and came back with nothing is the failure this whole panel exists to make loud: it
+  // looks like work, it spends a MoreLogin start, and the catalogue is exactly as it was. Three Micro1 runs closed
+  // `succeeded` with `33/33 · 0 links` on 17 Nov while the tenant believed links were being minted (see below).
+  const emptyCapture = Object.entries(runs?.byPlatform || {})
+    .map(([slug, state]) => ({ slug, run: state?.last }))
+    .find(({ run }) => run
+      && ['succeeded', 'failed', 'partial'].includes(String(run.status))
+      && Number(run.done) > 0
+      && Number(run.ok) === 0);
+  if (emptyCapture) {
+    actions.push({
+      key: 'empty_capture',
+      severity: 'critical',
+      label: `The last ${emptyCapture.slug} capture processed ${emptyCapture.run.done} and minted nothing`,
+      hint: 'No role and no link reached the portal. Re-run it and watch the popup builder open: a capture that produced nothing cannot pay, however finished it looks.',
+      action: { type: 'capture', phase: 'links' }
+    });
+  }
+
+  // Two codes on one marketplace is the quiet version of "wrong links": every row still says payable, and half the
+  // clicks credit an account the tenant does not own (2026-11-17).
   const mixedHost = Array.isArray(links?.attribution?.hosts) ? links.attribution.hosts.find((host) => host.mixed) : null;
   if (mixedHost) {
     actions.push({
@@ -487,6 +508,7 @@ export function writerFlowView({
   const coverage = summarizeCoverage(offers);
   const platforms = buildPlatformFunnel(offers);
   const runSummary = summarizeRuns(runs, now);
+  const byPlatform = runsByPlatform(runs, now);
   // Which links actually pay, and which of them cover more than one role. Both are the tenant's commercial question, not
   // an operations one: "how much of this catalogue can I be paid for?" (2026-11-17).
   const payable = platforms.reduce((sum, row) => sum + (row.payable || 0), 0);
@@ -494,6 +516,13 @@ export function writerFlowView({
   // Which account the links ride on. "Payable" is only trustworthy if the tenant can see the code, because a link that
   // credits the wrong account is indistinguishable from one that credits theirs until the money fails to arrive.
   const attribution = linkAttribution(offers);
+  // Has any capture ever *recorded a minted link*? The tenant's own test is the one that matters — click it, and the
+  // page should name you as the inviter. Without a single minted URL in the run history, the codes sitting on the offers
+  // came from somewhere else, and calling them payable would be a claim the portal cannot support (2026-11-17).
+  const mintedInRuns = (Array.isArray(runs) ? runs : []).slice(0, 25).some((run) => {
+    const blob = `${run?.message || ''} ${JSON.stringify(run?.detail || {})}`;
+    return /referralCode=|[?&](ref|code)=/i.test(blob);
+  });
   const links = {
     counts: {
       wrong: coverage.wrong,
@@ -509,6 +538,8 @@ export function writerFlowView({
     // the number of linked roles.
     linkedTotal: platforms.reduce((sum, row) => sum + (row.linked || 0), 0),
     attribution,
+    // Read by the panel: when false, the codes on file were not produced by any capture it can point at.
+    mintedInRuns,
     shared: sharedLinkGroups(offers),
     queue: linkQueue(offers, { limit: linkLimit }),
     // Descriptions are counted here too: a published offer with a one-line body looks
@@ -532,6 +563,8 @@ export function writerFlowView({
     unpayableTotal: unpayable,
     // The code behind every link, and whether it is one code or several.
     attribution,
+    // False when no capture in the run history ever recorded a minted URL — the panel must say so rather than imply it.
+    mintedInRuns,
     runs: {
       available: runsAvailable,
       total: runSummary.total,
@@ -542,7 +575,7 @@ export function writerFlowView({
         : 'Run history is unavailable until the run-tracking migration is applied.',
       // What the two marketplace cards render. Without this the panel could only say
       // "a run is happening", never "Micro1 failed an hour ago and Turing never started".
-      byPlatform: runsByPlatform(runs, now),
+      byPlatform,
       // Newest first, capped: the panel shows a history, not an audit log.
       recent: (Array.isArray(runs) ? runs : []).slice(0, 8).map((run) => ({
         id: run.id,
@@ -562,7 +595,7 @@ export function writerFlowView({
         heartbeatAt: run.heartbeat_at || null
       }))
     },
-    nextActions: nextActions({ coverage, platforms, runs: runSummary, links }),
+    nextActions: nextActions({ coverage, platforms, runs: { ...runSummary, byPlatform }, links }),
     generatedAt: new Date(now).toISOString()
   };
 }

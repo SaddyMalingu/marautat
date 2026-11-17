@@ -191,8 +191,11 @@ export function deriveRunStatus({ cancelled = false, error = null, total = 0, do
   if (error) return failed > 0 || ok > 0 || done > 0 ? 'partial' : 'failed';
   const processed = Math.max(Number(done) || 0, (Number(ok) || 0) + (Number(failed) || 0));
   if (processed === 0) return 'failed';
-  if (Number(failed) === 0 && (!Number(total) || processed >= Number(total))) return 'succeeded';
+  // Nothing succeeded, so nothing about this run is a success — even when it walked every item and counted none of them
+  // as failures. Three Micro1 captures closed `succeeded` with `33/33 · 0 links, 0 imported` on 17 Nov and put a green
+  // tick on a catalogue that had never minted a link (2026-11-17).
   if (Number(ok) === 0) return 'failed';
+  if (Number(failed) === 0 && (!Number(total) || processed >= Number(total))) return 'succeeded';
   return 'partial';
 }
 

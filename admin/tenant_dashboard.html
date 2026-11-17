@@ -664,13 +664,42 @@ let wfTab = 'blogger';
 // the whole list already arrived with /tenant/blogger — no new route, no round trip.
 const wfOfferState = { status: 'all', links: 'all', pages: 'all', source: 'all', sort: 'title', dir: 'asc' };
 
-/** 'none' | 'verified' | 'wrong' | 'unchecked' — what the referral link really is. */
+/**
+ * Does this URL carry a referral code, in the same shapes the server accepts?
+ *
+ * Mirrors `referralCodeOf` in `utils/writerFlow.js`. The offers table filters client-side, so this rule is the one place
+ * it could drift from the funnel — and a filter that disagrees with the number above it sends the tenant clicking links
+ * that were never counted (2026-11-17).
+ */
+function wfLinkHasCode(url) {
+  const raw = String(url || '').trim();
+  if (!raw) return false;
+  let parsed;
+  try { parsed = new URL(raw); } catch { return false; }
+  for (const key of ['referralCode', 'referral_code', 'ref', 'code', 'invite', 'aff', 'affiliate']) {
+    const value = parsed.searchParams.get(key);
+    if (value && value.trim()) return true;
+  }
+  return /\/(?:r|ref|refs|invite|i)\/[A-Za-z0-9_-]+/i.test(parsed.pathname);
+}
+
+/** 'none' | 'verified' | 'wrong' | 'unpayable' | 'unchecked' — what the referral link really is. */
 function wfOfferLinkState(o) {
   if (!String(o.referral_url || '').trim()) return 'none';
   const verdict = String(o.link_verdict || '').toLowerCase();
-  if (verdict === 'match') return 'verified';
+  // A mismatch is checked first: it is the one state that pays somebody else, and it outranks "no code" because the
+  // tenant has to look at where it lands before replacing it.
   if (verdict === 'mismatch') return 'wrong';
+  // A URL with no referral code earns nothing however it got there, so it is not "unverified" — nothing about
+  // verifying it could make it pay (2026-11-17).
+  if (!wfLinkHasCode(o.referral_url)) return 'unpayable';
+  if (verdict === 'match') return 'verified';
   return 'unchecked';
+}
+
+/** Can a click through this offer's link earn? The filter and the funnel must answer this the same way. */
+function wfOfferPayable(o) {
+  return wfLinkHasCode(o.referral_url) && wfOfferLinkState(o) !== 'wrong';
 }
 
 function wfLinkBadge(o) {
@@ -678,6 +707,7 @@ function wfLinkBadge(o) {
   if (state === 'none') return '<span class="badge" style="background:#6b7280" title="No referral link — this offer earns nothing">none</span>';
   if (state === 'verified') return '<span class="badge" style="background:#10b981" title="Resolves to this job">verified</span>';
   if (state === 'wrong') return '<span class="badge" style="background:#ef4444" title="This link lands on a DIFFERENT job">wrong job</span>';
+  if (state === 'unpayable') return '<span class="badge" style="background:#b91c1c" title="A URL is attached but carries no referral code — every click through it earns nothing">no code</span>';
   return '<span class="badge" style="background:#f59e0b" title="Never checked since it was attached">unverified</span>';
 }
 
@@ -695,7 +725,12 @@ function wfFilterOffers(offers) {
       if (isDeleted) return false;
       if (s.status !== 'all' && status !== s.status) return false;
     }
-    if (s.links !== 'all' && wfOfferLinkState(o) !== s.links) return false;
+    // `payable` and `unpayable` are answered by the URL alone, because that is the question a tenant asking "can this
+    // earn?" is asking. The verdict-based options stay: they answer the different question of whether the link lands on
+    // the right role (2026-11-17).
+    if (s.links === 'payable' && !wfOfferPayable(o)) return false;
+    if (s.links === 'unpayable' && wfOfferLinkState(o) !== 'unpayable') return false;
+    if (!['all', 'payable', 'unpayable'].includes(s.links) && wfOfferLinkState(o) !== s.links) return false;
     // Which marketplace this offer came from. `source_slug` is attached by the server using
     // the same rule the Collection funnel uses, so the filter and the funnel can never
     // disagree about what "Micro1" means.
@@ -807,7 +842,7 @@ function wfOfferRows(offers) {
       <td>${badge(o.status)}</td>
       <td>${o.compensation_max != null ? esc(o.compensation_currency || 'KES') + ' ' + Number(o.compensation_max).toLocaleString() : '—'}</td>
       <td class="text-center"><button class="btn btn-sm ${n ? 'btn-outline-info' : 'btn-outline-secondary'}" data-act="posts" data-id="${esc(o.id)}">${n ? n + ' page' + (n === 1 ? '' : 's') : 'Pages'}</button></td>
-      <td>${wfLinkBadge(o)}</td>
+      <td>${wfLinkBadge(o)}${o.referral_url ? ` <a href="${esc(o.referral_url)}" target="_blank" rel="noopener noreferrer" style="font-size:.72rem" title="Open this referral link — the page should name you as the inviter. If it does not, the code is not yours.">open&nbsp;${'\u2197'}</a>` : ''}</td>
       <td class="text-end">
         ${o.deleted_at
           ? `<button class="btn btn-sm btn-outline-success" data-act="restore" data-id="${esc(o.id)}" title="Put it back — the offer and its pages were never removed">Restore</button>`
@@ -1333,6 +1368,8 @@ function wfBloggerHtml(ctx) {
           </select>
           <select id="wfFilterLinks" class="form-select form-select-sm" style="width:auto" title="Referral link health">
             <option value="all">Any link</option>
+            <option value="payable">Payable — has a referral code</option>
+            <option value="unpayable">Unpayable — no code, earns nothing</option>
             <option value="verified">Link verified</option>
             <option value="unchecked">Link unverified</option>
             <option value="wrong">Link points elsewhere</option>
@@ -1643,6 +1680,7 @@ function wfAttributionHtml(d) {
             : (host.distinct === 1 ? ' <span style="color:#22c55e">· one code, one account</span>' : '')}
         </div>`).join('')}
       ${mixed ? '<div style="color:#ef4444;font-size:.76rem;margin-top:4px">Some links were captured under a different account. Re-capture them with Capture Micro1 links while signed in as this tenant.</div>' : ''}
+      ${d.mintedInRuns === false ? '<div style="color:#f59e0b;font-size:.76rem;margin-top:4px">No capture has ever recorded a minted referral link. These codes came from the offer pages, not from your popup builder — open one and check it names you as the inviter before trusting the payable count.</div>' : ''}
     </div>`;
 }
 

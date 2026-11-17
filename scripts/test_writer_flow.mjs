@@ -1000,6 +1000,59 @@ async function withServer(db) {
   ok('the panel states zero-unpayable rather than omitting it', /0 unpayable/.test(dash));
   ok('and renders the attribution block', /function wfAttributionHtml/.test(dash) && /wfAttributionHtml\(d\)/.test(dash));
   ok('with the mix-up warning', /one of them is not your account/.test(dash));
+
+  // ── The filter the tenant asked for, answering the same question as the funnel ──────────────────────────────
+  ok('Your Offers can be filtered to the payable links', /<option value="payable">/.test(dash));
+  ok('and to the ones that earn nothing', /<option value="unpayable">/.test(dash));
+  ok('each row can be opened to confirm by clicking', /Open this referral link/.test(dash));
+
+  // Running the browser's own rule here is the only way to know the filter and the number above it agree; two
+  // implementations of "has a code" would send the tenant clicking links the count ignored (2026-11-17).
+  const fnStart = dash.indexOf('function wfLinkHasCode(');
+  const fnEnd = dash.indexOf('\n}', fnStart);
+  const browserRule = new Function(`${dash.slice(fnStart, fnEnd + 2)}; return wfLinkHasCode;`)();
+  const samples = [
+    micro1,
+    turing,
+    'https://jobs.micro1.ai/post/79aa5dad?referralCode=abc',
+    'https://jobs.micro1.ai/post/79aa5dad',
+    'https://jobs.micro1.ai/post/79aa5dad?utm_source=share',
+    'https://jobs.micro1.ai/post/79aa5dad?referralCode=',
+    'https://micro1.ai/invite/abc123xyz',
+    ''
+  ];
+  for (const url of samples) {
+    eq(`the offers filter agrees with the funnel on ${url.slice(-28) || '(empty)'}`,
+      browserRule(url), Boolean(referralCodeOf(url)));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// A run that captured nothing is not a success
+// ---------------------------------------------------------------------------
+// The run history for Malingu Ventures on 17 Nov: three Micro1 captures closed `succeeded` with `33/33 · 0 links,
+// 0 imported`, and no run in forty has ever recorded a minted referral code. The green tick is what let that stand for
+// a day while the tenant believed links were being minted.
+{
+  const { deriveRunStatus } = await import('../utils/browserActor/runs.js');
+  const { nextActions, writerFlowView } = await import('../utils/writerFlow.js');
+
+  eq('a run that walked every item and succeeded at none is a failure',
+    deriveRunStatus({ total: 33, done: 33, ok: 0, failed: 0 }), 'failed');
+  eq('while real success still is one',
+    deriveRunStatus({ total: 33, done: 33, ok: 33, failed: 0 }), 'succeeded');
+
+  const emptyRun = { id: 'r-empty', status: 'succeeded', done: 33, total: 33, ok: 0, failed: 0 };
+  const acts = nextActions({ coverage: {}, platforms: [], runs: { byPlatform: { micro1: { last: emptyRun } } }, links: {} });
+  const emptyAction = acts.find((a) => a.key === 'empty_capture');
+  ok('an empty capture is called out on the panel', Boolean(emptyAction) && emptyAction.severity === 'critical', emptyAction?.label);
+  ok('naming what it processed', /33/.test(String(emptyAction?.label)));
+  eq('and it asks for the capture to be re-run', emptyAction?.action?.phase, 'links');
+
+  eq('no minted link in the history is reported as such',
+    writerFlowView({ offers: [], runs: [{ id: 'r1', message: '0/0 links, 0 imported', detail: {} }] }).mintedInRuns, false);
+  eq('a minted URL in a run detail is found',
+    writerFlowView({ offers: [], runs: [{ id: 'r2', detail: { log: 'minted https://jobs.micro1.ai/post/x?referralCode=abc' } }] }).mintedInRuns, true);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
