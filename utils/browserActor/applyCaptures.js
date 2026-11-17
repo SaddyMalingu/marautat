@@ -342,9 +342,30 @@ export async function applyCaptureUpdates({ supabase, offers = [], captures = []
 export async function readCoverage(supabase, tenantId) {
   const { data, error } = await supabase
     .from('opportunities')
-    .select('id, title, external_id, description, deleted_at')
+    .select('id, title, external_id, description, referral_url, deleted_at')
     .eq('tenant_id', tenantId);
   if (error) return null;
   const live = (data || []).filter((row) => row.deleted_at == null);
-  return describeEnrichment(live);
+  const coverage = describeEnrichment(live);
+
+  /**
+   * The commercial number (2026-11-17).
+   *
+   * Description fullness says whether the funnel has text to work with; this says whether an offer can EARN. A row with
+   * no URL and a row whose URL carries no referral code are both dead, and only the second looks healthy in a list —
+   * which is exactly how 259 offers sat there paying nothing.
+   */
+  let payable = 0;
+  let unpayable = 0;
+  let unlinked = 0;
+  for (const row of live) {
+    const url = String(row.referral_url || '').trim();
+    if (!url) unlinked += 1;
+    else if (referralAttribution(url) === 'none') unpayable += 1;
+    else payable += 1;
+  }
+  return {
+    ...coverage,
+    links: { payable, unpayable, unlinked, total: live.length }
+  };
 }

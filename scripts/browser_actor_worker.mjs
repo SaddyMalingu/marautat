@@ -466,7 +466,7 @@ async function runApply({ tenantSlug, runId, detail = {} }) {
   });
 }
 
-function runCapture({ tenantSlug, runId, limit, platform = 'micro1' }) {
+function runCapture({ tenantSlug, runId, limit, platform = 'micro1', phase = null }) {
   // `relative` is what the registry holds and what the args are built from; `script` is the
   // absolute path to spawn. Mixing the two is how every social run became a LinkedIn read on
   // 2026-11-04 — see `utils/browserActor/runArgs.js`.
@@ -479,7 +479,7 @@ function runCapture({ tenantSlug, runId, limit, platform = 'micro1' }) {
     console.error(reason);
     return Promise.resolve({ code: 1, reason });
   }
-  const args = absoluteArgv(buildRunArgs({ relative, platform, tenantSlug, runId, limit, api }), (value) => (
+  const args = absoluteArgv(buildRunArgs({ relative, platform, tenantSlug, runId, limit, api, phase }), (value) => (
     path.resolve(WORKER_ROOT, value)
   ));
   const childEnv = { ...process.env, TENANT_WORKER_TOKEN: token };
@@ -606,7 +606,7 @@ async function tick(tenantSlug) {
   // ChatterApply is dispatched separately: its runner prints rather than reporting, so the worker relays.
   const code = platform === 'chatterapply'
     ? await runApply({ tenantSlug, runId: run.id, detail })
-    : await runCapture({ tenantSlug, runId: run.id, limit, platform });
+    : await runCapture({ tenantSlug, runId: run.id, limit, platform, phase: detail.phase || null });
   if (code && code.code !== undefined) {
     if (code.code !== 0) await closeAbandonedRun(run.id, code.code, code.reason);
     else console.error('runner exited 0 — the portal shows what it recorded');

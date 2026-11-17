@@ -36,7 +36,7 @@ export function usesSocialListener(platform) {
  *          limit?: number|string, api: string}} input
  * @returns {string[]} argv for the child, script path first (relative; the caller makes it absolute)
  */
-export function buildRunArgs({ relative, platform, tenantSlug, runId, limit, api, group = true, maxGroups = 12 }) {
+export function buildRunArgs({ relative, platform, tenantSlug, runId, limit, api, group = true, maxGroups = 12, phase = null }) {
   // The branch is chosen by the **platform id**, which is a value the queue route validated,
   // rather than by comparing paths. Paths differ by separator, by resolution and by casing; an id
   // does not. That mistake cost two rounds and four networks.
@@ -72,9 +72,23 @@ export function buildRunArgs({ relative, platform, tenantSlug, runId, limit, api
    * worker therefore asks for grouped capture by default, related roles only (a mixed pair reads like a
    * mailshot), and a run may turn it off with `detail.group === false`.
    */
-  if (String(platform || '').toLowerCase() === 'micro1' && group !== false) {
-    // 12 pairs per run, not 5: the tenant's backlog is ~259 offers with no link, and each pair is one transaction with
-    // the popup (it closes on generate). More pairs per MoreLogin start is the cheapest throughput there is.
+  /**
+   * Two phases, one worker (2026-11-17).
+   *
+   * `phase: 'offers'` collects the offers themselves — listing, each role's page, its description — and its per-role
+   * pass is also what discovers each role's job id. `phase: 'links'` (the default) mints attributed links for roles the
+   * tenant already holds. They are separate because they fail differently and cost differently, and because a role that
+   * was never collected cannot be linked: offers first, then links.
+   */
+  const isMicro1 = String(platform || '').toLowerCase() === 'micro1';
+  if (isMicro1 && String(phase || '').toLowerCase() === 'offers') {
+    args.push('--per-role');
+    return args;
+  }
+
+  if (isMicro1 && group !== false) {
+    // 12 pairs per run, not 5: each pair is one transaction with the popup (it closes on generate), so more pairs per
+    // MoreLogin start is the cheapest throughput there is.
     args.push('--groups', '--group-size', '2', '--max-groups', String(Math.min(25, Math.max(1, Number(maxGroups) || 12))));
   }
   return args;

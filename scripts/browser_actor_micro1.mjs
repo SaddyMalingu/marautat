@@ -830,7 +830,9 @@ async function main() {
   // simply have no related partner yet — and in links mode the offers themselves were captured by an earlier run.
   const unpaired = captures.filter((capture) => capture.reason === 'no_related_partner').length;
   console.error(`captured: ${captures.length} roles Â· ${withLink.length} links Â· ${withBody.length} bodies${unpaired ? ` Â· ${unpaired} role(s) with no related partner` : ''}`);
-  if (groupMode) console.error(`links phase: offers already exist â€” this run only mints and attaches links${withDescriptions ? '' : ' (bodies off)'}`);
+  console.error(groupMode
+    ? `links phase: offers already exist â€” this run only mints and attaches links${withDescriptions ? '' : ' (bodies off)'}`
+    : 'offers phase: collecting each role and its detail â€” links are minted by a separate run');
   if (withheld) console.error(`not sent: ${withheld} role(s) carry no link and no body — counted above, nothing for the portal to apply`);
 
   // One caller writes offers, and it is never the tenant's machine.
@@ -858,6 +860,11 @@ async function main() {
   const coverage = agentMode ? applied.coverage : await readCoverage(supabase, tenantRow.id);
   if (coverage) {
     console.error(`descriptions: ${coverage.full}/${coverage.marketplace} marketplace offers have full text (median ${coverage.medianChars} chars), ${coverage.thin} still thin`);
+    // The number the business runs on: how many offers can actually earn, and how the rest fail.
+    if (coverage.links) {
+      const { payable, unpayable, unlinked, total } = coverage.links;
+      console.error(`links: ${payable}/${total} offer(s) payable${unpayable ? ` · ${unpayable} with a link that credits nobody` : ''}${unlinked ? ` · ${unlinked} without a link` : ''}`);
+    }
   }
 
   // The portal no longer closes the run on `/result` (so a long capture can post in batches and

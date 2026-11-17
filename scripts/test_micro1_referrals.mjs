@@ -454,6 +454,12 @@ const ROLES = [
   ok('and caps the pairs per run', Number(micro[micro.indexOf('--max-groups') + 1]) >= 1);
   // A parameter default of 5 shadowed this once, so every run asked for five pairs however the fallback was written.
   eq('twelve pairs per run by default', micro[micro.indexOf('--max-groups') + 1], '12');
+
+  // Two phases, one worker: a run may ask to collect offers instead of minting links, because a role that was never
+  // collected cannot be linked at all.
+  const offers = buildRunArgs({ relative: 'scripts/browser_actor_micro1.mjs', platform: 'micro1', tenantSlug: 'acme', runId: 'r2', limit: 40, api: 'x', phase: 'offers' });
+  ok('the offers phase collects per role', offers.includes('--per-role'), offers.join(' '));
+  ok('and does not ask for pairs', !offers.includes('--groups'), offers.join(' '));
   ok('a run may opt out', !buildRunArgs({ relative: 'scripts/browser_actor_micro1.mjs', platform: 'micro1', tenantSlug: 'acme', runId: 'r1', limit: 40, api: 'x', group: false }).includes('--groups'));
   ok('turing is untouched by the micro1 flags', !buildRunArgs({ relative: 'scripts/browser_actor_referrals.mjs', platform: 'turing', tenantSlug: 'acme', runId: 'r1', limit: 40, api: 'x' }).includes('--groups'));
 }
@@ -985,6 +991,25 @@ const ROLES = [
     ok('and different roles do not collide',
       titleKey('Legal Expert (Employment)') !== titleKey('Legal Expert (Antitrust)'),
       `${titleKey('Legal Expert (Employment)')} / ${titleKey('Legal Expert (Antitrust)')}`);
+  }
+
+  // The number the business runs on: how many offers can earn, and how the rest fail.
+  {
+    const { readCoverage } = await import('../utils/browserActor/applyCaptures.js');
+    const rows = [
+      { id: '1', title: 'Payable', external_id: 'micro1:a', description: 'x'.repeat(400), referral_url: 'https://refer.micro1.ai/referral/jobs?referralCode=abc', deleted_at: null },
+      { id: '2', title: 'Dead', external_id: 'micro1:b', description: 'x'.repeat(400), referral_url: 'https://jobs.micro1.ai/post/abcdef', deleted_at: null },
+      { id: '3', title: 'Unlinked', external_id: 'micro1:c', description: 'x'.repeat(400), referral_url: null, deleted_at: null },
+      { id: '4', title: 'Deleted', external_id: 'micro1:d', description: null, referral_url: null, deleted_at: '2026-01-01' }
+    ];
+    const supabase = {
+      from: () => ({ select: () => ({ eq: async () => ({ data: rows, error: null }) }) })
+    };
+    const coverage = await readCoverage(supabase, 'tenant');
+    eq('a payable link is counted as payable', coverage.links.payable, 1);
+    eq('a link that credits nobody is counted separately', coverage.links.unpayable, 1);
+    eq('a role without a link is counted too', coverage.links.unlinked, 1);
+    eq('and deleted rows are not counted at all', coverage.links.total, 3);
   }
 
 console.log(`\n${pass} passed, ${fail} failed`);
