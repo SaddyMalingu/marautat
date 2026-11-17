@@ -763,6 +763,14 @@ async function reportAgentResult({ captures, listing }) {
     // while two links had been attached — a summary that reads like failure after success (2026-11-16).
     linksUpdated: 0, descriptionsUpdated: 0, existingSkipped: [], linksReplaced: 0
   };
+  // A run with nothing to post still asks one question: what is left? (2026-11-17)
+  if (!captures.length) {
+    const res = await agentCall('GET', `/api/agent/runs/${encodeURIComponent(String(runIdFlag))}/coverage`)
+      .catch((error) => ({ ok: false, data: { error: error?.message || String(error) } }));
+    if (res.ok) applied.coverage = res.data?.coverage || null;
+    else applied.error = res.data?.error || `the portal refused the coverage read (${res.status || 'no status'})`;
+    return applied;
+  }
   for (let index = 0; index < captures.length; index += CHUNK) {
     const chunk = captures.slice(index, index + CHUNK);
     const res = await agentCall('POST', `/api/agent/runs/${encodeURIComponent(String(runIdFlag))}/result`, {

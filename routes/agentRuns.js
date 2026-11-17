@@ -346,6 +346,29 @@ export function createAgentRunsRouter({
    * The profile must be the **tenant's own and local**. Anything else is refused instead of
    * silently driving an operator's browser from a stranger's laptop.
    */
+  /**
+   * What is left to do (2026-11-17).
+   *
+   * A run that finds nothing to pair still has one useful thing to report: how many of the tenant's offers are payable,
+   * how many carry a link that credits nobody, and how many have no link. That is the number the business runs on, and a
+   * "nothing left to pair" line without it left the tenant guessing whether the phase was finished or broken.
+   */
+  router.get('/api/agent/runs/:id/coverage', async (req, res) => {
+    const auth = await authenticate(req, res);
+    if (!auth) return;
+    try {
+      const run = await findRunForTenant(auth, req.params.id);
+      if (!run) return fail(res, 404, 'Run not found for this tenant');
+      const coverage = await readCoverage(supabase, auth.tenantId).catch((error) => {
+        console.error(`[agent] coverage for run ${run.id} failed: ${error?.message || error}`);
+        return null;
+      });
+      return res.json({ ok: true, coverage });
+    } catch (error) {
+      return fail(res, 500, `Could not read coverage: ${error?.message || error}`);
+    }
+  });
+
   router.get('/api/agent/runs/:id/context', async (req, res) => {
     const auth = await authenticate(req, res);
     if (!auth) return;
@@ -532,13 +555,19 @@ export function createAgentRunsRouter({
          *
          * The runner posts in chunks, and this route used to answer 400 to a chunk that held only unpaired roles — which
          * killed the run *after* the previous chunk had banked its links, so the tenant saw a failure for work that had
-         * succeeded. A body with no captures at all is still refused: that is a broken worker, not an empty batch.
+         * succeeded.
+         *
+         * It still answers with the coverage, because the useful question for an empty batch is "what is left?" — a
+         * link-phase run with nothing to do should report how many offers are payable, not just shrug (2026-11-17).
          */
+        // An EMPTY batch is a worker bug and is refused: a run that submitted captures and had every one rejected must
+        // not look like success. A run with nothing to post asks for `/coverage` instead, so the two cases stay distinct.
         if (Array.isArray(req.body?.captures) && req.body.captures.length) {
+          const coverage = await readCoverage(supabase, tenantRow.id).catch(() => null);
           return res.json({
             ok: true,
             applied: { planned: 0, inserted: 0, withLinks: 0, skipped: [], verification: [], error: null, existing: null },
-            coverage: null,
+            coverage,
             note: 'that batch carried nothing to apply'
           });
         }
