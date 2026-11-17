@@ -1451,7 +1451,7 @@ function wfFunnelHtml(d) {
       <table class="table table-sm mb-0 align-middle" style="font-size:.82rem">
         <thead><tr>
           <th>Marketplace</th><th class="text-center">Captured</th><th class="text-center">Live</th>
-          <th class="text-center">Linked</th><th class="text-center">Verified</th><th style="width:130px">Earning</th>
+          <th class="text-center">Linked</th><th class="text-center">Payable</th><th class="text-center">Verified</th><th style="width:130px">Earning</th>
         </tr></thead>
         <tbody>
           ${rows.map(p => `
@@ -1460,12 +1460,13 @@ function wfFunnelHtml(d) {
               <td class="text-center">${p.captured}</td>
               <td class="text-center">${p.live}</td>
               <td class="text-center">${p.linked}${p.missing ? ` <span style="color:#f59e0b">(${p.missing} none)</span>` : ''}</td>
+              <td class="text-center">${p.payable || 0}${p.unpayable ? ` <span style="color:#ef4444" title="The URL carries no referral code, so a click through it earns nothing">(${p.unpayable} unpayable)</span>` : ''}</td>
               <td class="text-center">${p.verified}${p.wrong ? ` <span style="color:#ef4444">(${p.wrong} wrong)</span>` : ''}</td>
               <td>
                 <div class="progress" style="height:6px;background:#1e293b">
-                  <div class="progress-bar" style="width:${p.verifiedShare}%;background:${p.verifiedShare ? '#22c55e' : '#334155'}"></div>
+                  <div class="progress-bar" style="width:${p.payableShare || 0}%;background:${p.payableShare ? '#22c55e' : '#334155'}"></div>
                 </div>
-                <span class="text-muted" style="font-size:.72rem">${p.verifiedShare}% verified</span>
+                <span class="text-muted" style="font-size:.72rem">${p.payableShare || 0}% payable</span>
               </td>
             </tr>`).join('')}
         </tbody>
@@ -1503,7 +1504,7 @@ function wfPlatformCardHtml(d, spec) {
       : '<span class="text-muted">never run for this tenant</span>';
 
   const counters = funnel
-    ? `${funnel.captured} captured · ${funnel.linked} linked · ${funnel.verified} verified${funnel.wrong ? ` · <span style="color:#ef4444">${funnel.wrong} wrong</span>` : ''}`
+    ? `${funnel.captured} captured · <span style="color:#22c55e">${funnel.payable || 0} payable</span> · ${funnel.verified} verified${funnel.unpayable ? ` · <span style="color:#f59e0b" title="A URL is attached but carries no referral code">${funnel.unpayable} unpayable</span>` : ''}${funnel.wrong ? ` · <span style="color:#ef4444">${funnel.wrong} wrong</span>` : ''}`
     : 'nothing captured yet';
 
   // A marketplace with a live run cannot queue another (the database holds one slot per kind),
@@ -1581,6 +1582,29 @@ function wfQueuedHint(run) {
   return platform === 'micro1'
     ? `${doing}queued for your worker — it claims this within about 15 seconds while its window is open. Leave the worker running.`
     : `${doing}queued for your worker — it starts as soon as the previous capture finishes, so the two never drive the same profile at once. It clears itself after 30 minutes if the worker stays closed.`;
+}
+
+/**
+ * The pair links, shown as pairs.
+ *
+ * Micro1 mints one link for two roles, and both offers carry that identical URL. Listing them together is the proof that
+ * the minted link is attached to the roles it covers — the failure this whole phase exists to prevent is a link sitting
+ * on one role while its partner looks unlinked (2026-11-17).
+ */
+function wfPairLinksHtml(d) {
+  const pairs = Array.isArray(d.sharedLinks) ? d.sharedLinks.filter((row) => row && Array.isArray(row.titles) && row.titles.length > 1) : [];
+  if (!pairs.length) return '';
+  return `
+    <div class="mt-3">
+      <div class="text-muted" style="font-size:.74rem;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Pair links — one URL, both roles</div>
+      ${pairs.slice(0, 6).map((pair) => `
+        <div style="font-size:.78rem;margin-top:2px">
+          <i class="fa-solid fa-link" style="opacity:.55"></i>
+          ${esc(pair.titles.join('  +  '))}
+          <span class="text-muted">· ${pair.count} roles · same referral code</span>
+        </div>`).join('')}
+      ${pairs.length > 6 ? `<div class="text-muted" style="font-size:.72rem">+ ${pairs.length - 6} more pair(s)</div>` : ''}
+    </div>`;
 }
 
 function wfActionsHtml(d) {
@@ -1839,6 +1863,7 @@ function wfControlHtml(d) {
          and a long table between the cards and the button is how a control gets missed. */ ''}
     ${wfListeningHtml(d)}
     ${wfFunnelHtml(d)}
+    ${wfPairLinksHtml(d)}
     <div class="mt-3"><div class="text-muted" style="font-size:.74rem;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Next</div>${wfActionsHtml(d)}</div>
     <div class="mt-3"><div class="text-muted" style="font-size:.74rem;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Links that need you</div>${wfLinkQueueHtml(d)}</div>
     ${/* Which build is serving this page. "Is my deploy live?" has cost several rounds of guessing, and the answer

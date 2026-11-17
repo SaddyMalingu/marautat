@@ -869,6 +869,54 @@ async function withServer(db) {
     /else if \(act === 'capture'\) wfCaptureNow\(btn\)/.test(dash));
 }
 
+// ─── A link that credits nobody is its own state (2026-11-17) ────────────────────────────────
+//
+// The catalogue's real failure was never "no link" — it was links with no referral code. Those rows looked complete in
+// every list, so nothing flagged them while they earned nothing.
+{
+  const { linkStateOf, buildPlatformFunnel, sharedLinkGroups, nextActions } = await import('../utils/writerFlow.js');
+  const { writerFlowView } = await import('../utils/writerFlow.js');
+
+  eq('a bare URL credits nobody',
+    linkStateOf({ referral_url: 'https://jobs.micro1.ai/post/abcdefabcdefabcd' }), 'unpayable');
+  eq('a URL with a referral code is payable',
+    linkStateOf({ referral_url: 'https://refer.micro1.ai/referral/jobs?referralCode=abc' }), 'unchecked');
+  eq('a verified link stays verified',
+    linkStateOf({ referral_url: 'https://refer.micro1.ai/referral/jobs?referralCode=abc', link_verdict: 'match' }), 'verified');
+  eq('a proven-mismatch link wins over everything',
+    linkStateOf({ referral_url: 'https://jobs.micro1.ai/post/abcdefabcdefabcd', link_verdict: 'mismatch' }), 'wrong');
+  eq('no URL is still missing', linkStateOf({ referral_url: null }), 'missing');
+
+  const offers = [
+    { title: 'Spanish (LATAM)', external_id: 'micro1:a', status: 'published', referral_url: 'https://refer.micro1.ai/referral/jobs?referralCode=abc' },
+    { title: 'Spanish (Mexico)', external_id: 'micro1:b', status: 'published', referral_url: 'https://refer.micro1.ai/referral/jobs?referralCode=abc' },
+    { title: 'Attorney', external_id: 'micro1:c', status: 'draft', referral_url: 'https://jobs.micro1.ai/post/abcdefabcdefabcd' },
+    { title: 'Tutor', external_id: 'micro1:d', status: 'draft', referral_url: null }
+  ];
+  const funnel = buildPlatformFunnel(offers);
+  eq('one marketplace row is built', funnel.length, 1);
+  eq('payable counts the code-carrying links, not the rows that merely have a URL', funnel[0].payable, 2);
+  eq('and the code-less ones are counted apart', funnel[0].unpayable, 1);
+  eq('missing still counts separately', funnel[0].missing, 1);
+  ok('the share is payable over captured', funnel[0].payableShare === 50, String(funnel[0].payableShare));
+
+  // One URL, two roles: how the portal proves the minted link reached both.
+  const shared = sharedLinkGroups(offers);
+  eq('the pair is grouped by its shared URL', shared.length, 1);
+  eq('with both roles named', shared[0].count, 2);
+  eq('and the exact titles', shared[0].titles.join(' + '), 'Spanish (LATAM) + Spanish (Mexico)');
+
+  const actions = nextActions({ coverage: {}, platforms: funnel, runs: {}, links: { unpayableTotal: funnel[0].unpayable } });
+  const unpayableAction = actions.find((action) => action.key === 'unpayable_links');
+  ok('an unpayable link becomes a critical action', Boolean(unpayableAction) && unpayableAction.severity === 'critical', unpayableAction?.label);
+  eq('and the action asks for the links phase', unpayableAction?.action?.phase, 'links');
+
+  const view = writerFlowView({ offers });
+  eq('the panel reports payable at the top level', view.payableTotal, 2);
+  eq('and unpayable too', view.unpayableTotal, 1);
+  eq('and exposes the pair for display', view.sharedLinks.length, 1);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
 

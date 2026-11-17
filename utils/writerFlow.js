@@ -26,17 +26,35 @@
 import { summarizeCoverage, coverageHeadline, sourceOf } from './coverage.js';
 import { summarizeRuns, isActiveStatus, isStalled, runPlatform } from './browserActor/runs.js';
 
-/** A link needs attention when it is absent, unproven, or provably wrong. */
-export const LINK_STATES = Object.freeze(['wrong', 'unchecked', 'missing', 'verified']);
+/**
+ * A link needs attention when it is absent, unproven, provably wrong — or when it credits nobody.
+ *
+ * `unpayable` is the state that cost this tenant months: a URL is attached, it looks done, and it carries no referral
+ * code, so every click through it earns nothing. It is not `unchecked` (nothing to verify) and it is not `missing`
+ * (there is a URL to replace), which is why it gets its own word (2026-11-17).
+ */
+export const LINK_STATES = Object.freeze(['wrong', 'unpayable', 'unchecked', 'missing', 'verified']);
 
 /** Severity order for the action list: money lost first, cosmetics last. */
 export const SEVERITY_ORDER = Object.freeze(['critical', 'high', 'medium', 'low']);
 
+/** Does this URL actually credit the tenant? A bare URL has no query at all, so it cannot carry a code. */
+function creditsSomebody(url) {
+  try {
+    const parsed = new URL(String(url));
+    // `?referralCode=…` (Micro1) or a path segment such as `/r/<code>` (Turing). The path form carries short codes, so no
+    // minimum length: refusing `/r/a` would call a working Turing link unpayable (2026-11-17).
+    return parsed.search.length > 1 || /\/(r|ref|invite|i)\/[A-Za-z0-9_-]+/i.test(parsed.pathname);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * What this offer's referral link is, in one word.
  *
- * `missing` and `unchecked` are different problems with different fixes: one needs a
- * capture, the other needs a click.
+ * `missing` and `unchecked` are different problems with different fixes: one needs a capture, the other needs a click.
+ * And `unpayable` is a third: the fix is to mint a proper link, which no amount of verifying will produce.
  */
 export function linkStateOf(offer) {
   const url = String(offer?.referral_url || '').trim();
@@ -44,6 +62,9 @@ export function linkStateOf(offer) {
   const verdict = String(offer?.link_verdict || '').toLowerCase();
   if (verdict === 'mismatch') return 'wrong';
   if (verdict === 'match') return 'verified';
+  // A link with no referral code cannot credit anyone, whatever else is true of it. This is the state that cost the
+  // tenant months: the row looks done, and every click through it earns nothing.
+  if (!creditsSomebody(url)) return 'unpayable';
   return 'unchecked';
 }
 
@@ -120,7 +141,10 @@ export function buildPlatformFunnel(offers = []) {
   for (const offer of rows) {
     const { slug, name } = sourceOf(offer);
     const row = byPlatform.get(slug) || {
-      slug, name, captured: 0, draft: 0, live: 0, linked: 0, verified: 0, wrong: 0, unchecked: 0, missing: 0
+      slug, name, captured: 0, draft: 0, live: 0, linked: 0, verified: 0, wrong: 0, unchecked: 0, missing: 0,
+      // The money axis, separate from verification: `payable` means the URL carries a referral code, whatever else is
+      // true of it (2026-11-17).
+      payable: 0, unpayable: 0
     };
     const live = String(offer.status || '').toLowerCase() === 'published';
     const state = linkStateOf(offer);
@@ -130,6 +154,9 @@ export function buildPlatformFunnel(offers = []) {
     if (state === 'verified') row.verified += 1;
     if (state === 'wrong') row.wrong += 1;
     if (state === 'unchecked') row.unchecked += 1;
+    if (state === 'unpayable') row.unpayable += 1;
+    // Both `verified` and `unchecked` carry a referral code, so both can earn; `unpayable` and `missing` cannot.
+    if (state === 'verified' || state === 'unchecked') row.payable += 1;
     byPlatform.set(slug, row);
   }
 
@@ -138,9 +165,34 @@ export function buildPlatformFunnel(offers = []) {
       ...row,
       // "How much of this marketplace is actually earning?" — verified links as a share
       // of captured roles. 0 is honest; 100 means every role is provably paid.
-      verifiedShare: row.captured ? Math.round((row.verified / row.captured) * 100) : 0
+      verifiedShare: row.captured ? Math.round((row.verified / row.captured) * 100) : 0,
+      // The share a tenant should watch: a role with a code can be bought from, one without cannot.
+      payableShare: row.captured ? Math.round((row.payable / row.captured) * 100) : 0
     }))
     .sort((a, b) => b.captured - a.captured);
+}
+
+/**
+ * One URL, several roles (2026-11-17).
+ *
+ * Micro1 mints a referral link per PAIR of roles, and both offers carry that same URL. Grouping by URL is how the portal
+ * shows the connection explicitly: the link we minted is attached to the roles it covers, not to one of them while the
+ * other sits empty.
+ */
+export function sharedLinkGroups(offers = [], limit = 6) {
+  const byUrl = new Map();
+  for (const offer of Array.isArray(offers) ? offers : []) {
+    const url = String(offer?.referral_url || '').trim();
+    if (!url) continue;
+    if (!byUrl.has(url)) byUrl.set(url, []);
+    const title = String(offer?.title || '').trim();
+    if (title) byUrl.get(url).push(title);
+  }
+  return [...byUrl.entries()]
+    .filter(([, titles]) => titles.length > 1)
+    .sort((a, b) => b[1].length - a[1].length)
+    .slice(0, Math.max(1, Number(limit) || 6))
+    .map(([url, titles]) => ({ url, titles, count: titles.length }));
 }
 
 /** A tenant overriding the verifier. Recorded as a decision, not as a fact. */
@@ -167,7 +219,19 @@ export function nextActions({ coverage, platforms = [], runs, links } = {}) {
   const unchecked = Number(coverage?.uncheckedLinks || 0);
   const drafts = Number(coverage?.drafts || 0);
   const thin = Number(links?.thin || 0);
+  // A link with no referral code is the most expensive state in the catalogue: the row looks complete, so nothing else
+  // in this list will ever mention it (2026-11-17).
+  const unpayable = Number(links?.unpayableTotal || links?.counts?.unpayable || 0);
 
+  if (unpayable) {
+    actions.push({
+      key: 'unpayable_links',
+      severity: 'critical',
+      label: `${unpayable} link${unpayable === 1 ? '' : 's'} credit nobody`,
+      hint: 'The URL is attached but carries no referral code. Capture Micro1 links replaces each one with a paired, attributed link.',
+      action: { type: 'capture', phase: 'links' }
+    });
+  }
   if (wrong) {
     actions.push({
       key: 'wrong_links',
@@ -332,13 +396,22 @@ export function writerFlowView({
   const coverage = summarizeCoverage(offers);
   const platforms = buildPlatformFunnel(offers);
   const runSummary = summarizeRuns(runs, now);
+  // Which links actually pay, and which of them cover more than one role. Both are the tenant's commercial question, not
+  // an operations one: "how much of this catalogue can I be paid for?" (2026-11-17).
+  const payable = platforms.reduce((sum, row) => sum + (row.payable || 0), 0);
+  const unpayable = platforms.reduce((sum, row) => sum + (row.unpayable || 0), 0);
   const links = {
     counts: {
       wrong: coverage.wrong,
       unchecked: coverage.uncheckedLinks,
       missing: coverage.missingReferral,
-      verified: coverage.verified
+      verified: coverage.verified,
+      payable,
+      unpayable
     },
+    payableTotal: payable,
+    unpayableTotal: unpayable,
+    shared: sharedLinkGroups(offers),
     queue: linkQueue(offers, { limit: linkLimit }),
     // Descriptions are counted here too: a published offer with a one-line body looks
     // complete in every other number on this page.
@@ -354,6 +427,11 @@ export function writerFlowView({
     headline: coverageHeadline(coverage),
     platforms,
     links,
+    // What a tenant should see without opening anything: how many roles can be paid for, how many cannot, and which
+    // links cover a pair (2026-11-17).
+    sharedLinks: links.shared,
+    payableTotal: payable,
+    unpayableTotal: unpayable,
     runs: {
       available: runsAvailable,
       total: runSummary.total,
