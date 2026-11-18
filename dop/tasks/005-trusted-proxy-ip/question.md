@@ -10,7 +10,7 @@ I am not asking you to add a geolocation service or to buy a database. I am aski
 why the address the app stores is not the visitor's, and what should change so it
 is.
 
-What I have is in `./files`:
+What I have is in `/app/data/files` — three text files:
 
 * `bot-log-excerpt-2026-04-18.txt` — our own log, two dates, two surfaces.
 * `analytics-ip-column.txt` — what the columns actually contain.

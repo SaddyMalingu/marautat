@@ -17,7 +17,10 @@ one, and the app's Proof will agree with `npm run dop:proof`.
 **Task name:** Every visitor was recorded from one address
 **Type:** Software · Defect tickets with fixes · Requirements traced to code
 **Size:** 1 incident · 3 evidence files · produced 2026-04-18 → 2026-10-24
-**Environment:** create a new one, from the three files in `files/`
+**Environment:** `alphadome-debugging` (Shell: Python, default settings, internet off)
+**Evidence path in the container:** `/app/data/files/` — confirmed from the environment's
+generated Dockerfile (`WORKDIR /app`, `COPY environment/data /app/data`). The prompt
+uses this absolute path on purpose: a relative `./files/` reads from `/app` and misses.
 
 | # | Step (outcome) | Pts | Check | Enter exactly | Tick near misses |
 |---|---|---|---|---|---|
