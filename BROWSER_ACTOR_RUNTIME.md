@@ -348,7 +348,10 @@ a tenant slug rather than defaulting one.
 ### Refer-and-earn: the link is the asset
 
 The offer's `referral_url` is the CTA, and `offerMeta()` already resolves
-`destination_url || referral_url || application_url`. So an offer published without
+`preferCreditingUrl(referral_url, destination_url, application_url)` — the URL that
+carries a referral code wins over the plain posting, because `destination_url ||
+referral_url` sent every CTA (and every `/go/:id` hop) to `jobs.micro1.ai/post/<id>`,
+which earns the marketplace (fixed 2026-11-18). So an offer published without
 the tenant's own referral link helps the marketplace for free.
 
 Verified live (2026-10-31): `work.turing.com/dashboard/job_referral` loads

@@ -22,7 +22,8 @@
  * Usage: npm run test:go-redirect
  */
 import fs from 'fs';
-import { ctaTarget, usesUnmeteredLink, pageNeedsRebuild } from '../utils/ctaBlock.js';
+import { ctaTarget, ctaBlock, usesUnmeteredLink, pageNeedsRebuild } from '../utils/ctaBlock.js';
+import { offerMeta } from '../utils/aiJobsService.js';
 
 let pass = 0, fail = 0;
 const ok = (name, cond, extra = '') => {
@@ -90,6 +91,30 @@ ok('an offer with no id keeps its raw URL (there is nothing to count it against)
 ok('a non-http destination is never turned into a link',
   ctaTarget({ id: '', destination_url: 'javascript:alert(1)' }) === '');
 ok('no offer at all yields no target', ctaTarget(null) === '' && ctaTarget({}) === '');
+
+// ---- 4b. The CTA earns: a coded URL outranks a bare one (2026-11-18) ------
+// Live symptom: a minted pair link showed its referral code in the tenant portal, and the article generated for the same
+// offer sent every reader to `jobs.micro1.ai/post/<id>` — the plain posting — because the destination resolved as
+// `destination_url || referral_url`. The pages converted and the tenant earned nothing, which is the whole business.
+const coded = 'https://jobs.micro1.ai/post/c8cdec0c?referralCode=98fb722e';
+const bare = 'https://jobs.micro1.ai/post/c8cdec0c';
+const paired = 'https://refer.micro1.ai/referral/jobs?referralCode=98fb722e&linkId=a1f48ab6';
+const earning = { id: 'o1', title: 'STEM Expert', offer_type: 'job', destination_url: bare, referral_url: coded };
+
+ok('the redirect resolves the coded URL, not the plain posting', offerMeta(earning).destination === coded);
+ok('a pair link wins when that is what was minted',
+  offerMeta({ ...earning, referral_url: paired }).destination === paired);
+ok('an offer with no code at all still resolves its destination',
+  offerMeta({ id: 'o2', destination_url: bare }).destination === bare);
+ok('a coded destination is preferred to a coded referral only when the referral has none',
+  offerMeta({ id: 'o3', destination_url: coded, referral_url: 'https://jobs.micro1.ai/post/c8cdec0c' }).destination === coded);
+ok('the tracked hop is still what the CTA carries', ctaTarget(earning) === '/go/o1');
+ok('and with no id the CTA is the coded URL itself',
+  ctaTarget({ referral_url: coded, destination_url: bare }) === coded);
+ok('the closing block points at the tracked hop, which now earns',
+  /href="\/go\/o1"/.test(ctaBlock(earning)));
+ok('and an id-less offer carries the code inline rather than the bare posting',
+  /referralCode=98fb722e/.test(ctaBlock({ referral_url: coded, destination_url: bare })));
 
 // ---- 5. The pages that predate /go are rebuilt, and stop after that ------
 const stored = '<article><p>' + 'word '.repeat(60) + '</p></article>'

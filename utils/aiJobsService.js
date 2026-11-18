@@ -6,6 +6,8 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
+// Which of an offer's URLs actually earns. Same rule the CTA block and the Payable filter use.
+import { preferCreditingUrl } from './browserActor/referralCode.js';
 
 function createFallbackSupabase() {
   const fallbackResult = { data: [], error: null };
@@ -425,7 +427,14 @@ const OFFER_TYPES = {
 function offerMeta(offer) {
   const type = (offer && offer.offer_type) || 'job';
   const base = OFFER_TYPES[type] || OFFER_TYPES.job;
-  const destination = (offer && (offer.destination_url || offer.referral_url || offer.application_url)) || null;
+  // The earning URL wins (2026-11-18). This resolver is what `/go/:id` redirects to, so the order here decides whether
+  // every blog CTA credits the tenant or the marketplace: a Micro1 row's `destination_url` is the plain posting and its
+  // `referral_url` carries the code, and `destination_url || referral_url` chose the one that pays nobody.
+  const destination = preferCreditingUrl(
+    offer && offer.referral_url,
+    offer && offer.destination_url,
+    offer && offer.application_url
+  );
   return {
     type,
     label: base.label,

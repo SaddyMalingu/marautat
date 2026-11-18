@@ -19,6 +19,8 @@
  * Pure string assembly — no IO, so the template can be tested offline.
  */
 import { readinessCard } from './conversionPlaybook.js';
+// One answer to "which of this offer's URLs actually earns", shared with the /go redirect.
+import { preferCreditingUrl } from './browserActor/referralCode.js';
 
 const LABEL = {
   job: 'Apply now',
@@ -172,8 +174,10 @@ const type = (offer) => {
  */
 export function ctaTarget(offer) {
   if (offer && offer.id) return '/go/' + offer.id;
-  const direct = offer && (offer.destination_url || offer.referral_url || offer.application_url);
-  if (direct && /^https?:\/\//i.test(String(direct))) return String(direct);
+  // No id, so no tracked hop: link the reader straight at the URL that earns. A bare posting URL is the fallback, never
+  // the preference — `destination_url || referral_url` published pages that paid the marketplace (2026-11-18).
+  const direct = preferCreditingUrl(offer && offer.referral_url, offer && offer.destination_url, offer && offer.application_url);
+  if (direct) return String(direct);
   return '';
 }
 

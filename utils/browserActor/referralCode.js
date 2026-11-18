@@ -47,3 +47,21 @@ export function referralCodeOf(url) {
 export function creditsSomebody(url) {
   return Boolean(referralCodeOf(url));
 }
+
+/**
+ * The first URL of these that credits somebody, else the first usable one (2026-11-18).
+ *
+ * An offer carries up to three URLs and only some of them can earn. A Micro1 role has
+ * `destination_url = jobs.micro1.ai/post/<id>` — the plain posting — and `referral_url = jobs.micro1.ai/post/<id>?referralCode=…`.
+ * Resolving the destination as `destination_url || referral_url` therefore sends every CTA, and every `/go/:id` hop, to
+ * the URL that pays the marketplace for the tenant's traffic: the pages convert and the tenant earns nothing.
+ *
+ * The order is by what the URL *does*, not by which column it arrived in. `creditsSomebody` is the same test the Payable
+ * filter uses, so "which link is the earning one" has one answer everywhere.
+ */
+export function preferCreditingUrl(...urls) {
+  const usable = urls
+    .map((url) => String(url || '').trim())
+    .filter((url) => /^https?:\/\//i.test(url));
+  return usable.find((url) => creditsSomebody(url)) || usable[0] || null;
+}

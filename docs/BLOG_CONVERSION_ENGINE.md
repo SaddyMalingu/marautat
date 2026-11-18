@@ -100,7 +100,9 @@ Now: the heading names the offer ("Apply for ML Engineer", "Get Studio Session
 priced"), the figure and place are printed when the offer has them, the readiness
 list sits directly above the button, and there is a compact copy **above the
 article** so a reader who never scrolls still has a way out. Destination order is
-`destination_url → referral_url → application_url → /ai-jobs/apply/<id>`. With
+`referral_url (if it carries a code) → destination_url → application_url → /go/<id>`:
+the earning URL outranks the plain posting, because preferring `destination_url`
+published pages whose CTA credited the marketplace (fixed 2026-11-18). With
 none of those, no button is rendered — the page asks for a message instead of
 sending the reader to a 404.
 
