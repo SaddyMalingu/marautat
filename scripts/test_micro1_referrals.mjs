@@ -185,7 +185,9 @@ function makePage(roles) {
     title: 'Opportunities | micro1 referral platform',
     querySelectorAll(sel) {
       if (sel === '[data-testid="job-card"]') return cards.map((c) => c.card);
-      if (sel === 'button') return [action];
+      // Two shapes, because the runner asks for both: the plain `button` list and the `button, [role="button"]` list
+      // it uses now that a build renders the confirm control without a <button> (2026-11-18).
+      if (sel === 'button' || sel === 'button, [role="button"]') return [action];
       return [];
     },
     querySelector: () => null
@@ -1022,6 +1024,163 @@ const ROLES = [
     eq('a link that credits nobody is counted separately', coverage.links.unpayable, 1);
     eq('a role without a link is counted too', coverage.links.unlinked, 1);
     eq('and deleted rows are not counted at all', coverage.links.total, 3);
+  }
+
+  /**
+   * The popup renders the same cards as the listing, and opening it does not unmount the listing (2026-11-18).
+   *
+   * A live re-mint run read 84 cards — 72 listing rows with no control, and the popup's rows behind them. The tick took
+   * the first title match, which was the listing copy, pressed nothing, and 10 of 12 pairs died as
+   * `selection_not_verified`. Two rows that resolved inside the popup ticked fine, which is what made the pattern
+   * visible. The fix is to act on the copies inside the fixed-position overlay.
+   */
+  {
+    const mod = await import('../utils/browserActor/tasks/micro1Referrals.js');
+    const state = { listingPresses: 0, modalPresses: 0 };
+
+    const makeCard = (title, { box = null, overlay = null } = {}) => ({
+      parentElement: overlay,
+      outerHTML: `<div data-testid="job-card">${title}</div>`,
+      querySelector: (sel) => (sel === 'h2' ? { innerText: title } : (sel === 'input[type="checkbox"]' ? box : null)),
+      querySelectorAll: () => [],
+      getBoundingClientRect: () => ({ left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 }),
+      scrollIntoView: () => {},
+      click: () => { state.listingPresses += 1; }
+    });
+
+    // The grid's copy of the role: present, titled, and with nothing to tick.
+    const listingCopy = makeCard('Legal Research Attorney');
+    // The popup's copy: the same title, inside a fixed overlay, carrying the checkbox.
+    const overlay = { parentElement: null, __position: 'fixed' };
+    const modalBox = {
+      checked: false,
+      click() { state.modalPresses += 1; this.checked = true; }
+    };
+    const popupCopy = makeCard('Legal Research Attorney', { box: modalBox, overlay });
+
+    const document = {
+      querySelectorAll(sel) {
+        if (sel === '[data-testid="job-card"]') return [listingCopy, popupCopy];
+        return [];
+      },
+      body: { innerText: '0 Roles selected' }
+    };
+    const window = { getComputedStyle: (node) => ({ position: node?.__position || 'static' }) };
+    const location = { href: 'https://refer.micro1.ai/opportunities' };
+    const evaluate = async (expression) => JSON.parse(
+      await new Function('document', 'window', 'navigator', 'location', `return ${expression};`)(
+        document, window, {}, location
+      )
+    );
+
+    const result = await evaluate(mod.selectRolesExpr({ titles: ['Legal Research Attorney'], settleMs: 0 }));
+    eq('the tick presses the popup copy of a role, not the listing copy behind it', state.modalPresses, 1);
+    eq('and never presses the listing card', state.listingPresses, 0);
+    eq('which is what makes the selection verifiable', result.ok, true);
+    eq('and it says how it ticked', result.ticks[0]?.method, 'box');
+  }
+
+  // ─── One URL, one opinion (2026-11-18) ────────────────────────────────────────
+  //
+  // A live offers run reported "imported 23 draft offer(s) (23 with a verified link)" and then 23 × "link skipped …
+  // wrong_host" for those same rows: the insert path accepted `jobs.micro1.ai` and the backfill planner judged it against
+  // Turing's host. The proof is the difference the source makes.
+  {
+    const { applyCaptureUpdates } = await import('../utils/browserActor/applyCaptures.js');
+    const offer = {
+      id: 'm1',
+      title: 'Quantitative Rates Researcher',
+      referral_url: null,
+      external_id: 'micro1:c8cdec0c-76b7-40ae-9764-fb170200408a',
+      description: null
+    };
+    const capture = {
+      title: offer.title,
+      jobId: 'c8cdec0c-76b7-40ae-9764-fb170200408a',
+      externalId: offer.external_id,
+      referralUrl: 'https://jobs.micro1.ai/post/c8cdec0c-76b7-40ae-9764-fb170200408a?referralCode=98fb722e&utm_source=referral'
+    };
+    const writes = [];
+    const supabase = {
+      from: () => ({
+        update: (row) => ({
+          eq: () => ({ is: () => ({ select: async () => { writes.push(row); return { data: [{ id: 'm1' }], error: null }; } }) })
+        })
+      })
+    };
+    const verify = async () => ({ verdict: 'match' });
+
+    const judgedAsTuring = await applyCaptureUpdates({ supabase, offers: [offer], captures: [capture], verify });
+    eq('without a source, a micro1 link is refused by the Turing host rule', judgedAsTuring.links.planned, 0);
+    ok('and the refusal is named', (judgedAsTuring.links.skipped || []).some((row) => row.reason === 'wrong_host'),
+      JSON.stringify(judgedAsTuring.links.skipped));
+
+    const judgedAsMicro1 = await applyCaptureUpdates({ supabase, offers: [offer], captures: [capture], verify, sourceSlug: 'micro1' });
+    eq('with the source, the same link is accepted', judgedAsMicro1.links.planned, 1);
+    eq('and written to the offer that had no link', judgedAsMicro1.links.updated, 1);
+    eq('a per-role link is stored verbatim', writes[0]?.referral_url, capture.referralUrl);
+  }
+
+  /**
+   * The popup renders only the rows in view (2026-11-18).
+   *
+   * The live read found 12 controls for 72 titles it could see, so a pair further down the list has nothing to press
+   * until the list is scrolled. Bounded scrolling is the difference between "2 of 12 pairs" and the rest of the popup.
+   */
+  {
+    const mod = await import('../utils/browserActor/tasks/micro1Referrals.js');
+    const state = { presses: 0 };
+    const overlay = { parentElement: null, __position: 'fixed', scrollTop: 0, scrollHeight: 400, clientHeight: 100 };
+
+    const makeRow = (title) => {
+      const box = { checked: false, click() { state.presses += 1; this.checked = true; } };
+      return {
+        parentElement: overlay,
+        outerHTML: `<div data-testid="job-card">${title}</div>`,
+        querySelector: (sel) => (sel === 'h2' ? { innerText: title } : (sel === 'input[type="checkbox"]' ? box : null)),
+        querySelectorAll: () => [],
+        getBoundingClientRect: () => ({ left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 }),
+        scrollIntoView: () => {}
+      };
+    };
+    const first = makeRow('Passport Specialist');
+    const later = makeRow('Passport Acceptance Agent');
+
+    const document = {
+      // Only the rows that have been scrolled into view exist to be found — which is what a rendered list looks like.
+      querySelectorAll: (sel) => (sel === '[data-testid="job-card"]'
+        ? (overlay.scrollTop > 0 ? [first, later] : [first])
+        : []),
+      body: { innerText: '0 Roles selected' }
+    };
+    const window = { getComputedStyle: (node) => ({ position: node?.__position || 'static' }) };
+    const evaluate = async (expression) => JSON.parse(
+      await new Function('document', 'window', 'navigator', 'location', `return ${expression};`)(
+        document, window, {}, { href: 'https://refer.micro1.ai/opportunities' }
+      )
+    );
+
+    const result = await evaluate(mod.selectRolesExpr({ titles: ['Passport Acceptance Agent'], settleMs: 0 }));
+    eq('a role below the fold is scrolled to and ticked', state.presses, 1);
+    eq('the scroll actually happened', overlay.scrollTop > 0, true);
+    eq('and the pair is verified after scrolling', result.ok, true);
+  }
+
+  // A pair that ticked both roles and found no button: the page's own controls are the only useful diagnosis.
+  {
+    const mod = await import('../utils/browserActor/tasks/micro1Referrals.js');
+    const document = {
+      querySelectorAll: (sel) => (sel === 'button, [role="button"]'
+        ? [{ innerText: 'Close modal', click: () => {} }, { innerText: 'Copy invite link for 2 roles', click: () => {} }]
+        : [])
+    };
+    const action = JSON.parse(await new Function('document', `return ${mod.clickActionExpr()};`)(document));
+    eq('a button named in the page is clicked', action.ok, true);
+    eq('and its label is reported', action.label, 'Copy invite link for 2 roles');
+
+    const bare = JSON.parse(await new Function('document', `return ${mod.clickActionExpr()};`)({ querySelectorAll: () => [] }));
+    eq('with no button the reason is named', bare.reason, 'no_action_button');
+    ok('and the controls that were on the page come with it', Array.isArray(bare.labels));
   }
 
 console.log(`\n${pass} passed, ${fail} failed`);

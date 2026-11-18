@@ -605,6 +605,9 @@ export function createAgentRunsRouter({
         supabase,
         offers: Array.isArray(offers) ? offers : [],
         captures,
+        // Which marketplace issued these links. Without it the backfill planner judges a Micro1 URL against Turing's
+        // host and answers `wrong_host` for links the insert path accepted one call earlier (2026-11-18).
+        sourceSlug: platform,
         // `remint` comes from the worker, which was told by the queue. It permits replacing a stored link that carries
         // a code but was never minted for this tenant — the only way out of a catalogue whose links credit nobody
         // (2026-11-17).

@@ -351,6 +351,11 @@ async function runCapture({ existingOffers = [], identity = null } = {}) {
   console.error(`tenant=${tenant} profile=${maskEnvId(runnerIdentity.envId)} port=${port}`);
 
   const captures = [];
+  // Why the group pass stopped, when it did (2026-11-18). It has to be declared out here: the pass runs inside the
+  // capture `try`, and reporting happens after it. Kept local to that block, `groupStop` threw a ReferenceError *after*
+  // the report had been printed and *before* the run was closed — so two live runs showed a full result in the tenant's
+  // window and stayed undecided in the portal.
+  let groupStop = null;
   try {
     await capturePage({ host, port, url: MICRO1_PLATFORM.listUrl, timeoutMs: 45_000 });
     const listing = await waitForListing({ host, port });
@@ -374,7 +379,7 @@ async function runCapture({ existingOffers = [], identity = null } = {}) {
     }
     if (!listing.ok || !listing.count) {
       console.error(`listing did not render (waited ${listing.waitedMs}ms) · session=${gate.state} (${gate.reason}) — nothing captured`);
-      return { captures, listing };
+      return { captures, listing, groupStop };
     }
     console.error(`listing: ${listing.count} cards after ${listing.waitedMs}ms`);
 
@@ -437,10 +442,6 @@ async function runCapture({ existingOffers = [], identity = null } = {}) {
     // the pairing engine runs first, related roles only, and its link is attached to each role it covers.
     let groupedLinks = new Map();
     let groupedOk = true;
-    // Why the group pass stopped, when it did. Without this the reason lived only in the tenant's console window, so the
-    // portal could see `0 links` and nothing else — which is what made three re-mint attempts look identical
-    // (2026-11-17).
-    let groupStop = null;
     if (groupMode) {
       /**
        * Re-mint mode (2026-11-17).
@@ -668,7 +669,7 @@ async function runCapture({ existingOffers = [], identity = null } = {}) {
       try { await capturePage({ host, port, url: MICRO1_PLATFORM.listUrl, timeoutMs: 30_000 }); } catch {}
     }
 
-    return { captures, listing };
+    return { captures, listing, groupStop };
   } finally {
     if (sharedSession) { try { sharedSession.close(); } catch {} sharedSession = null; }
     if (flag('keep-open', null) === null) {
@@ -849,7 +850,7 @@ async function main() {
   console.error(`tenant=${tenantRow.slug} offers=${offers.length} source_id=${sourceId || '(none)'}`);
   await startRunTracking(supabase, tenantRow);
 
-  const { captures, listing } = await runCapture({ existingOffers: offers, identity });
+  const { captures, listing, groupStop } = await runCapture({ existingOffers: offers, identity });
   const withLink = captures.filter((capture) => capture.referralUrl);
   const withBody = captures.filter((capture) => capture.content);
   // A role we could not pair, or could not link, carries nothing the portal can apply. Posting it made every batch
@@ -910,13 +911,17 @@ async function main() {
         failed: 0,
         total: captures.length
       }),
-      message: `${applied.inserted || 0} imported, ${applied.linksUpdated || 0} existing offer(s) linked of ${captures.length} captured`.slice(0, 300),
+      message: `${applied.inserted || 0} imported, ${applied.linksUpdated || 0} existing offer(s) linked of ${captures.length} captured${groupStop ? ` · group pass stopped: ${groupStop}` : ''}`.slice(0, 300),
       detail: {
         captured: captures.length,
         links: withLink.length,
         inserted: applied.inserted || 0,
         linksUpdated: applied.linksUpdated || 0,
-        groupLinks: withLink.filter((capture) => capture.groupId).length
+        groupLinks: withLink.filter((capture) => capture.groupId).length,
+        // Carried to the portal so the panel can name the next step instead of showing a bare zero. Without it the
+        // reason lived only in the tenant's console window, which is what made three re-mint attempts look identical
+        // (2026-11-17).
+        groupStop: groupStop || null
       }
     });
   }
@@ -946,18 +951,6 @@ async function main() {
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
   fs.writeFileSync(outPath, JSON.stringify(report, null, 2));
   console.log(JSON.stringify(report, null, 2));
-
-  await finishRunTracking({
-    message: `${withLink.length}/${captures.length} links, ${applied.inserted} imported${groupStop ? ` · stopped: ${groupStop}` : ''}`,
-    detail: {
-      captured: captures.length,
-      links: withLink.length,
-      bodies: withBody.length,
-      inserted: applied.inserted,
-      // Carried to the portal so the panel can name the next step instead of showing a bare zero.
-      groupStop: groupStop || null
-    }
-  });
 }
 
 main().catch(async (error) => {

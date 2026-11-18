@@ -275,6 +275,24 @@ ok('and a readable page does not', !blocksRun('signed_in') && !blocksRun('unknow
     Boolean(TURING_PLATFORM.listSelector) && Boolean(MICRO1_PLATFORM.listUrl));
 }
 
+/**
+ * A run reported all of its work and then died on `groupStop is not defined` (2026-11-18).
+ *
+ * The stop reason is produced inside the capture `try` and reported after it, so the two halves have to agree on where
+ * it lives. No suite catches this: `node --check` passes, both live runs printed a complete result, and the portal was
+ * never told the run had finished — the tenant saw a full report and a failed run. These lines are the tripwire.
+ */
+{
+  const runner = read('scripts/browser_actor_micro1.mjs');
+  ok('the capture hands the group stop back to its caller',
+    /return \{ captures, listing, groupStop \}/.test(runner));
+  ok('and the caller reads it from the same place',
+    /const \{ captures, listing, groupStop \} = await runCapture/.test(runner));
+  ok('with exactly one declaration, which is what makes the name safe',
+    (runner.match(/let groupStop = null;/g) || []).length === 1);
+  ok('and it reaches the portal in the run detail, not just the console', /groupStop: groupStop \|\| null/.test(runner));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
 

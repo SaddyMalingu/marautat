@@ -545,6 +545,30 @@ const TICK_HELPER = `
     try { el.click(); } catch (e) {}
     return true;
   };
+  /**
+   * The cards that are actually in front of the tenant (2026-11-18).
+   *
+   * The listing grid and the popup render the **same** markup — \`[data-testid="job-card"]\` — and opening the popup does
+   * not unmount the listing. A live re-mint run read 84 cards: 72 listing rows with no control, and the popup's own
+   * rows behind them. The tick then took the first title match, which was the *listing* card, pressed nothing, and 10 of
+   * 12 pairs died as \`selection_not_verified\` while two rows that happened to resolve inside the popup succeeded. So:
+   * prefer the copies that live inside a fixed-position overlay, which is what a popup is, and fall back to the whole
+   * document when there is no overlay (the referral page itself has the grid at top level).
+   */
+  const frontCards = () => {
+    const all = Array.from(document.querySelectorAll('${MICRO1_CARD}'));
+    const inOverlay = all.filter((card) => {
+      let node = card.parentElement;
+      while (node && node !== document.body) {
+        let position = '';
+        try { position = (window.getComputedStyle ? window.getComputedStyle(node) : {}).position || ''; } catch (e) {}
+        if (position === 'fixed') return true;
+        node = node.parentElement;
+      }
+      return false;
+    });
+    return inOverlay.length ? inOverlay : all;
+  };
   const boxOf = (card) =>
     card.querySelector('input[type="checkbox"]') || card.querySelector('[role="checkbox"], [aria-checked]') || null;
   const isTicked = (card) => {
@@ -597,23 +621,51 @@ export function selectRolesExpr({ titles = [], settleMs = 400 } = {}) {
   const clean = (v) => String(v == null ? '' : v).replace(/\\s+/g, ' ').trim();
   const wanted = ${wanted};
   ${TICK_HELPER}
-  const cards = Array.from(document.querySelectorAll('${MICRO1_CARD}'));
+  const cards = frontCards();
   const titleOf = (card) => {
     const h = card.querySelector('h2') || card.querySelector('h3');
     return h ? clean(h.innerText || h.textContent) : '';
+  };
+  /**
+   * Find a role by title, scrolling the popup's own list if it is not on screen yet.
+   *
+   * The popup renders only the rows in view: the live read saw 12 of them while the tenant holds 72 titles, so a role a
+   * little further down the list has no control to press until it is scrolled to (2026-11-18). Bounded on purpose —
+   * when the list stops growing under the scroll, that role genuinely is not in this popup and is reported as missed.
+   */
+  let live = cards;
+  const scrollHost = (() => {
+    let node = cards.length ? cards[0].parentElement : null;
+    while (node && node !== document.body) {
+      if (node.scrollHeight > node.clientHeight + 20) return node;
+      node = node.parentElement;
+    }
+    return null;
+  })();
+  const matchIn = (key) => live.filter((c) => {
+    const actual = titleOf(c).toLowerCase();
+    return actual && (actual === key || actual.startsWith(key) || key.startsWith(actual));
+  });
+  const findCard = async (title) => {
+    const key = title.toLowerCase();
+    let hits = matchIn(key);
+    if (hits.length) return hits.find((c) => boxOf(c)) || hits[0];
+    if (!scrollHost) return null;
+    for (let step = 0; step < 12; step += 1) {
+      scrollHost.scrollTop += Math.max(120, Math.floor(scrollHost.clientHeight * 0.8));
+      await new Promise((r) => setTimeout(r, 220));
+      live = frontCards();
+      hits = matchIn(key);
+      if (hits.length) return hits.find((c) => boxOf(c)) || hits[0];
+      if (scrollHost.scrollTop + scrollHost.clientHeight >= scrollHost.scrollHeight - 2) break;
+    }
+    return null;
   };
   const clicked = [];
   const missed = [];
   const counterBefore = counterNow();
   for (const title of wanted) {
-    const key = title.toLowerCase();
-    const matches = cards.filter((c) => {
-      const actual = titleOf(c).toLowerCase();
-      return actual && (actual === key || actual.startsWith(key) || key.startsWith(actual));
-    });
-    // Prefer the copy that exposes a control, then any copy at all: the ladder can find the square by geometry even
-    // when the markup has no input, so requiring one would skip cards that are perfectly tickable (2026-11-16).
-    const card = matches.find((c) => boxOf(c)) || matches[0];
+    const card = await findCard(String(title));
     if (!card) { missed.push(title); continue; }
     const before = counterNow();
     const target = boxOf(card);
@@ -635,26 +687,35 @@ export function selectRolesExpr({ titles = [], settleMs = 400 } = {}) {
         ticked = await waitTicked(card, 800);
       }
     }
-    clicked.push({ title: titleOf(card), already: false, method, ticked, before, after: counterNow() });
+    // Nothing to press and nothing to read: hand back the row's own markup. Choosing the next selector from a log line
+    // has cost several round trips ("no control/unreadable" twelve times names no element), and the markup ends it.
+    let markup = null;
+    if (ticked !== true && !method) {
+      try { markup = clean(card.outerHTML || '').slice(0, 240); } catch (e) {}
+    }
+    clicked.push({ title: titleOf(card), already: false, method, ticked, before, after: counterNow(), ...(markup ? { markup } : {}) });
   }
   await new Promise((r) => setTimeout(r, ${Number(settleMs) || 400}));
   const counterAfter = counterNow();
-  // Read the state back from the DOM: this is the difference between "clicked" and "selected".
+  // Read the state back from the DOM: this is the difference between "clicked" and "selected". The snapshot is the
+  // last one taken, and a row that has since scrolled out of the popup answers null rather than "not ticked".
   const states = clicked.map((row) => {
     const key = row.title.toLowerCase();
-    const card = cards.filter((c) => titleOf(c).toLowerCase() === key)[0] || null;
+    const card = live.filter((c) => titleOf(c).toLowerCase() === key)[0] || null;
     return { title: row.title, checked: card ? isTicked(card) : null };
   });
   const body = clean(document.body ? document.body.innerText : '');
   const counter = (body.match(/(\\d+)\\s+Roles?\\s+selected/i) || [])[0] || null;
   const action = Array.from(document.querySelectorAll('button')).find((b) =>
     /select at least|generate|create link|copy link|get link/i.test(clean(b.innerText || b.textContent)));
+  // The counter rising by the number asked for is proof on its own — it is what the tenant can see, and a custom control
+  // may never expose its checked state at all. When it is the proof, the roles asked for ARE the roles selected: a row
+  // that has scrolled out of the popup cannot be re-read, and calling that "nothing selected" contradicts the counter.
+  const byCounter = counterBefore != null && counterAfter != null && counterAfter - counterBefore >= wanted.length;
   return JSON.stringify({
-    // Proof is the checkbox state OR the page's own counter rising by the number of roles asked for. The counter is
-    // what the tenant can see, and a custom control may never expose its checked state to us at all.
-    ok: (states.every((s) => s.checked === true) && states.length === wanted.length)
-      || (counterBefore != null && counterAfter != null && counterAfter - counterBefore >= wanted.length),
-    selected: states.filter((s) => s.checked === true).map((s) => s.title),
+    // Proof is the checkbox state OR the page's own counter rising by the number of roles asked for.
+    ok: (states.every((s) => s.checked === true) && states.length === wanted.length) || byCounter,
+    selected: byCounter ? wanted.slice() : states.filter((s) => s.checked === true).map((s) => s.title),
     unselected: states.filter((s) => s.checked !== true).map((s) => s.title),
     missed,
     counterBefore,
@@ -671,7 +732,7 @@ export function selectRolesExpr({ titles = [], settleMs = 400 } = {}) {
 export function clearSelectionExpr({ settleMs = 300 } = {}) {
   return `(async () => {
   ${TICK_HELPER}
-  const cards = Array.from(document.querySelectorAll('${MICRO1_CARD}'));
+  const cards = frontCards();
   const counterBefore = counterNow();
   let cleared = 0;
   for (const card of cards) {
@@ -700,15 +761,20 @@ export function clickActionExpr() {
   return `(() => {
   const clean = (v) => String(v == null ? '' : v).replace(/\\s+/g, ' ').trim();
   // Never the header pill: clicking "Your referral link" reopens its menu and takes the modal away.
-  const button = Array.from(document.querySelectorAll('button')).filter((b) =>
+  const button = Array.from(document.querySelectorAll('button, [role="button"]')).filter((b) =>
     !/your referral link/i.test(clean(b.innerText || b.textContent)))
-    .find((b) => /select at least|generate|create link|copy link|get link|share|referral link/i.test(clean(b.innerText || b.textContent)));
-  if (!button) return JSON.stringify({ ok: false, reason: 'no_action_button' });
+    .find((b) => /select at least|generate|create link|copy link|get link|share|referral link|invite|link [0-9]+ role/i.test(clean(b.innerText || b.textContent)));
+  // A pair that ticked both roles and then found no button has got further than any selector guess can reach: name the
+  // controls that ARE on the page, so the next attempt is an edit and not another blind run (2026-11-18).
+  const labels = Array.from(document.querySelectorAll('button, [role="button"]'))
+    .map((b) => clean(b.innerText || b.textContent)).filter(Boolean).slice(0, 12);
+  if (!button) return JSON.stringify({ ok: false, reason: 'no_action_button', labels });
   if (button.disabled) {
     return JSON.stringify({
       ok: false,
       reason: 'action_disabled',
-      label: clean(button.innerText || button.textContent)
+      label: clean(button.innerText || button.textContent),
+      labels
     });
   }
   const label = clean(button.innerText || button.textContent);
@@ -855,6 +921,9 @@ export async function runReferralGroups({ evaluate, groups = [], waitForLinkMs =
         .map((t) => `${String(t.title || '').slice(0, 28)}=${t.method || 'no control'}/${t.ticked === true ? 'ticked' : (t.ticked === null ? 'unreadable' : 'not ticked')}`)
         .join(', ');
       log(`selection not verified — counter ${selection?.counterBefore ?? '?'}→${selection?.counterAfter ?? '?'}${selection?.missed?.length ? `, missing: ${selection.missed.join(', ')}` : ''}${ticks ? ` · ${ticks}` : ''}`);
+      // The row that had nothing to press and nothing to read: its markup names the control we have not learned yet.
+      const sample = (selection?.ticks || []).find((t) => t.markup);
+      if (sample) log(`  row markup — ${sample.title}: ${sample.markup}`);
       failures.push({ groupId, reason: 'selection_not_verified', titles, selection });
       continue;
     }
@@ -867,6 +936,10 @@ export async function runReferralGroups({ evaluate, groups = [], waitForLinkMs =
     const action = await evaluate(clickActionExpr());
     if (!action?.ok) {
       failures.push({ groupId, reason: action?.reason || 'action_failed', titles, action });
+      // Two roles were ticked and the page offered no button we recognise: the labels are the whole diagnosis.
+      if (Array.isArray(action?.labels) && action.labels.length) {
+        log(`  controls on the page: ${action.labels.map((label) => `"${String(label).slice(0, 40)}"`).join(' | ')}`);
+      }
       continue;
     }
 

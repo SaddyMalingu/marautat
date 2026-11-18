@@ -176,6 +176,19 @@ export async function applyCaptures({
 }
 
 /**
+ * Which host each marketplace issues its referral links on (2026-11-18).
+ *
+ * `planReferralBackfill` defaults to Turing's host, so a Micro1 capture was refused as `wrong_host` — while the very
+ * same URL had just been accepted by the insert path a few lines earlier. One live run therefore reported "imported 23
+ * draft offer(s) (23 with a verified link)" and, immediately below it, 23 × "link skipped … wrong_host" for those same
+ * rows: two opinions about one URL, which is how a run that worked reads like a run that failed.
+ *
+ * `micro1.ai` covers both `jobs.micro1.ai` (one link per role) and `refer.micro1.ai` (one link per pair), because
+ * `isReferralUrlForHost` compares subdomain-safely. Turing keeps its planner default, so nothing changes for it.
+ */
+export const REFERRAL_HOST_BY_SOURCE = { micro1: 'micro1.ai' };
+
+/**
  * Attach what a worker read to offers that **already exist** (2026-11-03).
  *
  * `applyCaptures` creates draft offers, which is what a Micro1 capture needs: the roles it
@@ -191,16 +204,19 @@ export async function applyCaptures({
  *
  * @returns {{links: object, descriptions: object}}
  */
-export async function applyCaptureUpdates({ supabase, offers = [], captures = [], verify = verifyReferralLink, apply = true, allowReplacePayable = false } = {}) {
+export async function applyCaptureUpdates({ supabase, offers = [], captures = [], verify = verifyReferralLink, apply = true, allowReplacePayable = false, sourceSlug = null } = {}) {
   const rows = Array.isArray(offers) ? offers : [];
   const allCaptures = Array.isArray(captures) ? captures : [];
+  const host = REFERRAL_HOST_BY_SOURCE[String(sourceSlug || '').toLowerCase()] || null;
   // A paired link is handled directly, by title — not through the single-role planner. It lives on refer.micro1.ai and
   // carries no job id, so the planner refuses it as `wrong_host` before any verification could happen. Its evidence is
   // different too: the roles were ticked and the page's own counter confirmed them.
   const groupCaptures = allCaptures.filter((capture) => capture && capture.groupId && capture.referralUrl);
   const linkPlan = planReferralBackfill({
     offers: rows,
-    captures: allCaptures.filter((capture) => !(capture && capture.groupId))
+    captures: allCaptures.filter((capture) => !(capture && capture.groupId)),
+    // Spread, not `host`: passing null would override the planner's own default and refuse every link.
+    ...(host ? { host } : {})
   });
   const verification = [];
   const accepted = [];
