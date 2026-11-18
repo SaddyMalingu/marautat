@@ -217,6 +217,31 @@ export function resolveLinkVerdict({ check = null, expectedTitle = '', pageTitle
 }
 
 /**
+ * Does this link cover a SET of roles rather than one posting? (2026-11-18)
+ *
+ * Micro1 mints one link per pair of roles: `refer.micro1.ai/referral/jobs?referralCode=…&linkId=…`. Both roles carry the
+ * same URL, and that URL opens a *list*. The single-role title test is therefore the wrong test for it — and running it
+ * anyway turns every pair link into `mismatch`, which the portal reads as "pays somebody else" and drops out of the
+ * Payable filter. Worse, the audit's `--clear-mismatches` would null out links that were just minted for this tenant.
+ *
+ * Decided by shape, not by host: a listing path with no job id in it. Anything carrying `/post/<id>` or `/r/<code>` is a
+ * single role and keeps the strict test, which is what protects against a link that lands on a different job.
+ */
+const MULTI_ROLE_PATH = /\/referrals?(\/jobs)?\/?$/i;
+
+export function isMultiRoleLink(url) {
+  let parsed;
+  try {
+    parsed = new URL(String(url || ''));
+  } catch {
+    return false;
+  }
+  if (!parsed.hostname) return false;
+  if (/\/post\/[0-9a-z-]{8,}/i.test(parsed.pathname)) return false;
+  return MULTI_ROLE_PATH.test(parsed.pathname);
+}
+
+/**
  * Fetch a referral link and judge it against the offer it is supposed to serve.
  * Never throws for a bad link: an unreachable page is a verdict, not a crash,
  * because the caller's next move (refuse to write) is the same either way.
@@ -229,6 +254,18 @@ export async function verifyReferralLink({
   userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
 } = {}) {
   if (!url) return { ...judgeReferralLink({ expectedTitle }), url: null, status: null };
+  // A pair link has no single role to resolve to, so there is nothing here to test and nothing to fetch. Answering
+  // `list` is what keeps the audit — and the Payable filter that reads its verdict — from calling a good link wrong.
+  if (isMultiRoleLink(url)) {
+    return {
+      verdict: 'list',
+      reason: 'covers_several_roles',
+      url: String(url),
+      status: null,
+      resolvedTitle: null,
+      expectedTitle
+    };
+  }
   if (typeof fetchImpl !== 'function') {
     return { ...judgeReferralLink({ expectedTitle }), url: String(url), status: null, reason: 'no_fetch' };
   }

@@ -269,7 +269,7 @@ export async function applyCaptureUpdates({ supabase, offers = [], captures = []
       linkPlan.skipped.push({ title: capture.title, reason: 'link_without_attribution' });
       continue;
     }
-    accepted.push({ id: offer.id, title: offer.title, referral_url: capture.referralUrl, replaceOf });
+    accepted.push({ id: offer.id, title: offer.title, referral_url: capture.referralUrl, replaceOf, multiRole: true });
   }
 
   for (const update of linkPlan.updates) {
@@ -330,14 +330,35 @@ export async function applyCaptureUpdates({ supabase, offers = [], captures = []
   if (apply) {
     for (const update of accepted) {
       if (!update.id) { links.skipped.push({ title: update.title, reason: 'no_id' }); continue; }
-      const base = supabase
-        .from('opportunities')
-        .update({ referral_url: update.referral_url, updated_at: new Date().toISOString() })
-        .eq('id', update.id);
+      const stamp = new Date().toISOString();
+      /**
+       * A verdict describes a URL, not a row (2026-11-18).
+       *
+       * Replacing a link has to clear the old verdict, or the row keeps claiming "verified" about a URL it no longer
+       * holds. And a pair link can be stamped on the spot: `list` says what it covers, which is not the same claim as
+       * "lands on this one posting" — and it is what stops the audit from re-testing a list against a single title and
+       * answering `mismatch`, which the portal reads as "pays somebody else".
+       */
+      const patch = {
+        referral_url: update.referral_url,
+        updated_at: stamp,
+        link_verdict: update.multiRole ? 'list' : null,
+        link_checked_at: update.multiRole ? stamp : null
+      };
       // Compare-and-set either way: against NULL when the row had no link, or against the exact dead value we are
       // replacing. A link somebody attached while this run was driving the browser is never clobbered.
-      const { data, error } = await (update.replaceOf ? base.eq('referral_url', update.replaceOf) : base.is('referral_url', null))
-        .select('id, title');
+      const write = (fields) => {
+        const query = supabase.from('opportunities').update(fields).eq('id', update.id);
+        return (update.replaceOf ? query.eq('referral_url', update.replaceOf) : query.is('referral_url', null))
+          .select('id, title');
+      };
+      let { data, error } = await write(patch);
+      // A database without the verification migration must still accept the link itself — losing the verdict is a gap
+      // in reporting, losing the link is losing the money.
+      if (error && /link_verdict|link_checked_at/i.test(String(error.message))) {
+        const fallback = { referral_url: patch.referral_url, updated_at: patch.updated_at };
+        ({ data, error } = await write(fallback));
+      }
       if (error) { links.skipped.push({ title: update.title, reason: error.message }); continue; }
       links.updated += Array.isArray(data) ? data.length : 0;
     }

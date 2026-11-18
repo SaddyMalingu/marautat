@@ -693,6 +693,9 @@ function wfOfferLinkState(o) {
   // A URL with no referral code earns nothing however it got there, so it is not "unverified" — nothing about
   // verifying it could make it pay (2026-11-17).
   if (!wfLinkHasCode(o.referral_url)) return 'unpayable';
+  // One link, several roles (2026-11-18). Both offers of a Micro1 pair carry the same URL, which opens a list — so the
+  // single-post test does not apply to it, and the row says so instead of reading as never checked.
+  if (verdict === 'list') return 'pair';
   if (verdict === 'match') return 'verified';
   return 'unchecked';
 }
@@ -706,6 +709,7 @@ function wfLinkBadge(o) {
   const state = wfOfferLinkState(o);
   if (state === 'none') return '<span class="badge" style="background:#6b7280" title="No referral link — this offer earns nothing">none</span>';
   if (state === 'verified') return '<span class="badge" style="background:#10b981" title="Resolves to this job">verified</span>';
+  if (state === 'pair') return '<span class="badge" style="background:#14b8a6" title="One link covers both roles — minted for the pair, so a single-post check does not apply">pair</span>';
   if (state === 'wrong') return '<span class="badge" style="background:#ef4444" title="This link lands on a DIFFERENT job">wrong job</span>';
   if (state === 'unpayable') return '<span class="badge" style="background:#b91c1c" title="A URL is attached but carries no referral code — every click through it earns nothing">no code</span>';
   return '<span class="badge" style="background:#f59e0b" title="Never checked since it was attached">unverified</span>';

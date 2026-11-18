@@ -65,6 +65,10 @@ export function linkStateOf(offer) {
   // verification proved it lands on the right role and said nothing about whether a click earns. That is the state that
   // cost this tenant months: the row looks done, and every click through it earns nothing.
   if (!creditsSomebody(url)) return 'unpayable';
+  // One link, several roles (2026-11-18). Micro1 mints per pair, so both offers carry the same URL and it opens a list.
+  // Deliberately not `verified`: the single-role test cannot apply to a list, and claiming it passed would be a claim
+  // about a posting nobody checked.
+  if (verdict === 'list') return 'pair';
   if (verdict === 'match') return 'verified';
   return 'unchecked';
 }
@@ -108,7 +112,7 @@ export function buildClearPatch({ pointsAt = null, now = new Date() } = {}) {
  * else while looking fine. Capped: a queue of 96 is a report, not a to-do list.
  */
 export function linkQueue(offers = [], { limit = 25 } = {}) {
-  const rank = { wrong: 0, unchecked: 1, missing: 2, verified: 3 };
+  const rank = { wrong: 0, unchecked: 1, missing: 2, pair: 3, verified: 4 };
   return (Array.isArray(offers) ? offers : [])
     .filter(Boolean)
     .map((offer) => ({

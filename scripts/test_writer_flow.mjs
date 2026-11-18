@@ -1123,6 +1123,89 @@ async function withServer(db) {
     /roles you already hold/.test(String(withStop('stopped: held_pool_too_small')?.label)), withStop('stopped: held_pool_too_small')?.label);
 }
 
+/**
+ * One link, several roles — and every reader must agree (2026-11-18).
+ *
+ * The 18 Nov run minted six pair links: `refer.micro1.ai/referral/jobs?referralCode=…&linkId=…`. Two roles share each
+ * URL and it opens a LIST. The audit resolves every stored link and compares the page title with the offer title, so a
+ * list can never match a role: all six would have been recorded `mismatch`, which the Payable filter reads as "wrong
+ * job" and excludes — and `--clear-mismatches` would then have deleted the links the run had just minted. The tenant's
+ * question ("are these in Payable?") is answered by these three readers agreeing.
+ */
+{
+  const { isMultiRoleLink, verifyReferralLink } = await import('../utils/browserActor/referralVerify.js');
+  const pair = 'https://refer.micro1.ai/referral/jobs?referralCode=98fb722e-dde7-40cc-977b-f40871bdb2e6&linkId=a1f48ab6-99b0-4710-a925-76a4ea77c85a&utm_source=referral';
+  const single = 'https://jobs.micro1.ai/post/c8cdec0c-76b7-40ae-9764-fb170200408a?referralCode=98fb722e';
+
+  eq('a pair link covers several roles', isMultiRoleLink(pair), true);
+  eq('a per-role link does not', isMultiRoleLink(single), false);
+  eq('and neither does a Turing per-role link', isMultiRoleLink('https://www.turing.com/r/xako-8LrQK'), false);
+
+  let fetched = 0;
+  const judged = await verifyReferralLink({
+    url: pair,
+    expectedTitle: 'STEM Expert',
+    fetchImpl: async () => { fetched += 1; throw new Error('a pair link must not be fetched'); }
+  });
+  eq('a pair link is judged by its shape, not by its page title', judged.verdict, 'list');
+  eq('and nothing is fetched for it', fetched, 0);
+
+  // The two readers the portal answers with.
+  eq('the row reads as a pair, not as never checked', linkStateOf({ referral_url: pair, link_verdict: 'list' }), 'pair');
+  const pairOnly = buildPlatformFunnel([
+    { title: 'STEM Expert', source_slug: 'micro1', status: 'published', referral_url: pair, link_verdict: 'list' }
+  ]);
+  eq('a pair link is counted as payable', pairOnly[0].payable, 1);
+  eq('and never as a wrong link', pairOnly[0].wrong, 0);
+  const provedWrong = buildPlatformFunnel([
+    { title: 'Unrelated', source_slug: 'micro1', status: 'published', referral_url: single, link_verdict: 'mismatch' }
+  ]);
+  eq('while a proven mismatch is still counted as wrong', provedWrong[0].wrong, 1);
+  eq('and therefore not as payable', provedWrong[0].payable, 0);
+
+  const dash = fs.readFileSync(new URL('../admin/tenant_dashboard.html', import.meta.url), 'utf8');
+  ok('the offers table has a state for a pair link', /if \(verdict === 'list'\) return 'pair'/.test(dash));
+  ok('and a badge that says what it is', /state === 'pair'/.test(dash));
+  ok('so the Payable filter keeps it rather than calling it wrong', /wfOfferLinkState\(o\) !== 'wrong'/.test(dash));
+
+  // A verdict describes a URL, so replacing one has to move the verdict with it.
+  const { applyCaptureUpdates } = await import('../utils/browserActor/applyCaptures.js');
+  const writes = [];
+  const fakeDb = {
+    from: () => ({
+      update: (row) => {
+        writes.push(row);
+        const done = { select: async () => ({ data: [{ id: 'o1' }], error: null }) };
+        return { eq: () => ({ eq: () => done, is: () => done }) };
+      }
+    })
+  };
+  const offers = [
+    { id: 'o1', title: 'STEM Expert', referral_url: single, external_id: null, description: null },
+    // No link at all: the only shape the single-role planner writes into. It must arrive with no verdict rather than
+    // inheriting one from the row's history.
+    { id: 'o3', title: 'ML Engineer', referral_url: null, external_id: null, description: null }
+  ];
+  const applied = await applyCaptureUpdates({
+    supabase: fakeDb,
+    offers,
+    apply: true,
+    allowReplacePayable: true,
+    sourceSlug: 'micro1',
+    verify: async () => ({ verdict: 'match' }),
+    captures: [
+      { title: 'STEM Expert', referralUrl: pair, groupId: 'pair-1', sharedWith: ['Physics Expert (PhD / Postdoc)'] },
+      { title: 'ML Engineer', referralUrl: 'https://jobs.micro1.ai/post/cf351411-3ea6-400b-ae57-369d9b2884c5?referralCode=98fb722e' }
+    ]
+  });
+  eq('both links were written', applied.links.updated, 2);
+  const pairWrite = writes.find((row) => row.referral_url === pair);
+  const singleWrite = writes.find((row) => row.referral_url !== pair);
+  eq('a pair link is stamped as covering several roles', pairWrite?.link_verdict, 'list');
+  eq('and dated, so "when" is answerable', typeof pairWrite?.link_checked_at, 'string');
+  eq('a single-role link makes no claim it did not earn', singleWrite?.link_verdict, null);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
 

@@ -66,12 +66,18 @@ async function main() {
   for (const offer of rows) {
     const check = await verifyReferralLink({ url: offer.referral_url, expectedTitle: offer.title });
     results.push({ ...offer, ...check });
-    const mark = check.verdict === 'match' ? 'OK  ' : check.verdict === 'mismatch' ? 'WRONG' : '???? ';
+    const mark = check.verdict === 'match' ? 'OK  '
+      : check.verdict === 'mismatch' ? 'WRONG'
+      // A pair link covers several roles, so the single-post test cannot apply. Saying so is the honest answer — and it
+      // is what keeps `--clear-mismatches` from deleting links that were minted for this tenant (2026-11-18).
+      : check.verdict === 'list' ? 'PAIR '
+      : '???? ';
     console.error(`  ${mark} ${String(offer.title).slice(0, 46).padEnd(46)} -> ${check.resolvedTitle || check.reason}`);
   }
 
   const mismatches = results.filter((r) => r.verdict === 'mismatch');
   const matches = results.filter((r) => r.verdict === 'match');
+  const pairs = results.filter((r) => r.verdict === 'list');
   const unknown = results.filter((r) => r.verdict === 'unresolvable');
 
   // Title verification says "right job". This says "right payee". A link can land on
@@ -140,7 +146,7 @@ async function main() {
   console.log(JSON.stringify({
     tenant: tenant.slug,
     checked: results.length,
-    verdicts: { match: matches.length, mismatch: mismatches.length, unresolvable: unknown.length },
+    verdicts: { match: matches.length, mismatch: mismatches.length, list: pairs.length, unresolvable: unknown.length },
     mismatches: mismatches.map((r) => ({
       id: r.id,
       title: r.title,
