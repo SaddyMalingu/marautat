@@ -1,0 +1,17 @@
+Names exactly as they appear in the host's environment list, read 2026-10-23 14:56
+UTC. Values are not reproduced here. Each name marked `set` held a non-empty value;
+the person who read the list confirmed each key worked against its provider from a
+laptop.
+
+  GEMINI_API_KEY          set
+  HF_API_KEY              set
+  GROK_API_KEY            set        <- our Groq key
+  OPEN_ROUTER_API_KEY     set        <- our OpenRouter key
+  CEREBRAS_API_KEY        not provisioned yet
+  MISTRAL_API_KEY         not provisioned yet
+
+Names that are NOT in the environment list:
+
+  GROQ_API_KEY
+  OPENROUTER_API_KEY
+  OPENROUTER_KEY

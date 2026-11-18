@@ -1,9 +1,18 @@
 # DOP — how we record system progress
 
-Alphadome work is written up the same way a Hashlist/DOP task is written up, because
-Hashlist pays **$300 per accepted task** and rejects anything that is not real
-engineering. If our progress notes already have the shape of a task, any week's
-work can be packaged in minutes instead of reconstructed from chat logs.
+Alphadome work is written up the same way a task-platform card is written up, because
+these platforms reject anything that is not real engineering and pay per **accepted**
+task. If our progress notes already have the shape of a task, any week's work can be
+packaged in minutes instead of reconstructed from chat logs.
+
+**What a card actually earns** (checked against the account dashboard, 2026-11-18):
+pay lands on the balance per accepted task and is paid out weekly by Stripe; the
+embedded Interview Task brief on the board shows **$0 per successful submission**;
+the data-set lane pays a **$500–$5,000 sample fee** on acceptance and then a licence
+per batch. The full lane-by-lane comparison, the honest data-set description and the
+seven-day plan are in `docs/HASHLIST_TASK_PACK.md`. Do not quote a per-task rate
+here that the platform has not published — an earlier version of this file claimed
+one and it was not supported by anything.
 
 This is not a second backlog. It is the *frame* around the work we were doing
 anyway: one folder per real defect or decision, with the evidence, the golden
@@ -69,14 +78,33 @@ node dop/tasks/001-silent-ai-slug/grader.mjs dop/tasks/001-silent-ai-slug/answer
 
 ## Which brief a card can become
 
-* Experiments on host behaviour, latency budgets and provider fallbacks → **Embedded
-  Systems Task** style brief: specifications, constraints, architecture choice, scored
-  checks (the shape `tasks/001` already uses).
-* Anything with a real register/peripheral trace or a schema migration between two
-  SDK versions → the **Driver and Peripheral Bring-up** brief ($300/accepted task).
-* A customer-facing dataset (tickets, WhatsApp threads, offer/catalog exports) →
-  the **"send us a sample"** data-set channel, which is the highest-value route and
-  needs no task format at all, only clean, consented files.
+* Experiments on host behaviour, latency budgets and provider fallbacks → the
+  **task** programme: specifications, constraints, architecture choice, scored
+  checks (the shape `tasks/001` and `tasks/005` already use).
+* Anything where the *stored value* disagrees with reality — a proxy address, a boot
+  log that reports a key as missing, a status row counted as a message → also the
+  **task** programme, because the diagnosis is the product.
+* A dataset is the batch of accepted cards, not a different artifact. Anything that
+  is not already a card is not a dataset either.
+* **Not a dataset, ever:** the WhatsApp `conversations` table. It holds 792 inbound
+  messages from 83 identifiable people; that is third-party personal data inside a
+  DPA 2019 obligation, not inventory. Source history is excluded for a different
+  reason: it is the product we sell, so licensing it trains the competitor.
+
+## Packaging a card for upload
+
+```powershell
+npm run dop:proof          # golden = 1.000, every near miss < 0.300, repeatable ×3
+npm run dop:package        # dist/hashlist/<id>/ in the upload layout
+npm run dop:package:check  # validate every card without writing anything
+```
+
+`scripts/dop_package.mjs` writes `agent/PROMPT.md`, `agent/CONTEXT.md`, `files/`,
+`references/` (gold, near misses, checks, bands) and `PROVENANCE.md`, and refuses to
+finish if the grader is mounted next to the question, if a golden answer is not
+1.000, if a near miss reaches 0.300, or if the redaction scan finds an email, an
+M-Pesa number, a bearer token or a provider key. `dist/` is build output and is
+git-ignored.
 
 ## Revenue tie-in
 

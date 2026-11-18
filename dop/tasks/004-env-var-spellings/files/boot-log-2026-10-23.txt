@@ -1,0 +1,12 @@
+Excerpt from the host boot log, 2026-10-23. The line names every provider the reply
+path can reach; it prints presence, never key material. An ellipsis marks a field
+this incident did not change.
+
+[2026-10-23T14:56:04.221Z] [SYSTEM] Server running on port 10000
+[2026-10-23T14:56:04.619Z] [SYSTEM] ENV LLM keys: … openrouter=false … groq=false cerebras=false mistral=false … hf=true
+
+Note from the person who pulled the excerpt: this build was facc1404, the commit that
+joined the WhatsApp reply path to the same provider chain the writers use. The
+environment list was checked in the same minute — see the names file. `hf=true` is a
+provider whose key is spelled the way the code reads it, and it is the one provider
+the chain did reach.

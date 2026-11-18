@@ -32,6 +32,8 @@
     "test:smoke-tenant": "node scripts/test_smoke_tenant_onboarding.mjs",
     "check:ai-key": "node scripts/check_ai_key.mjs",
     "dop:proof": "node dop/proof-all.mjs",
+    "dop:package": "node scripts/dop_package.mjs",
+    "dop:package:check": "node scripts/dop_package.mjs --check",
     "test:blog-fallback": "node scripts/test_blog_fallback.mjs",
     "test:blog-html": "node scripts/test_blog_html_sanitize.mjs",
     "test:blog-quality": "node scripts/test_blog_quality.mjs",

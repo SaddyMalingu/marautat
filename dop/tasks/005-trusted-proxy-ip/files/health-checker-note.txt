@@ -1,0 +1,21 @@
+Written by the person on duty, 2026-10-24 03:55 UTC, while watching the host log.
+
+A demo link was opened on a phone on mobile data, in Nakuru, by someone who has
+never been in this office and is not on our network. This is what arrived from that
+peer, in order:
+
+  [PAGE] Landing page loaded by ::1 at 2026-10-24T03:55:36.216Z
+  GET /media/*.mp4  206  (ten range requests, about 40 MB, all inside 13 s)
+  POST /api/kassangas/track-visit  200
+  GET /favicon.ico  404
+  GET /favicon.ico  404
+
+Two things I keep coming back to:
+
+  1. A health checker does not fetch ten videos and post analytics. Whatever this
+     peer is, it is a browser belonging to a real person.
+  2. The carousel advanced as if every clip had failed, while the log shows the
+     clips were served. That is a separate annoyance, noted here only because it is
+     what made me look at this log at all.
+
+The address in the page line is the same one the analytics table stores.

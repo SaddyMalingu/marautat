@@ -1,0 +1,25 @@
+Excerpt from logs/bot.log — the application's own log file, written on the Render
+instance. Contiguous lines, verbatim. Nothing has been edited except that the
+middle of the file (2026-04-22 to 2026-10-11) is not shown.
+
+[2026-04-18T14:40:52.269Z] [SYSTEM] Server running on port 3000
+[2026-04-18T14:43:54.563Z] [PAGE] Admin dashboard loaded by ::1 at 2026-04-18T14:43:54.556Z
+[2026-04-18T14:45:28.119Z] [SYSTEM] Health monitor started.
+[2026-04-18T14:45:28.129Z] [SYSTEM] ✅ Manual health check recorded.
+[2026-04-18T14:45:28.210Z] [SYSTEM] Server running on port 3000
+[2026-04-18T14:55:10.955Z] [SYSTEM] Health monitor started.
+[2026-04-18T14:55:11.154Z] [SYSTEM] ✅ Manual health check recorded.
+[2026-04-18T14:55:11.903Z] [SYSTEM] Server running on port 3000
+[2026-04-18T14:56:54.808Z] [PAGE] Admin dashboard loaded by ::1 at 2026-04-18T14:56:54.804Z
+[2026-04-18T14:56:56.943Z] [PAGE] Admin dashboard loaded by ::1 at 2026-04-18T14:56:56.943Z
+
+...
+
+[2026-10-11T09:58:57.347Z] [SYSTEM] Health monitor started.
+[2026-10-11T09:58:57.350Z] [SYSTEM] ✅ Manual health check recorded.
+[2026-10-11T09:58:57.365Z] [SYSTEM] Server running on port undefined
+[2026-10-11T09:58:57.366Z] [SYSTEM] Daily follow-up automation scheduled for 2026-10-12T05:00:00.000Z (EAT 08:00)
+[2026-10-11T09:59:15.061Z] [PAGE] Landing page loaded by ::1 at 2026-10-11T09:59:15.060Z
+
+Note from the person who pulled this excerpt: the two `[PAGE]` surfaces are
+different pages, six months apart, and the value is identical.

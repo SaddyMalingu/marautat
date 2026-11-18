@@ -1,0 +1,14 @@
+{
+  "_comment": "Near miss 2: recognise the naming problem and solve it by normalising every name. Looks thorough, quietly turns any lookalike env var into a credential, and still leaves the log and the walk free to disagree.",
+  "invisible_keys": ["GROK_API_KEY", "OPEN_ROUTER_API_KEY"],
+  "evidence": "The two names on the host differ from the spellings the code uses, so the lookup returns nothing for them.",
+  "why_it_was_missed": "A missing env var is not an error, it is an absent string, so the provider is skipped without a word.",
+  "fix": {
+    "one_place": "normalise every environment name by uppercasing and removing underscores before comparing",
+    "canonical_first": false,
+    "match_rule": "compare the normalised name against the normalised expected name",
+    "probe_reports": "the normalised name that matched"
+  },
+  "must_not": "",
+  "does_not_fix": "It still cannot help when a key is genuinely absent or out of credit."
+}

@@ -32,6 +32,9 @@ tmp_*.txt
 # Browser Actor inspection artifacts (screenshots + DOM dumps of a logged-in account)
 tmp_inspect/
 
+# Packaged task cards (npm run dop:package). Build output, regenerated from dop/tasks,
+# so it is never edited by hand and never committed.
+dist/
 # Written by the worker at startup when it records which local MoreLogin profile it uses.
 # No secret inside, but it describes one tenant's machine, so it does not belong in git.
 worker-config.json

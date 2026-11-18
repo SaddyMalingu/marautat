@@ -1,0 +1,13 @@
+{
+  "_comment": "The realistic first answer: the standard Express advice, applied without checking what it trusts. Must score < 0.3.",
+  "culprit": "The reverse proxy address is being recorded instead of the visitor, so the ip columns fill with ::1.",
+  "evidence": "Every page line says ::1, on two different surfaces six months apart.",
+  "why_it_was_missed": "The proxy sends the real address in a header the app ignores, so req.ip stays as the socket peer.",
+  "fix": {
+    "setting": "app.set('trust proxy', true)",
+    "value": "true",
+    "ordering": "at the top of the file"
+  },
+  "must_not": "",
+  "does_not_fix": "Nothing else. This is the standard Express setting when you are behind a proxy."
+}

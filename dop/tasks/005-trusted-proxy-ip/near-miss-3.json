@@ -1,0 +1,13 @@
+{
+  "_comment": "Near miss 3: blame the platform and raise it as a support ticket. A real engineer does this first, and it leaves the app exactly as it was.",
+  "culprit": "Render's proxy is not forwarding the client address, so the app can only see ::1.",
+  "evidence": "Every page log line reads ::1 across two surfaces, so the proxy must be suppressing the header.",
+  "why_it_was_missed": "The application looks correct; the header simply never arrives from the platform.",
+  "fix": {
+    "setting": "ask the host to enable X-Forwarded-For forwarding",
+    "value": "host-side",
+    "ordering": "not a code change"
+  },
+  "must_not": "",
+  "does_not_fix": "Nothing in the code; the address stays wrong until the platform answers."
+}

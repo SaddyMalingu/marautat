@@ -1,0 +1,13 @@
+{
+  "_comment": "Near miss 2: skip the framework setting and parse the header by hand. Looks careful, is the spoofable half of the problem, and leaves every other reader of the address inconsistent.",
+  "culprit": "The app reads the socket peer instead of the forwarded header, so it records ::1 behind the proxy.",
+  "evidence": "The page line shows ::1 while the same peer pulled ten media clips and posted analytics, which only a browser does.",
+  "why_it_was_missed": "Nothing errored; a well-formed loopback address was stored as if it were the visitor, so it silently looked like local traffic.",
+  "fix": {
+    "setting": "read req.headers['x-forwarded-for'].split(',')[0] as the client address",
+    "value": "leftmost",
+    "ordering": "in the analytics writer, before the insert"
+  },
+  "must_not": "",
+  "does_not_fix": "It still cannot identify VPN or corporate NAT users."
+}

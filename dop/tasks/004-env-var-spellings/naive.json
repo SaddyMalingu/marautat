@@ -1,0 +1,14 @@
+{
+  "_comment": "The realistic first answer: fix the names on the host, today. It is not wrong, it is just not a fix — it removes the symptom and leaves the trap. Must score < 0.3.",
+  "invisible_keys": ["GROK_API_KEY", "OPEN_ROUTER_API_KEY"],
+  "evidence": "The dashboard has GROK_API_KEY and OPEN_ROUTER_API_KEY with values, and the boot log says openrouter=false groq=false.",
+  "why_it_was_missed": "The variables are misspelled, so the code never reads them.",
+  "fix": {
+    "one_place": "rename them in the dashboard to GROQ_API_KEY and OPENROUTER_API_KEY, then redeploy",
+    "canonical_first": false,
+    "match_rule": "use the documented names from now on",
+    "probe_reports": "the same presence line as today"
+  },
+  "must_not": "",
+  "does_not_fix": "Nothing else — the keys themselves are valid and in date."
+}

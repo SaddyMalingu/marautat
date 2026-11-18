@@ -1,0 +1,14 @@
+{
+  "_comment": "Near miss 3: believe the boot log at face value and go provisioning. The most expensive wrong answer, because it spends money to hide the bug.",
+  "invisible_keys": [],
+  "evidence": "The boot log says openrouter=false and groq=false, so those two providers are simply not configured on this host.",
+  "why_it_was_missed": "Nothing failed loudly; the boot log reports a provider as not configured, so a missing env var reads as provisioning rather than naming.",
+  "fix": {
+    "one_place": "provision the OpenRouter and Groq keys again on the host",
+    "canonical_first": false,
+    "match_rule": "",
+    "probe_reports": "the presence line, unchanged"
+  },
+  "must_not": "",
+  "does_not_fix": "Nothing; a fresh key fixes today and the same two providers go quiet again at the next deploy."
+}

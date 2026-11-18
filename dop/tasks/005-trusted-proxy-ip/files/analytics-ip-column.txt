@@ -1,0 +1,16 @@
+Read-only notes on the analytics tables, written 2026-10-24 before any change was
+made. No row was written or edited.
+
+page_visits
+  ip           every row read so far is ::1. The distinct count on this column is 1.
+  source_ip    same value, same distinct count.
+  city         one value, because the location is derived from the column above.
+  session_id   many distinct values across the same rows, and the sessions do not
+               overlap in time, so these are separate visits by separate people.
+
+admin_audit
+  source_ip    ::1 on every row we have, back to the first row in the table
+               (2026-04-18).
+
+How it was read: the two columns above are filled from the same request object at
+log time, so a wrong value there is a wrong value everywhere that reads it.
