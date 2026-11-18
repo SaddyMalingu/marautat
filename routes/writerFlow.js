@@ -132,7 +132,7 @@ export function createWriterFlowRouter({
    * loses that detail and says so, rather than failing to load.
    */
   async function loadOffers(tenantId) {
-    const base = 'id, slug, title, status, description, external_id, referral_url, source:opportunity_sources(slug, name)';
+    const base = 'id, slug, title, status, description, external_id, referral_url, created_at, updated_at, source:opportunity_sources(slug, name)';
     const attempts = [
       { columns: `${base}, link_verdict, link_checked_at, link_note`, softDelete: true },
       { columns: `${base}, link_verdict, link_checked_at`, softDelete: true },

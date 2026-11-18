@@ -1166,6 +1166,43 @@ const ROLES = [
     eq('and the pair is verified after scrolling', result.ok, true);
   }
 
+  /**
+   * The planner must read the popup, not the listing behind it (2026-11-18).
+   *
+   * A run reported "Member of Technical Staff, Forward Deployed (US Gov)" as missing: the title was in the tenant's
+   * offers and in the listing grid, but not among the popup's rows, so a pair was planned with nothing to tick. Reading
+   * every card on the page is what caused it; only the fixed-position overlay is in front of the tenant.
+   */
+  {
+    const mod = await import('../utils/browserActor/tasks/micro1Referrals.js');
+    const makeCard = (title, overlay) => ({
+      parentElement: overlay,
+      innerText: title,
+      querySelector: (sel) => (sel === 'h2' ? { innerText: title } : null),
+      querySelectorAll: () => []
+    });
+    const overlay = { parentElement: null, __position: 'fixed' };
+    const listingOnly = makeCard('Member of Technical Staff, Forward Deployed (US Gov)', null);
+    const popupRow = makeCard('Legal Research Attorney', overlay);
+    const window = { getComputedStyle: (node) => ({ position: node?.__position || 'static' }) };
+    const location = { href: 'https://refer.micro1.ai/referral/jobs' };
+    const read = async (cards) => JSON.parse(await new Function('document', 'window', 'location',
+      `return ${mod.readAffiliateExpr({ limit: 10 })};`)({
+      querySelectorAll: (sel) => (sel === '[data-testid="job-card"]' ? cards : []),
+      body: { innerText: '0 Roles selected' },
+      title: 'Your referral link'
+    }, window, location));
+
+    const inPopup = await read([listingOnly, popupRow]);
+    eq('the reader returns the popup row', inPopup.cards.map((c) => c.title).join('|'), 'Legal Research Attorney');
+    eq('and leaves the listing-only title out, so it can never be planned',
+      inPopup.cards.some((c) => /Forward Deployed/.test(c.title)), false);
+
+    // With no overlay the page draws its own grid, and every card is in front — the referral dashboard itself.
+    const onPage = await read([makeCard('Quantitative Rates Researcher', null)]);
+    eq('a page with no popup still reads its grid', onPage.cards.map((c) => c.title).join('|'), 'Quantitative Rates Researcher');
+  }
+
   // A pair that ticked both roles and found no button: the page's own controls are the only useful diagnosis.
   {
     const mod = await import('../utils/browserActor/tasks/micro1Referrals.js');

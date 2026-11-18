@@ -879,10 +879,12 @@ async function withServer(db) {
 
   eq('a bare URL credits nobody',
     linkStateOf({ referral_url: 'https://jobs.micro1.ai/post/abcdefabcdefabcd' }), 'unpayable');
-  eq('a URL with a referral code is payable',
-    linkStateOf({ referral_url: 'https://refer.micro1.ai/referral/jobs?referralCode=abc' }), 'unchecked');
-  eq('a verified link stays verified',
-    linkStateOf({ referral_url: 'https://refer.micro1.ai/referral/jobs?referralCode=abc', link_verdict: 'match' }), 'verified');
+  // A `/referral/jobs` URL is a LIST of roles, not a posting, so the single-role test can never run on it: "unchecked"
+  // would say a check is still owed, and "verified" would claim a posting passed one (2026-11-18).
+  eq('a code-bearing list link reads as a pair',
+    linkStateOf({ referral_url: 'https://refer.micro1.ai/referral/jobs?referralCode=abc' }), 'pair');
+  eq('and a stale match on one is not a verification claim',
+    linkStateOf({ referral_url: 'https://refer.micro1.ai/referral/jobs?referralCode=abc', link_verdict: 'match' }), 'pair');
   eq('a proven-mismatch link wins over everything',
     linkStateOf({ referral_url: 'https://jobs.micro1.ai/post/abcdefabcdefabcd', link_verdict: 'mismatch' }), 'wrong');
   eq('no URL is still missing', linkStateOf({ referral_url: null }), 'missing');
@@ -1204,6 +1206,119 @@ async function withServer(db) {
   eq('a pair link is stamped as covering several roles', pairWrite?.link_verdict, 'list');
   eq('and dated, so "when" is answerable', typeof pairWrite?.link_checked_at, 'string');
   eq('a single-role link makes no claim it did not earn', singleWrite?.link_verdict, null);
+}
+
+/**
+ * The offers filter has to answer "which of these will actually pay me" (2026-11-18).
+ *
+ * "Payable — has a referral code" was satisfied by any URL with a code in it, so 361 of 381 read as healthy while the
+ * tenant could not find the six links a run had just minted. These assertions run the dashboard's own filter rather
+ * than re-implementing it: a test that restates the rule proves only that the test agrees with itself.
+ */
+{
+  const dash = fs.readFileSync(new URL('../admin/tenant_dashboard.html', import.meta.url), 'utf8');
+  const start = dash.indexOf('const wfOfferState = {');
+  const end = dash.indexOf('let wfOffersTotal = 0;');
+  ok('the filter block is one slice the test can execute', start > 0 && end > start);
+  const api = new Function(`${dash.slice(start, end)}; return { wfOfferState, wfFilterOffers, wfOfferLinkState, wfOfferPayable, wfOfferMinted, wfOfferLinkAt, wfAgo };`)();
+
+  const now = Date.now();
+  const fresh = new Date(now - 2 * 3600e3).toISOString();
+  const stale = new Date(now - 40 * 864e5).toISOString();
+  const pair = 'https://refer.micro1.ai/referral/jobs?referralCode=98fb722e&linkId=a1f48ab6';
+  const single = 'https://jobs.micro1.ai/post/c8cdec0c-76b7-40ae-9764-fb170200408a?referralCode=98fb722e';
+  const rows = [
+    { id: 'p1', title: 'STEM Expert', status: 'published', referral_url: pair, link_verdict: 'list', link_checked_at: fresh, updated_at: fresh },
+    { id: 'v1', title: 'Verified role', status: 'published', referral_url: single, link_verdict: 'match', link_checked_at: fresh, updated_at: fresh },
+    { id: 'u1', title: 'Unchecked role', status: 'published', referral_url: single, link_verdict: null, updated_at: stale },
+    { id: 'w1', title: 'Wrong role', status: 'published', referral_url: single, link_verdict: 'mismatch', link_checked_at: fresh, updated_at: fresh },
+    { id: 'c1', title: 'No code', status: 'published', referral_url: 'https://jobs.micro1.ai/post/abc', link_verdict: null, updated_at: stale },
+    { id: 'n1', title: 'No link', status: 'draft', referral_url: null, updated_at: stale }
+  ];
+  const titles = (list) => list.map((o) => o.title).sort();
+  const set = (patch) => Object.assign(api.wfOfferState, { links: 'all', recent: 'all', status: 'all', source: 'all', pages: 'all' }, patch);
+
+  eq('a pair link is minted-and-right', api.wfOfferMinted(rows[0]), true);
+  eq('a checked link is too', api.wfOfferMinted(rows[1]), true);
+  eq('a code nobody has checked is not', api.wfOfferMinted(rows[2]), false);
+  eq('and neither is a wrong job', api.wfOfferMinted(rows[3]), false);
+
+  eq('Minted & right is exactly the pair plus the verified rows',
+    titles(api.wfFilterOffers(rows, set({ links: 'minted' }))), ['STEM Expert', 'Verified role']);
+  eq('a pair link can be selected on its own',
+    titles(api.wfFilterOffers(rows, set({ links: 'pair' }))), ['STEM Expert']);
+  eq('payable still means "a code that is not known to be wrong"',
+    titles(api.wfFilterOffers(rows, set({ links: 'payable' }))), ['STEM Expert', 'Unchecked role', 'Verified role']);
+  eq('the last week is answered from the link, not from the row',
+    titles(api.wfFilterOffers(rows, set({ recent: '7' }))), ['STEM Expert', 'Verified role', 'Wrong role']);
+  eq('an old link is not recent just because the row is still there',
+    api.wfFilterOffers(rows, set({ recent: '7' })).some((o) => o.title === 'Unchecked role'), false);
+  eq('"never linked" is the absence of a URL', titles(api.wfFilterOffers(rows, set({ recent: 'never' }))), ['No link']);
+
+  // A facet count must not collapse because its own filter is on — that is what makes the chips usable.
+  const unfiltered = api.wfFilterOffers(rows, set({ links: 'all', recent: 'all' })).length;
+  eq('the facet base ignores the link filter', unfiltered, rows.length);
+  set({ links: 'minted' });
+  eq('and a chip can still be counted while its own filter is active',
+    api.wfFilterOffers(rows, { links: 'all' }).length, rows.length);
+
+  eq('an unlinked offer has no link timestamp', api.wfOfferLinkAt(rows[5]), null);
+  eq('age reads in the unit a tenant thinks in', api.wfAgo(now - 2 * 3600e3, now), '2h ago');
+  eq('and months do not print as 1200 hours', api.wfAgo(now - 40 * 864e5, now), '1mo ago');
+
+  // The markup the tenant actually presses.
+  ok('the link filter offers "minted and right"', /<option value="minted">/.test(dash));
+  ok('and pair as its own view', /<option value="pair">/.test(dash));
+  ok('recency has its own filter', /id="wfFilterRecent"/.test(dash) && /<option value="7">/.test(dash));
+  ok('the counts are buttons above the table', /id="wfOfferChips"/.test(dash) && /data-wflinks/.test(dash));
+  ok('and the row says when the link changed', /data-wfsort="link"/.test(dash) && /wfAgo\(at\)/.test(dash));
+  // A row with one cell too few silently shifts every action button into the wrong column.
+  const header = dash.slice(dash.indexOf('<th data-wfsort="title">'), dash.indexOf('<tbody id="wfOfferBody">'));
+  eq('the offers header and its empty-state colspan agree', (header.match(/<th/g) || []).length, 8);
+  ok('which is the colspan the rows use', /colspan="8"/.test(dash) && !/colspan="7" class="text-muted text-center p-3">No offers/.test(dash));
+}
+
+/**
+ * A stored verdict must not outvote the URL's own shape (2026-11-18).
+ *
+ * This is the half that made the minted links visible without waiting for a re-audit: audits written before the pair
+ * shape was understood stamped every pair link `mismatch`, and `mismatch` is what the Payable filter excludes. The URL
+ * says it is a list; the verdict says "wrong posting"; one of those is evidence and the other is a mistake.
+ */
+{
+  const { linkStateOf, buildPlatformFunnel } = await import('../utils/writerFlow.js');
+  const { isMultiRoleLink } = await import('../utils/browserActor/referralVerify.js');
+  const pair = 'https://refer.micro1.ai/referral/jobs?referralCode=98fb722e&linkId=a1f48ab6';
+  const single = 'https://jobs.micro1.ai/post/c8cdec0c-76b7-40ae-9764-fb170200408a?referralCode=98fb722e';
+
+  eq('a stale mismatch cannot condemn a pair link', linkStateOf({ referral_url: pair, link_verdict: 'mismatch' }), 'pair');
+  eq('nor can a missing verdict leave it unreadable', linkStateOf({ referral_url: pair, link_verdict: null }), 'pair');
+  eq('a list with no code still earns nothing', linkStateOf({ referral_url: 'https://refer.micro1.ai/referral/jobs', link_verdict: 'mismatch' }), 'unpayable');
+  // The strict test survives exactly where it means something.
+  eq('a single-role mismatch is still wrong', linkStateOf({ referral_url: single, link_verdict: 'mismatch' }), 'wrong');
+
+  const funnel = buildPlatformFunnel([{ title: 'STEM Expert', source_slug: 'micro1', status: 'published', referral_url: pair, link_verdict: 'mismatch' }]);
+  eq('and the funnel counts it as payable, not as a wrong link', [funnel[0].payable, funnel[0].wrong].join('|'), '1|0');
+
+  // The browser's mirror of the shape rule has to agree with the server's, or the filter and the count diverge.
+  const dash = fs.readFileSync(new URL('../admin/tenant_dashboard.html', import.meta.url), 'utf8');
+  const start = dash.indexOf('const wfOfferState = {');
+  const end = dash.indexOf('let wfOffersTotal = 0;');
+  const api = new Function(`${dash.slice(start, end)}; return { wfIsMultiRoleLink, wfOfferLinkState };`)();
+  const samples = [
+    pair,
+    single,
+    'https://refer.micro1.ai/referral/jobs',
+    'https://refer.micro1.ai/referrals?referralCode=abc',
+    'https://refer.micro1.ai/referral/jobs/post/c8cdec0c-76b7-40ae-9764',
+    'https://www.turing.com/r/xako-8LrQK',
+    'not a url'
+  ];
+  eq('the browser and the server agree on which links cover several roles',
+    samples.map((url) => api.wfIsMultiRoleLink(url)).join(','),
+    samples.map((url) => isMultiRoleLink(url)).join(','));
+  eq('and both readers land on the same state for a pair link',
+    api.wfOfferLinkState({ referral_url: pair, link_verdict: 'mismatch' }), linkStateOf({ referral_url: pair, link_verdict: 'mismatch' }));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

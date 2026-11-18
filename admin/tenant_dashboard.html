@@ -662,7 +662,7 @@ let wfTab = 'blogger';
 // live pages vs drafts, offers whose referral link is verified vs ones that earn
 // nothing, offers already written vs never touched. Filtering is client-side because
 // the whole list already arrived with /tenant/blogger — no new route, no round trip.
-const wfOfferState = { status: 'all', links: 'all', pages: 'all', source: 'all', sort: 'title', dir: 'asc' };
+const wfOfferState = { status: 'all', links: 'all', recent: 'all', pages: 'all', source: 'all', sort: 'title', dir: 'asc' };
 
 /**
  * Does this URL carry a referral code, in the same shapes the server accepts?
@@ -683,10 +683,32 @@ function wfLinkHasCode(url) {
   return /\/(?:r|ref|refs|invite|i)\/[A-Za-z0-9_-]+/i.test(parsed.pathname);
 }
 
-/** 'none' | 'verified' | 'wrong' | 'unpayable' | 'unchecked' — what the referral link really is. */
+/**
+ * Does this URL open a list of roles rather than one posting?
+ *
+ * Mirrors `isMultiRoleLink` in `utils/browserActor/referralVerify.js`, for the same reason `wfLinkHasCode` mirrors the
+ * code rule: the filter runs in the browser, and a filter that disagrees with the funnel above it sends the tenant
+ * clicking rows the count ignored. Decided by shape, not by host — a `/post/<id>` is always a single role.
+ */
+function wfIsMultiRoleLink(url) {
+  const raw = String(url || '').trim();
+  if (!raw) return false;
+  let parsed;
+  try { parsed = new URL(raw); } catch { return false; }
+  if (!parsed.hostname) return false;
+  if (/\/post\/[0-9a-z-]{8,}/i.test(parsed.pathname)) return false;
+  return /\/referrals?(\/jobs)?\/?$/i.test(parsed.pathname);
+}
+
+/** 'none' | 'verified' | 'pair' | 'wrong' | 'unpayable' | 'unchecked' — what the referral link really is. */
 function wfOfferLinkState(o) {
   if (!String(o.referral_url || '').trim()) return 'none';
   const verdict = String(o.link_verdict || '').toLowerCase();
+  // One URL, several roles (2026-11-18). The shape is a fact about the URL; `link_verdict` is an opinion recorded about
+  // it, and an opinion formed by a test that cannot apply is stale evidence. Checked before `mismatch` deliberately:
+  // audits written before the shape was understood stamped every pair link `mismatch`, and the Payable filter then hid
+  // the very links a run had just minted. A code-less list still earns nothing, so that keeps its precedence.
+  if (wfIsMultiRoleLink(o.referral_url)) return wfLinkHasCode(o.referral_url) ? 'pair' : 'unpayable';
   // A mismatch is checked first: it is the one state that pays somebody else, and it outranks "no code" because the
   // tenant has to look at where it lands before replacing it.
   if (verdict === 'mismatch') return 'wrong';
@@ -705,6 +727,48 @@ function wfOfferPayable(o) {
   return wfLinkHasCode(o.referral_url) && wfOfferLinkState(o) !== 'wrong';
 }
 
+/**
+ * "Rightly minted" — the two states that mean this link lands where it should AND carries your code.
+ *
+ * `pair` is a URL a run of yours minted for two roles; `verified` is a URL a check resolved to its own job. Anything
+ * else is a claim the portal cannot back: a code with no check (`unchecked`), a URL with no code, or no link at all.
+ * The tenant's question is not "is there a string in this column", it is "will this pay me" (2026-11-18).
+ */
+function wfOfferMinted(o) {
+  const state = wfOfferLinkState(o);
+  return state === 'pair' || state === 'verified';
+}
+
+/**
+ * When this offer's link last changed hands, in ms — or null when there is no link.
+ *
+ * `link_checked_at` is the field that actually answers this: the run that mints a link stamps it, and so does the audit
+ * that re-checks one. Offers minted before that column existed have nothing there, so we fall back to `updated_at` —
+ * which is "when this row last changed", not "when the link was minted". The column therefore says *changed*, and its
+ * tooltip names which of the two it read rather than letting the tenant assume the flattering one.
+ */
+function wfOfferLinkAt(o) {
+  if (!String(o.referral_url || '').trim()) return null;
+  const checked = Date.parse(String(o.link_checked_at || ''));
+  if (Number.isFinite(checked)) return checked;
+  const touched = Date.parse(String(o.updated_at || ''));
+  return Number.isFinite(touched) ? touched : null;
+}
+
+/** "3h ago" — a tenant scanning 361 rows needs the order of magnitude, not an ISO string. */
+function wfAgo(ms, now = Date.now()) {
+  if (!Number.isFinite(ms)) return '';
+  const mins = Math.floor(Math.max(0, now - ms) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  const months = Math.floor(days / 30);
+  return months < 12 ? `${months}mo ago` : `${Math.floor(months / 12)}y ago`;
+}
+
 function wfLinkBadge(o) {
   const state = wfOfferLinkState(o);
   if (state === 'none') return '<span class="badge" style="background:#6b7280" title="No referral link — this offer earns nothing">none</span>';
@@ -715,8 +779,10 @@ function wfLinkBadge(o) {
   return '<span class="badge" style="background:#f59e0b" title="Never checked since it was attached">unverified</span>';
 }
 
-function wfFilterOffers(offers) {
-  const s = wfOfferState;
+function wfFilterOffers(offers, overrides = {}) {
+  // Facet counts need this same filter with one dimension lifted out — otherwise every chip reads 0 the moment its own
+  // filter is applied, which is how a count becomes unusable. An override is that lift, not a second set of rules.
+  const s = { ...wfOfferState, ...overrides };
   const filtered = offers.filter((o) => {
     const status = String(o.status || 'draft').toLowerCase();
     const isDeleted = Boolean(o.deleted_at);
@@ -734,7 +800,10 @@ function wfFilterOffers(offers) {
     // the right role (2026-11-17).
     if (s.links === 'payable' && !wfOfferPayable(o)) return false;
     if (s.links === 'unpayable' && wfOfferLinkState(o) !== 'unpayable') return false;
-    if (!['all', 'payable', 'unpayable'].includes(s.links) && wfOfferLinkState(o) !== s.links) return false;
+    // "Minted and right" is the question behind "payable": a code proves nothing about whose code it is, so this cuts
+    // to the links a run minted or a check resolved (2026-11-18).
+    if (s.links === 'minted' && !wfOfferMinted(o)) return false;
+    if (!['all', 'payable', 'unpayable', 'minted'].includes(s.links) && wfOfferLinkState(o) !== s.links) return false;
     // Which marketplace this offer came from. `source_slug` is attached by the server using
     // the same rule the Collection funnel uses, so the filter and the funnel can never
     // disagree about what "Micro1" means.
@@ -744,6 +813,17 @@ function wfFilterOffers(offers) {
       if (s.pages === 'optimized' && !optimized) return false;
       if (s.pages === 'not' && optimized) return false;
     }
+    // Recency, answered from the link rather than from the row: "recent" in this table means a link that appeared or
+    // was confirmed lately, because that is what a tenant who just ran a capture is looking for (2026-11-18).
+    if (s.recent !== 'all') {
+      if (s.recent === 'never') {
+        if (String(o.referral_url || '').trim()) return false;
+      } else {
+        const at = wfOfferLinkAt(o);
+        if (at == null) return false;
+        if (Date.now() - at > Number(s.recent) * 86400000) return false;
+      }
+    }
     return true;
   });
 
@@ -752,7 +832,9 @@ function wfFilterOffers(offers) {
     status: (o) => String(o.status || ''),
     links: (o) => wfOfferLinkState(o),
     pages: (o) => Number(o.page_count || 0),
-    price: (o) => Number(o.compensation_max || 0)
+    price: (o) => Number(o.compensation_max || 0),
+    // Newest link first by default, because "what did my last run actually do" is the question this column answers.
+    link: (o) => Number(wfOfferLinkAt(o) || 0)
   }[s.sort] || ((o) => String(o.title || '').toLowerCase());
 
   return filtered.sort((a, b) => {
@@ -764,13 +846,69 @@ function wfFilterOffers(offers) {
 }
 
 let wfOffersTotal = 0;
+
+/**
+ * The counts above the table, as buttons (2026-11-18).
+ *
+ * "361 of 381 payable" answered a question nobody asked: the tenant wanted the six links the run had just minted, and
+ * had no way to name them. Every bucket is now a chip with its own count under the current marketplace and status, and
+ * clicking one filters the table to exactly those rows — the zero-click path from "did my run work" to the answer.
+ */
+function wfRenderChips(offers) {
+  const host = document.getElementById('wfOfferChips');
+  if (!host) return;
+  // Counted with the link and recency dimensions lifted out, so a chip never reads 0 because its own filter is on.
+  const base = wfFilterOffers(offers, { links: 'all', recent: 'all' });
+  const count = (test) => base.filter(test).length;
+  const chips = [
+    ['payable', 'Payable', count(wfOfferPayable), 'Holds a referral code and is not known to point elsewhere'],
+    ['minted', 'Minted & right', count(wfOfferMinted), 'Minted for a pair by your own run, or checked and resolving to the right role'],
+    ['pair', 'Pair', count((o) => wfOfferLinkState(o) === 'pair'), 'One minted link covers both roles of a pair'],
+    ['verified', 'Verified', count((o) => wfOfferLinkState(o) === 'verified'), 'A check resolved this link to its own offer'],
+    ['unchecked', 'Unverified', count((o) => wfOfferLinkState(o) === 'unchecked'), 'Carries a code that has never been checked'],
+    ['unpayable', 'No code', count((o) => wfOfferLinkState(o) === 'unpayable'), 'A URL with no referral code — every click earns nothing'],
+    ['none', 'No link', count((o) => wfOfferLinkState(o) === 'none'), 'Nothing attached — this offer earns nothing yet'],
+    ['wrong', 'Wrong job', count((o) => wfOfferLinkState(o) === 'wrong'), 'This link lands on a DIFFERENT role']
+  // A zero chip is noise, except for the two the tenant is working towards: those are worth seeing at 0.
+  ].filter(([key, , n]) => n > 0 || key === 'payable' || key === 'minted');
+
+  const chip = (attr, value, label, n, title, active) => `<button type="button" class="btn btn-sm ${active
+    ? 'btn-light' : 'btn-outline-light'}" ${attr}="${esc(value)}" title="${esc(title)}">${esc(label)}<span class="badge ms-1" style="background:rgba(0,0,0,.25)">${n}</span></button>`;
+
+  host.innerHTML = chips.map(([key, label, n, title]) =>
+    chip('data-wflinks', key, label, n, title, wfOfferState.links === key)).join('')
+    + chip('data-wfrecent', '7', 'Last 7 days', count((o) => {
+      const at = wfOfferLinkAt(o);
+      return at != null && Date.now() - at <= 7 * 86400000;
+    }), 'Links minted or checked in the last week', wfOfferState.recent === '7');
+
+  host.querySelectorAll('[data-wflinks]').forEach((el) => {
+    el.onclick = () => {
+      // Clicking the active chip clears it: a filter you cannot undo by pressing it again is a trap.
+      wfOfferState.links = wfOfferState.links === el.dataset.wflinks ? 'all' : el.dataset.wflinks;
+      const select = document.getElementById('wfFilterLinks');
+      if (select) select.value = wfOfferState.links;
+      wfRenderOffers(offers);
+    };
+  });
+  host.querySelectorAll('[data-wfrecent]').forEach((el) => {
+    el.onclick = () => {
+      wfOfferState.recent = wfOfferState.recent === el.dataset.wfrecent ? 'all' : el.dataset.wfrecent;
+      const select = document.getElementById('wfFilterRecent');
+      if (select) select.value = wfOfferState.recent;
+      wfRenderOffers(offers);
+    };
+  });
+}
+
 function wfRenderOffers(offers) {
   const body = document.getElementById('wfOfferBody');
   if (!body) return;
   const rows = wfFilterOffers(offers);
+  wfRenderChips(offers);
   body.innerHTML = rows.length
     ? wfOfferRows(rows)
-    : '<tr><td colspan="7" class="text-muted text-center p-3">No offers match this filter.</td></tr>';
+    : '<tr><td colspan="8" class="text-muted text-center p-3">No offers match this filter.</td></tr>';
   const count = document.getElementById('wfOfferCount');
   if (count) {
     // "100 of 100" was a lie of omission: the query was capped and the panel had no other
@@ -813,6 +951,7 @@ function wfWireOfferFilters(offers) {
   bind('wfFilterSource', 'source');
   bind('wfFilterStatus', 'status');
   bind('wfFilterLinks', 'links');
+  bind('wfFilterRecent', 'recent');
   bind('wfFilterPages', 'pages');
   // Clicking a header sorts by it; clicking again reverses. No arrow glyph is faked
   // until it is actually the active sort, so the header never lies about the order.
@@ -825,7 +964,9 @@ function wfWireOfferFilters(offers) {
         wfOfferState.dir = wfOfferState.dir === 'asc' ? 'desc' : 'asc';
       } else {
         wfOfferState.sort = field;
-        wfOfferState.dir = 'asc';
+        // A timestamp sorts newest-first when you first click it: nobody opens "when did this change" to see last
+        // month's stale links at the top (2026-11-18).
+        wfOfferState.dir = field === 'link' ? 'desc' : 'asc';
       }
       wfRenderOffers(offers);
     };
@@ -834,11 +975,14 @@ function wfWireOfferFilters(offers) {
 }
 
 function wfOfferRows(offers) {
-  if (!offers.length) return `<tr><td colspan="7" class="text-muted text-center p-3">No offers yet — create your first one above.</td></tr>`;
+  if (!offers.length) return `<tr><td colspan="8" class="text-muted text-center p-3">No offers yet — create your first one above.</td></tr>`;
   return offers.map(o => {
     // The pages are the deliverable, so they get a column of their own instead
     // of ending as a toast the tenant cannot click.
     const n = Number(o.page_count || 0);
+    // When the link changed hands, next to the badge rather than in a column of its own: "pair · 2h ago" answers
+    // "is this the link my run just minted" in one glance, and an unlinked offer simply has no age to show.
+    const at = wfOfferLinkAt(o);
     return `
     <tr>
       <td><strong>${esc(o.title)}</strong><div class="text-muted" style="font-size:.72rem">/${esc(o.slug)}</div></td>
@@ -847,6 +991,9 @@ function wfOfferRows(offers) {
       <td>${o.compensation_max != null ? esc(o.compensation_currency || 'KES') + ' ' + Number(o.compensation_max).toLocaleString() : '—'}</td>
       <td class="text-center"><button class="btn btn-sm ${n ? 'btn-outline-info' : 'btn-outline-secondary'}" data-act="posts" data-id="${esc(o.id)}">${n ? n + ' page' + (n === 1 ? '' : 's') : 'Pages'}</button></td>
       <td>${wfLinkBadge(o)}${o.referral_url ? ` <a href="${esc(o.referral_url)}" target="_blank" rel="noopener noreferrer" style="font-size:.72rem" title="Open this referral link — the page should name you as the inviter. If it does not, the code is not yours.">open&nbsp;${'\u2197'}</a>` : ''}</td>
+      <td class="text-nowrap" style="font-size:.75rem">${at ? `<span title="${esc(o.link_checked_at
+        ? `Link minted or checked ${new Date(at).toISOString()}`
+        : `Row last changed ${new Date(at).toISOString()} — this link predates the check timestamps, so when it was minted is not recorded`)}">${wfAgo(at)}</span>` : '<span class="text-muted">—</span>'}</td>
       <td class="text-end">
         ${o.deleted_at
           ? `<button class="btn btn-sm btn-outline-success" data-act="restore" data-id="${esc(o.id)}" title="Put it back — the offer and its pages were never removed">Restore</button>`
@@ -856,7 +1003,7 @@ function wfOfferRows(offers) {
         <button class="btn btn-sm btn-outline-danger" data-act="del" data-id="${esc(o.id)}">Delete</button>`}
       </td>
     </tr>
-    <tr class="wf-posts-row" data-for="${esc(o.id)}" style="display:none"><td colspan="7" class="wf-posts-cell"></td></tr>`;
+    <tr class="wf-posts-row" data-for="${esc(o.id)}" style="display:none"><td colspan="8" class="wf-posts-cell"></td></tr>`;
   }).join('');
 }
 
@@ -1372,12 +1519,23 @@ function wfBloggerHtml(ctx) {
           </select>
           <select id="wfFilterLinks" class="form-select form-select-sm" style="width:auto" title="Referral link health">
             <option value="all">Any link</option>
+            <option value="minted">Minted &amp; right — pair or verified</option>
             <option value="payable">Payable — has a referral code</option>
             <option value="unpayable">Unpayable — no code, earns nothing</option>
+            <option value="pair">Pair link (one URL, two roles)</option>
             <option value="verified">Link verified</option>
             <option value="unchecked">Link unverified</option>
             <option value="wrong">Link points elsewhere</option>
             <option value="none">No link (earns nothing)</option>
+          </select>
+          <!-- Recency is answered from the link, not from the row: a tenant who just ran a capture is asking what that
+               run did, not which offer record was edited last (2026-11-18). -->
+          <select id="wfFilterRecent" class="form-select form-select-sm" style="width:auto" title="When the link was minted or last checked">
+            <option value="all">Any time</option>
+            <option value="1">Link touched today</option>
+            <option value="7">Link touched in 7 days</option>
+            <option value="30">Link touched in 30 days</option>
+            <option value="never">Never linked</option>
           </select>
           <select id="wfFilterPages" class="form-select form-select-sm" style="width:auto" title="Whether pages have been written">
             <option value="all">Any pages</option>
@@ -1392,6 +1550,9 @@ function wfBloggerHtml(ctx) {
           </button>
         </span>
       </div>
+      <!-- The counts the tenant actually acts on, as buttons. They sit above the table so "did my run mint anything"
+           is answered before scrolling 361 rows (2026-11-18). -->
+      <div id="wfOfferChips" class="d-flex flex-wrap gap-1 px-3 pb-2"></div>
       <div id="wfOptimiseStatus" class="d-none px-2 py-2" style="font-size:.82rem"></div>
       <div class="table-responsive">
         <table class="table table-sm mb-0 align-middle"><thead><tr>
@@ -1401,6 +1562,7 @@ function wfBloggerHtml(ctx) {
           <th data-wfsort="price">Price</th>
           <th class="text-center" data-wfsort="pages">Pages</th>
           <th data-wfsort="links">Link</th>
+          <th data-wfsort="link" title="When this link was minted or last checked — click to sort newest first">When</th>
           <th></th>
         </tr></thead><tbody id="wfOfferBody">${wfOfferRows(offers)}</tbody></table>
       </div>
@@ -2122,11 +2284,19 @@ async function wfResolveLink(id, action, btn) {
 
 // "Show them" jumps to the existing offers table with the matching filter applied —
 // repeating the list inside the panel would give the tenant two places to fix one thing.
+//
+// A link that was never there and a link that is missing are the same row, so `missing` maps to the one option that
+// means it; every other kind is its own state now, pairs included (2026-11-18).
 function wfApplyLinkFilter(kind) {
   const links = document.getElementById('wfFilterLinks');
   const status = document.getElementById('wfFilterStatus');
+  const recent = document.getElementById('wfFilterRecent');
   if (kind === 'drafts' && status) { status.value = 'draft'; status.dispatchEvent(new Event('change')); return; }
-  if (links && kind) { links.value = kind === 'missing' ? 'none' : kind; links.dispatchEvent(new Event('change')); }
+  if (kind === 'recent' && recent) { recent.value = '7'; recent.dispatchEvent(new Event('change')); return; }
+  if (links && kind) {
+    links.value = kind === 'missing' ? 'none' : kind;
+    links.dispatchEvent(new Event('change'));
+  }
 }
 
 function wfWireControl() {

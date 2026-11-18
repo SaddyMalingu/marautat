@@ -27,6 +27,9 @@ import { summarizeCoverage, coverageHeadline, sourceOf } from './coverage.js';
 import { summarizeRuns, isActiveStatus, isStalled, runPlatform } from './browserActor/runs.js';
 // The one rule for "does this URL credit anyone", shared with the tenant's worker. See the module header.
 import { referralCodeOf, creditsSomebody } from './browserActor/referralCode.js';
+// Whether a URL covers a set of roles. A list cannot be judged by the single-role title test, and the portal must draw
+// that conclusion from the URL rather than from whichever verdict happens to be stored on the row.
+import { isMultiRoleLink } from './browserActor/referralVerify.js';
 
 /**
  * A link needs attention when it is absent, unproven, provably wrong — or when it credits nobody.
@@ -57,6 +60,12 @@ export { referralCodeOf } from './browserActor/referralCode.js';
 export function linkStateOf(offer) {
   const url = String(offer?.referral_url || '').trim();
   if (!url) return 'missing';
+  // One URL, several roles (2026-11-18). The shape is a fact about the URL; a verdict is an opinion recorded about it,
+  // and an opinion formed by a test that does not apply is stale evidence, not proof. This is checked BEFORE `mismatch`
+  // on purpose: audits written before the shape was understood stamped every pair link `mismatch`, which the portal then
+  // read as "pays somebody else" and dropped out of the Payable filter — the six links a run had just minted were there
+  // and invisible. A code-less list still earns nothing, so `unpayable` keeps its precedence.
+  if (isMultiRoleLink(url)) return creditsSomebody(url) ? 'pair' : 'unpayable';
   const verdict = String(offer?.link_verdict || '').toLowerCase();
   // A mismatch leads the queue even among code-less links: it is the one state that pays somebody else, and a human
   // has to look at where it lands before anything is replaced.

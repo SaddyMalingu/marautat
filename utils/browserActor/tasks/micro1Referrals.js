@@ -406,6 +406,23 @@ export function readAffiliateExpr({ limit = 120 } = {}) {
   const clean = (v) => String(v == null ? '' : v).replace(/\\s+/g, ' ').trim();
   const nodes = Array.from(document.querySelectorAll('${MICRO1_CARD}')).slice(0, ${Number(limit) || 120});
   const body = clean(document.body ? document.body.innerText : '');
+  // The listing grid and the popup render the SAME markup, and opening the popup does not unmount the listing. Reading
+  // both is how the planner came to propose a title the popup never offered ("Member of Technical Staff, Forward
+  // Deployed (US Gov) — missing", 18 Nov), and how a pair was planned that the tick could not press. So a card is only
+  // in front when it sits inside a fixed-position overlay, which is what a modal is; with no overlay (the referral page
+  // itself draws its own grid) every card is in front. The ticker's frontCards() uses this same rule.
+  const inFront = (card) => {
+    let node = card.parentElement;
+    while (node && node !== document.body) {
+      let position = '';
+      try { position = (window.getComputedStyle ? window.getComputedStyle(node) : {}).position || ''; } catch (e) {}
+      if (position === 'fixed') return true;
+      node = node.parentElement;
+    }
+    return false;
+  };
+  const front = nodes.filter(inFront);
+  const cardsInPlay = front.length ? front : nodes;
   if (!nodes.length) {
     return JSON.stringify({
       ok: false,
@@ -416,7 +433,7 @@ export function readAffiliateExpr({ limit = 120 } = {}) {
       bodyStart: body.slice(0, 200)
     });
   }
-  const cards = nodes.map((card, index) => {
+  const cards = cardsInPlay.map((card, index) => {
     const box = card.querySelector('input[type="checkbox"]')
       || card.querySelector('[role="checkbox"], [aria-checked]');
     const heading = card.querySelector('h2') || card.querySelector('h3');
@@ -892,8 +909,10 @@ export async function runReferralGroups({ evaluate, groups = [], waitForLinkMs =
       const ready = await ensureBuilder().catch((error) => ({ ok: false, reason: error?.message || 'ensure_failed' }));
       if (!ready?.ok) {
         failures.push({ groupId, reason: `builder_lost:${ready?.reason || 'unknown'}`, titles });
-        log(`group ${groupId}: the popup could not be re-opened (${ready?.reason || 'unknown'}) — stopping`);
-        break;
+        // Keep going: the next group re-opens the popup anyway, and the pass used to `break` here — which is how one
+        // lost popup became twelve unattempted pairs on 18 Nov (2026-11-18).
+        log(`group ${groupId}: the popup could not be re-opened (${ready?.reason || 'unknown'}) — carrying on with the next pair`);
+        continue;
       }
     }
     await evaluate(clearSelectionExpr());
@@ -904,13 +923,15 @@ export async function runReferralGroups({ evaluate, groups = [], waitForLinkMs =
     const state = await evaluate(readAffiliateExpr({ limit: 1 })).catch(() => null);
     if (!state?.ok || state.mode !== 'builder') {
       failures.push({ groupId, reason: `builder_not_ready:${state?.mode || 'unreadable'}`, titles });
-      log(`group ${groupId}: the popup is not on screen (${state?.mode || 'unreadable'}) — stopping`);
-      break;
+      // Not a stop. The next iteration walks back into the popup, and losing the remaining pairs to one bad read is what
+      // made the 18 Nov run report 12 planned and 4 minted (2026-11-18).
+      log(`group ${groupId}: the popup is not on screen (${state?.mode || 'unreadable'}) — carrying on with the next pair`);
+      continue;
     }
     if (state.counter == null) {
       failures.push({ groupId, reason: 'counter_unreadable', titles });
-      log(`group ${groupId}: no "N Roles selected" counter on the page — stopping rather than ticking blind`);
-      break;
+      log(`group ${groupId}: no "N Roles selected" counter on the page — skipping this pair rather than ticking blind`);
+      continue;
     }
 
     const selection = await evaluate(selectRolesExpr({ titles }));
@@ -924,7 +945,18 @@ export async function runReferralGroups({ evaluate, groups = [], waitForLinkMs =
       // The row that had nothing to press and nothing to read: its markup names the control we have not learned yet.
       const sample = (selection?.ticks || []).find((t) => t.markup);
       if (sample) log(`  row markup — ${sample.title}: ${sample.markup}`);
-      failures.push({ groupId, reason: 'selection_not_verified', titles, selection });
+      // A counter that was readable and then was not means the popup closed mid-selection — the tick took the page with
+      // it. Naming that is the difference between "the selectors are wrong" and "the click navigated away" (2026-11-18).
+      // The `counterBefore` half is load-bearing: a page whose counter was never readable is a selector problem, and
+      // calling that "the popup closed" would send the next run hunting a click that never happened.
+      const lostPopup = selection?.counterBefore != null && selection?.counterAfter == null;
+      if (lostPopup) log(`  the popup closed mid-selection — the counter was readable before the ticks and gone after them`);
+      failures.push({
+        groupId,
+        reason: lostPopup ? 'builder_lost_after_tick' : 'selection_not_verified',
+        titles,
+        selection
+      });
       continue;
     }
     log(`selected ${selection.selected?.length || 0} role(s) — counter ${selection.counterBefore ?? '?'}→${selection.counterAfter ?? '?'}`);
@@ -935,11 +967,26 @@ export async function runReferralGroups({ evaluate, groups = [], waitForLinkMs =
 
     const action = await evaluate(clickActionExpr());
     if (!action?.ok) {
-      failures.push({ groupId, reason: action?.reason || 'action_failed', titles, action });
-      // Two roles were ticked and the page offered no button we recognise: the labels are the whole diagnosis.
-      if (Array.isArray(action?.labels) && action.labels.length) {
+      // Two roles were ticked and there is no confirm button. Ask which cause it is before reporting: a popup taken away
+      // by the ticks (the counter went `2→?` on 18 Nov) is not a missing button, and dumping the listing's labels as if it
+      // were sent the next run hunting a selector that was never wrong.
+      let lostPopup = false;
+      if (typeof ensureBuilder === 'function') {
+        const after = await evaluate(readAffiliateExpr({ limit: 1 })).catch(() => null);
+        lostPopup = !after?.ok || after.mode !== 'builder';
+      }
+      if (lostPopup) {
+        log(`  the popup is gone after ticking — ${titles.length} role(s) were selected, then the page was the listing again`);
+      } else if (Array.isArray(action?.labels) && action.labels.length) {
+        // Two roles were ticked and the page offered no button we recognise: the labels are the whole diagnosis.
         log(`  controls on the page: ${action.labels.map((label) => `"${String(label).slice(0, 40)}"`).join(' | ')}`);
       }
+      failures.push({
+        groupId,
+        reason: lostPopup ? 'builder_lost_after_tick' : (action?.reason || 'action_failed'),
+        titles,
+        action
+      });
       continue;
     }
 
