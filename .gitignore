@@ -31,6 +31,13 @@ tmp_*.txt
 
 # Browser Actor inspection artifacts (screenshots + DOM dumps of a logged-in account)
 tmp_inspect/
+# Generated tenant campaign messages (npm run tenants:campaign). Each one carries a
+# tenant's portal sign-in token inside its wa.me text, so this is a credential file, not
+# a lead list: never committed, delete it once sent. Rotate a token with
+# POST /admin/api/tenants/:id/portal-link if one of these leaks.
+leads/tenant_activation_*.md
+leads/tenant_campaign_*.csv
+
 
 # Packaged task cards (npm run dop:package). Build output, regenerated from dop/tasks,
 # so it is never edited by hand and never committed.
