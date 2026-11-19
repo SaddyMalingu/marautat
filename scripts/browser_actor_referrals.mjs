@@ -682,6 +682,9 @@ async function runCapture({ existing = [], offers = [], supabase = null, identit
     };
 
     let consecutiveFailures = 0;
+    // Counted separately: a role with no referral affordance is not the same signal as a
+    // role that failed to load, and conflating them stopped passes early (2026-11-19).
+    let consecutiveLinkless = 0;
 
     for (let index = skip; index < windowEnd; index += 1) {
       if (!refresh && doneIndexes.has(index)) {
@@ -717,7 +720,22 @@ async function runCapture({ existing = [], offers = [], supabase = null, identit
         // worth starting, so it is logged rather than inferred from timestamps.
         console.error(`[${index}] ${capture?.referralUrl ? 'LINK' : capture?.reason || note || 'no link'} — ${label} (${Date.now() - roleStartedAt}ms)`);
 
-        consecutiveFailures = capture?.referralUrl ? 0 : consecutiveFailures + 1;
+        // Two kinds of "no link", and only one of them is a broken run (2026-11-19).
+        //   - `no_candidates` / `no_confident_pick` is a fact about that role: the listing
+        //     exposes a referral affordance on some cards and not others. On 2026-11-19 five
+        //     of those in a row (indices 70-74, the banking roles) ended a 120-card pass at
+        //     card 74 and left ~45 roles unvisited on every run.
+        //   - a thrown error, a missing card or a page that abandoned the listing is the
+        //     marketplace moving under us, and that is what the five-strike guard is for.
+        if (capture?.referralUrl) {
+          consecutiveFailures = 0;
+          consecutiveLinkless = 0;
+        } else if (capture?.reason === 'no_candidates' || capture?.reason === 'no_confident_pick') {
+          consecutiveLinkless += 1;
+          consecutiveFailures = 0;
+        } else {
+          consecutiveFailures += 1;
+        }
 
         if (leftListing) {
           // Recover instead of proceeding against the wrong page: every later index
@@ -755,6 +773,14 @@ async function runCapture({ existing = [], offers = [], supabase = null, identit
         }
       }
 
+      if (consecutiveLinkless >= 12) {
+        // Twelve roles in a row without an affordance is a listing shape, not a broken run:
+        // stop the pass, keep what was captured, and say so distinctly from the five-strike
+        // path so nobody goes looking at selectors when the marketplace simply moved on.
+        console.error(`stopping after ${consecutiveLinkless} roles in a row with no referral affordance — looks like a listing shape; re-run resumes after card ${index}`);
+        break;
+      }
+
       if (consecutiveFailures >= 5) {
         // Five in a row means the marketplace changed under us — or the session ended. Ask which,
         // because "signed out" and "markup moved" need opposite repairs. Only the first is worth
@@ -771,6 +797,15 @@ async function runCapture({ existing = [], offers = [], supabase = null, identit
 
       await sleep(pace);
     }
+    // One line that answers "did it record anything?" without reading the batches: the
+    // portal's "0 links attached" is ambiguous between "already recorded" and "nothing
+    // found", and this removes the guess.
+    const tally = captures.reduce((acc, c) => {
+      const key = c?.referralUrl ? 'linked' : (c?.reason || 'no_link');
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+    console.error('capture tally: ' + JSON.stringify(tally));
     return captures;
   } finally {
     await closeSession();
