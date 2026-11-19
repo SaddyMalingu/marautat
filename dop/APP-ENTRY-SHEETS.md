@@ -14,6 +14,9 @@ one, and the app's Proof will agree with `npm run dop:proof`.
 
 ## A. `005-trusted-proxy-ip` — publish this one first
 
+**Answer format:** the platform reads `/app/answer.txt`, not JSON — `label: value`
+lines, then plain sentences. `references/gold.py` is the script that writes it.
+
 **Task name:** Every visitor was recorded from one address
 **Type:** Software · Defect tickets with fixes · Requirements traced to code
 **Size:** 1 incident · 3 evidence files · produced 2026-04-18 → 2026-10-24
@@ -26,12 +29,12 @@ uses this absolute path on purpose: a relative `./files/` reads from `/app` and 
 |---|---|---|---|---|---|
 | 1 | The stored address is identified as the proxy's, not the visitor's | 2 | phrase | `::1` | — |
 | 2 | The setting that decides how the address is resolved is named | 3 | phrase | `trust proxy` | nm2, nm3 |
-| 3 | The value is given as the hop count of one | 3 | value | field `fix.value`, min **1**, max **1** | all 3 |
+| 3 | The value is given as the hop count of one | 3 | value | line `value`, min **1**, max **1** | all 3 |
 | 4 | The boolean form is rejected because it lets a client spoof the address | 3 | phrase | `spoof` | all 3 |
 | 5 | The setting is placed before the readers that use it | 2 | phrase | `express.json` | all 3 |
 | 6 | A wrong-but-well-formed address is explained as looking normal | 2 | phrase | `well-formed` | naive, nm3 |
 | 7 | The traffic itself is used to prove the peer was a person | 2 | phrase | `health checker` | all 3 |
-| 8 | What it cannot identify and what it leaves broken is stated | 2 | phrase | `VPN` | all 3 |
+| 8 | What it cannot identify and what it leaves broken is stated | 2 | phrase | `carrier` | all 3 |
 
 **Point total: 19.** Golden must score 19/19 inside the app; best near miss 5/19.
 

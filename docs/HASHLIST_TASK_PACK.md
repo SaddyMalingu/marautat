@@ -11,6 +11,14 @@ today (`npm run dop:package` → `dist/hashlist/`). The same artifact is also a 
 of the Build Log pack we already price at KES 2,500, so the work is sold twice and
 invented once.
 
+> **Corrected 2026-11-19 — read `docs/HASHLIST_EVALUATION.md` before acting on this file.**
+> Two of the paragraphs below are now wrong. (1) The `$300 per accepted task` rate belongs
+> to briefs that closed on 19 Oct; the only per-task route visible in this account today
+> pays **$0**, and the paid open route is the data-set sample. (2) "Sold twice" assumes a
+> card can be reused commercially after publishing, which depends on ToS **§11** — not yet
+> read, because the terms are served by a JavaScript app. Until §11 is read, treat a
+> published card as spent, and hold 004 and 001 back for the sample.
+
 ---
 
 ## 1. The platform, as it actually pays

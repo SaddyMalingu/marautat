@@ -105,7 +105,22 @@ local changes.
 
 ---
 
+## Known platform limits (countered once already)
+
+| Limit | What it blocked | How to work with it |
+|---|---|---|
+| Daily spend limit **$0.00** on this account | *"Generate checks from your steps"* — it is a model job, so it is cancelled before it runs | **Add the scored steps manually** from `APP-ENTRY-SHEETS.md`. The checks are already known; nothing needs drafting. Ask Hashlist to raise the limit before relying on generated drafts |
+| "Runs are temporarily paused" (service notice, 2026-11-16) | step 7 **Run**, and the model spread a reviewer sees | publish anyway — runs queue and the notice says they resume Tue 17th. Do not read a queued run as a rejection |
+| Script execution is **not** a model job | nothing — `gold.py` ran and produced the expected `answer.txt` while jobs were blocked | the parts that need no spend: gold script, near-miss scripts, environment, prompt, scored steps entered by hand |
+
 ## 4. Publish, then watch two numbers
+
+> **Gate before you publish:** ToS **§11** (who owns your work) and **§13** (which files
+> you may use) have not been read — the legal pages are a JavaScript app and returned no
+> text. Publishing may assign the task, in which case the card can never be sold by us
+> again. Ask the reviewer through **Messages** first: *"If I publish a task, do I assign
+> copyright or grant a licence, and may I reuse that same task commercially elsewhere?"*
+> See `docs/HASHLIST_EVALUATION.md`.
 
 Publishing is the only irreversible action in this list.
 
