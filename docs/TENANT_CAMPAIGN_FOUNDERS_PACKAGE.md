@@ -45,27 +45,24 @@ it after the round, and rotate any token that leaks
 
 ### What actually happened on 2026-11-19
 
-**Ten messages accepted, zero delivered.** Meta returned `200` and a `wamid` for each,
-then failed every one minutes later — the status callbacks are in `conversations`:
+**Delivered 2026-11-19, from Alphadome +254 786 817637** (quality GREEN), using the approved
+alphadome template:
 
 | Number | Tenant | Meta's verdict |
 |---|---|---|
-| 254743780542 | Malingu Ventures (test) | `131042 Business eligibility payment issue` |
-| 254702245555 | Kassangas Music Shop | `131042` |
-| 254741859390 | lifeline Inc. | `131026` — message undeliverable (not on WhatsApp) |
-| 254706291262 | joska Sportiff Academy | `131042` |
-| 254799721460 | Malingu Global | `131042` |
-| 254748621563 | Insight chess club / Coach Dawn 3.0 | `131042` (one message — deduped) |
-| 254707459359 | Sales and marketing | `131042` |
-| 254743383192 | Faraja | `131042` |
-| 254759091491 | Malingu shambas | `131042` |
-| 254713793488 | Spreadmasters ltd | `131042` |
+| 254702245555 | Kassangas Music Shop | DELIVERED |
+| 254706291262 | joska Sportiff Academy | SENT |
+| 254799721460 | Malingu Global | DELIVERED |
+| 254748621563 | Insight chess club / Coach Dawn 3.0 | SENT (one message — deduped) |
+| 254707459359 | Sales and marketing | SENT |
+| 254743383192 | Faraja | DELIVERED |
+| 254759091491 | Malingu shambas | SENT |
+| 254713793488 | Spreadmasters ltd | DELIVERED |
+| 254741859390 | lifeline Inc. | FAILED 131026 — not on WhatsApp |
 
-`131042` = the WhatsApp Business account has **no payment method**. The error carries the
-fix: `business.facebook.com/billing_hub/accounts/details/?business_id=446240825246847&asset_id=2195891014181281&wizard_name=ADD_PM&account_type=whatsapp-business-account`.
-Until a card is on the account, every business-initiated message is accepted and then
-dropped — which is exactly why "no message received" looked like a code problem.
-
+**8 of 9 reached a handset.** The first attempt an hour earlier reached none: every message was
+accepted and then dropped with 131042, because the WhatsApp Business account had no valid payment
+method. The card is now on the account, and the same command delivers.
 Two findings worth keeping:
 
 1. **A `wamid` is not a delivery.** The sender now prints `ACCEPTED` on the API response
