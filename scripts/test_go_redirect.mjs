@@ -177,8 +177,16 @@ ok('an external link inside the article body does not trigger a rebuild',
 {
   const { readFileSync } = await import('fs');
   const routesSrc = readFileSync('routes/aiJobs.js', 'utf8');
+  const kitHandler = routesSrc.slice(
+    routesSrc.indexOf('export async function handleKitOfferClick'),
+    routesSrc.indexOf('// GET /go/:id and GET /ai-jobs/apply/:id')
+  );
   ok('the kit handler records its own click type',
-    /handleKitOfferClick[\s\S]{0,400}trackClick\(from, 'kit_offer', req\)/.test(routesSrc));
+    kitHandler.includes("trackClick(from, 'kit_offer', req)"));
+  ok('a stripped Referer still attributes the click, through the slug the link carries',
+    kitHandler.includes('req.query.from') && kitHandler.includes("'/blog/' + safeSlug"));
+  ok('that slug is validated, not trusted into a page path',
+    routesSrc.includes('[a-z0-9][a-z0-9-]{0,79}') && routesSrc.includes('.test(slug)'));
   ok('a switched-off offer sends the reader to the jobs board, not to a dead link',
     /if \(!cfg\.enabled\) return res\.redirect\(302, '\/ai-jobs'\)/.test(routesSrc));
   ok('the kit route is mounted before /go/:id, or "kit" is read as an offer id',

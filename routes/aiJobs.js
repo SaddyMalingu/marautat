@@ -232,7 +232,14 @@ export function offerUnavailablePage(title, backHref) {
 export async function handleKitOfferClick(req, res) {
   const cfg = ctaOfferConfig(process.env);
   if (!cfg.enabled) return res.redirect(302, '/ai-jobs');
-  const from = pagePathFromReferrer(req, '/go/kit') || '/ai-jobs';
+  // Attribution, in order: the page that sent them (Referer), then the offer slug the
+  // link carries. The second matters because an in-app browser (WhatsApp, Gmail) often
+  // strips the Referer, and an unattributed click cannot be credited to the article
+  // that earned it. The slug is validated, not trusted: it becomes a page path.
+  const slug = String((req.query && req.query.from) || '').trim();
+  const safeSlug = /^[a-z0-9][a-z0-9-]{0,79}$/i.test(slug) ? slug : '';
+  const from = pagePathFromReferrer(req, null)
+    || (safeSlug ? '/blog/' + safeSlug : '/go/kit');
   trackClick(from, 'kit_offer', req).catch(() => {});
   const query = '?from=' + encodeURIComponent(from);
   return res.redirect(302, '/drops/' + encodeURIComponent(cfg.slug) + query);
