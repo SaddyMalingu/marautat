@@ -82,6 +82,7 @@
     "money:routine:json": "node scripts/money_routine.mjs --json",
     "tenants:campaign": "node scripts/tenant_campaign.mjs",
     "test:founder-offer": "node scripts/test_founder_offer.mjs",
+    "deploy:check": "node scripts/deploy_check.mjs",
     "test:drops": "node scripts/test_digital_drops.mjs",
     "test:drops:flow": "node scripts/test_drops_flow.mjs",
     "test:wf-create": "node scripts/test_wf_campaign_create.mjs",

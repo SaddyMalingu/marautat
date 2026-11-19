@@ -30,6 +30,8 @@ Alphadome is a blockchain-powered AI platform that transforms 1000 African brand
 ```powershell
 npm run money:routine          # who to call, who owes, what to send — read-only
 npm run money:routine:json     # the same facts for another tool
+npm run tenants:campaign       # the twelve tenant messages + wa.me links — read-only
+npm run deploy:check           # is the pushed change actually live? (probe, not a guess)
 ```
 
 The operating script is [docs/MONEY_ROUTINE_24H.md](./docs/MONEY_ROUTINE_24H.md): two
