@@ -39,9 +39,31 @@ npm run tenants:campaign -- --step activation --html leads/send_desk.html --firs
 # then open leads/send_desk.html — each card has "Open in WhatsApp" and "Copy message"
 ```
 
-The file carries portal sign-in tokens, so `leads/send_desk_*.html` is git-ignored: delete
+## The file carries portal sign-in tokens, so `leads/send_desk_*.html` is git-ignored: delete
 it after the round, and rotate any token that leaks
 (`POST /admin/api/tenants/:id/portal-link`).
+
+### Sending from the bot itself
+
+`npm run wa:send` does it from the platform's own WhatsApp number, with that tenant's
+name, business and portal link as template parameters:
+
+```powershell
+npm run wa:send                          # preflight: which number, quality rating, approved templates
+npm run wa:send -- --to 254713793488     # one recipient, still a dry run
+npm run wa:send -- --apply               # send the approved template to every active tenant
+```
+
+It needs `WHATSAPP_TOKEN`, `PHONE_NUMBER_ID` and (to list templates)
+`WHATSAPP_BUSINESS_ACCOUNT_ID` in `.env` — the same values the server uses, which live on
+Render.
+
+**It is template-only on purpose.** Meta permits free-form text only within 24 hours of
+the recipient's last message; these tenants last wrote months ago, so a text send returns
+`131047` and counts against the number's quality rating — the rating the 10,212
+`WHATSAPP_STATUS:failed` rows already strained. When no template is approved, the script
+prints the exact body to create and exits without sending anything.
+
 
 ## 3. The five messages, in order
 
