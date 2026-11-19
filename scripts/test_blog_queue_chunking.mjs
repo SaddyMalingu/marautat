@@ -28,7 +28,7 @@ ok('no unbounded .in(\'opportunity_id\', ids)',
 
 // 3. The ids are deduped, so a duplicated offer cannot double the URL twice over.
 ok('ids are de-duplicated before the read',
-  /new Set\(\(offers \|\| \[\]\)\.map\(\(o\) => o\.id\)\.filter\(Boolean\)\)/.test(src));
+  /new Set\(eligible\.map\(\(o\) => o\.id\)\.filter\(Boolean\)\)/.test(src));
 
 // 4. A failure must still refuse to plan rather than assume "nothing is written".
 ok('a read failure still refuses to plan',
@@ -39,6 +39,16 @@ ok('the error carries status and the filter sample',
 // 5. And the probe that separates "list too long" from "column is wrong".
 ok('a single-id probe distinguishes size from schema',
   /probing blog_posts/.test(src));
+
+// 6. Only pair-link offers are generated for (2026-11-19). The rule must be the one the
+//    portal's "Pair link (one URL, two roles)" filter uses, and it must be reachable
+//    with an explicit escape hatch rather than by editing the file.
+ok('generation is limited to pair links by default',
+  /isMultiRoleLink\(o\.referral_url\)/.test(src) && /parseReferralCode\(o\.referral_url\)\.code/.test(src));
+ok('the filter can be bypassed on purpose',
+  /--all-offers|arg\('all-offers'/.test(src));
+ok('the filter reports how many offers it kept',
+  /pair-only: \$\{eligible\.length\} of \$\{rows\.length\}/.test(src));
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

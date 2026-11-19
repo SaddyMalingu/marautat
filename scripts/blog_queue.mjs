@@ -21,6 +21,7 @@ import path from 'path';
 import { planBlogQueue } from '../utils/blogQueue.js';
 import { requireSupabaseEnv } from '../utils/supabaseEnv.js';
 import { withCause } from '../utils/fetchCause.js';
+import { isMultiRoleLink, parseReferralCode } from '../utils/browserActor/referralVerify.js';
 
 function arg(name, fallback) {
   const argv = process.argv.slice(2);
@@ -40,6 +41,8 @@ const budgetMs = Number(arg('budget-ms', process.env.BLOG_QUEUE_BUDGET_MS || 0))
 const perOfferMs = Number(arg('per-offer-ms', process.env.BLOG_RUN_BUDGET_MS || 90000));
 const apply = Boolean(arg('apply', false));
 const from = arg('from', null);
+// 2026-11-19: by default only offers whose link is a pair link are generated for.
+const allOffers = Boolean(arg('all-offers', false));
 
 async function load() {
   if (from) {
@@ -63,12 +66,26 @@ async function load() {
   // exactly what happened on 2026-11-13.
   const { data: offers, error } = await withCause(() => offersQuery, 'reading offers');
   if (error) throw new Error('reading offers: ' + error.message);
+
+  // 2026-11-19: only offers whose referral link is a *pair* link are generated for.
+  // `isMultiRoleLink(url)` plus a code is the same rule the portal's "Pair link (one
+  // URL, two roles)" filter applies — one minted URL that covers both roles, which is
+  // the only link shape a run of ours created deliberately, so a page written against
+  // it earns. Every other row is a single-role link whose check has not run, a link
+  // carrying someone else's code, or no link at all; writing pages there spends the
+  // generation budget on offers that cannot pay.
+  const rows = Array.isArray(offers) ? offers : [];
+  const eligible = allOffers ? rows : rows.filter((o) =>
+    isMultiRoleLink(o.referral_url) && Boolean(parseReferralCode(o.referral_url).code));
+  if (!allOffers) {
+    console.log(`[queue] pair-only: ${eligible.length} of ${rows.length} open offer(s) carry a pair link with a code (--all-offers includes the rest)`);
+  }
   // `.in()` travels as a URL query string: one `uuid,` per offer. On 2026-11-18 the
   // cron answered `Bad Request` with no Postgres message at all, because the offer
   // table had grown past the gateway's URL budget and the request never reached the
   // table. Chunk the list, and report the status plus a sample of the filter, since a
   // bare status text was all the log could say.
-  const ids = [...new Set((offers || []).map((o) => o.id).filter(Boolean))];
+  const ids = [...new Set(eligible.map((o) => o.id).filter(Boolean))];
   const CHUNK = Math.max(1, Number(process.env.BLOG_QUEUE_IDS_PER_QUERY || 40));
   const readPosts = (list) => sb.from('blog_posts')
     .select('opportunity_id, slug, status')
@@ -112,7 +129,7 @@ async function load() {
   if (ids.length) {
     console.log(`[queue] ${ids.length} offer id(s) for coverage in ${Math.ceil(ids.length / CHUNK)} request(s)`);
   }
-  return { offers: offers || [], posts, tenant: tenantId };
+  return { offers: eligible, posts, tenant: tenantId };
 }
 
 const { offers, posts } = await load();
