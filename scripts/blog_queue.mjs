@@ -63,25 +63,54 @@ async function load() {
   // exactly what happened on 2026-11-13.
   const { data: offers, error } = await withCause(() => offersQuery, 'reading offers');
   if (error) throw new Error('reading offers: ' + error.message);
-  const ids = (offers || []).map((o) => o.id);
+  // `.in()` travels as a URL query string: one `uuid,` per offer. On 2026-11-18 the
+  // cron answered `Bad Request` with no Postgres message at all, because the offer
+  // table had grown past the gateway's URL budget and the request never reached the
+  // table. Chunk the list, and report the status plus a sample of the filter, since a
+  // bare status text was all the log could say.
+  const ids = [...new Set((offers || []).map((o) => o.id).filter(Boolean))];
+  const CHUNK = Math.max(1, Number(process.env.BLOG_QUEUE_IDS_PER_QUERY || 40));
+  const readPosts = (list) => sb.from('blog_posts')
+    .select('opportunity_id, slug, status')
+    .in('opportunity_id', list);
   let posts = [];
-  if (ids.length) {
-    const { data, error: postErr } = await withCause(
-      () => sb.from('blog_posts').select('opportunity_id, slug, status').in('opportunity_id', ids),
-      'reading blog_posts'
-    );
+  for (let at = 0; at < ids.length; at += CHUNK) {
+    const chunk = ids.slice(at, at + CHUNK);
+    const { data, error: postErr } = await withCause(() => readPosts(chunk), 'reading blog_posts');
     // A host without `opportunity_id` on blog_posts cannot report coverage; that is
     // unknown, not "every offer is unwritten", so say so rather than queue everything.
     if (postErr) {
-      throw new Error('reading blog_posts: ' + postErr.message +
+      // One id is the smallest request this query can make. If that fails too, the
+      // column or the permission is wrong; if it succeeds, the filter was the problem.
+      let probe = null;
+      if (chunk.length > 1) {
+        const one = await withCause(() => readPosts([chunk[0]]).limit(1), 'probing blog_posts');
+        probe = one.error
+          ? 'a single-id probe fails too (' + (one.error.message || 'no message') +
+            '), so the length of the list is not the cause'
+          : 'a single-id probe succeeds, so the filter list is the problem, not the column';
+      }
+      const detail = [
+        postErr.message || '(no message)',
+        postErr.status ? 'status ' + postErr.status : null,
+        postErr.code ? 'code ' + postErr.code : null,
+        postErr.details ? 'details ' + postErr.details : null,
+        postErr.hint ? 'hint ' + postErr.hint : null,
+        chunk.length + ' of ' + ids.length + ' id(s) in this request, first ' + JSON.stringify(chunk[0])
+      ].filter(Boolean).join(' | ');
+      throw new Error('reading blog_posts: ' + detail +
         ' — coverage is unknown, refusing to plan' +
         // The schema-cache message means the table/column is missing, which is a migration
-        // problem; anything else here is the connection the guard above should have caught.
-        (/schema cache|does not exist/i.test(postErr.message)
+        // problem; anything else here is the connection or the request itself.
+        (/schema cache|does not exist/i.test(postErr.message || '')
           ? ' (apply the migrations in migrations/ — blog_posts.opportunity_id is missing)'
-          : ' (the request reached Supabase and was refused, so the URL is right and the key or the network is not)'));
+          : ' (the request reached Supabase and was refused, so the URL is right and the key or the network is not)') +
+        (probe ? ' (' + probe + ')' : ''));
     }
-    posts = data || [];
+    posts.push(...(data || []));
+  }
+  if (ids.length) {
+    console.log(`[queue] ${ids.length} offer id(s) for coverage in ${Math.ceil(ids.length / CHUNK)} request(s)`);
   }
   return { offers: offers || [], posts, tenant: tenantId };
 }
