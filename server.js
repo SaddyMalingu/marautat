@@ -43,6 +43,10 @@ import {
   findSubmission,
 } from "./utils/discoveryApprovals.js";
 import { insertWfCampaign, describeWfCampaignError } from "./utils/wfCampaigns.js";
+// Outreach is a conversation with a brake: clarify → plan → approve → draft (2026-11-19).
+import { renderOutreach, campaignName as wfCampaignName } from "./utils/wfOutreach.js";
+// What Alphadome is, read live, so the assistant and the endpoints never disagree.
+import { loadPlatformDossier } from "./utils/platformDossier.js";
 // Display-only voice info for the tenant portal, and the profile list the voice
 // picker offers. The prompt block itself stays on the server.
 import { resolveTenantVoice, listVoiceProfiles, VOICE_PROFILES } from "./utils/tenantVoice.js";
@@ -11335,17 +11339,27 @@ app.post("/webhook", loadTenantContext, async (req, res) => {
       catalogMatches,
     });
 
+    // What Alphadome is — read live for everyone, owner or stranger, so the assistant and
+    // the endpoints cannot disagree about prices, packs or what is running (2026-11-19).
+    let platformBlock = "";
+    try {
+      const platform = await loadPlatformDossier(supabase);
+      if (platform?.text) platformBlock = platform.text;
+    } catch (platformErr) {
+      log(`Platform dossier unavailable: ${platformErr.message}`, "WARN");
+    }
+
     // The owner's own business, read live (cached 5 min) and only for the owner: a
     // customer messaging a tenant's number must never see the business's numbers.
     const ownerSpeaking = Boolean(req.tenant) && (
       req.tenantVia === "owner" || isOwnerPhone(req.tenant, from)
     );
-    let dbContextWithDossier = dbContext;
+    let dbContextWithDossier = platformBlock ? `${platformBlock}\n\n${dbContext}` : dbContext;
     if (ownerSpeaking) {
       try {
         const dossier = await loadDossier(supabase, req.tenant);
         if (dossier?.text) {
-          dbContextWithDossier = `${dbContext}\n\n${dossier.text}`;
+          dbContextWithDossier = `${dbContextWithDossier}\n\n${dossier.text}`;
           log(`Dossier attached for ${req.tenant.client_name} (${dossier.gaps.length} gap(s))`, "SYSTEM");
         }
       } catch (dossierErr) {
@@ -11391,6 +11405,60 @@ app.post("/webhook", loadTenantContext, async (req, res) => {
       lead_inbound_count: Number(liveContext.lead_inbound_count || 0) + 1,
       generation_access_unlocked: subscriptionStatus.hasActiveApprovedSubscription,
     });
+
+    // Writer's Flow outreach: clarify → plan → approve → draft. A campaign spends the
+    // tenant's credibility with strangers, so it never starts from one word (2026-11-19).
+    try {
+      const wfTurn = renderOutreach({
+        state: liveContext?.wf_outreach || null,
+        text,
+        tenantName: req.tenant?.client_name || "Alphadome"
+      });
+      if (wfTurn.action !== "none" && wfTurn.reply) {
+        let replyText = wfTurn.reply;
+        if (wfTurn.action === "create") {
+          try {
+            const campaign = await insertWfCampaign(supabase, {
+              name: wfCampaignName(wfTurn.state),
+              keywords: wfTurn.state.keywords,
+              industries: wfTurn.state.industries,
+              outreach_types: ["pitch"],
+              channels: ["email"],
+              target_count: wfTurn.state.target,
+              quality_threshold: 70,
+              status: "draft",
+              tenant_id: req.tenant?.id || null
+            });
+            log(`[WF chat] draft ${campaign?.id || "(no id)"} created for ${req.tenant?.client_name || "platform"}`, "SYSTEM");
+          } catch (wfErr) {
+            const info = describeWfCampaignError(wfErr);
+            replyText = wfTurn.reply + "\n\n(One problem: " + info.message + " — your plan is saved; tell me to try again.)";
+            log(`[WF chat] draft create failed: ${info.message}`, "ERROR");
+          }
+        }
+        await mergeUserSessionContext(from, {
+          wf_outreach: wfTurn.action === "cancel" ? null : wfTurn.state
+        });
+        try {
+          await sendMessage(from, replyText, getDecryptedCredentials(req.tenant));
+        } catch (wfSendErr) {
+          log(`[WF chat] send failed: ${wfSendErr.message}`, "WARN");
+        }
+        await supabase.from("conversations").insert([{
+          brand_id: brandId,
+          user_id: userData.id,
+          direction: "outgoing",
+          message_text: replyText,
+          llm_used: false,
+          llm_reason: "wf_outreach_" + wfTurn.action,
+          raw_payload: { wf_outreach: wfTurn.state },
+          created_at: new Date().toISOString()
+        }]);
+        return res.sendStatus(200);
+      }
+    } catch (wfTurnErr) {
+      log(`[WF chat] turn failed: ${wfTurnErr.message}`, "WARN");
+    }
 
     // Hard gate for generation tasks until payment is active and admin-approved.
     if (detectGenerationIntent(text) && !subscriptionStatus.hasActiveApprovedSubscription) {

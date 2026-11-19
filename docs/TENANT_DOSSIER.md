@@ -2,7 +2,39 @@
 
 **Written:** 2026-11-19 · **Trigger:** the campaign delivered, the founder began engaging as
 Malingu Ventures, and asked the obvious thing: *"the bot should know everything about each
-tenant — their portal, Writer's Flow, Analytics."*
+tenant — their portal, Writer's Flow, Analytics."* Then, more precisely: *"there has to be
+high coherence in info across all system endpoints… the WhatsApp assistant beats the
+assistance part if it knows nothing."*
+
+## 1 · The platform block — what Alphadome is, read live
+
+Until this change the bot's Alphadome knowledge was `utils/alphadomeBrandContext.js`: a pitch
+written by hand, including a price (**1,000 KES**) that no longer matched the model, and the
+Avatar Universe. The 86 KB `alphadome_knowledge_base_full.json` was never imported by
+anything — dead weight that looked like knowledge.
+
+`utils/platformDossier.js` replaces the guesswork with a block assembled from the tables and
+from `utils/founderOffer.js` (the single source of both prices):
+
+```
+ALPHADOME — WHAT EXISTS TODAY
+… builds and runs revenue systems: WhatsApp sales line, M-Pesa collection, tenant portal,
+content engine …
+Prices: Founder's Package KES 1,000/month (tenants already in); KES 3,000/month (joining
+now); the done-for-you funnel build is quoted from $3,000.
+Digital packs on sale at /drops: The AI Work Application Kit (KES 1,500) · Alphadome Build
+Log 2026 (KES 2,500) · …
+Running right now: 12 active tenant(s) · 997 published page(s) · 351 live AI-work offer(s) ·
+14 business(es) through discovery · 0 pack(s) sold.
+Links to give, one at a time: /drops · /build · /founders-package.html · /discovery · /ai-jobs
+```
+
+Rules it encodes: a price is never invented (an unreadable catalogue says *unknown* and links
+`/drops` instead), "what do you do" gets two concrete things and **one** link, and the
+classified knowledge base is deliberately absent — asking a model to keep a secret in a prompt
+is not a control. Cached 10 minutes, capped at 1,600 characters.
+
+## 2 · The owner block — the business, read live
 
 Before this, the reply path knew the tenant's **name, voice, catalogue matches and a lead
 coach** — but nothing about the business. A tenant owner asking *"how is my shop doing?"*
@@ -70,7 +102,43 @@ npm run test:tenant-dossier                       # 30 checks, no database neede
 The CLI calls the **same** `loadDossier()` the reply path uses, so what it prints is what
 the bot sees — not a second implementation that could drift.
 
-## What is deliberately not in it yet
+## 6 · Writer's Flow outreach — a conversation with a brake
+
+The ask: *"it should be clear — not just running. It must seek clarification and tell the user
+what is about to happen for approval."* `utils/wfOutreach.js` is a pure state machine that the
+webhook consults before any model call:
+
+| Turn | The bot | What it must not do |
+|---|---|---|
+| "run outreach" | *"I will not start one from a single word. What am I looking for?"* | create anything |
+| the goal | confirms the phrase, asks for industries | guess industries |
+| industries | asks how many leads (cap 25) | exceed the runner's cap |
+| the count | **states the plan**: draft name, search terms, industries, lead count, and *"outreach messages are **not** sent by this step"* | run it |
+| "YES" | creates a **draft** campaign (`insertWfCampaign`, status `draft`) and says *"Nothing has been sent. Press Run in your portal"* | send, or start the run |
+| anything else | *"I have not created anything"* | treat silence as consent |
+
+State lives in `user_sessions.context.wf_outreach`, so a conversation survives the next message
+and a deploy. Cancel clears it. Every number is clamped to `WF_MAX_TARGET` (25), and the reply
+for a created draft says exactly what exists and what has not happened.
+
+Why a draft and not a run: a campaign spends the tenant's **email reputation** with inbox
+providers and their **credibility** with strangers. The bot's job is to make the decision easy
+and reversible, not to make it.
+
+## 7 · Coherence — one source per fact
+
+| Fact | Single source | Everywhere else |
+|---|---|---|
+| Founder's rate / walk-up price | `utils/founderOffer.js` | platform block, tenant messages, `/founders-package.html`, `money:routine` |
+| The five packs and their prices | `digital_products` | `/drops`, platform block |
+| Whether a tenant can sell | `bot_products` | owner block, `money:routine` |
+| What is published | `blog_posts.status` | owner block, platform block |
+| Who has a portal link | `bot_tenants.portal_token` | owner block, `tenants:campaign` |
+| What was promised at signup | `discovery_submissions` | owner block |
+
+If a fact is missing from a table, the block says **unknown** and names the next action. It
+never guesses, and it never quotes the hand-written pitch.
+
 
 - **Analytics** (page views, CTA clicks, referral revenue): the tables are platform-wide and
   not yet attributed per tenant, so reporting them would be a guess. The honest line is

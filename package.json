@@ -83,6 +83,7 @@
     "tenants:campaign": "node scripts/tenant_campaign.mjs",
     "tenant:dossier": "node scripts/tenant_dossier.mjs",
     "test:tenant-dossier": "node scripts/test_tenant_dossier.mjs",
+    "test:assistant-context": "node scripts/test_assistant_context.mjs",
     "catalog:import": "node scripts/catalog_import.mjs",
     "wa:send": "node scripts/whatsapp_send.mjs",
     "test:catalog-import": "node scripts/test_catalog_import.mjs",

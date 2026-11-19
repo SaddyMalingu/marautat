@@ -67,6 +67,8 @@ export function buildDossier({
   campaigns = null,
   leads = null,
   posts = null,
+  offers = null,
+  discovery = null,
   now = new Date()
 } = {}) {
   const lines = [];
@@ -144,10 +146,38 @@ export function buildDossier({
       + (leads.qualified ? ' (' + count(leads.qualified) + ' qualified)' : ''));
   }
 
+  // ---- discovery ------------------------------------------------------------
+  // Someone who filled the form told us their industry, budget and what hurts. Asking
+  // again is the fastest way to look like nobody read it (2026-11-19).
+  if (discovery && discovery.found) {
+    const bits = [];
+    if (discovery.industry) bits.push(discovery.industry);
+    if (discovery.budget) bits.push('budget ' + discovery.budget);
+    if (discovery.timeline) bits.push(discovery.timeline);
+    lines.push('Discovery form: submitted ' + (ago(discovery.submitted_at, now) || 'recently')
+      + ' — ' + (bits.join(' · ') || 'no detail given')
+      + (discovery.challenges ? ' · asked for: ' + discovery.challenges : '')
+      + (discovery.status ? ' · status ' + discovery.status : ''));
+    if (String(discovery.status).toLowerCase() === 'new') {
+      gaps.push('approve their discovery submission so a portal link can be issued');
+    }
+    if (String(discovery.status).toLowerCase() === 'approved' && !tenant.portal_token) {
+      gaps.push('send their portal link (it has been approved)');
+    }
+  }
+
   // ---- content --------------------------------------------------------------
   if (posts && Number.isFinite(Number(posts.published))) {
-    lines.push('Content: ' + posts.published + ' published page(s)'
+    const titles = Array.isArray(posts.titles) ? posts.titles.slice(0, 3) : [];
+    lines.push('Content: ' + count(posts.published) + ' published page(s)'
+      + (titles.length
+        ? ' — ' + titles.join(' · ')
+          + (posts.published > titles.length ? ' · +' + count(posts.published - titles.length) + ' more' : '')
+        : '')
       + (posts.newest_at ? ' · newest ' + ago(posts.newest_at, now) : ''));
+  }
+  if (offers && Number.isFinite(Number(offers.published))) {
+    lines.push('Live offers behind those pages: ' + count(offers.published) + '.');
   }
 
   // ---- what to do next ------------------------------------------------------
@@ -276,14 +306,51 @@ export async function loadDossier(sb, tenant, { now = new Date(), ttlMs = DOSSIE
   const posts = await read(async () => {
     const { data, error } = await sb
       .from('blog_posts')
-      .select('id, status, created_at')
+      .select('id, title, slug, status, created_at')
       .eq('tenant_id', tenant.id)
       .order('created_at', { ascending: false })
       .limit(200);
     if (error) return null;
     const rows = data || [];
     const published = rows.filter((r) => /publish/i.test(String(r.status || '')));
-    return { published: published.length, newest_at: published[0]?.created_at || null };
+    return {
+      published: published.length,
+      titles: published.map((r) => r.title).filter(Boolean),
+      newest_at: published[0]?.created_at || null
+    };
+  });
+
+  // The offers behind those pages: published opportunities owned by this tenant.
+  const offers = await read(async () => {
+    const { count, error } = await sb
+      .from('opportunities')
+      .select('id', { count: 'exact', head: true })
+      .eq('tenant_id', tenant.id)
+      .eq('status', 'published');
+    if (error) return null;
+    return { published: count || 0 };
+  });
+
+  // What they told us in the discovery form, if this tenant ever filled one.
+  const discovery = await read(async () => {
+    const phone = String(tenant.client_phone || '').replace(/\D/g, '').slice(-9);
+    if (!phone) return null;
+    const { data, error } = await sb
+      .from('discovery_submissions')
+      .select('business_name, industry, budget, timeline, challenges, status, submitted_at, phone')
+      .limit(200);
+    if (error) return null;
+    const hit = (data || []).find((r) => String(r.phone || '').replace(/\D/g, '').slice(-9) === phone);
+    if (!hit) return { found: false };
+    return {
+      found: true,
+      industry: hit.industry || '',
+      budget: hit.budget || '',
+      timeline: hit.timeline || '',
+      challenges: hit.challenges || '',
+      status: hit.status || '',
+      submitted_at: hit.submitted_at || null
+    };
   });
 
   const value = buildDossier({
@@ -294,6 +361,8 @@ export async function loadDossier(sb, tenant, { now = new Date(), ttlMs = DOSSIE
     campaigns,
     leads,
     posts,
+    offers,
+    discovery,
     now
   });
   cache.set(tenant.id, { at: Date.now(), value });
