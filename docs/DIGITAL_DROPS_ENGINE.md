@@ -96,7 +96,7 @@ namespaced. That is now a test, not a promise (`test:drops`):
 | Surface | Paths it uses | Touches tenant onboarding? |
 |---|---|---|
 | Drops pages | `/drops`, `/drops/:slug`, `/drops/access/:token`, `/drops/free/:token` | No |
-| Drops API | `/api/drops`, `/api/drops/ladder`, `/api/drops/funnel`, `/api/drops/lead`, `/api/drops/:slug`, `/api/drops/stats`, `/api/drops/order/:ref`, `/api/drops/access/*`, `/api/drops/:slug/checkout`, `/api/drops/:slug/checkout-card` | No |
+| Drops API | `/api/drops`, `/api/drops/ladder`, `/api/drops/funnel`, `/api/drops/lead`, `/api/drops/:slug`, `/api/drops/stats`, `/api/drops/recovery`, `/api/drops/order/:ref`, `/api/drops/access/*`, `/api/drops/:slug/checkout`, `/api/drops/:slug/checkout-card` | No |
 | Money callbacks | `/drops/mpesa/callback`, `/drops/card/webhook` | No — `POST /mpesa/callback` is untouched |
 | Rung 3 | `/build`, `/api/service-requests` | No — a separate `service_requests` queue, **not** `discovery_submissions` |
 | Tenant surfaces | `/discovery`, `/discovery/*`, `/tenant/*`, `/admin/*` | Not declared here at all |
@@ -197,7 +197,8 @@ points at it. That is the next job, not this one.
 | `DROPS_CARD_WEBHOOK_SECRET` | for the card lane | HMAC-SHA256 key for `POST /drops/card/webhook`. With it unset the webhook refuses every call |
 | `DROPS_BASE_URL` | optional | Absolute base used in the access URL. Falls back to `SITE_URL`, then the request host |
 | `DROPS_SUPPORT_WHATSAPP` | optional | Turns "reply on WhatsApp" into a `wa.me` link on the storefront and delivery page |
-| `DROPS_ADMIN_KEY` | optional | Key for `GET /api/drops/stats` and `GET /api/service-requests`. Falls back to `ADMIN_PASS`; with neither set, both routes are closed (403) |
+| `DROPS_ADMIN_KEY` | optional | Key for `GET /api/drops/stats`, `GET /api/drops/recovery` and `GET /api/service-requests`. Falls back to `ADMIN_PASS`; with neither set, all three routes are closed (403) |
+| `DROPS_RECOVERY_ACCOUNT` | optional | The account reference printed in the recovery message ("send to Paybill X, account Y"). Unset means the **order's own reference** is used, so a payment can always be matched to the pack — nothing needs configuring |
 | `DROPS_LEAD_EMAIL` | optional | Where a funnel-build proposal request is emailed. Falls back to `ADMIN_EMAIL` |
 | `SMTP_HOST` / `SMTP_USER` / `SMTP_PASS` | for the card lane | The existing platform mailer. A card buyer has no WhatsApp thread, so email is the only delivery channel; with SMTP unset the pack is still on the page and the failure is logged |
 | `MPESA_CONSUMER_KEY/SECRET/PASSKEY/SHORTCODE` | already set | The money lane |

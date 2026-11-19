@@ -52,6 +52,10 @@ import {
   deliveryMessage,
   supportWhatsAppLink,
   revenueSummary,
+  settlementFor,
+  PAID_STATES,
+  recoveryQueue,
+  recoveryMessage,
   parseMpesaCallback,
   isMissingTable,
   validateCheckout,
@@ -256,6 +260,12 @@ export function createDropsRouter(deps = {}) {
       ? order.lines
       : [{ slug: order.product_slug, label: order.product_title, amount: order.amount }];
 
+    // Which kind of paid this is (2026-11-19). A non-production shortcode answers
+    // ResultCode 0 and Safaricom reverses the charge, so the order is delivered and
+    // owed. Storing that beside the receipt is what lets the operator chase it and
+    // keeps `collected` from reading as `gross`.
+    const settlement = settlementFor(env, lane);
+
     await supabase.from(TABLES.orders).update({
       status: 'delivered',
       mpesa_receipt: lane === 'mpesa' ? (receipt || null) : (order.mpesa_receipt || null),
@@ -265,6 +275,7 @@ export function createDropsRouter(deps = {}) {
       metadata: {
         ...(order.metadata && typeof order.metadata === 'object' ? order.metadata : {}),
         ...meta,
+        settlement,
       },
     }).eq('id', order.id);
 
@@ -341,9 +352,23 @@ export function createDropsRouter(deps = {}) {
       }
     }
 
-    await recordEvent('paid', { product_slug: order.product_slug, order_ref: order.order_ref, detail: { amount: order.amount, lane } });
+    await recordEvent('paid', { product_slug: order.product_slug, order_ref: order.order_ref, detail: { amount: order.amount, lane, settlement } });
     await recordEvent('delivered', { product_slug: order.product_slug, order_ref: order.order_ref, detail: { lane } });
     log('[drops] ' + order.order_ref + ' paid and delivered via ' + lane + (receipt ? ' (receipt ' + receipt + ')' : ''), 'PAYMENT');
+
+    // The operator's line, not the buyer's. If this is a sandbox settlement the money
+    // was reversed: the order is a debt and it belongs on the chase list, which is
+    // exactly what/where the warning says so nobody has to remember to look.
+    if (settlement !== 'collected') {
+      await recordEvent('settlement_pending', {
+        product_slug: order.product_slug,
+        order_ref: order.order_ref,
+        detail: { settlement, amount: order.amount, phone: order.phone },
+      });
+      log('[drops] ' + order.order_ref + ' DELIVERED BUT NOT SETTLED (' + settlement + '): '
+        + 'the buyer was refunded and the money was not received — chase it on a live channel. '
+        + 'GET /api/drops/recovery lists it with the message to send.', 'WARN');
+    }
 
     return { expiresAt, issued };
   }
@@ -436,17 +461,78 @@ export function createDropsRouter(deps = {}) {
     try {
       const { data, error } = await supabase
         .from(TABLES.orders)
-        .select('status, amount, product_slug, product_title, created_at')
+        .select('status, amount, product_slug, product_title, created_at, paid_at, currency, lane, metadata')
         .order('created_at', { ascending: false })
         .limit(5000);
       if (error) {
         if (isMissingTable(error)) return notInitialised(res);
         throw error;
       }
-      return say(res, 200, { ok: true, ...revenueSummary(data || []) });
+      const rows = data || [];
+      const recovery = recoveryQueue(rows);
+      return say(res, 200, {
+        ok: true,
+        ...revenueSummary(rows),
+        // What today's payments would settle as, so the report says out loud whether
+        // its own numbers are bankable before anyone reads `gross` as income.
+        settlement_mode: settlementFor(env, 'mpesa'),
+        recovery: { count: recovery.count, oldest_days: recovery.oldest_days, by_currency: recovery.by_currency },
+      });
     } catch (err) {
       log('[drops] stats error: ' + err.message, 'ERROR');
       return say(res, 500, { error: 'Revenue could not be read.' });
+    }
+  });
+
+  // ---- the chase list (2026-11-19) -------------------------------------------
+  // Every order this server marked paid that the money never reached. Registered
+  // before `/api/drops/:slug`, for the reason recorded at `health`: a named route
+  // after a wildcard is a route that does not exist.
+  //
+  // The buyer is never told the shortcode is a sandbox. The operator is given the
+  // reference, the amount, the phone and the message to send — see recoveryMessage().
+  router.get('/api/drops/recovery', async (req, res) => {
+    const key = String(req.query.key || req.get('x-admin-key') || '');
+    const expected = String(env.DROPS_ADMIN_KEY || env.ADMIN_PASS || '');
+    if (!expected || key !== expected) return say(res, 403, { error: 'Unauthorized' });
+    try {
+      const { data, error } = await supabase
+        .from(TABLES.orders)
+        .select('order_ref, product_slug, product_title, phone, amount, currency, status, paid_at, created_at, mpesa_receipt, metadata')
+        .in('status', PAID_STATES)
+        .order('paid_at', { ascending: true })
+        .limit(5000);
+      if (error) {
+        if (isMissingTable(error)) return notInitialised(res);
+        throw error;
+      }
+      const queue = recoveryQueue(data || []);
+      const shortcode = String(env.MPESA_SHORTCODE || '').trim();
+      const support = supportWhatsAppLink(env);
+      return say(res, 200, {
+        ok: true,
+        settlement_mode: settlementFor(env, 'mpesa'),
+        ...queue,
+        // Ready to paste, one per order. Nothing here is sent automatically: asking a
+        // buyer for money after their bank already reversed a charge is a human's job,
+        // because it is a conversation before it is a transaction.
+        //
+        // The account is the order's own reference unless one is configured, so a payment
+        // can always be matched to the pack it was for — the same rule scan-to-pay uses
+        // (`AccountReference` identifies the payer's intent, not the till).
+        messages: queue.items.map((item) => ({
+          order_ref: item.order_ref,
+          phone: item.phone,
+          ...recoveryMessage({
+            order: item,
+            payTo: { shortcode, account: String(env.DROPS_RECOVERY_ACCOUNT || item.order_ref || '').trim() },
+            support,
+          }),
+        })),
+      });
+    } catch (err) {
+      log('[drops] recovery error: ' + err.message, 'ERROR');
+      return say(res, 500, { error: 'The recovery list could not be read.' });
     }
   });
 

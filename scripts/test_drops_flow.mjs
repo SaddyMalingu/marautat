@@ -184,6 +184,21 @@ ok('the order is marked delivered', db.digital_orders[0].status === 'delivered' 
 ok('exactly one entitlement was issued', db.digital_entitlements.length === 1, String(db.digital_entitlements.length));
 ok('the buyer was messaged with the access link', messages.length === 1 && messages[0].text.includes('/drops/access/'), JSON.stringify(messages[0]));
 
+// Sandbox settlement (2026-11-19). This router is built with no MPESA_ENV, exactly like
+// the deployment, so a delivered order is money that was reversed. It must be stamped,
+// and it must show up on the chase list rather than in collected revenue.
+ok('a delivered order records how it settled', db.digital_orders[0].metadata.settlement === 'sandbox_refund',
+  JSON.stringify(db.digital_orders[0].metadata));
+const recovery = await getJson('/api/drops/recovery?key=smoke-admin');
+ok('the chase list is readable with the admin key', recovery.status === 200, JSON.stringify(recovery.body));
+ok('the delivered order is owed, not collected', recovery.body.count === 1 && recovery.body.items[0].order_ref === checkout.body.orderRef,
+  JSON.stringify(recovery.body.items));
+ok('the chase list carries a message to send', recovery.body.messages.length === 1
+  && recovery.body.messages[0].text.includes(checkout.body.orderRef));
+ok('the message to the buyer never mentions our plumbing',
+  !/sandbox|refund|reversed/i.test(recovery.body.messages[0].text));
+ok('the chase list is closed without a key', (await getJson('/api/drops/recovery?key=wrong')).status === 403);
+
 const poll = await getJson('/api/drops/order/' + checkout.body.orderRef + '?lookup=' + encodeURIComponent(checkout.body.lookup));
 ok('the buyer can poll their own order', poll.status === 200 && poll.body.status === 'delivered');
 ok('the poll returns the access path', poll.body.access && poll.body.access[0].path.startsWith('/drops/access/'));
@@ -204,6 +219,9 @@ ok('a tampered token is refused', (await getJson('/api/drops/access/' + encodeUR
 const stats = await getJson('/api/drops/stats?key=smoke-admin');
 ok('stats are readable with the admin key', stats.status === 200 && stats.body.paid_orders === 1, JSON.stringify(stats.body));
 ok('stats subtract the collection fee', stats.body.net === Math.round((12000 - 118.8) * 100) / 100, String(stats.body.net));
+ok('stats say which settlement the money is', stats.body.settlement_mode === 'sandbox_refund'
+  && stats.body.collected === 0 && stats.body.unsettled === 12000, JSON.stringify(stats.body));
+ok('stats report the chase list beside the revenue', stats.body.recovery.count === 1);
 ok('stats are closed without a key', (await getJson('/api/drops/stats?key=wrong')).status === 403);
 
 const late = await postJson('/drops/mpesa/callback', { Body: { stkCallback: { CheckoutRequestID: 'cid-1', ResultCode: 1032, ResultDesc: 'cancelled' } } });

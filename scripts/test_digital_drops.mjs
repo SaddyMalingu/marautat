@@ -51,6 +51,12 @@ import {
   deliveryMessage,
   supportWhatsAppLink,
   revenueSummary,
+  settlementFor,
+  settlementOf,
+  isUnsettled,
+  recoveryQueue,
+  recoveryMessage,
+  SETTLEMENT_STATES,
   parseMpesaCallback,
   isMissingTable,
   validateCheckout,
@@ -204,6 +210,59 @@ ok('conversion is paid over attempts', rev.conversion === 50, String(rev.convers
 ok('revenue is attributed per product', rev.by_product.length === 2 && rev.by_product[0].slug === 'kit-a');
 ok('an empty report does not divide by zero', revenueSummary([]).aov === 0 && revenueSummary([]).conversion === 0);
 
+// ---- 6b. settlement truth ------------------------------------------------------
+// A non-production shortcode answers ResultCode 0 and Safaricom reverses the charge.
+// `gross` is what was booked; `collected` is what was banked. They are different
+// numbers and the difference is a debt somebody has to chase (2026-11-19).
+console.log('\n-- settlement truth');
+ok('a sandbox payment is not collected', settlementFor({ MPESA_ENV: 'sandbox' }) === 'sandbox_refund');
+ok('an unset environment is treated as sandbox, like initiateStkPush does',
+  settlementFor({}) === 'sandbox_refund', settlementFor({}));
+ok('production is collected', settlementFor({ MPESA_ENV: 'production' }) === 'collected');
+ok('the environment name is not case sensitive', settlementFor({ MPESA_ENV: ' PRODUCTION ' }) === 'collected');
+ok('a card payment settles on the provider side', settlementFor({ MPESA_ENV: 'sandbox' }, 'card') === 'collected');
+ok('both settlement states are named', SETTLEMENT_STATES.length === 2
+  && SETTLEMENT_STATES.includes('collected') && SETTLEMENT_STATES.includes('sandbox_refund'));
+
+ok('an unmarked order is not turned into a debt', settlementOf({ status: 'delivered' }) === 'collected');
+ok('a marked sandbox order stays a debt',
+  settlementOf({ metadata: { settlement: 'sandbox_refund' } }) === 'sandbox_refund');
+ok('an unknown marker falls back to collected', settlementOf({ metadata: { settlement: 'nonsense' } }) === 'collected');
+ok('an unpaid order is never owed', !isUnsettled({ status: 'pending', metadata: { settlement: 'sandbox_refund' } }));
+ok('a paid sandbox order is owed', isUnsettled({ status: 'delivered', metadata: { settlement: 'sandbox_refund' } }));
+
+const chaseable = [
+  { status: 'delivered', amount: 1500, currency: 'KES', product_slug: 'kit-a', product_title: 'Kit A', order_ref: 'DRPAAAAAAA1', phone: '254712000001', paid_at: '2026-11-18T10:00:00.000Z', metadata: { settlement: 'sandbox_refund' } },
+  { status: 'paid', amount: 4500, currency: 'KES', product_slug: 'kit-b', product_title: 'Kit B', order_ref: 'DRPAAAAAAA2', phone: '254712000002', paid_at: '2026-11-10T10:00:00.000Z', metadata: { settlement: 'sandbox_refund' } },
+  { status: 'delivered', amount: 2500, currency: 'KES', product_slug: 'kit-c', product_title: 'Kit C', order_ref: 'DRPAAAAAAA3', phone: '254712000003', paid_at: '2026-11-19T10:00:00.000Z', metadata: { settlement: 'collected' } },
+  { status: 'failed', amount: 900, currency: 'KES', product_slug: 'kit-d', order_ref: 'DRPAAAAAAA4' },
+];
+const chase = recoveryQueue(chaseable, { now: '2026-11-19T12:00:00.000Z' });
+ok('only unsettled paid orders are chaseable', chase.count === 2, String(chase.count));
+ok('the oldest debt comes first', chase.items[0].order_ref === 'DRPAAAAAAA2', chase.items.map((i) => i.order_ref).join(','));
+ok('a debt carries its age', chase.items[0].age_days === 9, String(chase.items[0].age_days));
+ok('a debt carries the phone to reach', chase.items[0].phone === '254712000002');
+ok('debts are totalled by currency', chase.by_currency.length === 1 && chase.by_currency[0].amount === 6000);
+ok('an empty ledger owes nothing', recoveryQueue([]).count === 0 && recoveryQueue([]).oldest_days === null);
+
+const booked = revenueSummary(chaseable);
+ok('booked revenue still counts every paid order', booked.paid_orders === 3, String(booked.paid_orders));
+ok('collected is the part the money actually reached', booked.collected === 2500, String(booked.collected));
+ok('unsettled is the part that did not', booked.unsettled === 6000, String(booked.unsettled));
+ok('the split adds up to the booked gross', booked.collected + booked.unsettled === booked.gross);
+ok('an order book with nothing owed says so', revenueSummary([chaseable[2]]).settlement_note === null);
+
+const askPay = recoveryMessage({ order: chase.items[0], payTo: { shortcode: '780542', account: 'ALPHA' } });
+ok('the recovery message names the order and the amount', askPay.text.includes('DRPAAAAAAA2') && askPay.text.includes('4500'));
+ok('the recovery message gives a place to pay', askPay.text.includes('780542') && askPay.text.includes('ALPHA'));
+ok('the recovery message leads with what the buyer already has', /pack is open/i.test(askPay.text));
+// The buyer is told the true thing that matters to them and never our plumbing.
+ok('the recovery message never mentions the sandbox', !/sandbox|refund|reversed|test mode/i.test(askPay.text));
+ok('the recovery message promises the receipt, not a promise of income',
+  /confirmation code/i.test(askPay.text) && !/guarantee|you will earn/i.test(askPay.text));
+ok('without paybill details it asks for the best way to pay',
+  /best way to take the payment/i.test(recoveryMessage({ order: chase.items[0] }).text));
+
 // ---- 7. callbacks and checkout input -------------------------------------------
 console.log('\n-- callbacks and checkout input');
 const callback = parseMpesaCallback({
@@ -293,6 +352,31 @@ ok('the callback acknowledges before it works', (() => {
 ok('the callback is idempotent on a repeated payment', /orderTransition\(order\.status, 'paid'\)/.test(routes));
 ok('the callback writes one entitlement per line', /for \(const line of lines\)/.test(routes));
 ok('a WhatsApp failure cannot undo a payment', /delivery message failed/.test(routes));
+// The order must record which kind of paid it is, or `gross` reads as income when the
+// money was reversed (2026-11-19).
+ok('delivery records the settlement beside the receipt', /settlementFor\(env, lane\)/.test(routes)
+  && /metadata: \{[\s\S]{0,200}settlement,/.test(routes));
+ok('delivery hands the same settlement to the paid event', /detail: \{ amount: order\.amount, lane, settlement \}/.test(routes));
+ok('an unsettled order logs a line the operator can act on',
+  /DELIVERED BUT NOT SETTLED/.test(routes) && /settlement_pending/.test(routes));
+ok('the chase list is admin-gated', (() => {
+  const at = routes.indexOf("router.get('/api/drops/recovery'");
+  const gate = routes.indexOf('Unauthorized', at);
+  return at > -1 && gate > at && gate - at < 400;
+})());
+ok('the chase list is registered before the product wildcard',
+  routes.indexOf("router.get('/api/drops/recovery'") < routes.indexOf("router.get('/api/drops/:slug'"));
+ok('the chase list reads only paid orders', /\.in\('status', PAID_STATES\)/.test(routes));
+ok('the chase list never sends by itself', (() => {
+  const at = routes.indexOf("router.get('/api/drops/recovery'");
+  const next = routes.indexOf('router.get(', at + 10) === -1 ? routes.length : routes.indexOf('router.get(', at + 10);
+  const nextPost = routes.indexOf('router.post(', at + 10) === -1 ? routes.length : routes.indexOf('router.post(', at + 10);
+  const end = Math.min(next, nextPost);
+  const body = at > -1 ? routes.slice(at, end) : '';
+  return Boolean(body) && !/sendMessage\(/.test(body) && !/sendEmail\(/.test(body);
+})());
+ok('stats reports booked and collected separately', /settlement_mode: settlementFor\(env, 'mpesa'\)/.test(routes)
+  && /recovery: \{ count: recovery\.count/.test(routes));
 ok('the access route verifies the token before reading the product', (() => {
   const at = routes.indexOf("router.get('/api/drops/access/:token'");
   const verify = routes.indexOf('loadEntitlement', at);

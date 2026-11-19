@@ -886,6 +886,24 @@ export function revenueSummary(orders, opts = {}) {
   const primary = currencies.find((c) => c.currency === 'KES') || currencies[0] || null;
   const attempts = rows.length;
 
+  // Booked money is not banked money (2026-11-19). A paid order that this server
+  // recorded against a sandbox shortcode was reversed by Safaricom: the buyer was
+  // refunded and the business was not paid, so `gross` overstates income by exactly
+  // that much. Both figures are reported rather than one being quietly chosen.
+  const unsettledRows = paid.filter(isUnsettled);
+  const unsettledByCurrency = new Map();
+  for (const o of unsettledRows) {
+    const currency = currencyOf(o);
+    unsettledByCurrency.set(currency, (unsettledByCurrency.get(currency) || 0) + Number(o.amount || 0));
+  }
+  const inPrimary = (map) => round(map.get((primary && primary.currency) || 'KES') || 0);
+  const collectedByCurrency = new Map();
+  for (const o of paid) {
+    if (isUnsettled(o)) continue;
+    const currency = currencyOf(o);
+    collectedByCurrency.set(currency, (collectedByCurrency.get(currency) || 0) + Number(o.amount || 0));
+  }
+
   return {
     orders: attempts,
     paid_orders: paid.length,
@@ -896,6 +914,15 @@ export function revenueSummary(orders, opts = {}) {
     net: primary ? primary.net : 0,
     aov: primary ? primary.aov : 0,
     conversion: attempts ? Math.round((paid.length / attempts) * 1000) / 10 : 0,
+    // `gross` stays what the ledger booked, because every existing report reads it.
+    // These four are the honest split: collected is banked, unsettled is owed.
+    settled_orders: paid.length - unsettledRows.length,
+    unsettled_orders: unsettledRows.length,
+    collected: inPrimary(collectedByCurrency),
+    unsettled: inPrimary(unsettledByCurrency),
+    settlement_note: unsettledRows.length
+      ? 'Paid orders booked against a non-production shortcode are reversed by Safaricom: the buyer was refunded and the money was not received. Chase these on a live channel before counting them as income.'
+      : null,
     fee_rate: mpesaRate,
     card_fee_rate: cardRate,
     by_currency: currencies,
@@ -904,6 +931,137 @@ export function revenueSummary(orders, opts = {}) {
       .map((p) => ({ ...p, gross: round(p.gross) }))
       .sort((a, b) => b.gross - a.gross),
   };
+}
+
+
+/**
+ * Settlement truth (2026-11-19).
+ *
+ * A Daraja shortcode that is not in production accepts the prompt, answers
+ * `ResultCode 0`, and Safaricom reverses the charge. The buyer sees money leave and
+ * come back; this server sees `paid` either way. Recording an order as paid without
+ * recording *which kind of paid* is how a business comes to believe it earned money
+ * it never received — and it is why every paid order here carries a settlement.
+ *
+ * `collected`     — the money reached the paybill and reconciles against a statement.
+ * `sandbox_refund` — the pack was delivered and the order is **owed**: the buyer must
+ *                    be asked to pay on a live channel. Revenue reports count it as
+ *                    booked, never as collected.
+ *
+ * The buyer is never told the shortcode is a sandbox. They are told the truth that
+ * matters to them: the pack is open, the payment has not reached us, resend and we
+ * will mark it settled. See `recoveryMessage()`.
+ */
+export const SETTLEMENT_STATES = ['collected', 'sandbox_refund'];
+
+/** Which settlement a payment *today* would have, given the lane and the environment. */
+export function settlementFor(env = process.env, lane = 'mpesa') {
+  // A card provider settles on its own books and reports it back; only M-Pesa has the
+  // non-production mode that silently reverses a completed charge.
+  if (String(lane || '').toLowerCase() !== 'mpesa') return 'collected';
+  const mode = String((env && env.MPESA_ENV) || '').trim().toLowerCase();
+  return mode === 'production' ? 'collected' : 'sandbox_refund';
+}
+
+/**
+ * What an order's stored settlement says.
+ *
+ * Orders written before this marker existed carry none. They are treated as collected:
+ * inventing a debt the business cannot evidence is worse than under-reporting, and a
+ * paid-at date is auditable against a statement either way.
+ */
+export function settlementOf(order) {
+  const marked = order && order.metadata && typeof order.metadata === 'object'
+    ? order.metadata.settlement
+    : null;
+  const value = String(marked || (order && order.settlement) || '').trim().toLowerCase();
+  return SETTLEMENT_STATES.includes(value) ? value : 'collected';
+}
+
+/** A paid order whose money was not received. */
+export function isUnsettled(order) {
+  return PAID_STATES.includes(String((order && order.status) || ''))
+    && settlementOf(order) === 'sandbox_refund';
+}
+
+/**
+ * The chase list.
+ *
+ * Oldest debt first, because it is the one the buyer is most likely to have forgotten
+ * and the one whose receipt is hardest to find. Each row carries enough to send a
+ * message without opening the database: reference, product, amount, phone, age.
+ */
+export function recoveryQueue(orders, opts = {}) {
+  const now = opts.now ? new Date(opts.now) : new Date();
+  const rows = Array.isArray(orders) ? orders : [];
+
+  const items = rows.filter(isUnsettled).map((o) => {
+    const paidAt = o.paid_at || o.created_at || null;
+    const ageDays = paidAt
+      ? Math.max(0, Math.floor((now.getTime() - new Date(paidAt).getTime()) / 86400000))
+      : null;
+    return {
+      order_ref: String(o.order_ref || ''),
+      product_slug: String(o.product_slug || ''),
+      product_title: String(o.product_title || o.product_slug || ''),
+      amount: Number(o.amount || 0),
+      currency: String(o.currency || 'KES').toUpperCase(),
+      phone: String(o.phone || ''),
+      paid_at: paidAt,
+      age_days: ageDays,
+      receipt: o.mpesa_receipt || null,
+      settlement: settlementOf(o),
+    };
+  }).sort((a, b) => (b.age_days == null ? -1 : b.age_days) - (a.age_days == null ? -1 : a.age_days));
+
+  const byCurrency = new Map();
+  for (const item of items) {
+    const c = byCurrency.get(item.currency) || { currency: item.currency, orders: 0, amount: 0 };
+    c.orders += 1;
+    c.amount += item.amount;
+    byCurrency.set(item.currency, c);
+  }
+  const round = (n) => Math.round(n * 100) / 100;
+
+  return {
+    count: items.length,
+    oldest_days: items.length ? items[0].age_days : null,
+    items,
+    by_currency: Array.from(byCurrency.values())
+      .map((c) => ({ ...c, amount: round(c.amount) }))
+      .sort((a, b) => b.amount - a.amount),
+  };
+}
+
+/**
+ * The message that asks a buyer to pay again, without telling them about our plumbing.
+ *
+ * It leads with what they already have (the pack is open), states the one true fact
+ * that matters (the payment has not reached us), gives the smallest possible action
+ * (send to this paybill, reply with the code), and promises the follow-through.
+ */
+export function recoveryMessage({ order = {}, payTo = {}, support = null } = {}) {
+  const ref = String(order.order_ref || '').trim() || 'your order';
+  const title = String(order.product_title || order.product_slug || 'your pack').trim();
+  const amount = Number(order.amount || 0);
+  const currency = String(order.currency || 'KES').toUpperCase();
+  const shortcode = String(payTo.shortcode || '').trim();
+  const account = String(payTo.account || '').trim();
+
+  const lines = [
+    `Hi — about order ${ref} (${title}, ${currency} ${amount}).`,
+    '',
+    'The pack is open and yours. The payment has not reached us on our side, so the order is still showing as unpaid.',
+    '',
+    shortcode && account
+      ? `Send ${currency} ${amount} to Paybill ${shortcode}, account ${account}, and reply with the confirmation code. I will mark it settled the same day.`
+      : `Let me know the best way to take the payment and I will send the details — reply here with the confirmation code once it is done and I will mark it settled the same day.`,
+    '',
+    'Nothing else is needed from you, and access does not close while this is open.'
+  ];
+  if (support) lines.push('', `Any trouble: ${support}`);
+
+  return { subject: `Payment not received — order ${ref}`, text: lines.join('\n') };
 }
 
 
