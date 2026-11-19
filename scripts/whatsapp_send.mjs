@@ -44,7 +44,17 @@ const templateName = String(arg('template', process.env.WA_TEMPLATE || '') || ''
 const lang = String(arg('lang', process.env.WA_TEMPLATE_LANG || 'en') || 'en');
 const apply = Boolean(arg('apply', false));
 const onlyTo = String(arg('to', '') || '').trim();
-const params = String(arg('params', '') || '').split('|').map((p) => p.trim()).filter(Boolean);
+// Numbers already messaged, or test rows: sending twice to the same person reads as a
+// broken system, and messaging a canary tenant spends the quality rating for nothing.
+const skipList = String(arg('skip', '') || '').split(',')
+  .map((v) => String(v).replace(/\D/g, ''))
+  .filter(Boolean);
+const paramsArg = String(arg('params', '') || '').trim();
+// `--params none` means the template takes no variables at all. That is a real case:
+// the approved template may be a one-line announcement, and sending an invented {{1}}
+// to it is rejected with 132000 (nothing delivered, but a wasted attempt).
+const noParams = /^(none|0)$/i.test(paramsArg);
+const params = noParams ? [] : paramsArg.split('|').map((p) => p.trim()).filter(Boolean);
 
 const digits = (v) => String(v || '').replace(/\D/g, '');
 const toMsisdn = (v) => {
@@ -116,9 +126,14 @@ if (waba) {
   console.log('   templates   unknown — set WHATSAPP_BUSINESS_ACCOUNT_ID to check');
 }
 
-const chosen = templateName
-  ? templates.find((t) => t.name === templateName)
-  : templates[0];
+// A template named explicitly is sent even when the list could not be read, because
+// listing needs the WABA id and this deployment's WHATSAPP_BUSINESS_ACCOUNT_ID is a
+// business portfolio id. The failure mode is safe: Meta rejects an unknown template
+// (132001) or a parameter mismatch (132000) and delivers nothing, which the loop below
+// reports per recipient. A template missing from a list we cannot read is not a reason
+// to refuse an explicit instruction.
+const explicitlyNamed = Boolean(templateName);
+const chosen = explicitlyNamed ? { name: templateName, language: lang } : templates[0];
 
 if (!chosen) {
   console.log('\nNOTHING CAN BE SENT YET — and this is the reason, not a code gap:');
@@ -131,8 +146,15 @@ if (!chosen) {
   console.log('     The system is KES 1,000 a month (new clients KES 3,000). I am not invoicing');
   console.log('     until your catalogue is loaded and one order has gone through end to end.');
   console.log('     Reply "catalogue" and I will load it. What the fee covers: {{4}}');
-  console.log('   Then:  node scripts/whatsapp_send.mjs --template <name> --apply\n');
+  console.log('   Then:  node scripts/whatsapp_send.mjs --template <name> --apply');
+  console.log('\n   Or name a template you know is approved: --template <name> --apply\n');
   process.exit(3);
+}
+
+if (explicitlyNamed && !templates.some((t) => t.name === templateName)) {
+  console.log('   note        "' + templateName + '" cannot be verified here (template listing needs the');
+  console.log('               WABA id, and this holds a business portfolio id). Meta rejects an');
+  console.log('               unknown template and delivers nothing, which is reported below.');
 }
 
 // ---- who gets it --------------------------------------------------------------
@@ -150,8 +172,14 @@ if (error) {
 const recipients = (tenants || [])
   .filter((t) => t.is_active !== false && String(t.status || 'active') === 'active')
   .filter((t) => !onlyTo || digits(t.client_phone).includes(digits(onlyTo)))
+  .filter((t) => !/canary/i.test(String(t.client_name || '')))
+  .filter((t) => !skipList.some((s) => digits(t.client_phone).includes(s)))
   .map((t) => ({ name: t.point_of_contact_name || t.client_name, business: t.client_name, phone: toMsisdn(t.client_phone), portal: t.portal_token }))
-  .filter((t) => t.phone);
+  .filter((t) => t.phone)
+  // One person can hold two tenant rows: Dawn runs both "Insight chess club" and
+  // "Coach Dawn 3.0" on 254748621563, and the first dry run would have messaged him
+  // twice. One message per number, first row wins.
+  .filter((t, i, all) => all.findIndex((o) => o.phone === t.phone) === i);
 
 if (!recipients.length) {
   console.log('\nNo recipient matches' + (onlyTo ? ' "' + onlyTo + '"' : '') + '.\n');
@@ -171,12 +199,12 @@ const { firstName } = await import('../utils/founderOffer.js');
  * values that make each message about that business — their name, their business, their
  * own sign-in link, and the page that prices it.
  */
-const paramsFor = (person) => (params.length ? params : [
+const paramsFor = (person) => (noParams ? [] : (params.length ? params : [
   firstName(person.name),
   person.business || 'your',
   person.portal ? `${site}/tenant-dashboard?t=${encodeURIComponent(person.portal)}&phone=${encodeURIComponent(person.phone)}` : site + '/founders-package.html',
   offerUrl
-]);
+]));
 
 const send = async (to, body) => graph(`/${PHONE_ID}/messages`, {
   method: 'POST',
@@ -194,10 +222,12 @@ for (const person of recipients) {
     template: {
       name: chosen.name,
       language: { code: chosen.language || lang },
-      components: [{
-        type: 'body',
-        parameters: personParams.map((p) => ({ type: 'text', text: String(p) }))
-      }]
+      ...(personParams.length ? {
+        components: [{
+          type: 'body',
+          parameters: personParams.map((p) => ({ type: 'text', text: String(p) }))
+        }]
+      } : {})
     }
   };
   if (!apply) {
@@ -222,9 +252,10 @@ for (const person of recipients) {
 
 if (!apply) {
   console.log('\nDry run. Nothing sent. Re-run with --apply to deliver this template.\n');
-  console.log('Note: a template\'s text is fixed by Meta, so the per-tenant wording in');
-  console.log('utils/founderOffer.js is what goes in the template body, with the name,');
-  console.log('business and portal link as parameters.\n');
+  console.log('Note: an approved template\'s text is fixed by Meta. The template this account');
+  console.log('has approved ("alphadome") takes no variables, so it cannot carry a portal link');
+  console.log('or a name; personalising means creating a new template with {{1}}…{{4}}');
+  console.log('(utils/founderOffer.js is the wording) and naming it with --template.\n');
   process.exit(0);
 }
 

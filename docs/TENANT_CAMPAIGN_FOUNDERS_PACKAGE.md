@@ -43,7 +43,41 @@ npm run tenants:campaign -- --step activation --html leads/send_desk.html --firs
 it after the round, and rotate any token that leaks
 (`POST /admin/api/tenants/:id/portal-link`).
 
-### Sending from the bot itself
+### What actually happened on 2026-11-19
+
+Ten messages delivered from **Alphadome +254 786 817637** (quality GREEN) — one test to
+the founder's own number, then nine tenants, each returning a `wamid`:
+
+| Number | Tenant | Result |
+|---|---|---|
+| 254743780542 | Malingu Ventures (test) | SENT |
+| 254702245555 | Kassangas Music Shop | SENT |
+| 254741859390 | lifeline Inc. | SENT |
+| 254706291262 | joska Sportiff Academy | SENT |
+| 254799721460 | Malingu Global | SENT |
+| 254748621563 | Insight chess club / Coach Dawn 3.0 | SENT (once — deduped) |
+| 254707459359 | Sales and marketing | SENT |
+| 254743383192 | Faraja | SENT |
+| 254759091491 | Malingu shambas | SENT |
+| 254713793488 | Spreadmasters ltd | SENT |
+
+Three findings from the send that change the campaign:
+
+1. **The only approved template is `alphadome`, and it takes no variables.** What was
+   delivered is Meta's fixed wording — no name, no business, **no portal link**. The
+   consequence: personalisation has to happen in the *reply*, not the opener.
+2. **Every reply opens a 24-hour window** in which free-form text is allowed. That is
+   where `utils/founderOffer.js` earns its keep: the personalised message with the portal
+   link, the fee and the three-line price-list format goes to whoever answers.
+3. **One phone can hold two tenant rows** (`254748621563` is both "Insight chess club" and
+   "Coach Dawn 3.0"). The first dry run would have messaged him twice; the sender now
+   dedupes by number.
+
+Also verified: `WHATSAPP_BUSINESS_ACCOUNT_ID` in `.env` is a **business portfolio id**, not
+a WABA id (`owned_whatsapp_business_accounts` → `403 Requires business_management`), so the
+template list cannot be read — an explicit `--template` name is sent with Meta as the
+authority, and a wrong name fails with `132001`/`132000` without delivering anything.
+
 
 `npm run wa:send` does it from the platform's own WhatsApp number, with that tenant's
 name, business and portal link as template parameters:
