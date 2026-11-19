@@ -48,6 +48,5 @@ Write your answer to `./answer.json`, exactly this shape:
   harm it does.
 * `does_not_fix` — what the tempting one-off fix would have left behind.
 
-The reasoning fields are read, so write plain sentences. Naming the two variables
-without saying why they were invisible scores low, and so does a fix that would make
-a lookalike name work by accident.
+Write plainly, in sentences. Naming the two variables without saying why the app
+could not see them is not an answer.

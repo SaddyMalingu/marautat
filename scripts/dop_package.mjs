@@ -82,7 +82,7 @@ function contextDoc(card, files, answer) {
   const rows = files.map((f) => {
     const first = readText(f.full).split('\n').find((l) => l.trim()) || '';
     const summary = first.replace(/\s+/g, ' ').trim().slice(0, 100).replace(/\|/g, '\\|');
-    return '| `files/' + f.rel + '` | ' + f.bytes + ' B | ' + summary + ' |';
+    return '| `' + f.rel + '` | ' + f.bytes + ' B | ' + summary + ' |';
   }).join('\n');
   return [
     '# Environment',
@@ -100,21 +100,16 @@ function contextDoc(card, files, answer) {
     '',
     '## What to produce',
     '',
-    'Write your answer to `./answer.json`. Every field must be present:',
+    'Write your answer to `/app/answer.txt`: the values on their own `label: value`',
+    'lines, then the reasoning in plain sentences underneath. The prompt names the',
+    'labels it expects.',
     '',
-    '```json',
-    JSON.stringify(shapeOf(answer), null, 2),
-    '```',
+    '## What to write',
     '',
-    '## How your answer is scored',
+    'Answer in sentences, with the numbers and the names in them. A bare component',
+    'name without the reason behind it is not an answer.',
     '',
-    'The scored steps and their points are in the task, not in this folder. They are',
-    'checked either as **the value you give** or as **whether your sentence says the',
-    'thing** — so write plain sentences with the numbers in them. Naming a component',
-    'without saying why it is the cause scores low, and so does a fix that would make',
-    'the same mistake in a different place.',
-    '',
-    'Nothing here is a puzzle: every fact you need is in `files/`.',
+    'Nothing here is a puzzle: every fact you need is in those three files.',
     '',
   ].join('\n');
 }
@@ -199,6 +194,15 @@ async function packageCard(id) {
       write('references/' + label + '.json', JSON.stringify(readJson(path.join(cardDir, f)), null, 2) + '\n');
     });
     write('references/checks.md', readText(path.join(cardDir, 'checks.md')));
+    const stepsFile = path.join(cardDir, 'steps.md');
+    if (fs.existsSync(stepsFile)) write('references/steps.md', readText(stepsFile));
+    // The platform's correct answer is a script that writes /app/answer.txt, not a
+    // JSON blob. answer.json stays as the authored source; gold.py is what is run.
+    const goldScript = path.join(cardDir, 'gold.py');
+    if (fs.existsSync(goldScript)) write('references/gold.py', readText(goldScript));
+    for (const f of fs.readdirSync(cardDir).filter((n) => /^naive_[a-z]\.py$/.test(n)).sort()) {
+      write('references/' + f, readText(path.join(cardDir, f)));
+    }
     write('references/bands.json', JSON.stringify({
       task: id,
       points_total: TOTAL,

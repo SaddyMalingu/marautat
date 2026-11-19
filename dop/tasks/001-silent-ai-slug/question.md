@@ -42,6 +42,5 @@ Write your answer to `./answer.json`, exactly this shape:
   punished the same way.
 * `does_not_fix` — what this change does and does not restore.
 
-The reasoning fields are read, so write plain sentences. Naming the slug without
-saying why it is the cause scores low, and so does a fix that would also punish a
-provider that is merely slow.
+Write plainly, in sentences. Naming the slug without saying why the click waited on
+it is not an answer.

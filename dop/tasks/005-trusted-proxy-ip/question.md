@@ -16,33 +16,20 @@ What I have is in `/app/data/files` — three text files:
 * `analytics-ip-column.txt` — what the columns actually contain.
 * `health-checker-note.txt` — what I was watching in the host log at the time.
 
-Write your answer to `./answer.json`, exactly this shape:
+Write your answer to `/app/answer.txt`: the values on their own `label: value` lines,
+then the reasoning in plain sentences underneath.
 
-```json
-{
-  "culprit": "",
-  "evidence": "",
-  "why_it_was_missed": "",
-  "fix": {
-    "setting": "",
-    "value": "",
-    "ordering": ""
-  },
-  "must_not": "",
-  "does_not_fix": ""
-}
-```
+Labels I need:
 
-* `culprit` — what the stored address actually is, and why it is that value.
-* `evidence` — the lines that prove it, in your own words, with the numbers.
-* `why_it_was_missed` — why this read as normal for six months instead of as a bug.
-* `fix.setting` — the change, written the way it would go into the code.
-* `fix.value` — the exact value that change takes, and nothing vaguer.
-* `fix.ordering` — where the change has to sit relative to the rest of the app.
-* `must_not` — the tempting form of the same change that must never be used, and
-  the harm it does.
-* `does_not_fix` — what this restores, and what it still cannot tell you.
+* `setting` — the change, written the way it would go into the code.
+* `value` — the exact value that change takes, as a number.
+* `ordering` — where the change has to sit relative to the rest of the app.
 
-The reasoning fields are read, so write plain sentences. A change that names the
-right knob but takes the wrong value scores lower than one that says why the value
-matters.
+Underneath those, in sentences: what the stored address actually is and why it is
+that value; the lines that prove it, with the numbers; why this read as normal for
+six months instead of as a bug; the tempting form of the same change that must never
+be used and the harm it does; and what this restores and what it still cannot tell
+you.
+
+Write plainly, in sentences. Naming the right line without saying why it produces
+that value is not an answer.
