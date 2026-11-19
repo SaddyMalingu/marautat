@@ -1,7 +1,8 @@
 # Brokered-data targets — the 15-firm pass
 
-**Written:** 2026-11-19 · **Companion to:** `docs/DATA_BROKER_SHORTLIST.md` · **Goal:** 15
-firms that own engineering records, in the six sectors Hashlist's form actually buys
+**Written:** 2026-11-19 · **Companion to:** `docs/BROKERED_DATA_SHORTLIST.md` (targets, the
+ask, expectations) · **Goal:** 15 firms that own engineering records, in the six sectors
+Hashlist's form actually buys
 
 ## The qualifying test (one question, ~30 seconds)
 
