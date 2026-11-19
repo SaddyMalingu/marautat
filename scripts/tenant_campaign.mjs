@@ -20,6 +20,8 @@
  * a person-to-person message, which is exactly what this conversation is.
  */
 import 'dotenv/config';
+import fs from 'fs';
+import path from 'path';
 import { requireSupabaseEnv } from '../utils/supabaseEnv.js';
 import { buildWhatsAppInviteLink } from '../utils/discoveryApprovals.js';
 import {
@@ -153,7 +155,112 @@ if (asCsv) {
   process.exit(0);
 }
 
-console.log(`\n-- Tenant campaign · ${offerLine({ existing: true })} ---`);
+const htmlPath = arg('html', null);
+if (htmlPath) {
+  // The send desk: one page, one button per tenant, ordered so the first message is
+  // the one with a concrete deliverable. Opening it on a laptop gives WhatsApp Web;
+  // on a phone it opens the app. The message sits in a <pre> so Copy is exact — a
+  // mistyped link in a first message is worse than no message.
+  const esc = (v) => String(v == null ? '' : v)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const pin = String(arg('first', '') || '').trim();
+  const ordered = [...rows].sort((a, b) => {
+    const pinned = (r) => (pin && (r.phone.includes(pin) || r.tenant.toLowerCase().includes(pin.toLowerCase())) ? 0 : 1);
+    return pinned(a) - pinned(b) || a.blockers.length - b.blockers.length || a.tenant.localeCompare(b.tenant);
+  });
+
+  const cards = ordered.map((row, i) => {
+    const step = row.steps.find((s) => s.id === (stepFilter || 'activation')) || row.steps[0];
+    const blockers = row.blockers.length ? row.blockers.join(' · ') : 'ready to send';
+    return `
+  <article class="card${i === 0 ? ' first' : ''}">
+    <header>
+      <label><input type="checkbox" data-key="sent-${esc(row.phone)}"> <b>${esc(row.tenant)}</b></label>
+      <span class="meta">${esc(row.contact)} · ${esc(row.phone || 'no phone')} · ${row.products} product(s)</span>
+    </header>
+    <p class="blockers">${esc(blockers)}</p>
+    <pre id="t-${i}">${esc(step.text)}</pre>
+    <div class="actions">
+      ${step.wa ? `<a class="open" href="${esc(step.wa)}" target="_blank" rel="noopener">Open in WhatsApp</a>` : '<span class="open disabled">no phone</span>'}
+      <button class="copy" data-target="t-${i}" type="button">Copy message</button>
+      ${row.portal_url ? `<a class="ghost" href="${esc(row.portal_url)}" target="_blank" rel="noopener">Check their portal</a>` : '<span class="ghost disabled">no portal token</span>'}
+    </div>
+  </article>`;
+  }).join('\n');
+
+  const page = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Send desk · ${esc(offerLine({ existing: true }))}</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin:0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background:#081421; color:#eef5fb; line-height:1.55; }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 24px 18px 60px; }
+  h1 { font-size: 1.35rem; margin: 0 0 6px; }
+  .lede { color:#a9bccd; margin: 0 0 18px; font-size: .95rem; }
+  .bar { display:flex; gap: 12px; align-items:center; flex-wrap:wrap; margin-bottom: 18px; }
+  .count { color:#ffd166; font-weight: 700; }
+  .card { background: rgba(12,26,43,.82); border:1px solid #1e3550; border-radius:14px; padding:16px; margin: 14px 0; }
+  .card.first { border-color:#ff8a00; box-shadow: 0 0 0 2px rgba(255,138,0,.25); }
+  .card.done { opacity:.45; }
+  header { display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; align-items:baseline; }
+  header b { font-size:1.05rem; }
+  .meta { color:#a9bccd; font-size:.82rem; }
+  .blockers { color:#c9b9b9; font-size:.8rem; margin:6px 0 10px; }
+  pre { white-space: pre-wrap; background:#0a1725; border:1px solid #1e3550; border-radius:10px;
+    padding:12px; font-size:.86rem; margin:0; color:#dfe9f3; }
+  .actions { display:flex; gap:10px; margin-top:12px; flex-wrap:wrap; }
+  a.open { background:linear-gradient(90deg,#ff8a00,#ffd166); color:#201000; font-weight:700;
+    text-decoration:none; padding:9px 16px; border-radius:9px; font-size:.9rem; }
+  button.copy { background:#12263c; color:#eef5fb; border:1px solid #2a4767; padding:9px 14px;
+    border-radius:9px; font:inherit; font-size:.9rem; cursor:pointer; }
+  a.ghost { color:#7ef9c8; font-size:.85rem; align-self:center; text-decoration:none; }
+  .disabled { color:#5b7286; }
+</style></head><body><div class="wrap">
+  <h1>Send desk — ${esc(offerLine({ existing: true }))}</h1>
+  <p class="lede">Nothing on this page sends by itself: press <b>Open in WhatsApp</b> and the message is already
+    written; press <b>Copy message</b> to paste it yourself. Ticks are kept in this browser only.</p>
+  <div class="bar"><span class="count" id="progress">0 / ${ordered.length} sent</span>
+    <span class="meta">${pin ? 'Pinned first: ' + esc(pin) + '. Then' : ''} fewest blockers first.</span></div>
+  ${cards}
+</div>
+<script>
+  var boxes = Array.prototype.slice.call(document.querySelectorAll('input[type=checkbox]'));
+  function refresh() {
+    var done = boxes.filter(function (b) { return b.checked; }).length;
+    document.getElementById('progress').textContent = done + ' / ' + boxes.length + ' sent';
+    boxes.forEach(function (b) { b.closest('.card').classList.toggle('done', b.checked); });
+  }
+  boxes.forEach(function (b) {
+    try { b.checked = localStorage.getItem(b.dataset.key) === '1'; } catch (e) {}
+    b.addEventListener('change', function () {
+      try { localStorage.setItem(b.dataset.key, b.checked ? '1' : '0'); } catch (e) {}
+      refresh();
+    });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('button.copy'), function (btn) {
+    btn.addEventListener('click', function () {
+      var el = document.getElementById(btn.dataset.target);
+      var done = function () { btn.textContent = 'Copied'; setTimeout(function () { btn.textContent = 'Copy message'; }, 1400); };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(el.textContent).then(done, function () {
+          window.getSelection().selectAllChildren(el);
+        });
+      } else { window.getSelection().selectAllChildren(el); }
+    });
+  });
+  refresh();
+</script></body></html>`;
+
+  fs.writeFileSync(path.resolve(String(htmlPath)), page, 'utf8');
+  console.log(`Wrote ${ordered.length} message(s) to ${path.resolve(String(htmlPath))}`);
+  console.log('First card: ' + ordered[0].tenant + ' (' + ordered[0].phone + ')');
+  console.log('Nothing was sent. Open the file and press the buttons.');
+  process.exit(0);
+}
+
+
+
 console.log(`   ${rows.length} active tenant(s) · ${OFFER_URL}`);
 console.log('   Read-only. Send from your own WhatsApp; a bot cannot open this conversation.\n');
 

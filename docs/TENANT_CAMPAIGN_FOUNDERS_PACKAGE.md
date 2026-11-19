@@ -30,6 +30,19 @@ npm run tenants:campaign -- --step activation # what to send today
 npm run tenants:campaign -- --csv > tenants.csv
 ```
 
+**The send desk** — one page, one button per tenant, ordered so the first message has a
+concrete deliverable. Nothing on it sends by itself; the tick boxes are kept in the
+browser so you can see what is left.
+
+```powershell
+npm run tenants:campaign -- --step activation --html leads/send_desk.html --first 254713793488
+# then open leads/send_desk.html — each card has "Open in WhatsApp" and "Copy message"
+```
+
+The file carries portal sign-in tokens, so `leads/send_desk_*.html` is git-ignored: delete
+it after the round, and rotate any token that leaks
+(`POST /admin/api/tenants/:id/portal-link`).
+
 ## 3. The five messages, in order
 
 | Day | Step | What it says | What it is for |

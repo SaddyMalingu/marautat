@@ -37,6 +37,7 @@ tmp_inspect/
 # POST /admin/api/tenants/:id/portal-link if one of these leaks.
 leads/tenant_activation_*.md
 leads/tenant_campaign_*.csv
+leads/send_desk_*.html
 
 
 # Packaged task cards (npm run dop:package). Build output, regenerated from dop/tasks,
