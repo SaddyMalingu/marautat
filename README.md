@@ -25,6 +25,19 @@ Alphadome is a blockchain-powered AI platform that transforms 1000 African brand
 
 ---
 
+## Money routine (start here when the goal is revenue today)
+
+```powershell
+npm run money:routine          # who to call, who owes, what to send — read-only
+npm run money:routine:json     # the same facts for another tool
+```
+
+The operating script is [docs/MONEY_ROUTINE_24H.md](./docs/MONEY_ROUTINE_24H.md): two
+calls to people who already asked, the pack link to people already applying, Kassangas on
+a fee — and the rule that a paid order on this deployment is **delivered and owed**, not
+collected (`GET /api/drops/recovery?key=…` is the chase list; `OPEN_FLAGS` #57 explains
+why).
+
 ## Admin Catalog Upload (Dashboard)
 
 This repo contains the Alphadome WhatsApp bot with multi‑tenant routing, product catalog, and portfolio support.
