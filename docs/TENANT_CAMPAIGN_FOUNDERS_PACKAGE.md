@@ -45,33 +45,35 @@ it after the round, and rotate any token that leaks
 
 ### What actually happened on 2026-11-19
 
-Ten messages delivered from **Alphadome +254 786 817637** (quality GREEN) — one test to
-the founder's own number, then nine tenants, each returning a `wamid`:
+**Ten messages accepted, zero delivered.** Meta returned `200` and a `wamid` for each,
+then failed every one minutes later — the status callbacks are in `conversations`:
 
-| Number | Tenant | Result |
+| Number | Tenant | Meta's verdict |
 |---|---|---|
-| 254743780542 | Malingu Ventures (test) | SENT |
-| 254702245555 | Kassangas Music Shop | SENT |
-| 254741859390 | lifeline Inc. | SENT |
-| 254706291262 | joska Sportiff Academy | SENT |
-| 254799721460 | Malingu Global | SENT |
-| 254748621563 | Insight chess club / Coach Dawn 3.0 | SENT (once — deduped) |
-| 254707459359 | Sales and marketing | SENT |
-| 254743383192 | Faraja | SENT |
-| 254759091491 | Malingu shambas | SENT |
-| 254713793488 | Spreadmasters ltd | SENT |
+| 254743780542 | Malingu Ventures (test) | `131042 Business eligibility payment issue` |
+| 254702245555 | Kassangas Music Shop | `131042` |
+| 254741859390 | lifeline Inc. | `131026` — message undeliverable (not on WhatsApp) |
+| 254706291262 | joska Sportiff Academy | `131042` |
+| 254799721460 | Malingu Global | `131042` |
+| 254748621563 | Insight chess club / Coach Dawn 3.0 | `131042` (one message — deduped) |
+| 254707459359 | Sales and marketing | `131042` |
+| 254743383192 | Faraja | `131042` |
+| 254759091491 | Malingu shambas | `131042` |
+| 254713793488 | Spreadmasters ltd | `131042` |
 
-Three findings from the send that change the campaign:
+`131042` = the WhatsApp Business account has **no payment method**. The error carries the
+fix: `business.facebook.com/billing_hub/accounts/details/?business_id=446240825246847&asset_id=2195891014181281&wizard_name=ADD_PM&account_type=whatsapp-business-account`.
+Until a card is on the account, every business-initiated message is accepted and then
+dropped — which is exactly why "no message received" looked like a code problem.
 
-1. **The only approved template is `alphadome`, and it takes no variables.** What was
-   delivered is Meta's fixed wording — no name, no business, **no portal link**. The
-   consequence: personalisation has to happen in the *reply*, not the opener.
-2. **Every reply opens a 24-hour window** in which free-form text is allowed. That is
-   where `utils/founderOffer.js` earns its keep: the personalised message with the portal
-   link, the fee and the three-line price-list format goes to whoever answers.
-3. **One phone can hold two tenant rows** (`254748621563` is both "Insight chess club" and
-   "Coach Dawn 3.0"). The first dry run would have messaged him twice; the sender now
-   dedupes by number.
+Two findings worth keeping:
+
+1. **A `wamid` is not a delivery.** The sender now prints `ACCEPTED` on the API response
+   and, with `--verify`, reads the status callbacks and prints `DELIVERED`/`FAILED` with
+   Meta's code. The first version of this tool said "sent 9 of 9" and none arrived.
+2. **The approved template `alphadome` takes no variables**, so it cannot carry a name or
+   a portal link. Personalisation has to happen in the reply, inside the 24-hour window
+   a reply opens.
 
 Also verified: `WHATSAPP_BUSINESS_ACCOUNT_ID` in `.env` is a **business portfolio id**, not
 a WABA id (`owned_whatsapp_business_accounts` → `403 Requires business_management`), so the

@@ -211,8 +211,13 @@ const send = async (to, body) => graph(`/${PHONE_ID}/messages`, {
   body: JSON.stringify(body)
 });
 
-let sent = 0;
+let sentCount = 0;
 const failed = [];
+// `sent` keeps the wamid with the person, because the verify step has to report a
+// delivery per recipient, not a count. ACCEPTED is what Meta's 200 means; DELIVERED
+// is what the status callback says, and they are not the same thing.
+const sent = [];
+const sentWamids = [];
 for (const person of recipients) {
   const personParams = paramsFor(person);
   const body = {
@@ -237,8 +242,10 @@ for (const person of recipients) {
   const res = await send(person.phone, body);
   const id = res.body.messages?.[0]?.id || null;
   if (res.status === 200 && id) {
-    sent += 1;
-    console.log('   SENT       ' + person.phone + '  ' + person.name + '  (' + id + ')');
+    sentCount += 1;
+    sent.push({ wamid: id, person });
+    sentWamids.push(id);
+    console.log('   ACCEPTED   ' + person.phone + '  ' + person.name + '  (' + id + ')');
   } else {
     const msg = res.body.error?.message || ('HTTP ' + res.status);
     const code = res.body.error?.code || '';
@@ -259,7 +266,52 @@ if (!apply) {
   process.exit(0);
 }
 
-console.log('\n   sent ' + sent + ' of ' + recipients.length + (failed.length ? ', ' + failed.length + ' failed' : ''));
+/**
+ * A wamid is not a delivery.
+ *
+ * On 2026-11-19 ten messages came back `200` with a wamid each and *none* of them
+ * arrived: every one failed minutes later with `131042 Business eligibility payment
+ * issue`. A tool that prints "sent" on the HTTP response is a tool that lies, so this
+ * reads the status callbacks the server already stores and reports what Meta said.
+ */
+const verifySeconds = Number(arg('verify', 45)) || 0;
+if (verifySeconds > 0 && sentWamids.length) {
+  console.log('\n   verifying delivery for ' + verifySeconds + 's (status callbacks land a few seconds apart)…');
+  const deadline = Date.now() + verifySeconds * 1000;
+  const seen = new Map();
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 5000));
+    const { data } = await sb
+      .from('conversations')
+      .select('message_text, raw_payload')
+      .like('message_text', 'WHATSAPP_STATUS:%')
+      .order('created_at', { ascending: false })
+      .limit(500);
+    for (const row of data || []) {
+      const event = row.raw_payload?.whatsapp_status_event;
+      const id = event?.id;
+      if (!id || !sentWamids.includes(id)) continue;
+      seen.set(id, {
+        status: row.raw_payload?.whatsapp_status || String(row.message_text).split(':')[1],
+        code: event?.errors?.[0]?.code || null,
+        title: event?.errors?.[0]?.title || null
+      });
+    }
+    if (sentWamids.every((id) => seen.has(id))) break;
+  }
+  console.log('');
+  let delivered = 0;
+  for (const { wamid, person } of sent) {
+    const s = seen.get(wamid);
+    const label = s ? String(s.status).toUpperCase() : 'NO CALLBACK';
+    if (s && /delivered|read|sent/i.test(label)) delivered += 1;
+    console.log('   ' + label.padEnd(12) + person.phone + '  ' + person.name
+      + (s?.code ? '  [' + s.code + '] ' + (s.title || '') : ''));
+  }
+  console.log('\n   delivered or accepted: ' + delivered + ' of ' + sent.length);
+}
+
+console.log('\n   accepted ' + sentCount + ' of ' + recipients.length + (failed.length ? ', ' + failed.length + ' rejected outright' : ''));
 for (const f of failed) console.log('   - ' + f.phone + ' [' + f.code + '] ' + f.msg);
 console.log('\n   Portal links used in messages come from bot_tenants.portal_token — a tenant');
 console.log('   without one gets a message with no link (see npm run tenants:campaign).\n');
