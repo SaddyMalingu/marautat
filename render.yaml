@@ -63,6 +63,13 @@ services:
     # 2026-11-12: daily, 02:00 UTC. GitHub's schedule was removed because it fired hours
     # late and then not at all; this runs on the same platform as the site it serves.
     # Raise the frequency only after a week of clean runs.
+    #
+    # 2026-11-19: the frequency stays daily on purpose. A run writes up to
+    # BLOG_RUN_LIMIT posts and each post walks ~9 angles, so twelve runs a day would
+    # mean up to 120 posts and ~1,000 provider calls — the free tiers give out by
+    # mid-morning, every later run lands on "AI tier unavailable — copy unchanged",
+    # and the quality gate rejects what does get written. Frequency is the expensive
+    # lever; the canary below is the cheap one.
     schedule: "0 2 * * *"
     buildCommand: echo "no build required"
     # 2026-11-12: runs the queue directly instead of asking a Render Workflow to do it.
@@ -88,4 +95,31 @@ services:
       # How many offers each nightly run writes. 10 is roughly an hour of work.
       - key: BLOG_RUN_LIMIT
         value: "10"
+
+  # ─── The canary that runs every two hours (2026-11-19) ──────────────────────
+  #
+  # The 2026-11-18 failure was found by a person reading a log the next morning. This
+  # is the cheap half of "run it more often": plan-only (no --apply), so it reads the
+  # offers and the blog_posts coverage and prints a plan, and writes nothing.
+  #
+  # It needs only the two credentials the failing query uses, so a passing run also
+  # proves those two are right. Any read failure exits non-zero — including the
+  # URL-size failure that killed the nightly run and arrived as a bare `Bad Request`
+  # before the fix — so Render's cron-failure notification becomes the alarm.
+  #
+  # Cost: no AI calls, under a second of runtime, twelve times a day. Never give this
+  # job --apply; that would turn it into the nightly run with the problems listed above.
+  - type: cron_job
+    name: alphadome-blog-canary
+    runtime: node
+    region: frankfurt
+    branch: main
+    schedule: "0 */2 * * *"
+    buildCommand: echo "no build required"
+    startCommand: node scripts/blog_queue.mjs --limit 1
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
 
