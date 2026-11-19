@@ -146,9 +146,9 @@ This is the honest submission. It is smaller, and it survives review.
 >
 > **Owner:** I own it personally and can sign
 >
-> **Size:** 5 incidents (2 complete as tasks, 3 in progress); 8 evidence files;
-> ~40 KB packaged; each task carries a golden answer, 3 near misses, 8 scored steps
-> and an offline grader
+> **Size:** 3 incidents, each complete as a task (8 scored steps, 19 points); 8 evidence
+> files; ~62 KB packaged; every task carries a golden answer, 2–3 near misses and an
+> offline grader; 2 further incidents recorded and queued
 >
 > **Produced from:** 2026-02 · **Produced to:** 2026-11
 >
