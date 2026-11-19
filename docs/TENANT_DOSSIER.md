@@ -102,7 +102,36 @@ npm run test:tenant-dossier                       # 30 checks, no database neede
 The CLI calls the **same** `loadDossier()` the reply path uses, so what it prints is what
 the bot sees — not a second implementation that could drift.
 
-## 6 · Writer's Flow outreach — a conversation with a brake
+## 4 · Reach — did the pages earn anything?
+
+Attribution cost one discovery: **`blog_posts.tenant_id` points at `site_tenants`, not
+`bot_tenants`.** The dossier was asking the wrong table and reporting *"0 published page(s)"*
+for a business with 445 posts. The loader now resolves the site tenant by phone once and uses
+its id for everything content-shaped (posts, offers, enquiries).
+
+With that fixed, Malingu Ventures reads:
+
+```
+Content: 200 published page(s) — Applying for Legal Expert… · The Portfolio a Legal Expert…
+         · What the Assessment Asks For… · +197 more · newest today
+Live offers behind those pages: 56.
+Reach (7 days): 256 view(s) · 35 click(s) · 34 apply click(s) · 1 pack click(s) · 0 enquir(ies)
+Next actions: … readers are arriving and nothing converts — take one order end to end
+```
+
+That last line is the point. Views are pair-recorded with what the reader did, and when
+traffic arrives with no order behind it, the block says so instead of congratulating anyone.
+
+Attribution is bounded: the 60 most recent published slugs, `/blog/<slug>` and its `.html`
+twin, seven days, 2,000 click rows. Older posts are excluded rather than costing a slow query
+on every message.
+
+## 5 · The 24-hour hunt
+
+`npm run hunt` ranks today's revenue actions from live data — unanswered humans first, then
+clicks without a purchase, then stock without an order, then approved leads without a portal
+link, then empty shelves, then the fee. Read-only; it never sends.
+
 
 The ask: *"it should be clear — not just running. It must seek clarification and tell the user
 what is about to happen for approval."* `utils/wfOutreach.js` is a pure state machine that the

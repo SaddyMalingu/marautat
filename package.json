@@ -80,6 +80,8 @@
     "drops:outreach": "node scripts/build_page_outreach.mjs",
     "money:routine": "node scripts/money_routine.mjs",
     "money:routine:json": "node scripts/money_routine.mjs --json",
+    "hunt": "node scripts/revenue_hunt.mjs",
+    "hunt:json": "node scripts/revenue_hunt.mjs --json",
     "tenants:campaign": "node scripts/tenant_campaign.mjs",
     "tenant:dossier": "node scripts/tenant_dossier.mjs",
     "test:tenant-dossier": "node scripts/test_tenant_dossier.mjs",

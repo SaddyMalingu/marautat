@@ -69,6 +69,7 @@ export function buildDossier({
   posts = null,
   offers = null,
   discovery = null,
+  reach = null,
   now = new Date()
 } = {}) {
   const lines = [];
@@ -180,6 +181,22 @@ export function buildDossier({
     lines.push('Live offers behind those pages: ' + count(offers.published) + '.');
   }
 
+  // ---- reach ----------------------------------------------------------------
+  // Views are worthless without the next step, so the line always pairs them with what
+  // the reader did — and says plainly when traffic arrived and nothing converted.
+  if (reach && (Number.isFinite(Number(reach.views)) || Number.isFinite(Number(reach.clicks)))) {
+    const parts = [];
+    if (Number.isFinite(Number(reach.views))) parts.push(count(reach.views) + ' view(s)');
+    if (Number.isFinite(Number(reach.clicks))) parts.push(count(reach.clicks) + ' click(s)');
+    if (reach.apply) parts.push(count(reach.apply) + ' apply click(s)');
+    if (reach.kit) parts.push(count(reach.kit) + ' pack click(s)');
+    if (Number.isFinite(Number(reach.enquiries))) parts.push(count(reach.enquiries) + ' enquir(ies)');
+    lines.push('Reach (7 days): ' + (parts.join(' · ') || 'nothing recorded'));
+    if (Number(reach.views) > 0 && orders && Number(orders.count) === 0) {
+      gaps.push('readers are arriving and nothing converts — take one order end to end on the busiest page');
+    }
+  }
+
   // ---- what to do next ------------------------------------------------------
   // The bot's most useful sentence is not a number, it is the next action — and the gaps
   // are the only reason to have read any of the above.
@@ -288,6 +305,22 @@ export async function loadDossier(sb, tenant, { now = new Date(), ttlMs = DOSSIE
     };
   });
 
+  // Content is owned by `site_tenants`, not `bot_tenants`: 445 posts sat under a site
+  // tenant while this dossier reported "0 published page(s)" for the same business, because
+  // the two registries share a customer but not an id (found 2026-11-19). Resolve the site
+  // tenant once, by phone, and use its id for anything content-shaped.
+  const siteTenant = await read(async () => {
+    const phone = String(tenant.client_phone || '').replace(/\D/g, '').slice(-9);
+    if (!phone) return null;
+    const { data, error } = await sb
+      .from('site_tenants')
+      .select('id, slug, name, client_phone')
+      .limit(200);
+    if (error) return null;
+    return (data || []).find((r) => String(r.client_phone || '').replace(/\D/g, '').slice(-9) === phone) || null;
+  });
+  const contentOwnerId = siteTenant?.id || tenant.id;
+
   const leads = await read(async () => {
     if (!campaigns || !campaigns.ids?.length) return null;
     const { data, error } = await sb
@@ -307,7 +340,7 @@ export async function loadDossier(sb, tenant, { now = new Date(), ttlMs = DOSSIE
     const { data, error } = await sb
       .from('blog_posts')
       .select('id, title, slug, status, created_at')
-      .eq('tenant_id', tenant.id)
+      .eq('tenant_id', contentOwnerId)
       .order('created_at', { ascending: false })
       .limit(200);
     if (error) return null;
@@ -316,7 +349,38 @@ export async function loadDossier(sb, tenant, { now = new Date(), ttlMs = DOSSIE
     return {
       published: published.length,
       titles: published.map((r) => r.title).filter(Boolean),
+      slugs: published.map((r) => r.slug).filter(Boolean),
       newest_at: published[0]?.created_at || null
+    };
+  });
+
+  // ---- reach: did the pages the engine wrote actually get read? -------------
+  // This is the fact an owner pays for. It needs the tenant's own page paths, so it can
+  // only be answered after the posts are known — and only for the pages we can attribute
+  // (`/blog/<slug>` and its `.html` twin, which is how the corpus is served).
+  const reach = await read(async () => {
+    const slugs = (posts?.slugs || []).slice(0, 60);
+    if (!slugs.length) return null;
+    const paths = [];
+    for (const slug of slugs) {
+      paths.push('/blog/' + slug);
+      paths.push('/blog/' + slug + '.html');
+    }
+    const since = new Date(Date.now() - 7 * 86400000).toISOString();
+    const [views, clicks, enquiries] = await Promise.all([
+      sb.from('analytics_page_views').select('id', { count: 'exact', head: true })
+        .in('page_path', paths).gte('created_at', since),
+      sb.from('analytics_clicks').select('id, click_type').in('page_path', paths).gte('created_at', since).limit(2000),
+      sb.from('opportunity_events').select('id', { count: 'exact', head: true })
+        .eq('tenant_id', contentOwnerId).eq('event_type', 'apply_click').gte('created_at', since)
+    ]);
+    const clickRows = clicks.data || [];
+    return {
+      views: views.error ? null : (views.count || 0),
+      clicks: clicks.error ? null : clickRows.length,
+      apply: clickRows.filter((c) => c.click_type === 'apply').length,
+      kit: clickRows.filter((c) => c.click_type === 'kit_offer').length,
+      enquiries: enquiries.error ? null : (enquiries.count || 0)
     };
   });
 
@@ -325,7 +389,7 @@ export async function loadDossier(sb, tenant, { now = new Date(), ttlMs = DOSSIE
     const { count, error } = await sb
       .from('opportunities')
       .select('id', { count: 'exact', head: true })
-      .eq('tenant_id', tenant.id)
+      .eq('tenant_id', contentOwnerId)
       .eq('status', 'published');
     if (error) return null;
     return { published: count || 0 };
@@ -363,6 +427,7 @@ export async function loadDossier(sb, tenant, { now = new Date(), ttlMs = DOSSIE
     posts,
     offers,
     discovery,
+    reach,
     now
   });
   cache.set(tenant.id, { at: Date.now(), value });
