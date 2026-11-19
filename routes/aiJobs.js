@@ -33,6 +33,7 @@ import {
 } from '../utils/aiJobsViews.js';
 import { renderOfferPage } from '../utils/aiJobsViewsOpp.js';
 import { trackPageView, trackClick, pagePathFromReferrer } from '../utils/analytics.js';
+import { ctaOfferConfig } from '../utils/ctaBlock.js';
 
 const router = Router();
 
@@ -213,6 +214,28 @@ export function offerUnavailablePage(title, backHref) {
     '<p><a href="' + esc(back) + '">&larr; Back to what you were reading</a> &nbsp;·&nbsp; ' +
     '<a href="/ai-jobs">Browse other opportunities</a></p>' +
     '</div></body></html>';
+}
+
+// GET /go/kit — the application pack offered under the Apply button (2026-11-19).
+//
+// A reader who presses the pack link is recorded as `kit_offer` against the page
+// that earned it, then sent to the product page. It is a plain 302, exactly like
+// /go/:id: no wrapper URL, no interstitial, no added friction for the reader who
+// would rather apply.
+//
+// It must be mounted BEFORE /go/:id in server.js, or `kit` is read as an offer id
+// and the reader gets "applications are not open yet" — the same class of mistake
+// as the named route that sat behind a wildcard in routes/drops.js.
+//
+// Nothing is served if the offer is switched off (CTA_OFFER_OFF), so a stale link
+// in a page that has not been rebuilt yet degrades to the jobs board.
+export async function handleKitOfferClick(req, res) {
+  const cfg = ctaOfferConfig(process.env);
+  if (!cfg.enabled) return res.redirect(302, '/ai-jobs');
+  const from = pagePathFromReferrer(req, '/go/kit') || '/ai-jobs';
+  trackClick(from, 'kit_offer', req).catch(() => {});
+  const query = '?from=' + encodeURIComponent(from);
+  return res.redirect(302, '/drops/' + encodeURIComponent(cfg.slug) + query);
 }
 
 // GET /go/:id and GET /ai-jobs/apply/:id — count the click, then send the reader on.

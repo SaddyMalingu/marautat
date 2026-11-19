@@ -412,9 +412,14 @@ ok('the router declares at least a dozen routes', dropsPaths.length >= 12, Strin
 const otherRouters = fs.readdirSync(path.join(root, 'routes'))
   .filter((f) => f.endsWith('.js') && f !== 'drops.js')
   .map((f) => ({ file: f, src: read('routes/' + f) }));
+// The rule is "nobody else *serves* these paths", not "no file may name them".
+// A router that redirects a reader *to* /drops/<slug> is a link, not a shadow —
+// aiJobs does exactly that for the application pack since 2026-11-19 — so what is
+// matched here is a route declaration.
+const DROPS_ROUTE_DECL = /(?:router|app)\.(?:get|post|put|patch|delete|use)\(\s*['"]\/(?:drops|build)(?:['"/]|$)/;
 ok('no other router serves /drops or /build',
-  otherRouters.every((r) => !/['"]\/(drops|build)(['"/]|$)/.test(r.src)),
-  otherRouters.filter((r) => /['"]\/(drops|build)(['"/]|$)/.test(r.src)).map((r) => r.file).join(', '));
+  otherRouters.every((r) => !DROPS_ROUTE_DECL.test(r.src)),
+  otherRouters.filter((r) => DROPS_ROUTE_DECL.test(r.src)).map((r) => r.file).join(', '));
 ok('server.js has no catch-all route that could swallow /drops',
   !/app\.(?:get|use)\(\s*['"]\*['"]/.test(server) && !/app\.get\(\s*['"]\/:/.test(server));
 ok('the drops router still reuses the single STK implementation', /initiateStkPush,/.test(server));

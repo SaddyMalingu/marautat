@@ -149,6 +149,14 @@ export function pageNeedsRebuild(state) {
   if (needsClosingBlock(s)) return { rebuild: true, reason: 'no closing block' };
   if (repeatsFallbackNote(s)) return { rebuild: true, reason: 'repeated fallback note' };
   if (usesUnmeteredLink(s)) return { rebuild: true, reason: 'unmetered provider link' };
+  // 2026-11-19: pages written before the application-pack line existed carry a
+  // closing block that is already valid, so nothing above would rewrite them and
+  // the corpus would never gain the offer. The caller passes `expectOffer` from
+  // `offerShowsKit()` — the same predicate the template uses — so this converges:
+  // a rebuilt page carries the line and stops being flagged.
+  if (state && state.expectOffer && !hasOfferLine(s)) {
+    return { rebuild: true, reason: 'no application pack offer' };
+  }
   return { rebuild: false, reason: 'current' };
 }
 
@@ -219,6 +227,87 @@ export function ctaLabel(offer) {
 }
 
 /**
+ * The application pack that rides on the closing block (2026-11-19).
+ *
+ * The measured problem: ~930 recorded Apply clicks and 567 `apply_click` events
+ * left the site for a marketplace, and this side earned nothing at the moment of
+ * intent — the referral reaches us weeks later, if at all. A reader who has
+ * scrolled to the end of a job page is the one person on that page who is already
+ * deciding to apply, so the offer belongs there, next to the button.
+ *
+ * What this deliberately is **not**: an interstitial. The primary button keeps its
+ * exact destination (`/go/<id>` → the provider's URL, unchanged), the reader is
+ * never delayed, and nothing auto-redirects. The pack is a second line under the
+ * button, so a reader who ignores it loses nothing.
+ *
+ * Only job pages carry it (the pack finishes an *application*), and a tenant's own
+ * pages only carry it when that tenant is named in `CTA_OFFER_TENANTS` — a client's
+ * blog must never advertise our product as if it were theirs. Today the corpus is
+ * rendered for the platform's own tenant, and `scripts/blogManager.js` passes the
+ * slug when it has one.
+ */
+export const CTA_OFFER = Object.freeze({
+  slug: 'ai-work-application-kit',
+  priceKes: 1500,
+  label: 'The AI Work Application Kit',
+  line: 'the written pack that gets an application finished instead of abandoned'
+});
+
+export function ctaOfferConfig(env = process.env) {
+  const e = env || {};
+  const off = String(e.CTA_OFFER_OFF || '').toLowerCase();
+  const enabled = !(off === '1' || off === 'true' || off === 'on');
+  const slug = String(e.CTA_OFFER_SLUG || CTA_OFFER.slug).trim();
+  const price = Number(e.CTA_OFFER_PRICE_KES || CTA_OFFER.priceKes);
+  const tenants = String(e.CTA_OFFER_TENANTS || 'malingu-ventures')
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  return {
+    enabled: enabled && Boolean(slug),
+    slug,
+    priceKes: Number.isFinite(price) && price > 0 ? price : CTA_OFFER.priceKes,
+    label: String(e.CTA_OFFER_LABEL || CTA_OFFER.label),
+    tenants
+  };
+}
+
+/**
+ * Should this offer carry the pack line?
+ *
+ * This is the same answer the template and the rebuild predicate need, in one
+ * place: a template that emits what the predicate calls missing rewrites every
+ * page on every boot (`test:boot-convergence` exists because that happened).
+ */
+export function offerShowsKit(offer, opts = {}) {
+  if (!offer) return false;
+  const cfg = ctaOfferConfig((opts && opts.env) || process.env);
+  if (!cfg.enabled) return false;
+  if (type(offer) !== 'job') return false;
+  const tenant = String((opts && opts.tenantSlug) || '').trim().toLowerCase();
+  if (tenant && !cfg.tenants.includes(tenant)) return false;
+  return true;
+}
+
+const KIT_LINE = 'class="cta-offer"';
+
+/** Is the pack line already on this stored page? */
+export function hasOfferLine(html) {
+  return String(html || '').includes(KIT_LINE);
+}
+
+/** The line under the primary button. Empty when the offer does not carry it. */
+export function ctaOfferLine(offer, opts = {}) {
+  if (!offerShowsKit(offer, opts)) return '';
+  const cfg = ctaOfferConfig((opts && opts.env) || process.env);
+  const from = offer && offer.slug ? String(offer.slug) : '';
+  const href = '/go/kit' + (from ? '?from=' + encodeURIComponent(from) : '');
+  return '<p ' + KIT_LINE + '>Not ready to apply? '
+    + '<a class="cta-offer-link" href="' + esc(href) + '">' + esc(cfg.label) + ' — KES '
+    + esc(cfg.priceKes.toLocaleString('en-KE')) + '</a> is ' + esc(CTA_OFFER.line) + '.</p>';
+}
+
+/**
  * The full closing block: heading, one line of substance, the readiness list,
  * and the button. `variant: 'top'` is the compact version that sits above the
  * article, so a reader who never scrolls still has a way out that converts.
@@ -261,5 +350,8 @@ export function ctaBlock(offer, opts) {
     (facts ? '<p class="cta-facts">' + esc(facts) + '</p>' : '') +
     '<p>' + after + '</p>' +
     readinessCard(offer) +
-    button + '</div>';
+    button +
+    // The pack sits under the button, never in front of it (2026-11-19).
+    ctaOfferLine(offer, options) +
+    '</div>';
 }

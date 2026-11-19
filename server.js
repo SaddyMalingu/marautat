@@ -74,7 +74,7 @@ import {
   stkReadinessMessage,
 } from "./utils/scanPay.js";
 
-import aiJobsRouter, { handleOfferClick } from "./routes/aiJobs.js";
+import aiJobsRouter, { handleOfferClick, handleKitOfferClick } from "./routes/aiJobs.js";
 // Tenant portal session tokens carry their own signature so a session can
 // outlive the process that issued it (every deploy restarts the server).
 import { TENANT_SESSION_COOKIE, signTenantSession, verifyTenantSession, tenantSessionSecret } from "./utils/tenantSession.js";
@@ -651,6 +651,13 @@ app.get('/blog/:slug', async (req, res) => {
 
 // AI Jobs & Mercor Referral Engine routes
 app.use('/ai-jobs', aiJobsRouter);
+
+// GET /go/kit — the application pack offered under the Apply button (2026-11-19).
+// Mounted BEFORE /go/:id on purpose: Express matches in order, and `/go/kit` would
+// otherwise be read as an offer whose id is "kit" and answered with "applications
+// are not open yet". It redirects straight to the product page, after recording
+// the click as a `kit_offer` against the page that earned it.
+app.get('/go/kit', handleKitOfferClick);
 
 // GET /go/:id — the link every blog CTA carries.
 //

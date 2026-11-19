@@ -49,12 +49,15 @@ export const WORK_ANDA_AGENTS = Object.freeze([
 ]);
 
 /**
- * The queue: agents asked for, not yet built (2026-11-19).
+ * The queue: agents asked for, and what happened to them (2026-11-19).
  *
  * A card here is a yes to "should this be an agent", not a claim that it works. It is
  * the same shape as OF Chatter — a worker that acts on a site, on one tenant's behalf,
  * and stops where a human has to be the one to act — which is why it is queued beside
  * it rather than built as a separate mechanism.
+ *
+ * A shipped card stays in the list with its date, because the guardrails that were
+ * agreed before the build are the ones a later change has to keep honouring.
  *
  * The reason each card names its guardrails: an agent that touches a tenant's account
  * is spending their identity and their reputation, so the limits are part of the
@@ -66,9 +69,10 @@ export const WORK_ANDA_QUEUE = Object.freeze([
     name: 'Offer Intercept',
     site: 'alphadome.onrender.com',
     builtFor: 'the platform itself',
-    status: 'queued',
+    status: 'shipped',
     queuedAt: '2026-11-19',
-    summary: 'When a reader presses Apply on an offer page, the free Preflight pack and the KES 1,500 kit are offered before the redirect leaves the site.',
+    shippedAt: '2026-11-19',
+    summary: 'Shipped: a job page now carries the application pack under its Apply button, and /go/kit records the click. The reader is never delayed — the Apply button keeps its exact destination.',
     why: 'Every Apply click today 302s to the provider: the reader leaves, the platform earns nothing at the moment of intent, and the referral pays a commission weeks later, if at all.',
     guardrails: [
       'One handler and one template. No change to any tenant\'s account, credentials or published pages.',

@@ -217,6 +217,56 @@ the audit cannot pass by being blind.
 
 1. No published article's page is ever deleted. The prune keeps a file for every
    published row (`written` is built from all of them, not only the rebuilt
+
+---
+
+## The application pack under the Apply button (2026-11-19)
+
+**The measured problem.** `analytics_clicks` holds 932 `apply` clicks in its most recent
+1,000 rows, and `opportunity_events` 567 `apply_click` events, newest the day this was
+written. Every one of those readers left for a marketplace. The referral pays a
+commission weeks later, if the person is hired at all — so at the moment of intent, the
+most valuable moment the funnel has, this side earned nothing.
+
+**What shipped.** A job page's closing block now carries one extra line under the primary
+button:
+
+```html
+<a class="cta-btn" href="/go/o1">Apply now</a>
+<p class="cta-offer">Not ready to apply?
+  <a class="cta-offer-link" href="/go/kit?from=<offer-slug>">The AI Work Application Kit — KES 1,500</a>
+  is the written pack that gets an application finished instead of abandoned.</p>
+```
+
+`/go/kit` records the click as `kit_offer` against the page that earned it, then 302s to
+`/drops/ai-work-application-kit`. It is mounted **before** `/go/:id` in `server.js`,
+because `kit` would otherwise be read as an offer id and answered with "applications are
+not open yet".
+
+**What it deliberately is not.** An interstitial. The Apply button keeps its exact
+destination (`/go/<id>` → the provider's URL, unchanged), nothing is delayed, nothing
+auto-redirects, and a reader who ignores the line loses nothing. The guardrail was
+written on the Work_Anda card before the build; the test suite enforces it
+(`the Apply button is still the tracked hop and comes first`).
+
+**Switches.** `CTA_OFFER_OFF=1` removes the line (and a stale link degrades to
+`/ai-jobs`); `CTA_OFFER_SLUG` / `CTA_OFFER_PRICE_KES` / `CTA_OFFER_LABEL` change what is
+offered; `CTA_OFFER_TENANTS` (default `malingu-ventures`) is the allowlist — a client's
+pages must never carry our pack, and a future multi-tenant caller passes `tenantSlug` to
+be refused.
+
+**How the corpus gets it.** Pages written before today have a valid closing block with no
+pack line, so nothing in `pageNeedsRebuild()` would have touched them. The predicate now
+takes `expectOffer` from `offerShowsKit()` — the same function the template uses — and
+`restoreFromDB()` passes it. The boot after this deploy rebuilds job pages once, logs
+`no application pack offer`, and converges: `test:boot-convergence` and
+`test:go-redirect` prove the second boot rebuilds nothing.
+
+**How the result is read.** `analytics_clicks` where `click_type = 'kit_offer'`, against
+`page_path`, beside the `apply` clicks from the same page. If the pack line earns nothing
+in two weeks of the existing traffic, the offer is wrong, not the placement — and
+`CTA_OFFER_OFF=1` ends the experiment in one deploy without touching a page.
+
    ones) and only removes files that no published post owns.
 2. The footer rebuild can be switched off entirely with
    `BLOG_REBUILD_STALE_PAGES=off`. With it off, the restore still repairs pages

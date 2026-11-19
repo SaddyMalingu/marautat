@@ -350,16 +350,23 @@ function fakeTableFactory() {
   ok('the queue carries the offer intercept', queued.some((c) => c.id === 'offer-intercept'));
   ok('the queue carries the chatter co-pilot', queued.some((c) => c.id === 'of-chatter-copilot'));
   ok('the queue carries the task console', queued.some((c) => c.id === 'hashlist-console'));
-  ok('every queued card has a stop line, because that is what a worker may not cross',
+  ok('a shipped card says so, and when', (() => {
+    const oi = queued.find((c) => c.id === 'offer-intercept');
+    return oi.status === 'shipped' && Boolean(oi.shippedAt);
+  })());
+  ok('a card that is not built is never shown as shipped',
+    queued.filter((c) => c.status !== 'shipped').every((c) => !c.shippedAt));
+  ok('every card has a stop line, because that is what a worker may not cross',
     queued.every((c) => typeof c.stopsAt === 'string' && c.stopsAt.length > 20));
-  ok('every queued card has guardrails', queued.every((c) => Array.isArray(c.guardrails) && c.guardrails.length >= 3));
+  ok('every card has guardrails', queued.every((c) => Array.isArray(c.guardrails) && c.guardrails.length >= 3));
   const copilot = queued.find((c) => c.id === 'of-chatter-copilot');
   ok('the co-pilot drafts and the human sends', /drafts/i.test(copilot.summary) && /human pressing send/i.test(copilot.stopsAt));
   ok('the co-pilot names the line it will not cross', /never sent unattended|never pretends/i.test(copilot.guardrails.join(' ')));
   const card = queued.find((c) => c.id === 'offer-intercept');
-  ok('a queued card is never sold as available', card.status === 'queued');
-  ok('a queued card says what it would do', /Preflight|Apply/i.test(card.summary));
-  ok('a queued card says why it is worth building', card.why.length > 40);
+  ok('a card is either queued or shipped with a date, never both',
+    queued.every((c) => (c.status === 'queued' && !c.shippedAt) || (c.status === 'shipped' && Boolean(c.shippedAt))));
+  ok('a card says what it would do', /Apply|Preflight|Shipped/i.test(card.summary));
+  ok('a card says why it is worth building', card.why.length > 40);
   ok('a queued card names the line it will not cross',
     Array.isArray(card.guardrails) && card.guardrails.length >= 3 && /read-only/i.test(card.guardrails.join(' ')));
   ok('a queued card names where the worker stops', /reader/i.test(card.stopsAt));

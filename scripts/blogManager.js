@@ -24,7 +24,7 @@ import { analyzeArticle, qualityBrief, describeQuality } from '../utils/blogQual
 // lines — "Ready to Start? / This opportunity is available now. / [Apply Now]" —
 // on a job, a product and a course alike, linking to a redirect that 404s when
 // the offer has no destination. utils/ctaBlock.js writes it from the offer.
-import { ctaBlock, pageNeedsRebuild } from '../utils/ctaBlock.js';
+import { ctaBlock, pageNeedsRebuild, offerShowsKit } from '../utils/ctaBlock.js';
 // The prune/index rules for the boot restore, kept pure so they are testable.
 import { isTestArtifact, orphanPageFiles, indexIsStale } from '../utils/blogIndex.js';
 
@@ -91,6 +91,13 @@ export async function restoreFromDB() {
       // copies html_content byte-for-byte on every boot. Rebuild it from the
       // stored article body instead, and persist the repair.
       const audit = auditBlogHTML(html);
+      // The offer row this page sells, resolved before the decision because the
+      // decision now depends on it: pages written before 2026-11-19 have a valid
+      // closing block with no application-pack line, and nothing else would make
+      // the restore pick them up.
+      const offerForPage = post.opportunity_id
+        ? (offers.get(post.opportunity_id) || { id: post.opportunity_id })
+        : null;
       // Why this page needs rebuilding — the closing-block rules (old footer, no
       // block at all, a block with nothing to press) and the readability audit
       // both live in pageNeedsRebuild(), because the repair script and the
@@ -102,12 +109,12 @@ export async function restoreFromDB() {
         // Kill switch: BLOG_REBUILD_STALE_PAGES=off keeps every page exactly as
         // stored and only repairs pages that fail the readability audit.
         mayRebuildFooter: process.env.BLOG_REBUILD_STALE_PAGES !== 'off',
+        // The same predicate the template uses, so the rebuild converges.
+        expectOffer: offerShowsKit(offerForPage),
       });
       if (decision.rebuild && post.content) {
         try {
-          const offer = post.opportunity_id
-            ? (offers.get(post.opportunity_id) || { id: post.opportunity_id })
-            : null;
+          const offer = offerForPage;
           const fixed = buildHTML({
             title: post.title || post.slug,
             slug: post.slug,

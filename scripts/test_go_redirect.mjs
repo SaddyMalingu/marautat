@@ -22,7 +22,7 @@
  * Usage: npm run test:go-redirect
  */
 import fs from 'fs';
-import { ctaTarget, ctaBlock, usesUnmeteredLink, pageNeedsRebuild } from '../utils/ctaBlock.js';
+import { ctaTarget, ctaBlock, usesUnmeteredLink, pageNeedsRebuild, hasOfferLine, offerShowsKit } from '../utils/ctaBlock.js';
 import { offerMeta } from '../utils/aiJobsService.js';
 
 let pass = 0, fail = 0;
@@ -129,6 +129,62 @@ ok('a rebuilt page is not flagged again — the migration converges',
   !usesUnmeteredLink(rebuilt) && pageNeedsRebuild({ html: rebuilt, auditOk: true }).rebuild === false);
 ok('an external link inside the article body does not trigger a rebuild',
   !usesUnmeteredLink('<article><p>See https://source.example/study</p><a href="https://source.example/x">source</a></article>'));
+
+// ---- 6. The application pack under the button (2026-11-19) ----------------
+// Its whole reason for existing: 930 Apply clicks left for a marketplace and this
+// side earned nothing at the moment of intent. The rule it must not break is that
+// the Apply button still goes exactly where it went before, with nothing in front
+// of it — no interstitial, no countdown, no redirect.
+{
+  const job = { id: 'o1', slug: 'stem-expert', title: 'STEM Expert', offer_type: 'job', referral_url: coded };
+  const block = ctaBlock(job);
+
+  ok('a job page carries the pack line', hasOfferLine(block));
+  ok('the pack link is tracked, so the click is countable', /href="\/go\/kit\?from=stem-expert"/.test(block));
+  ok('the pack is named with its price', /AI Work Application Kit/.test(block) && /KES 1,500/.test(block));
+  ok('the Apply button is still the tracked hop and comes first',
+    block.indexOf('class="cta-btn"') > -1 && block.indexOf('class="cta-btn"') < block.indexOf('cta-offer'));
+  ok('the Apply button was not rewritten', /class="cta-btn" href="\/go\/o1"/.test(block));
+  ok('nothing auto-redirects: there is no meta refresh or script',
+    !/http-equiv="refresh"|<script/i.test(block));
+
+  ok('a product page does not carry the pack', !hasOfferLine(ctaBlock({ id: 'p1', title: 'Desk', offer_type: 'product' })));
+  ok('a course page does not carry the pack', !hasOfferLine(ctaBlock({ id: 'c1', title: 'Course', offer_type: 'course' })));
+  ok('the kill switch removes it', !hasOfferLine(ctaBlock(job, { env: { CTA_OFFER_OFF: '1' } })));
+  ok('the kill switch accepts true', !hasOfferLine(ctaBlock(job, { env: { CTA_OFFER_OFF: 'true' } })));
+  ok('a tenant outside the allowlist is not sold our pack',
+    !offerShowsKit(job, { tenantSlug: 'someone-elses-shop' }));
+  ok('the platform tenant is allowed', offerShowsKit(job, { tenantSlug: 'malingu-ventures' }));
+  ok('a configured product slug is used instead', /\/go\/kit\?from=stem-expert/.test(
+    ctaBlock(job, { env: { CTA_OFFER_SLUG: 'another-kit' } })));
+
+  // The predicate and the template have to agree, or the boot rewrites these pages
+  // on every deploy. `rebuiltPage` is what the template now produces.
+  const rebuiltPage = '<article><p>' + 'word '.repeat(60) + '</p></article>' + block;
+  ok('a page without the pack line is rebuilt, for a reason the log prints',
+    pageNeedsRebuild({ html: rebuilt, auditOk: true, expectOffer: true }).reason === 'no application pack offer');
+  ok('…and stops being rebuilt once it carries one',
+    pageNeedsRebuild({ html: rebuiltPage, auditOk: true, expectOffer: true }).rebuild === false);
+  ok('a product page is never flagged for the pack', pageNeedsRebuild({
+    html: '<article><p>' + 'word '.repeat(60) + '</p></article>'
+      + ctaBlock({ id: 'p1', title: 'Desk', offer_type: 'product' }),
+    auditOk: true,
+    expectOffer: false
+  }).rebuild === false);
+}
+
+// ---- 7. The kit route is mounted where it can actually be reached ----------
+{
+  const { readFileSync } = await import('fs');
+  const routesSrc = readFileSync('routes/aiJobs.js', 'utf8');
+  ok('the kit handler records its own click type',
+    /handleKitOfferClick[\s\S]{0,400}trackClick\(from, 'kit_offer', req\)/.test(routesSrc));
+  ok('a switched-off offer sends the reader to the jobs board, not to a dead link',
+    /if \(!cfg\.enabled\) return res\.redirect\(302, '\/ai-jobs'\)/.test(routesSrc));
+  ok('the kit route is mounted before /go/:id, or "kit" is read as an offer id',
+    serverSrc.indexOf("app.get('/go/kit'") > -1
+    && serverSrc.indexOf("app.get('/go/kit'") < serverSrc.indexOf("app.get('/go/:id'"));
+}
 
 // The offer page must keep the job's structure. Descriptions were a single <p>, so a
 // 2,000-character job rendered as one run-on paragraph and read as "no detail" — which
