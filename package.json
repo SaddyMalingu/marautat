@@ -88,6 +88,7 @@
     "test:assistant-context": "node scripts/test_assistant_context.mjs",
     "catalog:import": "node scripts/catalog_import.mjs",
     "wa:send": "node scripts/whatsapp_send.mjs",
+    "wa:window": "node scripts/wa_window.mjs",
     "test:catalog-import": "node scripts/test_catalog_import.mjs",
     "test:founder-offer": "node scripts/test_founder_offer.mjs",
     "deploy:check": "node scripts/deploy_check.mjs",
