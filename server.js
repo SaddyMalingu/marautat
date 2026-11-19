@@ -46,6 +46,8 @@ import { insertWfCampaign, describeWfCampaignError } from "./utils/wfCampaigns.j
 // Display-only voice info for the tenant portal, and the profile list the voice
 // picker offers. The prompt block itself stays on the server.
 import { resolveTenantVoice, listVoiceProfiles, VOICE_PROFILES } from "./utils/tenantVoice.js";
+// What a tenant owner may ask about: their own business, read live and cached (2026-11-19).
+import { loadDossier, isOwnerPhone } from "./utils/tenantDossier.js";
 // The blog index must never advertise a verifier's own page, whichever generator
 // builds it (this route, or updateIndex() in scripts/blogManager.js).
 import { isTestArtifact } from "./utils/blogIndex.js";
@@ -7541,6 +7543,29 @@ function getPaymentAmount(plan = "Monthly", level = 1) {
 }
 
 // ========== MULTI-TENANT SUPPORT: Load Tenant Context ==========
+async function findTenantByOwnerPhone(phone) {
+  const digits = String(phone || "").replace(/\D/g, "");
+  if (!digits) return null;
+  const candidates = [...new Set([
+    digits,
+    digits.startsWith("254") ? `0${digits.slice(3)}` : null,
+    digits.startsWith("0") ? `254${digits.slice(1)}` : null,
+    digits.length === 9 ? `254${digits}` : null,
+  ].filter(Boolean))];
+  try {
+    const { data, error } = await supabase
+      .from("bot_tenants")
+      .select("*")
+      .or(candidates.map((c) => `client_phone.eq.${c},point_of_contact_phone.eq.${c}`).join(","))
+      .order("updated_at", { ascending: false })
+      .limit(5);
+    if (error) return null;
+    return (data || []).find(isTenantRecordActive) || null;
+  } catch {
+    return null;
+  }
+}
+
 async function loadTenantContext(req, res, next) {
   try {
     // Get the business phone number/ID that RECEIVED the message (not the sender)
@@ -7573,8 +7598,23 @@ async function loadTenantContext(req, res, next) {
       toLocalKe(normalizedBusinessPhone),
     ].filter(Boolean))];
 
-    // If the destination number is Alphadome, do not load any tenant
+    // If the destination number is Alphadome, there is no *business* tenant to load — but
+    // the sender may be a tenant owner writing to Alphadome. "How is my shop doing?" is
+    // the most likely first question from someone we onboarded an hour ago, and without
+    // this the bot answered as a stranger to a person it had just invited (2026-11-19).
     if (businessPhoneCandidates.includes(normalizedAlphadome) || businessPhoneCandidates.includes(toKeE164(normalizedAlphadome)) || businessPhoneCandidates.includes(toLocalKe(normalizedAlphadome))) {
+      const sender = req.body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.from
+        || req.body?.entry?.[0]?.changes?.[0]?.value?.contacts?.[0]?.wa_id
+        || null;
+      const owner = sender ? await findTenantByOwnerPhone(sender) : null;
+      if (owner) {
+        req.tenant = owner;
+        req.isTenantAware = true;
+        req.tenantVia = "owner";
+        req.senderPhone = sender;
+        log(`✓ Owner of ${owner.client_name} detected (${sender}) - tenant context attached`, "SYSTEM");
+        return next();
+      }
       req.tenant = null;
       req.isTenantAware = false;
       log(`✓ Alphadome main number detected (${businessPhone}) - responding as Alphadome`, "SYSTEM");
@@ -7821,6 +7861,7 @@ IMPORTANT RULES:
 8. Be proactive - if customer mentions a category, suggest relevant products from catalog
 9. If customer mentions budget, recommend items within their price range
 10. Always be helpful, professional, and encourage customers to explore the full catalog
+11. If a BUSINESS SNAPSHOT section is present, the person you are talking to is the OWNER of that business: answer from that section plainly (catalogue, orders, messages, Writer's Flow, content), never invent a number, and when something is empty say what the next action is instead of apologising.
 `.trim();
 
   const consultativeStyle = isAlphadomeBrand
@@ -11294,6 +11335,25 @@ app.post("/webhook", loadTenantContext, async (req, res) => {
       catalogMatches,
     });
 
+    // The owner's own business, read live (cached 5 min) and only for the owner: a
+    // customer messaging a tenant's number must never see the business's numbers.
+    const ownerSpeaking = Boolean(req.tenant) && (
+      req.tenantVia === "owner" || isOwnerPhone(req.tenant, from)
+    );
+    let dbContextWithDossier = dbContext;
+    if (ownerSpeaking) {
+      try {
+        const dossier = await loadDossier(supabase, req.tenant);
+        if (dossier?.text) {
+          dbContextWithDossier = `${dbContext}\n\n${dossier.text}`;
+          log(`Dossier attached for ${req.tenant.client_name} (${dossier.gaps.length} gap(s))`, "SYSTEM");
+        }
+      } catch (dossierErr) {
+        // A dossier that fails must not cost the owner their reply.
+        log(`Dossier unavailable for ${req.tenant?.client_name || "tenant"}: ${dossierErr.message}`, "WARN");
+      }
+    }
+
     // STEP 3c: Runtime lead intelligence (state, profile, and conversion gating)
     const { data: liveSession } = await supabase
       .from("user_sessions")
@@ -11374,7 +11434,7 @@ app.post("/webhook", loadTenantContext, async (req, res) => {
       "Do not share internal cost structure or internal-only fulfillment details.",
     ].join("\n");
 
-    const dbContextWithLead = `${dbContext}\n\n${leadCoachContext}`.trim();
+    const dbContextWithLead = `${dbContextWithDossier}\n\n${leadCoachContext}`.trim();
 
  // ---------- INSERT START: Join Alphadome / STK flow ----------
     // detect join command (case-insensitive)
