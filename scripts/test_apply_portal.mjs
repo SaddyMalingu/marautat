@@ -20,7 +20,7 @@ import {
   sanitizeAnswers
 } from '../utils/applyRuns.js';
 import { createApplyPortalRouter, isApplyRunActive } from '../routes/applyPortal.js';
-import { agentsFor, enabledTenants, workAndaEnabled, workAndaFor, buildOnboardingRequest, appendRequest, templatesFor } from '../utils/workAnda.js';
+import { agentsFor, enabledTenants, workAndaEnabled, workAndaFor, buildOnboardingRequest, appendRequest, templatesFor, queueFor } from '../utils/workAnda.js';
 import { answersFileName, buildApplyChildArgs, classifyApplyLine, summarizeApplyLine } from '../utils/browserActor/applyDispatch.js';
 import { buildProgressPatch } from '../utils/browserActor/runs.js';
 
@@ -339,6 +339,33 @@ function fakeTableFactory() {
   const on = workAndaFor('malingu-ventures', env);
   ok('an enabled tenant gets the section for the sidebar',
     on.section.label === 'Work_Anda' && on.section.group === 'Growth' && on.section.id === 'work-anda');
+}
+
+// ─── The queue: asked for, not yet built ───────────────────────────────────────────────────
+// A queued card is a decision recorded, not a product on sale. OF Chatter is the shape
+// the next agent is built to, so the queue lives beside the templates rather than in a
+// backlog nobody reads.
+{
+  const queued = queueFor();
+  ok('the queue carries the offer intercept', queued.some((c) => c.id === 'offer-intercept'));
+  ok('the queue carries the chatter co-pilot', queued.some((c) => c.id === 'of-chatter-copilot'));
+  ok('the queue carries the task console', queued.some((c) => c.id === 'hashlist-console'));
+  ok('every queued card has a stop line, because that is what a worker may not cross',
+    queued.every((c) => typeof c.stopsAt === 'string' && c.stopsAt.length > 20));
+  ok('every queued card has guardrails', queued.every((c) => Array.isArray(c.guardrails) && c.guardrails.length >= 3));
+  const copilot = queued.find((c) => c.id === 'of-chatter-copilot');
+  ok('the co-pilot drafts and the human sends', /drafts/i.test(copilot.summary) && /human pressing send/i.test(copilot.stopsAt));
+  ok('the co-pilot names the line it will not cross', /never sent unattended|never pretends/i.test(copilot.guardrails.join(' ')));
+  const card = queued.find((c) => c.id === 'offer-intercept');
+  ok('a queued card is never sold as available', card.status === 'queued');
+  ok('a queued card says what it would do', /Preflight|Apply/i.test(card.summary));
+  ok('a queued card says why it is worth building', card.why.length > 40);
+  ok('a queued card names the line it will not cross',
+    Array.isArray(card.guardrails) && card.guardrails.length >= 3 && /read-only/i.test(card.guardrails.join(' ')));
+  ok('a queued card names where the worker stops', /reader/i.test(card.stopsAt));
+  ok('the queue is a copy, so a caller cannot edit the catalogue', queueFor()[0].guardrails !== queueFor()[0].guardrails);
+  ok('the section serves the queue with the agents', Array.isArray(workAndaFor('malingu-ventures').queue)
+    && workAndaFor('malingu-ventures').queue.length === queueFor().length);
 }
 
 // ─── Onboard a system: the door for a tenant without an agent ────────────────────────────────

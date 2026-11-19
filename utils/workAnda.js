@@ -48,6 +48,78 @@ export const WORK_ANDA_AGENTS = Object.freeze([
   }
 ]);
 
+/**
+ * The queue: agents asked for, not yet built (2026-11-19).
+ *
+ * A card here is a yes to "should this be an agent", not a claim that it works. It is
+ * the same shape as OF Chatter — a worker that acts on a site, on one tenant's behalf,
+ * and stops where a human has to be the one to act — which is why it is queued beside
+ * it rather than built as a separate mechanism.
+ *
+ * The reason each card names its guardrails: an agent that touches a tenant's account
+ * is spending their identity and their reputation, so the limits are part of the
+ * specification, not a footnote on it.
+ */
+export const WORK_ANDA_QUEUE = Object.freeze([
+  {
+    id: 'offer-intercept',
+    name: 'Offer Intercept',
+    site: 'alphadome.onrender.com',
+    builtFor: 'the platform itself',
+    status: 'queued',
+    queuedAt: '2026-11-19',
+    summary: 'When a reader presses Apply on an offer page, the free Preflight pack and the KES 1,500 kit are offered before the redirect leaves the site.',
+    why: 'Every Apply click today 302s to the provider: the reader leaves, the platform earns nothing at the moment of intent, and the referral pays a commission weeks later, if at all.',
+    guardrails: [
+      'One handler and one template. No change to any tenant\'s account, credentials or published pages.',
+      'The reader is never blocked or slowed: the provider link stays on the page and the redirect still fires if the offer is skipped.',
+      'Read-only against the provider. Nothing is submitted, applied for or asserted on a tenant\'s behalf.',
+      'Tenant-scoped: the page belongs to one tenant, and the offer must name that tenant\'s own product or no offer is shown.'
+    ],
+    stopsAt: 'the reader\'s own click — no auto-redirect, no countdown, no interstitial'
+  },
+  {
+    id: 'of-chatter-copilot',
+    name: 'OF Chatter Co-pilot',
+    site: 'chatterapply.com → the operator\'s chosen chat platform',
+    builtFor: 'Malingu Ventures, then any tenant holding a chatter seat',
+    status: 'queued',
+    queuedAt: '2026-11-19',
+    summary: 'A chatter seat is a paid shift (ChatterApply lists roles advertised around USD 450–600 a month). The agent drafts the replies a human chatter approves, so a shift takes less time than it does now.',
+    why: 'The application half is already built (OF Chatter, `runKind: apply`). The billable half is the shift itself, and the expensive part of a shift is thinking of what to say, not typing it.',
+    guardrails: [
+      'The agent drafts; the chatter sends. Nothing leaves the account unattended, and no message is sent as if a person wrote it when nobody read it.',
+      'The chatter is a real, identifiable person on the client\'s own contract — the agent never pretends to be them to the platform.',
+      'The operator\'s account only: a tenant\'s seat is touched only with that tenant\'s own credentials and their written instruction.',
+      'No client-facing medical, legal or payment commitment is ever drafted by the agent without a human rewriting it.',
+      'Every draft is logged with the human who approved it, because a paid shift can be audited by the platform that pays for it.'
+    ],
+    stopsAt: 'the human pressing send — the agent never submits a message it wrote as the operator\'s own words',
+    openQuestion: 'Running the chat account itself (not drafting for it) is the same line as OPEN_FLAGS #53/#56: a platform paying for attested human work, answered by software, misrepresents the contributor and breaks their terms. Draft-and-approve is the version that earns without risking the seat.'
+  },
+  {
+    id: 'hashlist-console',
+    name: 'Task & Referral Console',
+    site: 'the data-operations platform',
+    builtFor: 'the platform itself, sold as a tenant capability',
+    status: 'queued',
+    queuedAt: '2026-11-19',
+    summary: 'One console for the three lanes that platform actually pays on: accepted tasks, referrals, and a data-set sample.',
+    why: 'The cards exist (`dop/tasks/`, packaged in `dist/hashlist/`), the rate is known ($0 per task on this account; $500–$5,000 on an accepted data-set sample), and the publishing decision is still gated on ToS §11 (`docs/HASHLIST_EVALUATION.md`).',
+    guardrails: [
+      'Read-only until §11 is read: no task published, no sample submitted, no referral sent from a card that cannot be reused.',
+      'Cards are cut from the founder\'s own working week; no client\'s data or conversation ever enters a card.',
+      'A published card is treated as spent, not as inventory, until the terms say otherwise.'
+    ],
+    stopsAt: 'publishing — a human reads §11 and decides, once'
+  }
+]);
+
+/** The queue, as a tenant sees it. Queued cards are shown as `queued`, never as buyable. */
+export function queueFor() {
+  return WORK_ANDA_QUEUE.map((card) => ({ ...card, guardrails: [...card.guardrails] }));
+}
+
 /** The tenants with a live agent. Compared lower-case; whitespace and empty entries are ignored. */
 export function enabledTenants(env = process.env) {
   const raw = String(env.WORK_ANDA_TENANTS || env.WORK_UNDER_TENANTS || '').trim();
@@ -100,6 +172,7 @@ export function workAndaFor(slug, env = process.env, phone = '') {
     tenant: String(slug || '').trim().toLowerCase(),
     section: { ...WORK_ANDA_SECTION },
     templates: templatesFor(),
+    queue: queueFor(),
     agents: agentsFor(slug, env, phone),
     onboarding: { open: true, accepts: ['siteUrl', 'htmlDump', 'brief'] },
     reason: enabled ? null : 'No Work_Anda agent is unlocked for this tenant yet â€” onboard a system below and we will build one.'
