@@ -81,6 +81,8 @@
     "money:routine": "node scripts/money_routine.mjs",
     "money:routine:json": "node scripts/money_routine.mjs --json",
     "tenants:campaign": "node scripts/tenant_campaign.mjs",
+    "catalog:import": "node scripts/catalog_import.mjs",
+    "test:catalog-import": "node scripts/test_catalog_import.mjs",
     "test:founder-offer": "node scripts/test_founder_offer.mjs",
     "deploy:check": "node scripts/deploy_check.mjs",
     "test:drops": "node scripts/test_digital_drops.mjs",

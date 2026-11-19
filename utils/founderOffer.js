@@ -94,7 +94,9 @@ export function activationMessage({
     '',
     `The system is ${money(price)} a month for tenants already in${existing ? ` (it is ${money(standard)} for a new client)` : ''}. I am not invoicing you until your catalogue is loaded and one order has gone through end to end — before that you would be paying for an empty shop.`,
     '',
-    'Reply "catalogue" and I will send the two-minute format.'
+    'Reply "catalogue" and I will load it, or send it like this — one line per item, name, price, stock:',
+    'Omo 1kg | 320 | 12',
+    'Omo 3kg, 890'
   );
   if (offerUrl) lines.push('', `What the fee covers: ${offerUrl}`);
   return lines.join('\n');

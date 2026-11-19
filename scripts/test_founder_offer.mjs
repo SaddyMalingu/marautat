@@ -66,6 +66,8 @@ ok("it quotes the founder's rate", activation.includes('KES 1,000'));
 ok('it names the walk-up rate once', (activation.match(/KES 3,000/g) || []).length === 1);
 ok('it defers the invoice until a catalogue exists', /not invoicing you until/i.test(activation));
 ok('it asks for the catalogue as the one action', /Reply "catalogue"/.test(activation));
+ok('it shows the format inline, so the tenant need not wait for a second message',
+  /Omo 1kg \| 320 \| 12/.test(activation), activation.slice(-200));
 ok('it links the offer page', activation.includes('https://x.test/founders-package.html'));
 
 const noLink = activationMessage({ contactName: 'Dawn', businessName: 'Coach Dawn 3.0' });

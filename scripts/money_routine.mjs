@@ -208,7 +208,7 @@ console.log('   /founders-package.html  the offer page every tenant message link
 console.log('\nTENANTS');
 console.log(`   ${activeTenants.length} active · ${emptyTenants.length} with an empty catalogue (nothing to sell, so nothing to pay for)`);
 for (const t of emptyTenants.slice(0, 6)) {
-  console.log(`   - ${t.client_name} (${t.client_phone})`);
+  console.log(`   - ${t.client_name} (${t.client_phone}) — npm run catalog:import -- --tenant ${t.client_phone} --from prices.txt`);
 }
 if (emptyTenants.length > 6) console.log(`   … and ${emptyTenants.length - 6} more`);
 
