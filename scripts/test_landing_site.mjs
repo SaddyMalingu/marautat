@@ -51,6 +51,8 @@ const desc = (html.match(/<meta name="description" content="([^"]*)"/) || [])[1]
 ok('meta description is 120-320 chars', desc.length >= 120 && desc.length <= 320, desc.length + ' chars');
 ok('meta description names what is sold', /WhatsApp/i.test(desc) && /M-Pesa/i.test(desc), desc.slice(0, 80));
 ok('canonical URL is absolute', /<link rel="canonical" href="https:\/\/alphadome\.onrender\.com\/"/.test(html));
+ok('sends GA4 page views to the configured property',
+  /gtag\('config', 'G-2WH69MDCER'\)/.test(html));
 
 // Affiliate/media-property verification (Semrush via Impact.com) is checked by an
 // external crawler against the head of the live homepage. Losing the tag silently

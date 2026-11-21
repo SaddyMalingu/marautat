@@ -27,6 +27,7 @@ import { analyzeArticle, qualityBrief, describeQuality } from '../utils/blogQual
 import { ctaBlock, pageNeedsRebuild, offerShowsKit } from '../utils/ctaBlock.js';
 // The prune/index rules for the boot restore, kept pure so they are testable.
 import { isTestArtifact, orphanPageFiles, indexIsStale } from '../utils/blogIndex.js';
+import { withGoogleAnalytics } from '../utils/googleAnalytics.js';
 
 // Slugs the verifier and the provider smoke test generate. They are real posts
 // with real HTML, and until 2026-10-29 they were published to /blog alongside
@@ -135,6 +136,11 @@ export async function restoreFromDB() {
         } catch (e) {
           console.warn('[DB] Rebuild failed for ' + post.slug + ': ' + e.message);
         }
+      }
+      try {
+        html = withGoogleAnalytics(html);
+      } catch (e) {
+        console.warn('[DB] Could not add GA4 tag to ' + post.slug + ': ' + e.message);
       }
       fs.writeFileSync(path.join(BLOG, post.slug + '.html'), html, 'utf8');
     }
@@ -1172,7 +1178,8 @@ export function buildHTML(post, job) {
   // repair: restoreFromDB()/repair_blog_html.js pass the row's own timestamp.
   const pubDate = post.date ? new Date(post.date).toLocaleDateString() : new Date().toLocaleDateString();
   const VM = '<meta name="google-site-verification" content="nQc8r4A_tjZX4469pNlpTR5hf7bfjEazZtITnrrHZUU">';
-  return '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">' + VM + '<title>' + title + ' | AlphaDome</title><meta name="description" content="' + desc + '"><link rel="canonical" href="' + (process.env.SITE_URL || 'https://alphadome.onrender.com') + '/blog/' + post.slug + '.html"><style>' + BLOG_STYLE + '</style></head><body><div class="c"><nav><a href="/">AlphaDome</a> / <a href="/ai-jobs">AI Jobs</a> / <a href="/blog">Blog</a></nav>' + topCta + '<article><h1>' + title + '</h1><p style="color:var(--muted)">Published ' + pubDate + ' | ' + rt + ' min read</p>' + img + body + '</article>' + endCta + '</div></body></html>';
+  const html = '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">' + VM + '<title>' + title + ' | AlphaDome</title><meta name="description" content="' + desc + '"><link rel="canonical" href="' + (process.env.SITE_URL || 'https://alphadome.onrender.com') + '/blog/' + post.slug + '.html"><style>' + BLOG_STYLE + '</style></head><body><div class="c"><nav><a href="/">AlphaDome</a> / <a href="/ai-jobs">AI Jobs</a> / <a href="/blog">Blog</a></nav>' + topCta + '<article><h1>' + title + '</h1><p style="color:var(--muted)">Published ' + pubDate + ' | ' + rt + ' min read</p>' + img + body + '</article>' + endCta + '</div></body></html>';
+  return withGoogleAnalytics(html);
 }
 
 async function saveToDB(post, job, category) {
@@ -1256,7 +1263,8 @@ export function updateIndex(titles) {
     };
   });
   const list = posts.map(function(p){return '<article style="margin:1rem 0;padding:1.5rem;background:rgba(255,255,255,.05);border-radius:12px"><h3 style="margin:0 0 .5rem"><a href="/blog/'+p.slug+'.html" style="color:#ff8a00;text-decoration:none">'+p.title+'</a></h3><a href="/blog/'+p.slug+'.html" style="color:#b8c7d6;font-size:.9rem">Read more</a></article>';}).join("");
-  fs.writeFileSync(path.join(BLOG,"index.html"),'<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>AI Jobs Blog | AlphaDome</title><meta name="description" content="AI jobs articles."><link rel="canonical" href="/blog/"><style>:root{--bg:#081421;--accent:#ff8a00;--text:#f3f7fa;--muted:#b8c7d6}*{box-sizing:border-box;margin:0;padding:0}body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.6}.c{max-width:800px;margin:0 auto;padding:0 24px}nav{padding:1rem 0}nav a{color:var(--accent);text-decoration:none}h1{font-size:2rem;margin:1rem 0}</style></head><body><div class="c"><nav><a href="/">AlphaDome</a> / Blog</nav><h1>AI Jobs Blog</h1><p style="color:var(--muted)">Expert career guides.</p>'+list+'<p style="color:var(--muted);margin-top:2rem">'+posts.length+' articles</p></div></body></html>',"utf8");
+  const html = '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>AI Jobs Blog | AlphaDome</title><meta name="description" content="AI jobs articles."><link rel="canonical" href="/blog/"><style>:root{--bg:#081421;--accent:#ff8a00;--text:#f3f7fa;--muted:#b8c7d6}*{box-sizing:border-box;margin:0;padding:0}body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.6}.c{max-width:800px;margin:0 auto;padding:0 24px}nav{padding:1rem 0}nav a{color:var(--accent);text-decoration:none}h1{font-size:2rem;margin:1rem 0}</style></head><body><div class="c"><nav><a href="/">AlphaDome</a> / Blog</nav><h1>AI Jobs Blog</h1><p style="color:var(--muted)">Expert career guides.</p>'+list+'<p style="color:var(--muted);margin-top:2rem">'+posts.length+' articles</p></div></body></html>';
+  fs.writeFileSync(path.join(BLOG, "index.html"), withGoogleAnalytics(html), "utf8");
 }
 
 export async function generateAllBlogs(opts = {}) {

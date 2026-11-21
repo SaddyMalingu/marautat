@@ -1,5 +1,17 @@
 # Alphadome Analytics & SEO - Quick Start Guide
 
+## Google Analytics 4 (GA4)
+
+The public homepage and generated/restored blog pages send page views to the
+`alphadome.onrender.com` GA4 web stream (`G-2WH69MDCER`).
+
+1. Open GA4 **Reports → Realtime** and visit the site in another browser tab.
+2. Confirm a `page_view` appears. If it does not, check the deployed page source
+   for the Google tag and verify that browser extensions or consent settings are
+   not blocking it.
+3. Mediavine's 14-day check can only count data collected after GA4 begins
+   receiving events; older visits are not backfilled.
+
 ## ✅ Verification Checklist
 
 Run through these steps to confirm everything is deployed and working:

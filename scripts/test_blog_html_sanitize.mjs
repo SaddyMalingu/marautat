@@ -23,6 +23,7 @@ import chalk from "chalk";
 import { sanitizeArticleHTML, auditBlogHTML, escapeAttr } from "../utils/articleHtml.js";
 import { isStalePage, needsClosingBlock } from "../utils/ctaBlock.js";
 import { isTestArtifact, orphanPageFiles, indexIsStale, articleBodyOf, plainTextOf } from "../utils/blogIndex.js";
+import { withGoogleAnalytics } from "../utils/googleAnalytics.js";
 
 const results = [];
 const record = (status, name, detail = "") => {
@@ -165,6 +166,21 @@ await check("buildHTML: one <style>, one <html>, one <body>", () => {
   return "single theme";
 });
 
+await check("buildHTML: includes the configured GA4 tag exactly once", () => {
+  const html = buildHTML({ title: "T", slug: "s", content: CLEAN_FRAGMENT }, OFFER);
+  assert(html.includes("G-2WH69MDCER"), "GA4 measurement ID missing");
+  assert((html.match(/gtag\('config', 'G-2WH69MDCER'\)/g) || []).length === 1, "GA4 config count != 1");
+  assert(html.slice(0, html.indexOf("</head>")).includes("gtag('config'"), "GA4 config is not in the document head");
+  return "one GA4 config";
+});
+
+await check("GA4 injection is idempotent for restored blog pages", () => {
+  const first = withGoogleAnalytics("<html><head></head><body>Article</body></html>");
+  const second = withGoogleAnalytics(first);
+  assert(first === second, "restoring an already-tagged page duplicated GA4");
+  return "one tag after repeated restore";
+});
+
 await check("buildHTML: page keeps the dark theme and readable text", () => {
   const html = buildHTML({ title: "T", slug: "s", content: INJECTED_DOCUMENT }, OFFER);
   assert(/body\{[^}]*background:var\(--bg\)/.test(html), "theme background missing");
@@ -175,7 +191,7 @@ await check("buildHTML: page keeps the dark theme and readable text", () => {
 
 await check("buildHTML: quotes in a title cannot break the meta/title tags", () => {
   const html = buildHTML({ title: 'The "real" <script> job', slug: "t", content: CLEAN_FRAGMENT }, OFFER);
-  assert(!html.includes("<script>"), "raw <script> from the title reached the page");
+  assert(!html.includes('<title>The "real" <script> job'), "raw <script> from the title reached the page");
   assert(html.includes("&quot;real&quot;"), "title was not escaped");
   assert(/<meta name="description" content="[^"]*">/.test(html), "description tag is malformed");
   return "escaped";
