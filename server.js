@@ -55,6 +55,7 @@ import { loadDossier, isOwnerPhone } from "./utils/tenantDossier.js";
 // The blog index must never advertise a verifier's own page, whichever generator
 // builds it (this route, or updateIndex() in scripts/blogManager.js).
 import { isTestArtifact } from "./utils/blogIndex.js";
+import { withGoogleAnalytics } from "./utils/googleAnalytics.js";
 // Scan to Pay: the tenant merchant/client wallet rides the QR + STK stack that is
 // already live for Kassangas, so the rules live in one pure module both entry
 // points (tenant dashboard and the public pay page) agree on.
@@ -558,7 +559,12 @@ app.get(['/blog', '/blog/'], async (req, res) => {
   const blogIndex = path.join(blogDir, 'index.html');
   
   // If index exists, serve it
-  if (fs.existsSync(blogIndex)) return res.sendFile(blogIndex);
+  if (fs.existsSync(blogIndex)) {
+    const originalHtml = fs.readFileSync(blogIndex, 'utf8');
+    const trackedHtml = withGoogleAnalytics(originalHtml);
+    if (trackedHtml !== originalHtml) fs.writeFileSync(blogIndex, trackedHtml, 'utf8');
+    return res.sendFile(blogIndex);
+  }
   
   // Generate blog index dynamically from existing posts
   try {
@@ -595,7 +601,7 @@ app.get(['/blog', '/blog/'], async (req, res) => {
       
       const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>AI Jobs Blog | AlphaDome</title><meta name="description" content="AI jobs articles, salaries, skills, and career guides."><link rel="canonical" href="/blog/"><meta property="og:title" content="AI Jobs Blog | AlphaDome"><meta property="og:type" content="website"><style>:root{--bg:#081421;--accent:#ff8a00;--text:#f3f7fa;--muted:#b8c7d6}*{box-sizing:border-box;margin:0;padding:0}body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.6}.c{max-width:800px;margin:0 auto;padding:0 24px}nav{padding:1rem 0}nav a{color:var(--accent);text-decoration:none}h1{font-size:2rem;margin:1rem 0}</style></head><body><div class="c"><nav><a href="/">AlphaDome</a> / Blog</nav><h1>AI Jobs Blog</h1><p style="color:var(--muted)">Articles about AI jobs, salaries, skills, and career guides.</p>${postList}<p style="color:var(--muted);margin-top:2rem">Total: ${posts.length} articles</p></div></body></html>`;
       
-      fs.writeFileSync(blogIndex, html);
+      fs.writeFileSync(blogIndex, withGoogleAnalytics(html), 'utf8');
       return res.sendFile(blogIndex);
     }
   } catch (e) {
